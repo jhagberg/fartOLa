@@ -13,7 +13,7 @@ orienteer at a real event (training counts).
 - [x] **Phase 1: Single-laptop training MVP** — Run a real club training using only this software on one laptop. (Merged to main 2026-05-16 via PR #3.)
 - [x] **Phase 1.5: Public demo + landing page** — GitHub Pages site with a clickable mock so anyone can test the UI and leave feedback. (Merged to main 2026-05-15.)
 - [ ] **Phase 2.0: 4-klubbs MVP (parallel with MeOS)** — Run fartOLa as primary registration + readout at a 4-klubbs training on 2026-05-20, with MeOS as parallel safety backup via MIP+MOP sync.
-- [ ] **Phase 2.1: Sanctioned-competition foundations** — Yjs collaborative editing, Eventor entries pull, Eventor results push, spectator live results page, bridge crash recovery hardening, MIP/MOP polish.
+- [ ] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, gap-analysis quick wins.
 - [ ] **Phase 3: Children's finish, public engagement** — Kids' finish screen, parent notifications, embeddable live widget.
 - [ ] **Phase 4: Multi-arena, radio controls** — Radio controls feeding live punches, multiple WiFi cells, peer-to-peer sync.
 - [ ] **Phase 5: O-ringen scale** — Demonstrable capacity for a five-stage event with 25 000+ starters.
@@ -133,19 +133,36 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
 
 ### Phase 2.1: Sanctioned-competition foundations
 
-**Goal**: A sanctioned competition with 100–200 starters and multiple secretariat operators editing concurrently. Builds on the MIP/MOP substrate from Phase 2.0.
+**Goal**: Close operational gaps from the 4-klubbs event and add features needed for a real sanctioned sprint competition (Gundes Sommarsprint, June 2026) with 100-200 starters and 2 workstations. MeOS remains a parallel safety backup.
 **Depends on**: Phase 2.0
 **Requirements**: REQ-UI-008, REQ-STD-004 (full pull + push), REQ-OPS-004
 **Success Criteria** (what must be TRUE):
-  1. Eventor entries pull (REQ-STD-004 read) and results push (REQ-STD-004 write) work end-to-end.
-  2. Three+ browser clients connected to one edge-bridge.
-  3. Yjs collaborative editing of registrations: live cursors, no conflicts.
-  4. Spectator-facing live results page on arena WiFi.
-  5. Bridge process killed mid-event recovers with zero data loss.
-  6. A real Swedish-ranking competition runs on this stack.
-**Plans**: TBD — seeded with two carry-over slices from Phase 2.0 (currently filed under `02-4-klubbs-mvp/` with `deferred_until: phase-2.1`):
-  - 02-08-PLAN.md — Event admin codes for mobile sekretariat-helpers (minimal auth, no full accounts; see ADR-0010)
-  - 02-10-PLAN.md — Eventor event-ID linkage on the competition row + wizard quickstart + Tävling list chip + ImportRunnersView linked-card collapse
+  1. Eventor entries pull (already built) and results push + startlist push work end-to-end.
+  2. Two browser clients connected to one edge-bridge (multi-serial, admin codes for LAN access).
+  3. Start list lottning (SOFT/Random/Simultaneous) produces drawn start times visible in all views.
+  4. Kvar-i-skogen: operator reads check-unit backup, sees who is still in the forest.
+  5. Liveresultat push sends MOP XML 2.0 to liveresultat.orientering.se without blocking local results.
+  6. MeOS classid fix: MIP entries include classid from REST auto-discovery.
+  7. Gundes Sommarsprint (June 2026) runs on this stack with MeOS as backup.
+**Plans**: 13 plans
+
+Plans:
+  - [ ] 02.1-01-PLAN.md — Wave 1: Schema migration 0007 (start_time_ms, max_time_sec, liveresultat cols, course_replacements table) + reducer extensions (MAX auto-compute, voided legs, replacement controls) + voided-leg routes
+  - [ ] 02.1-02-PLAN.md — Wave 2: Start list draw algorithms (SOFT club-blocking, Random, Simultaneous) + lottning route + re-lotta + per-runner edit
+  - [ ] 02.1-03-PLAN.md — Wave 2: IOF XML 3.0 StartList export (buildStartListXml) + StartList import + export/import routes + thermal print
+  - [ ] 02.1-04-PLAN.md — Wave 2: Multi-serial SI readers (repeatable --serial flag, BridgeLifecycle array, position-aware WS broadcast, per-reader health)
+  - [ ] 02.1-05-PLAN.md — Wave 3: LottningView UI + start-time column in RegistrationView/ReadoutView + subsecond timing display
+  - [ ] 02.1-06-PLAN.md — Wave 2: Kvar-i-skogen (readBackupMemory in sportident package, checkunit snapshot route, KvarISkovenView diff + safety-call summary)
+  - [ ] 02.1-07-PLAN.md — Wave 3: Liveresultat push (MOP XML 2.0 builder, pushToLiveresultat, async retry queue, trigger route)
+  - [ ] 02.1-08-PLAN.md — Wave 3: Eventor results + startlist push (pushToEventor with zipped IOF XML 3.0, push routes, EventorPublishView)
+  - [ ] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
+  - [ ] 02.1-10-PLAN.md — Wave 1: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
+  - [ ] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
+  - [ ] 02.1-12-PLAN.md — Wave 3: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
+  - [ ] 02.1-13-PLAN.md — Wave 4: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
+
+Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred to Phase 2.2+.
+Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup), 02-10 (Eventor event linkage).
 
 ### Phase 3: Children's finish, public engagement
 
@@ -208,7 +225,7 @@ These must be respected throughout, not deferred to a phase:
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 0/TBD | Not started | - |
+| 2.1. Sanctioned-competition foundations | 0/13 | Planned | target: Gundes Sommarsprint June 2026 |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
