@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.0.1
 milestone_name: milestone
 status: Phase 2 complete
-stopped_at: Phase 2 round-2 context gathered — 14 implementation decisions locked across MIP/MOP/Eventor/Hyrbricka; ready for /gsd-plan-phase 2
-last_updated: '2026-05-17T00:33:44.987Z'
+stopped_at: Phase 2.1 context gathered
+last_updated: "2026-05-23T13:28:38.223Z"
 progress:
   total_phases: 8
   completed_phases: 2
@@ -259,9 +259,9 @@ None. Phase 0 plans created.
 
 ## Session Continuity
 
-Last session: 2026-05-16T19:58:29.664Z
-Stopped At: Phase 2 round-2 context gathered — 14 implementation decisions locked across MIP/MOP/Eventor/Hyrbricka; ready for /gsd-plan-phase 2
-Resume File: .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md
+Last session: 2026-05-23T13:28:38.216Z
+Stopped At: Phase 2.1 context gathered
+Resume File: .planning/phases/02.1-sanctioned-competition-foundations/02.1-CONTEXT.md
 
 ---
 
@@ -279,6 +279,7 @@ Resume File: .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md
   entirely — MIP XSD v3.0 (uploaded 2026-05-14) and MOP v2.0 (March 2025) are
   the only actively-versioned protocols and cover every documented use case.
   Hyrbricka handled in both systems independently (fartOLa toast at finish-readout
+
   - MIP `hired="true"` triggers MeOS reminder). Yjs and QR self-signup deferred
     to Phase 2.1. CONTEXT.md at `.planning/phases/02-4-klubbs-mvp/02-CONTEXT.md`.
     ROADMAP.md updated with the split. MeOS protocol research at
