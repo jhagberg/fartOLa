@@ -249,6 +249,9 @@
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: '—',
       status: row.status as ReadoutStatus,
+      // Phase 2.1 (plan 13): pass manual_status through so LatestReadCard
+      // can distinguish auto-DNF (no clear button) from operator override.
+      manual_status: row.manual_status,
       place: null,
       unknown: row.unmatched,
       competitorId: row.competitor_id,

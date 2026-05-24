@@ -54,3 +54,8 @@ docs/guide-meos.pdf
 # local; mention specific files in .planning/* or docs/* by path so
 # downstream readers know to ask the maintainer for a copy.
 .reference/
+
+# MeOS SQL dump fixtures for regression testing. May contain PII (runner
+# names, club names from real events). Gitignored per T-02.1-28.
+# Real-event dumps go here; synthetic fixtures live in test source files.
+apps/edge/test-fixtures/meos-*.sql

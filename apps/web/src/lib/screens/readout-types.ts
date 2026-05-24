@@ -60,6 +60,11 @@ export interface ReadoutHistoryRow {
   /** Ordered expected control codes for the competitor's course; empty
    * when the class has no course or the card is unmatched. */
   expected_codes: number[];
+  /** Phase 2.1 (plan 13) — mirrors CompetitorView.manual_status. Non-null
+   * when the current status was set by an operator override. null means
+   * the status is auto-detected from card_read + course. The UI uses this
+   * to show the clear button only for manual overrides, not for auto-DNF. */
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
 }
 
 export interface ReadoutResponse {

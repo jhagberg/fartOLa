@@ -271,6 +271,16 @@ describe('POST /api/competitions/:id/competitors/:competitorId/status (idempoten
       .all();
     assert.equal(evtRows.filter((e) => e.eventType === 'clear_manual_status').length, 0);
   });
+
+  test('Phase-2.1: POST /clear-status rejects unexpected body fields (strict)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/clear-status`,
+      payload: { unexpected_field: 'oops' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
 });
 
 describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => {

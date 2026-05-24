@@ -333,8 +333,9 @@ export const ManualStatusInput = z.object({
 });
 export type ManualStatusInput = z.infer<typeof ManualStatusInput>;
 
-/** Clearing the override takes no body — symmetric with UnDnfInput. */
-export const ClearManualStatusInput = z.object({}).passthrough();
+/** Clearing the override takes no body — symmetric with UnDnfInput. Strict
+ * so unexpected body fields are rejected (02-11 LOW: was passthrough()). */
+export const ClearManualStatusInput = z.object({}).strict();
 export type ClearManualStatusInput = z.infer<typeof ClearManualStatusInput>;
 
 // ---------------------------------------------------------------------------
