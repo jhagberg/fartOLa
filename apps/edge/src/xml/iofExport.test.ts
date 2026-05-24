@@ -98,6 +98,8 @@ function makeCompetitorView(
     elapsed_time_ms: partial.elapsed_time_ms,
     manual_dnf_reason: null,
     manual_status: null,
+    voided_legs: [],
+    start_time_ms: null,
   };
 }
 
