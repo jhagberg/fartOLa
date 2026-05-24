@@ -46,7 +46,7 @@ import type { DbHandle } from '../db/index.ts';
 import { SerialTransport, SiMainStation } from '@fartola/sportident';
 import { attachBridge } from '../si/bridge.ts';
 import type { AttachedBridge } from '../si/bridge.ts';
-import { config, competitions } from '../db/schema.ts';
+import { config, competitions, classes, clubs } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 import type { PrinterSink } from '../print/sink.ts';
 import { createStdoutPrinterSink } from '../print/stdout-sink.ts';
@@ -56,6 +56,7 @@ import { scheduleDailyBackup } from '../backup/daily.ts';
 import { scheduleDailyRetention } from '../privacy/retention.ts';
 import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
+import { createPushQueue } from '../integrations/liveresultat/queue.ts';
 
 /** A single serial reader entry as parsed from --serial or --serial-path. */
 export interface SerialPathEntry {
@@ -694,6 +695,56 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   });
   app.fartolaEventor = eventor;
 
+  // Phase 2.1 Plan 02.1-07 — Liveresultat push queue.
+  // Reads liveresultat_id + liveresultat_pwd from the competition row on
+  // every push attempt so the operator can update credentials via PATCH
+  // without a server restart. Auto-push hook: markDirty on the projection
+  // store fires when a card_read lands; we listen and enqueue a debounced
+  // push (15 s window). T-02.1-13: liveresultat_pwd is never logged in
+  // plaintext — redact.ts covers it at the pino layer.
+  const liveresultatQueue = createPushQueue({
+    log: app.log,
+    getProjection: (competitionId) => app.projectionStore.get(competitionId),
+    getConfig: (competitionId) => {
+      const row = handle.db
+        .select({
+          liveresultatId: competitions.liveresultatId,
+          liveresultatPwd: competitions.liveresultatPwd,
+        })
+        .from(competitions)
+        .where(eq(competitions.id, competitionId))
+        .get();
+      if (!row?.liveresultatId || !row.liveresultatPwd) return null;
+      return {
+        liveresultatId: row.liveresultatId,
+        liveresultatPwd: row.liveresultatPwd,
+      };
+    },
+    getMopMeta: (competitionId) => {
+      const classRows = handle.db
+        .select({ id: classes.id, name: classes.name })
+        .from(classes)
+        .where(eq(classes.competitionId, competitionId))
+        .all();
+      const clubRows = handle.db.select({ id: clubs.id, name: clubs.name }).from(clubs).all();
+      return { classes: classRows, clubs: clubRows };
+    },
+  });
+  app.liveresultatQueue = liveresultatQueue;
+
+  // Auto-push hook: wrap markDirty to trigger a debounced push whenever the
+  // projection becomes dirty. When markDirty fires for a competition that has
+  // liveresultat_id configured, the queue's getConfig returns non-null and a
+  // push is attempted. For competitions without liveresultat configured,
+  // getConfig returns null and attemptPush exits early (no HTTP call).
+  // The 15 s debouncer coalesces rapid card reads so the liveresultat server
+  // is not flooded (addresses Gemini HIGH review: per-punch congestion).
+  const originalMarkDirty = app.projectionStore.markDirty.bind(app.projectionStore);
+  app.projectionStore.markDirty = (competitionId: string) => {
+    originalMarkDirty(competitionId);
+    liveresultatQueue.enqueue(competitionId);
+  };
+
   const shutdown = async (code: number): Promise<void> => {
     for (const lc of lifecycles) {
       try {
@@ -701,6 +752,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       } catch {
         /* best-effort */
       }
+    }
+    try {
+      liveresultatQueue.stop();
+    } catch {
+      /* best-effort */
     }
     try {
       backup.stop();
