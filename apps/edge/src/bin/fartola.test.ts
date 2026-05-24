@@ -48,4 +48,71 @@ describe('parseArgs', () => {
   test('still rejects truly unknown flags', () => {
     assert.throws(() => parseArgs(['--bogus']), /Unknown argument: --bogus/);
   });
+
+  // -----------------------------------------------------------------------
+  // Plan 04 (D-02) — multi-serial --serial flag with path:position syntax
+  // -----------------------------------------------------------------------
+
+  test('--serial with position produces serialPaths entry with correct position', () => {
+    const opts = parseArgs(['--serial', '/dev/ttyUSB0:left']);
+    assert.equal(opts.serialPaths.length, 1);
+    assert.equal(opts.serialPaths[0]!.path, '/dev/ttyUSB0');
+    assert.equal(opts.serialPaths[0]!.position, 'left');
+  });
+
+  test('--serial without position produces position=null', () => {
+    const opts = parseArgs(['--serial', '/dev/ttyUSB0']);
+    assert.equal(opts.serialPaths.length, 1);
+    assert.equal(opts.serialPaths[0]!.path, '/dev/ttyUSB0');
+    assert.equal(opts.serialPaths[0]!.position, null);
+  });
+
+  test('multiple --serial flags produce multiple serialPaths entries', () => {
+    const opts = parseArgs(['--serial', '/dev/ttyUSB0:left', '--serial', '/dev/ttyUSB1:right']);
+    assert.equal(opts.serialPaths.length, 2);
+    assert.equal(opts.serialPaths[0]!.path, '/dev/ttyUSB0');
+    assert.equal(opts.serialPaths[0]!.position, 'left');
+    assert.equal(opts.serialPaths[1]!.path, '/dev/ttyUSB1');
+    assert.equal(opts.serialPaths[1]!.position, 'right');
+  });
+
+  test('--serial-path backward compat: maps to serialPaths with position=null', () => {
+    const opts = parseArgs(['--serial-path', '/dev/ttyUSB0']);
+    assert.equal(opts.serialPaths.length, 1);
+    assert.equal(opts.serialPaths[0]!.path, '/dev/ttyUSB0');
+    assert.equal(opts.serialPaths[0]!.position, null);
+  });
+
+  test('default serialPaths when no serial flag is given', () => {
+    const opts = parseArgs([]);
+    assert.equal(opts.serialPaths.length, 1);
+    assert.equal(opts.serialPaths[0]!.path, '/dev/ttyUSB0');
+    assert.equal(opts.serialPaths[0]!.position, null);
+  });
+
+  test('duplicate serial path exits with fatal error (T-02.1-08b)', () => {
+    // parseArgs calls process.exit(1) on duplicate paths — mock it.
+    const exitCalls: number[] = [];
+    const stderrCalls: string[] = [];
+    const origExit = process.exit.bind(process);
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.exit = ((code: number) => {
+      exitCalls.push(code);
+    }) as typeof process.exit;
+    process.stderr.write = ((msg: string) => {
+      stderrCalls.push(msg);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      parseArgs(['--serial', '/dev/ttyUSB0:left', '--serial', '/dev/ttyUSB0:right']);
+    } finally {
+      process.exit = origExit;
+      process.stderr.write = origWrite;
+    }
+    assert.ok(exitCalls.includes(1), 'process.exit(1) should have been called');
+    assert.ok(
+      stderrCalls.some((m) => m.includes('duplicate serial path')),
+      `stderr should mention duplicate path, got: ${JSON.stringify(stderrCalls)}`
+    );
+  });
 });

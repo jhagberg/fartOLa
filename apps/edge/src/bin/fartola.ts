@@ -7,19 +7,25 @@
 // rejections log to stderr and exit 1 (RESEARCH Pitfall 9).
 //
 // Plan 06 extension: the bin now owns the SI bridge lifecycle.
-//   - On boot (unless --no-bridge), open the SerialTransport at --serial-path
-//     (default /dev/ttyUSB0), construct a SiMainStation, and call
-//     attachBridge(station, {...}). The bridge subscribes the 5-event listener
-//     set; events flow into the events table via insertEvent.
+//   - On boot (unless --no-bridge), open the SerialTransport at --serial
+//     (repeatable, path:position syntax per D-02) or --serial-path (legacy
+//     alias, single reader, position=null). Constructs a BridgeLifecycle per
+//     entry; events flow into the events table via insertEvent with an
+//     optional reader_position field in the WS envelope.
 //   - getActiveCompetitionId reads `app.activeCompetitionId` on every event
 //     (no cached copy — operator toggles via /api/sessions/active-competition).
 //   - On open failure / spontaneous close, retry on the 250ms/500ms/1s/2s/5s
-//     backoff schedule (RESEARCH Pitfall 4 — serialport EBUSY). After 5
-//     consecutive failures the bridge bails and the operator can re-trigger
-//     via POST /api/sessions/reconnect-bridge (the bin exposes this via the
-//     `app.reconnectBridge` decoration).
+//     backoff schedule (RESEARCH Pitfall 4 — serialport EBUSY). Never gives
+//     up — operator can force an immediate retry via the "Återanslut" button
+//     (POST /api/sessions/reconnect-bridge, now reconnects ALL lifecycles).
 //   - The route exposing reconnect-bridge already returns 503 when
 //     reconnectBridge is undefined — tests and --no-bridge boots stay clean.
+//
+// Plan 04 (D-02) extension: repeatable --serial flag.
+//   - Multiple BridgeLifecycle instances run concurrently, one per --serial.
+//   - card_read WS envelope gains reader_position field (null when omitted).
+//   - GET /api/health returns per-reader status via app.bridgeLifecycles.
+//   - Duplicate serial paths are rejected at startup with a fatal error.
 //
 // Pattern S-7: `parseArgs` + `main` are exported so unit tests can exercise
 // them without booting the listener. The `isEntrypoint` guard at the bottom
@@ -31,6 +37,7 @@
 import type { FastifyInstance } from 'fastify';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -50,13 +57,25 @@ import { scheduleDailyRetention } from '../privacy/retention.ts';
 import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 
+/** A single serial reader entry as parsed from --serial or --serial-path. */
+export interface SerialPathEntry {
+  /** Absolute-resolved device path, e.g. '/dev/ttyUSB0'. */
+  path: string;
+  /** Operator-assigned position label ('left', 'right', or any string), or
+   * null when --serial-path is used or no position suffix is provided. */
+  position: string | null;
+}
+
 export interface CliOpts {
   port: number;
   bindHost: string;
   dbPath: string;
   allowLan: boolean;
   noBridge: boolean;
-  serialPath: string;
+  /** Plan 04 (D-02) — one entry per --serial flag. Legacy --serial-path maps
+   * to a single entry with position=null. Duplicate paths are rejected at
+   * startup. */
+  serialPaths: SerialPathEntry[];
   competitionId: string | null;
   /** Plan 17 — daily backup directory. Default './backups'. */
   backupDir: string;
@@ -108,8 +127,13 @@ Options:
                            or any non-loopback address requires --allow-lan
                            as a guard against accidental LAN exposure.
   --db-path <path>         SQLite database path (default ./fartola.db).
-  --serial-path <path>     SerialPort device path (default /dev/ttyUSB0).
-                           Ignored when --no-bridge is set.
+  --serial <path>[:<pos>]  SI reader device path with optional position label
+                           (e.g. --serial /dev/ttyUSB0:left). Repeatable for
+                           multiple readers (D-02). Ignored when --no-bridge
+                           is set. Duplicate device paths are rejected.
+  --serial-path <path>     DEPRECATED: use --serial instead. Single reader,
+                           no position label. Still works for backward compat.
+                           Default /dev/ttyUSB0 when neither flag is given.
   --no-bridge              Skip SI bridge attach. Useful for offline tests,
                            UI dev, and CI where /dev/ttyUSB0 is unavailable.
   --competition-id <id>    Set the bridge's active competition at boot.
@@ -135,14 +159,37 @@ function isLoopback(host: string): boolean {
   return false;
 }
 
+/** Parse a --serial value of the form `<path>[:<position>]`.
+ * The colon is treated as a separator only when the path does not already
+ * look like an absolute device path containing a second colon (Windows COM
+ * ports aside, POSIX device paths never contain colons). */
+function parseSerialEntry(raw: string): SerialPathEntry {
+  const colonIdx = raw.lastIndexOf(':');
+  if (colonIdx > 0) {
+    const maybePos = raw.slice(colonIdx + 1);
+    // Accept any non-empty string after the last colon as the position label.
+    // The path segment before the colon must be non-empty.
+    const maybePath = raw.slice(0, colonIdx);
+    if (maybePath.length > 0 && maybePos.length > 0) {
+      return { path: maybePath, position: maybePos };
+    }
+  }
+  return { path: raw, position: null };
+}
+
 export function parseArgs(argv: string[]): CliOpts {
+  /** Accumulate --serial entries; we'll apply the default after the loop. */
+  const rawSerialPaths: SerialPathEntry[] = [];
+  /** Track whether the legacy --serial-path flag was used. */
+  let legacySerialPath: string | null = null;
+
   const opts: CliOpts = {
     port: 3000,
     bindHost: '127.0.0.1',
     dbPath: './fartola.db',
     allowLan: false,
     noBridge: false,
-    serialPath: '/dev/ttyUSB0',
+    serialPaths: [], // filled after loop
     competitionId: null,
     backupDir: './backups',
     retentionDays: 30,
@@ -188,9 +235,13 @@ export function parseArgs(argv: string[]): CliOpts {
       const { value, consumed } = valueFor('--db-path', a, i);
       opts.dbPath = value;
       i += consumed;
+    } else if (a === '--serial' || a.startsWith('--serial=')) {
+      const { value, consumed } = valueFor('--serial', a, i);
+      rawSerialPaths.push(parseSerialEntry(value));
+      i += consumed;
     } else if (a === '--serial-path' || a.startsWith('--serial-path=')) {
       const { value, consumed } = valueFor('--serial-path', a, i);
-      opts.serialPath = value;
+      legacySerialPath = value;
       i += consumed;
     } else if (a === '--no-bridge') {
       opts.noBridge = true;
@@ -227,16 +278,51 @@ export function parseArgs(argv: string[]): CliOpts {
     );
   }
 
+  // Build serialPaths from --serial entries + legacy --serial-path.
+  // Both flags may coexist (e.g. a script that adds --serial alongside an
+  // existing --serial-path invocation); duplicates across both are caught.
+  if (legacySerialPath !== null) {
+    rawSerialPaths.push({ path: legacySerialPath, position: null });
+  }
+
+  if (rawSerialPaths.length === 0) {
+    // No serial flag given — use the historical default device.
+    opts.serialPaths = [{ path: '/dev/ttyUSB0', position: null }];
+  } else {
+    // Resolve to absolute paths for duplicate detection (e.g. ./ttyUSB0 vs
+    // /dev/ttyUSB0 are different strings but the same inode on most systems;
+    // we don't stat here — we only catch identical string paths after resolution).
+    const seen = new Map<string, SerialPathEntry>();
+    for (const entry of rawSerialPaths) {
+      const absPath = resolvePath(entry.path);
+      if (seen.has(absPath)) {
+        const msg = `--serial: duplicate serial path '${entry.path}' — each device may only appear once`;
+        process.stderr.write(`fatal: ${msg}\n`);
+        process.exit(1);
+      }
+      seen.set(absPath, entry);
+    }
+    opts.serialPaths = Array.from(seen.values());
+  }
+
   return opts;
 }
 
 /** Reconnect backoff schedule (RESEARCH Pitfall 4 — serialport EBUSY). */
 const BACKOFF_MS = [250, 500, 1000, 2000, 5000] as const;
 
+/** Per-reader status snapshot returned by BridgeLifecycle.status(). */
+export interface BridgeReaderStatus {
+  path: string;
+  position: string | null;
+  connected: boolean;
+  lastPunchAt: number | null;
+}
+
 /** Lifecycle manager for the SI bridge. Owns the current SerialTransport +
- * SiMainStation + AttachedBridge. Reconnect runs the backoff chain; bail
- * after BACKOFF_MS.length consecutive failures (operator can re-arm via
- * POST /api/sessions/reconnect-bridge). */
+ * SiMainStation + AttachedBridge. Reconnect runs the backoff chain; enters
+ * steady-state at 5 s intervals (never gives up — operator can force an
+ * immediate retry via POST /api/sessions/reconnect-bridge). */
 class BridgeLifecycle {
   private transport: SerialTransport | null = null;
   private station: SiMainStation | null = null;
@@ -245,16 +331,36 @@ class BridgeLifecycle {
   private attempt = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private openInFlight = false;
+  private isConnected = false;
+  private lastPunchAt: number | null = null;
   private readonly app: FastifyInstance;
   private readonly handle: DbHandle;
   private readonly nodeId: string;
   private readonly serialPath: string;
+  readonly position: string | null;
 
-  constructor(app: FastifyInstance, handle: DbHandle, nodeId: string, serialPath: string) {
+  constructor(
+    app: FastifyInstance,
+    handle: DbHandle,
+    nodeId: string,
+    serialPath: string,
+    position: string | null = null
+  ) {
     this.app = app;
     this.handle = handle;
     this.nodeId = nodeId;
     this.serialPath = serialPath;
+    this.position = position;
+  }
+
+  /** Returns a snapshot of the reader's current state for /api/health. */
+  status(): BridgeReaderStatus {
+    return {
+      path: this.serialPath,
+      position: this.position,
+      connected: this.isConnected,
+      lastPunchAt: this.lastPunchAt,
+    };
   }
 
   async start(): Promise<void> {
@@ -293,7 +399,26 @@ class BridgeLifecycle {
         handle: this.handle,
         nodeId: this.nodeId,
         getActiveCompetitionId: readActiveCompetitionId,
-        broadcast: (channel, envelope) => this.app.wsBroadcast(channel, envelope),
+        // Plan 04 (D-02): wrap the broadcast so card_read envelopes include
+        // reader_position in the payload. Also tracks lastPunchAt for the
+        // health endpoint. Other event types pass through unchanged.
+        broadcast: (channel, envelope) => {
+          if (envelope.type === 'card_read') {
+            this.lastPunchAt = Date.now();
+            if (this.position !== null) {
+              const augmented = {
+                ...envelope,
+                payload: {
+                  ...(envelope.payload as Record<string, unknown>),
+                  reader_position: this.position,
+                },
+              };
+              this.app.wsBroadcast(channel, augmented);
+              return;
+            }
+          }
+          this.app.wsBroadcast(channel, envelope);
+        },
         // Plan 08: bridge marks the projection dirty after relevant events so
         // the WS results channel + REST GET /api/competitions/:id/results
         // re-derive within the debounce window. Skipped when no active
@@ -358,8 +483,10 @@ class BridgeLifecycle {
       this.station = station;
       this.attached = attached;
       this.app.bridgeState = 'open';
+      this.isConnected = true;
       station.on('connectionChanged', (state) => {
         this.app.bridgeState = state;
+        this.isConnected = state === 'open';
         if (state === 'closed' || state === 'error') {
           if (!this.shutdownRequested && this.station === station) {
             this.scheduleReconnect();
@@ -453,6 +580,7 @@ class BridgeLifecycle {
       }
       this.transport = null;
     }
+    this.isConnected = false;
     // Reflect teardown if we're not mid-reconnect (scheduleReconnect leaves
     // 'opening' set for the next attempt).
     if (this.app.bridgeState !== 'opening') {
@@ -518,13 +646,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       .run();
   }
 
-  let lifecycle: BridgeLifecycle | null = null;
+  // Plan 04 (D-02) — one BridgeLifecycle per --serial entry.
+  const lifecycles: BridgeLifecycle[] = [];
   if (!opts.noBridge) {
-    lifecycle = new BridgeLifecycle(app, handle, nodeId, opts.serialPath);
-    app.reconnectBridge = () => lifecycle!.reconnectNow();
+    for (const entry of opts.serialPaths) {
+      lifecycles.push(new BridgeLifecycle(app, handle, nodeId, entry.path, entry.position));
+    }
+    app.reconnectBridge = async () => {
+      await Promise.all(lifecycles.map((lc) => lc.reconnectNow()));
+    };
+    // Expose the lifecycle array so the health route can query per-reader status.
+    app.bridgeLifecycles = lifecycles;
     // Kick off the first open in the background — listen returns first so
     // /api/health responds even if /dev/ttyUSB0 takes time to enumerate.
-    void lifecycle.start();
+    for (const lc of lifecycles) {
+      void lc.start();
+    }
+  } else {
+    app.bridgeLifecycles = [];
   }
 
   // Plan 17 — start the daily backup + retention schedulers. Both are cron-
@@ -556,10 +695,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   app.fartolaEventor = eventor;
 
   const shutdown = async (code: number): Promise<void> => {
-    try {
-      if (lifecycle) await lifecycle.stop();
-    } catch {
-      /* best-effort */
+    for (const lc of lifecycles) {
+      try {
+        await lc.stop();
+      } catch {
+        /* best-effort */
+      }
     }
     try {
       backup.stop();
