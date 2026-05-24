@@ -619,3 +619,52 @@ export const courseReplacements = sqliteTable(
     uniqueIndex('course_replacements_unique').on(t.courseId, t.controlCode, t.alternativeCode),
   ]
 );
+
+// ===========================================================================
+// Phase 2.1 Plan 02.1-12 — event_codes.
+//
+// Admin codes for mobile sekretariat-helpers (D-18). A code of the form
+// `<word>-<NNN>` (e.g. `sänkan-127`) scoped to a single competition lets
+// helpers register walk-ups from their phones without exposing the bridge to
+// the open LAN.
+//
+// Trust model: codes are single-competition scoped (competition_id FK),
+// time-limited (expires_at_ms = competition.date + 24h), and revocable.
+// The plaintext code is returned ONCE on generation and is never re-readable
+// via GET. The GET surface returns only masked previews (e.g. `sän****27`).
+//
+// Signed cookie (fartola_event_code) is issued by POST /access after
+// validateCode succeeds; the signing secret is stored in the config table
+// as `event_code_signing_secret` (auto-generated on first use via
+// crypto.randomBytes(32) — survives edge server restarts).
+//
+// Locked by:
+//   - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md
+//   - .planning/adr/0010-event-admin-codes-trust-model.md
+//   - T-02.1-24..27b (STRIDE threat register for event codes)
+// ===========================================================================
+
+export const eventCodes = sqliteTable(
+  'event_codes',
+  {
+    id: text('id').primaryKey(),
+    competitionId: text('competition_id')
+      .notNull()
+      .references(() => competitions.id, { onDelete: 'cascade' }),
+    /** Plaintext event code (e.g. `sänkan-127`). Stored so validateCode can
+     * SELECT by code value; the GET surface masks this to `sän****27`. */
+    code: text('code').notNull(),
+    /** Epoch ms when this code expires (competition.date + 24h by default). */
+    expiresAtMs: integer('expires_at_ms').notNull(),
+    /** Epoch ms when the operator revoked this code; NULL = still active. */
+    revokedAtMs: integer('revoked_at_ms'),
+    /** Epoch ms when this code was generated. */
+    createdAtMs: integer('created_at_ms').notNull(),
+  },
+  (t) => [
+    // Fast lookup by competition + code (the validateCode hot path).
+    index('idx_event_codes_comp_code').on(t.competitionId, t.code),
+    // Fast listing of active codes per competition (the GET/list path).
+    index('idx_event_codes_comp_active').on(t.competitionId, t.expiresAtMs),
+  ]
+);

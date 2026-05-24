@@ -57,6 +57,16 @@ function teardown(ctx: Ctx): void {
   rmSync(ctx.tmpDir, { recursive: true, force: true });
 }
 
+/** Insert a minimal competition row so the FK constraint is satisfied. */
+function insertCompetition(handle: DbHandle, competitionId: string): void {
+  handle.sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO competitions (id, name, date, created_at_ms)
+       VALUES (?, ?, ?, ?)`
+    )
+    .run(competitionId, 'Test competition', '2026-05-24', Date.now());
+}
+
 function insertCode(
   handle: DbHandle,
   opts: {
@@ -72,12 +82,14 @@ function insertCode(
   const code = opts.code ?? 'sänkan-127';
   const expiresAtMs = opts.expiresAtMs ?? Date.now() + 86_400_000;
   const revokedAtMs = opts.revokedAtMs ?? null;
-  handle.db
+  // Ensure parent competition exists for FK constraint.
+  insertCompetition(handle, competitionId);
+  handle.sqlite
     .prepare(
-      `INSERT INTO event_codes (id, competition_id, code, expires_at_ms, revoked_at_ms)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO event_codes (id, competition_id, code, expires_at_ms, revoked_at_ms, created_at_ms)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(id, competitionId, code, expiresAtMs, revokedAtMs);
+    .run(id, competitionId, code, expiresAtMs, revokedAtMs, Date.now());
   return { id, competitionId, code, expiresAtMs, revokedAtMs };
 }
 
