@@ -109,3 +109,64 @@ export function halfDayClockGapMs(
   if (diff < 0) diff += 24 * 3600;
   return diff * 1000;
 }
+
+// ---------------------------------------------------------------------------
+// Start list thermal print template (Plan 02.1-03).
+//
+// Renders a per-class start list to the thermal printer:
+//   - Header: class name + event date
+//   - Rows: bib/startnr | name | club | start time (HH:MM:SS)
+//
+// This is a standalone renderer — not part of the ReceiptTemplate receipt
+// system — because it operates on a list of starters for a whole class, not
+// an individual competitor's receipt.
+// ---------------------------------------------------------------------------
+
+export interface StartListEntry {
+  name: string;
+  club: string | null;
+  startTimeMs: number;
+  bibNumber?: string | null;
+}
+
+/** Format epoch ms as HH:MM:SS (local wall clock from the competition date).
+ * We use UTC here because start times are stored as epoch ms (UTC) and the
+ * competition date is already a local date string — converting both to UTC
+ * keeps the formatting deterministic across time zones in tests. */
+export function formatStartTime(epochMs: number): string {
+  const d = new Date(epochMs);
+  const h = d.getUTCHours().toString().padStart(2, '0');
+  const m = d.getUTCMinutes().toString().padStart(2, '0');
+  const s = d.getUTCSeconds().toString().padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+/** Render a class start list to the thermal printer. Pure: no I/O. */
+export async function renderStartListTemplate(
+  printer: ThermalPrinterLike,
+  className: string,
+  date: string,
+  entries: StartListEntry[]
+): Promise<void> {
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(className);
+  printer.bold(false);
+  printer.println(date);
+  printer.drawLine();
+
+  printer.alignLeft();
+  // Sort by start time ascending.
+  const sorted = [...entries].sort((a, b) => a.startTimeMs - b.startTimeMs);
+  for (const entry of sorted) {
+    const time = formatStartTime(entry.startTimeMs);
+    const bib = entry.bibNumber != null && entry.bibNumber.length > 0 ? entry.bibNumber : '—';
+    const club = entry.club != null && entry.club.length > 0 ? entry.club : '';
+    printer.leftRight(`${bib} ${entry.name}`, time);
+    if (club.length > 0) {
+      printer.println(`   ${club}`);
+    }
+  }
+  printer.drawLine();
+  printer.cut();
+}

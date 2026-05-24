@@ -41,8 +41,19 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 
-import { competitions, classes as classesTable } from '../db/schema.ts';
-import { validateAndBuild, type ExportStatus, type ExportInput } from '../xml/iofExport.ts';
+import {
+  competitions,
+  classes as classesTable,
+  competitors as competitorsTable,
+} from '../db/schema.ts';
+import {
+  validateAndBuild,
+  validateAndBuildStartList,
+  type ExportStatus,
+  type ExportInput,
+  type StartListInput,
+  type StartListCompetitor,
+} from '../xml/iofExport.ts';
 import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
 
 function parseStatus(raw: unknown): ExportStatus {
@@ -205,6 +216,102 @@ export default async function registerExportRoutes(app: FastifyInstance): Promis
       const slug = slugifyName(compRow.name);
       void reply.header('Content-Type', 'application/xml; charset=utf-8');
       void reply.header('Content-Disposition', `attachment; filename="${slug}-resultlist.xml"`);
+      return reply.code(200).send(result.build.xml);
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // GET /api/competitions/:id/export/startlist
+  //
+  // Exports an IOF XML 3.0 StartList from the competition's drawn competitors.
+  // Only competitors with a non-null start_time_ms are included. Validates via
+  // the bundled IOF.xsd (SC#6 contract) before streaming.
+  //
+  //   → 200 application/xml + Content-Disposition attachment
+  //   → 400 { error: 'xsd_invalid', errors: [...] }
+  //   → 404 { error: 'competition_not_found' }
+  //
+  // Locked by:
+  // - .planning/phases/02.1-sanctioned-competition-foundations/02.1-03-PLAN.md task 2
+  // ---------------------------------------------------------------------------
+  app.get<{ Params: { id: string } }>(
+    '/api/competitions/:id/export/startlist',
+    async (req, reply) => {
+      const { id } = req.params;
+
+      const compRow = app.fartolaDb.db
+        .select()
+        .from(competitions)
+        .where(eq(competitions.id, id))
+        .get() as CompetitionRow | undefined;
+      if (!compRow) {
+        return reply.code(404).send({ error: 'competition_not_found' });
+      }
+
+      const classRows = app.fartolaDb.db
+        .select()
+        .from(classesTable)
+        .where(eq(classesTable.competitionId, id))
+        .all() as ClassRow[];
+
+      // Load competitors with start times.
+      interface CompetitorStartRow {
+        id: string;
+        name: string;
+        club: string | null;
+        classId: string;
+        cardNumber: number | null;
+        startTimeMs: number | null;
+      }
+      const competitorRows = app.fartolaDb.db
+        .select({
+          id: competitorsTable.id,
+          name: competitorsTable.name,
+          club: competitorsTable.club,
+          classId: competitorsTable.classId,
+          cardNumber: competitorsTable.cardNumber,
+          startTimeMs: competitorsTable.startTimeMs,
+        })
+        .from(competitorsTable)
+        .where(eq(competitorsTable.competitionId, id))
+        .all() as CompetitorStartRow[];
+
+      // Group competitors by class.
+      const byClass = new Map<string, CompetitorStartRow[]>();
+      for (const c of competitorRows) {
+        const arr = byClass.get(c.classId) ?? [];
+        arr.push(c);
+        byClass.set(c.classId, arr);
+      }
+
+      const startListClasses: StartListInput['classes'] = classRows.map((cls) => {
+        const classCompetitors = byClass.get(cls.id) ?? [];
+        return {
+          name: cls.name,
+          competitors: classCompetitors.map(
+            (c): StartListCompetitor => ({
+              name: c.name,
+              club: c.club,
+              startTimeMs: c.startTimeMs,
+              // No bibNumber on this path — bib allocation is a future plan.
+            })
+          ),
+        };
+      });
+
+      const input: StartListInput = {
+        competition: competitionRowToDTO(compRow),
+        classes: startListClasses,
+      };
+
+      const result = await validateAndBuildStartList(input);
+      if (!result.valid) {
+        return reply.code(400).send({ error: 'xsd_invalid', errors: result.errors });
+      }
+
+      const slug = slugifyName(compRow.name);
+      void reply.header('Content-Type', 'application/xml; charset=utf-8');
+      void reply.header('Content-Disposition', `attachment; filename="${slug}-startlist.xml"`);
       return reply.code(200).send(result.build.xml);
     }
   );

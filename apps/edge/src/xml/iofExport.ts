@@ -88,6 +88,53 @@ export type ValidatedBuildResult =
   | { valid: false; errors: XsdError[] };
 
 // ---------------------------------------------------------------------------
+// StartList public types (Plan 02.1-03).
+// ---------------------------------------------------------------------------
+
+/** A competitor entry for the StartList export. startTimeMs=null means the
+ * competitor has no drawn start time and will be excluded from the export. */
+export interface StartListCompetitor {
+  /** Full name in "Given Family" format — reuses splitName(). */
+  name: string;
+  club?: string | null;
+  /** Epoch ms. null = not drawn → excluded from StartList. */
+  startTimeMs: number | null;
+  bibNumber?: string;
+  /** CANCEL competitors are excluded from the StartList entirely. The IOF XSD
+   * PersonRaceStart does not carry a Status element (unlike PersonRaceResult).
+   * D-14 CANCEL → Cancelled applies only to buildResultListXml. */
+  status?: 'CANCEL' | undefined;
+}
+
+export interface StartListClass {
+  name: string;
+  competitors: StartListCompetitor[];
+}
+
+export interface StartListInput {
+  competition: CompetitionDTO;
+  classes: StartListClass[];
+  status?: ExportStatus;
+  creator?: string;
+  now?: () => Date;
+}
+
+export interface StartListSummary {
+  class_count: number;
+  person_start_count: number;
+  status: ExportStatus;
+}
+
+export interface StartListBuildResult {
+  xml: string;
+  summary: StartListSummary;
+}
+
+export type ValidatedStartListBuildResult =
+  | { valid: true; build: StartListBuildResult }
+  | { valid: false; errors: XsdError[] };
+
+// ---------------------------------------------------------------------------
 // Helpers.
 // ---------------------------------------------------------------------------
 
@@ -316,6 +363,164 @@ export function buildResultListXml(input: ExportInput): BuildResult {
  * the body when valid=true. */
 export async function validateAndBuild(input: ExportInput): Promise<ValidatedBuildResult> {
   const built = buildResultListXml(input);
+  const v = await validateXml(built.xml);
+  if (!v.valid) {
+    return { valid: false, errors: v.errors };
+  }
+  return { valid: true, build: built };
+}
+
+// ---------------------------------------------------------------------------
+// IOF XML 3.0 StartList builder (Plan 02.1-03).
+//
+// Mirrors the buildResultListXml structure but uses the StartList root element.
+// Key differences from ResultList:
+//   - Root element is StartList (no @status attribute — StartList XSD does not
+//     carry a status restriction unlike ResultList).
+//   - ClassStart > PersonStart > Start > StartTime (NOT ClassResult/PersonResult).
+//   - StartTime is xsd:dateTime (UTC ISO with Z suffix).
+//   - Competitors with null startTimeMs are excluded (not yet drawn).
+//   - CANCEL status emits <Status>Cancelled</Status> (per D-14).
+//
+// SC#6 binding contract (same as ResultList): only call validateAndBuildStartList
+// when you intend to stream to a browser; use buildStartListXml for unit work.
+// ---------------------------------------------------------------------------
+
+interface PersonRaceStartNode {
+  BibNumber?: string;
+  StartTime?: string;
+}
+
+interface PersonStartNode {
+  Person: { Name: { Family: string; Given: string } };
+  Organisation?: { '@_type': 'Club'; Name: string };
+  Start: PersonRaceStartNode;
+}
+
+interface ClassStartNode {
+  Class: { Name: string };
+  PersonStart?: PersonStartNode[];
+}
+
+interface StartListNode {
+  '@_xmlns': 'http://www.orienteering.org/datastandard/3.0';
+  '@_iofVersion': '3.0';
+  '@_createTime': string;
+  '@_creator': string;
+  Event: { Name: string; StartTime: { Date: string } };
+  ClassStart?: ClassStartNode[];
+}
+
+/** Build the IOF XML 3.0 StartList string from a StartListInput.
+ *
+ * Pure: no IO, no validation. Use {@link validateAndBuildStartList} when the
+ * SC#6 binding contract applies (i.e. the response body is about to be streamed
+ * to a browser or written to disk). */
+export function buildStartListXml(input: StartListInput): StartListBuildResult {
+  const status: ExportStatus = input.status ?? 'Final';
+  const creator = input.creator ?? 'fartOLa v0.1';
+  const now = input.now ?? (() => new Date());
+
+  const classStarts: ClassStartNode[] = [];
+  let personStartCount = 0;
+
+  for (const cls of input.classes) {
+    const personStarts: PersonStartNode[] = [];
+
+    for (const competitor of cls.competitors) {
+      // Exclude competitors without a drawn start time (null = not yet drawn).
+      if (competitor.startTimeMs === null || competitor.startTimeMs === undefined) continue;
+
+      // Exclude CANCEL competitors from the StartList. The IOF XML 3.0 XSD
+      // does NOT include a Status element in PersonRaceStart (unlike
+      // PersonRaceResult). Cancelled competitors are not announced — the
+      // caller should use buildResultListXml for status reporting (D-14:
+      // CANCEL → Cancelled applies only to the ResultList).
+      if (competitor.status === 'CANCEL') continue;
+
+      const { family, given } = splitName(competitor.name);
+
+      // Build PersonRaceStart (the Start child). BibNumber before StartTime
+      // per XSD sequence order (IOF.xsd lines 2055-2097).
+      const start: PersonRaceStartNode = {};
+      if (competitor.bibNumber !== undefined && competitor.bibNumber !== null) {
+        start.BibNumber = competitor.bibNumber;
+      }
+      // Emit UTC ISO string with Z suffix (RESEARCH Pitfall 4).
+      start.StartTime = new Date(competitor.startTimeMs).toISOString();
+
+      // Build PersonStart with XSD-required element order:
+      // EntryId?, Person?, Organisation?, Start+ (IOF.xsd lines 2009-2044).
+      // JS object key insertion order IS preserved by fast-xml-parser's
+      // XMLBuilder, so we MUST build keys top-down.
+      const hasClub =
+        competitor.club !== null && competitor.club !== undefined && competitor.club.length > 0;
+      const personStart: PersonStartNode = hasClub
+        ? {
+            Person: { Name: { Family: family, Given: given } },
+            Organisation: { '@_type': 'Club', Name: competitor.club as string },
+            Start: start,
+          }
+        : {
+            Person: { Name: { Family: family, Given: given } },
+            Start: start,
+          };
+
+      personStarts.push(personStart);
+      personStartCount += 1;
+    }
+
+    // Only include classes with at least one drawn competitor (mirrors ResultList
+    // behavior where empty classes are dropped).
+    if (personStarts.length === 0) continue;
+
+    classStarts.push({
+      Class: { Name: cls.name },
+      PersonStart: personStarts,
+    });
+  }
+
+  const startListNode: StartListNode = {
+    '@_xmlns': 'http://www.orienteering.org/datastandard/3.0',
+    '@_iofVersion': '3.0',
+    '@_createTime': now().toISOString(),
+    '@_creator': creator,
+    Event: { Name: input.competition.name, StartTime: { Date: input.competition.date } },
+  };
+  if (classStarts.length > 0) {
+    startListNode.ClassStart = classStarts;
+  }
+
+  const tree = {
+    '?xml': { '@_version': '1.0', '@_encoding': 'UTF-8' },
+    StartList: startListNode,
+  };
+
+  const builder = new XMLBuilder({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    format: true,
+    indentBy: '  ',
+    suppressEmptyNode: false,
+  });
+  const xml = builder.build(tree) as string;
+
+  return {
+    xml,
+    summary: {
+      class_count: classStarts.length,
+      person_start_count: personStartCount,
+      status,
+    },
+  };
+}
+
+/** Build + validate a StartList. The route layer's SC#6 binding contract: only
+ * stream the body when valid=true. */
+export async function validateAndBuildStartList(
+  input: StartListInput
+): Promise<ValidatedStartListBuildResult> {
+  const built = buildStartListXml(input);
   const v = await validateXml(built.xml);
   if (!v.valid) {
     return { valid: false, errors: v.errors };

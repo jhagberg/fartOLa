@@ -29,7 +29,10 @@ import {
   splitName,
   statusForXml,
   resultListStatusFor,
+  buildStartListXml,
+  validateAndBuildStartList,
   type ExportInput,
+  type StartListInput,
 } from './iofExport.ts';
 import type { CompetitionState, CompetitorView, ResultView } from '../projection/types.ts';
 import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
@@ -462,5 +465,193 @@ describe('iofExport — helper functions', () => {
   test('resultListStatusFor maps the export-status toggle to the IOF @status enum', () => {
     assert.equal(resultListStatusFor('Final'), 'Complete');
     assert.equal(resultListStatusFor('Provisional'), 'Snapshot');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildStartListXml tests (Task 1 — Plan 02.1-03)
+// ---------------------------------------------------------------------------
+
+function makeStartListInput(overrides: Partial<StartListInput> = {}): StartListInput {
+  return {
+    competition: {
+      id: 'comp-stortuna-tisdag',
+      name: 'StorTuna Tisdag',
+      date: '2026-05-19',
+      receipt_template: 'classic',
+      auto_print: false,
+      created_at_ms: 1_716_120_000_000,
+      race_started_at_ms: null,
+    },
+    classes: [
+      {
+        name: 'H21',
+        competitors: [
+          {
+            name: 'Anna Andersson',
+            club: 'StorTuna OK',
+            startTimeMs: 1_716_148_200_000,
+            bibNumber: '101',
+          },
+          {
+            name: 'Bo Berg',
+            club: 'StorTuna OK',
+            startTimeMs: 1_716_148_260_000,
+            bibNumber: '102',
+          },
+          { name: 'Cia Carlsson', club: null, startTimeMs: 1_716_148_320_000 },
+        ],
+      },
+      {
+        name: 'D21',
+        competitors: [
+          { name: 'Dani Danielsson', club: 'FK Hök', startTimeMs: 1_716_148_200_000 },
+          { name: 'Erik Eriksson', club: null, startTimeMs: 1_716_148_260_000 },
+          { name: 'Fia Forsberg', club: 'StorTuna OK', startTimeMs: 1_716_148_320_000 },
+        ],
+      },
+    ],
+    status: 'Final',
+    creator: 'fartOLa test v0.0',
+    now: () => new Date('2026-05-19T18:30:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
+  test('test 1: produces valid IOF XML 3.0 with ClassStart and PersonStart elements', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: '@_',
+      parseAttributeValue: false,
+    });
+    const parsed = parser.parse(xml) as {
+      StartList: {
+        '@_iofVersion': string;
+        Event: { Name: string };
+        ClassStart: unknown;
+      };
+    };
+    assert.equal(parsed.StartList['@_iofVersion'], '3.0');
+    assert.equal(parsed.StartList.Event.Name, 'StorTuna Tisdag');
+    assert.ok(
+      xml.includes('<ClassStart>') || xml.includes('<ClassStart ') || xml.includes('ClassStart'),
+      'must have ClassStart elements'
+    );
+    assert.ok(xml.includes('PersonStart'), 'must have PersonStart elements');
+  });
+
+  test('test 2: StartTime values end with Z suffix (UTC ISO format)', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    // Extract all StartTime values from the XML
+    const startTimeRegex = /<StartTime>([^<]+)<\/StartTime>/g;
+    const matches = [...xml.matchAll(startTimeRegex)];
+    assert.ok(matches.length > 0, 'must have at least one StartTime element');
+    for (const match of matches) {
+      const val = match[1]!;
+      assert.ok(val.endsWith('Z'), `StartTime "${val}" must end with Z suffix`);
+    }
+  });
+
+  test('test 3: validateXml returns valid=true against bundled IOF.xsd', async () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    const v = await import('./validate.ts').then((m) => m.validateXml(xml));
+    if (!v.valid) {
+      const msgs = v.errors.map((e) => `${e.line ?? '?'}: ${e.message}`).join('\n');
+      assert.fail(`StartList XML failed XSD validation:\n${msgs}`);
+    }
+    assert.equal(v.valid, true);
+  });
+
+  test('test 4: competitor with null startTimeMs is excluded from the StartList', () => {
+    const input = makeStartListInput({
+      classes: [
+        {
+          name: 'H21',
+          competitors: [
+            { name: 'Anna Andersson', startTimeMs: 1_716_148_200_000 },
+            { name: 'Bo Berg', startTimeMs: null }, // not drawn
+          ],
+        },
+      ],
+    });
+    const { xml, summary } = buildStartListXml(input);
+    assert.ok(!xml.includes('Berg'), 'null startTimeMs competitor must not appear in output');
+    assert.ok(xml.includes('Andersson'), 'drawn competitor must appear');
+    assert.equal(summary.person_start_count, 1);
+  });
+
+  test('test 5: competitor with club is wrapped in Organisation element with type="Club"', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    assert.ok(xml.includes('<Organisation type="Club">'), 'must have Organisation type="Club"');
+    assert.ok(xml.includes('StorTuna OK'), 'must include club name');
+  });
+
+  test('test 6: CANCEL competitor is excluded from StartList (IOF XSD has no Status in PersonRaceStart)', () => {
+    // NOTE: The IOF XML 3.0 PersonRaceStart element does NOT include a Status
+    // child (unlike PersonRaceResult). Including <Status>Cancelled</Status> in
+    // PersonRaceStart would fail XSD validation. The correct behavior for a
+    // CANCEL competitor in a StartList is exclusion — the competitor is not
+    // announced at all. This mirrors how PEND is excluded from ResultList.
+    //
+    // D-14 (CANCEL → Cancelled) applies only to buildResultListXml, not
+    // buildStartListXml. The existing Phase 2.0 test already covers D-14 for
+    // the ResultList.
+    const input = makeStartListInput({
+      classes: [
+        {
+          name: 'H21',
+          competitors: [
+            { name: 'Anna Andersson', startTimeMs: 1_716_148_200_000, status: 'CANCEL' },
+            { name: 'Bo Berg', startTimeMs: 1_716_148_260_000 },
+          ],
+        },
+      ],
+    });
+    const { xml, summary } = buildStartListXml(input);
+    assert.ok(!xml.includes('Andersson'), 'CANCEL competitor must not appear in StartList');
+    assert.ok(xml.includes('Berg'), 'non-cancelled competitor must still appear');
+    assert.equal(summary.person_start_count, 1, 'only 1 non-cancelled drawn competitor');
+  });
+
+  test('test 6b: buildResultListXml CANCEL maps to Cancelled (D-14 regression)', async () => {
+    // This is already covered in the Phase 2.0 test above but we re-assert
+    // the specific wording per plan D-14 requirement.
+    const state = makeSeededState();
+    const cancel = makeCompetitorView({
+      id: 'cmp-cancel-d14',
+      name: 'Gustav Gren',
+      club: null,
+      class_id: 'cls-h21',
+      card_number: 9000001,
+      status: 'CANCEL',
+      elapsed_time_ms: null,
+    });
+    state.competitors.set(cancel.id, cancel);
+    state.results_by_class.get('cls-h21')!.push(rowFor(cancel, null));
+    const res = await validateAndBuild(makeInput({ state }));
+    assert.equal(res.valid, true);
+    if (res.valid) {
+      assert.ok(
+        res.build.xml.includes('<Status>Cancelled</Status>'),
+        'D-14: CANCEL must emit Cancelled in ResultList too'
+      );
+    }
+  });
+
+  test('validateAndBuildStartList returns valid=true for a well-formed StartList', async () => {
+    const res = await validateAndBuildStartList(makeStartListInput());
+    if (!res.valid) {
+      const msgs = res.errors
+        .map((e: { line: number | null; message: string }) => `${e.line ?? '?'}: ${e.message}`)
+        .join('\n');
+      assert.fail(`validateAndBuildStartList failed:\n${msgs}`);
+    }
+    assert.equal(res.valid, true);
+    if (res.valid) {
+      assert.equal(res.build.summary.class_count, 2);
+      assert.equal(res.build.summary.person_start_count, 6);
+    }
   });
 });
