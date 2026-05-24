@@ -16,12 +16,21 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { ClassCreateInput, type ClassDTO } from '@fartola/shared-types';
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+
+// Phase 2.1 D-08: PATCH class route for maxTimeSec editing.
+// Backend ownership here (consumed by Plan 05 UI).
+const PatchClassInput = z
+  .object({
+    maxTimeSec: z.number().int().positive().nullable(),
+  })
+  .strict();
 
 function classRowToDTO(row: Class): ClassDTO {
   return {
@@ -53,6 +62,41 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       .all();
     return { classes: rows.map(classRowToDTO) };
   });
+
+  // PATCH /api/competitions/:id/classes/:classId — update class settings.
+  // Phase 2.1 D-08: maxTimeSec for the class time cap.
+  // T-02.1 cross-competition pre-flight: verify class belongs to competition → 404.
+  app.patch<{ Params: { id: string; classId: string } }>(
+    '/api/competitions/:id/classes/:classId',
+    async (req, reply) => {
+      const { id: competitionId, classId } = req.params;
+
+      const parsed = PatchClassInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+
+      // Cross-competition pre-flight.
+      const classRow = app.fartolaDb.db
+        .select({ id: classes.id })
+        .from(classes)
+        .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
+        .get();
+      if (!classRow) {
+        return reply.code(404).send({ error: 'class_not_found' });
+      }
+
+      app.fartolaDb.db
+        .update(classes)
+        .set({ maxTimeSec: parsed.data.maxTimeSec })
+        .where(eq(classes.id, classId))
+        .run();
+
+      app.projectionStore.markDirty(competitionId);
+
+      return reply.code(200).send({ ok: true });
+    }
+  );
 
   // POST /api/competitions/:id/classes — create a class.
   app.post<{ Params: { id: string } }>('/api/competitions/:id/classes', async (req, reply) => {
