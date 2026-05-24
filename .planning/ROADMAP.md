@@ -152,14 +152,14 @@ Plans:
   - [ ] 02.1-03-PLAN.md — Wave 2: IOF XML 3.0 StartList export (buildStartListXml) + StartList import + export/import routes + thermal print
   - [ ] 02.1-04-PLAN.md — Wave 2: Multi-serial SI readers (repeatable --serial flag, BridgeLifecycle array, position-aware WS broadcast, per-reader health)
   - [ ] 02.1-05-PLAN.md — Wave 3: LottningView UI + start-time column in RegistrationView/ReadoutView + subsecond timing display
-  - [ ] 02.1-06-PLAN.md — Wave 2: Kvar-i-skogen (readBackupMemory in sportident package, checkunit snapshot route, KvarISkovenView diff + safety-call summary)
+  - [ ] 02.1-06-PLAN.md — Wave 3: Kvar-i-skogen (readBackupMemory in sportident package, checkunit snapshot route, KvarISkovenView diff + safety-call summary)
   - [ ] 02.1-07-PLAN.md — Wave 3: Liveresultat push (MOP XML 2.0 builder, pushToLiveresultat, async retry queue, trigger route)
-  - [ ] 02.1-08-PLAN.md — Wave 3: Eventor results + startlist push (pushToEventor with zipped IOF XML 3.0, push routes, EventorPublishView)
+  - [ ] 02.1-08-PLAN.md — Wave 3: Eventor results + startlist push (pushToEventor with PKZIP-archived IOF XML 3.0 via yazl, push routes, EventorPublishView)
   - [ ] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
-  - [ ] 02.1-10-PLAN.md — Wave 1: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
+  - [ ] 02.1-10-PLAN.md — Wave 2: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
   - [ ] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
-  - [ ] 02.1-12-PLAN.md — Wave 3: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
-  - [ ] 02.1-13-PLAN.md — Wave 4: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
+  - [ ] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
+  - [ ] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
 
 Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred to Phase 2.2+.
 Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup), 02-10 (Eventor event linkage).
