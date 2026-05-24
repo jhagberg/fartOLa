@@ -74,3 +74,14 @@ export type {
 } from './output/ndjson.ts';
 export { emitDiagnostic } from './output/diagnostics.ts';
 export { inferCardType } from './SiCard/cardTypeFromNumber.ts';
+
+// --- Backup readout (Phase 2.1 Plan 06 — kvar-i-skogen) --------------------
+export {
+  readBackupMemory,
+  parseBackupBlock,
+  parseMemPointer,
+  parseOverflowFlag,
+  BLOCK_SIZE,
+  MAX_ITERATIONS,
+} from './SiStation/readBackup.ts';
+export type { BackupRecord } from './SiStation/readBackup.ts';
