@@ -487,5 +487,17 @@
   "kvariskov.elapsed": "Gångtid",
   "kvariskov.copied": "Kopierat!",
   "kvariskov.refreshed": "Uppdaterat",
-  "kvariskov.hint": "Anslut BSF8-stämplingsdosan och klicka Hämta för att se vem som är kvar i skogen."
+  "kvariskov.hint": "Anslut BSF8-stämplingsdosan och klicka Hämta för att se vem som är kvar i skogen.",
+
+  "wizard.eventor.title": "Hämta från Eventor",
+  "wizard.eventor.inputLabel": "Eventor tävlings-ID",
+  "wizard.eventor.fetch": "Hämta",
+  "wizard.eventor.fetching": "Hämtar…",
+  "wizard.eventor.error": "Kunde inte hämta tävlingen: {{message}}",
+  "wizard.eventor.loaded": "Eventor: {{name}} (ID {{id}})",
+  "import.linked": "Eventor: {{name}} (ID {{id}})",
+  "import.linked.import": "Importera startlista",
+  "import.relink": "Länka om",
+  "import.relinking": "Uppdaterar…",
+  "competition.eventorChip": "Eventor: {{id}}"
 }

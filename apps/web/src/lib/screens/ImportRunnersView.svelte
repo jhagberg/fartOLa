@@ -29,8 +29,11 @@
     importEntriesFromEventor,
     importCompetitionFile,
     getCompetition,
+    patchCompetition,
+    getEventorEvent,
     type EventorEventListItem,
     type EventorImportResult,
+    type EventorEventMeta,
   } from '$lib/api/client.ts';
   import { ApiError } from '$lib/api/client.ts';
   import Button from '$lib/ui/Button.svelte';
@@ -48,6 +51,14 @@
   }
 
   let { competitionId, embedded = false }: Props = $props();
+
+  // --- Linked-event state (Plan 11) -----------------------------------------
+  /** When the competition has eventor_event_id set, this holds the fetched
+   * event metadata (name, date) for the linked-event card. */
+  let linkedEvent = $state<EventorEventMeta | null>(null);
+  /** Set while relinking (date picker flow replaces the linked event). */
+  let relinking = $state(false);
+  let relinkError = $state<string | null>(null);
 
   // --- Eventor path ---------------------------------------------------------
   /** ISO date the operator wants to search Eventor on. Defaults to the
@@ -104,12 +115,23 @@
   async function prefillDate(): Promise<void> {
     try {
       const res = await getCompetition(competitionId);
-      // getCompetition returns { competition: { date: 'YYYY-MM-DD', ... }, ... }
-      const compDate = (res as unknown as { competition?: { date?: string } }).competition?.date;
+      // getCompetition returns { competition: { date, eventor_event_id, ... }, ... }
+      const comp = (res as unknown as { competition?: { date?: string; eventor_event_id?: number | null } }).competition;
+      const compDate = comp?.date;
       if (compDate && /^\d{4}-\d{2}-\d{2}$/.test(compDate)) {
         searchDate = compDate;
       } else {
         searchDate = isoToday();
+      }
+      // Plan 11 — fetch linked-event metadata when eventor_event_id is set.
+      const eid = comp?.eventor_event_id;
+      if (eid != null) {
+        try {
+          linkedEvent = await getEventorEvent(eid);
+        } catch {
+          // Non-fatal: linked-event card won't show, but the import still works.
+          linkedEvent = null;
+        }
       }
     } catch {
       searchDate = isoToday();
@@ -187,6 +209,69 @@
     }
   }
 
+  // --- Linked-event import (Plan 11) ----------------------------------------
+
+  async function importFromLinkedEvent(): Promise<void> {
+    if (!linkedEvent) return;
+    importError = null;
+    importResult = null;
+    importingEventId = linkedEvent.eventId;
+    try {
+      const res = await importEntriesFromEventor(competitionId, linkedEvent.eventId);
+      importResult = res;
+      lastImportedEvent = {
+        eventId: linkedEvent.eventId,
+        name: linkedEvent.name,
+        date: linkedEvent.startDate,
+        clock: null,
+      };
+    } catch (e) {
+      lastImportedEvent = null;
+      if (e instanceof ApiError && e.status === 503) {
+        importError = t('importRunners.errNoKey');
+      } else if (e instanceof ApiError && e.status === 502) {
+        importError = t('importRunners.errEventorDown');
+      } else {
+        importError = formatApiError(e, t('importRunners.errImportFailed'));
+      }
+    } finally {
+      importingEventId = null;
+    }
+  }
+
+  function startRelink(): void {
+    // Exit linked-event mode; operator now uses the normal date-picker
+    // search to pick a new event. When they import a different event we
+    // PATCH the competition to store the new eventor_event_id.
+    linkedEvent = null;
+    relinking = true;
+    relinkError = null;
+  }
+
+  async function relinkEvent(ev: EventorEventListItem): Promise<void> {
+    relinkError = null;
+    importingEventId = ev.eventId;
+    try {
+      await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
+      linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
+      relinking = false;
+      const res = await importEntriesFromEventor(competitionId, ev.eventId);
+      importResult = res;
+      lastImportedEvent = ev;
+    } catch (e) {
+      lastImportedEvent = null;
+      if (e instanceof ApiError && e.status === 503) {
+        relinkError = t('importRunners.errNoKey');
+      } else if (e instanceof ApiError && e.status === 502) {
+        relinkError = t('importRunners.errEventorDown');
+      } else {
+        relinkError = formatApiError(e, t('importRunners.errImportFailed'));
+      }
+    } finally {
+      importingEventId = null;
+    }
+  }
+
   // --- Upload path ----------------------------------------------------------
   function openUploadPicker(): void {
     uploadInput?.click();
@@ -239,83 +324,126 @@
     </header>
     <p class="desc muted small">{t('importRunners.eventor.desc')}</p>
 
-    <!-- Form wrap: Enter on the date input submits the search instead of
-         being swallowed (audit follow-up #5). preventDefault on submit
-         stops the page reload; the button stays type=submit so screen
-         readers announce the form action correctly. -->
-    <form
-      class="search-row"
-      onsubmit={(e) => {
-        e.preventDefault();
-        void search();
-      }}
-    >
-      <Field label={t('importRunners.eventor.dateLabel')} htmlFor="import-date">
-        <Input
-          id="import-date"
-          data-testid="import-date"
-          type="text"
-          bind:value={searchDate}
-          oninput={onDateInput}
-          onblur={onDateBlur}
-          placeholder="ÅÅÅÅ-MM-DD"
-          maxlength={10}
-          aria-invalid={dateError !== null}
-          aria-describedby={dateError !== null ? 'import-date-error' : undefined}
-        />
-      </Field>
-      <Button
-        variant="primary"
-        type="submit"
-        disabled={searching}
-        data-testid="import-search"
+    {#if linkedEvent !== null && !relinking}
+      <!-- Linked-event card (Plan 11): compact view when the competition
+           has an eventor_event_id stored. Replaces the date-picker search.
+           "Länka om" exits back to the date-picker search flow. -->
+      <div class="linked-card" data-testid="linked-event-card">
+        <div class="linked-meta">
+          <span class="event-name">{linkedEvent.name}</span>
+          <span class="muted small mono">ID {linkedEvent.eventId} · {linkedEvent.startDate}</span>
+        </div>
+        <div class="linked-actions">
+          <Button
+            variant="primary"
+            size="sm"
+            onclick={() => void importFromLinkedEvent()}
+            disabled={importingEventId !== null}
+            data-testid="linked-import-btn"
+          >
+            {importingEventId === linkedEvent.eventId
+              ? t('importRunners.importing')
+              : t('import.linked.import')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onclick={startRelink}
+            disabled={importingEventId !== null}
+            data-testid="linked-relink-btn"
+          >
+            {t('import.relink')}
+          </Button>
+        </div>
+      </div>
+      {#if relinkError}
+        <p class="err" role="alert" data-testid="import-relink-error">{relinkError}</p>
+      {/if}
+    {:else}
+      <!-- Normal date-picker search flow. Also used when relinking=true so
+           the operator can pick a new event. On successful import while
+           relinking=true, relinkEvent() PATCHes eventor_event_id + imports. -->
+
+      <!-- Form wrap: Enter on the date input submits the search instead of
+           being swallowed (audit follow-up #5). preventDefault on submit
+           stops the page reload; the button stays type=submit so screen
+           readers announce the form action correctly. -->
+      <form
+        class="search-row"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void search();
+        }}
       >
-        <span class="btn-label">
-          {searching ? t('importRunners.eventor.searching') : t('importRunners.eventor.search')}
-        </span>
-      </Button>
-    </form>
+        <Field label={t('importRunners.eventor.dateLabel')} htmlFor="import-date">
+          <Input
+            id="import-date"
+            data-testid="import-date"
+            type="text"
+            bind:value={searchDate}
+            oninput={onDateInput}
+            onblur={onDateBlur}
+            placeholder="ÅÅÅÅ-MM-DD"
+            maxlength={10}
+            aria-invalid={dateError !== null}
+            aria-describedby={dateError !== null ? 'import-date-error' : undefined}
+          />
+        </Field>
+        <Button
+          variant="primary"
+          type="submit"
+          disabled={searching}
+          data-testid="import-search"
+        >
+          <span class="btn-label">
+            {searching ? t('importRunners.eventor.searching') : t('importRunners.eventor.search')}
+          </span>
+        </Button>
+      </form>
 
-    {#if dateError}
-      <p id="import-date-error" class="err" role="alert" data-testid="import-date-error">
-        {dateError}
-      </p>
-    {/if}
+      {#if dateError}
+        <p id="import-date-error" class="err" role="alert" data-testid="import-date-error">
+          {dateError}
+        </p>
+      {/if}
 
-    {#if searchError}
-      <p class="err" role="alert" data-testid="import-search-error">{searchError}</p>
-    {/if}
+      {#if searchError}
+        <p class="err" role="alert" data-testid="import-search-error">{searchError}</p>
+      {/if}
 
-    {#if searched && events.length === 0 && !searchError}
-      <p class="muted small" data-testid="import-empty">
-        {t('importRunners.eventor.noEvents', { date: searchDate })}
-      </p>
-    {/if}
+      {#if searched && events.length === 0 && !searchError}
+        <p class="muted small" data-testid="import-empty">
+          {t('importRunners.eventor.noEvents', { date: searchDate })}
+        </p>
+      {/if}
 
-    {#if events.length > 0}
-      <ul class="event-list" data-testid="import-event-list">
-        {#each events as ev (ev.eventId)}
-          <li class="event-row" data-testid="import-event-row">
-            <div class="event-meta">
-              <span class="event-name">{ev.name}</span>
-              <span class="muted small mono">
-                {ev.date}{ev.clock ? ` · ${ev.clock.slice(0, 5)}` : ''} · ID {ev.eventId}
-              </span>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onclick={() => void importEvent(ev)}
-              disabled={importingEventId !== null}
-              data-testid="import-event-btn"
-            >
-              {importingEventId === ev.eventId
-                ? t('importRunners.importing')
-                : t('importRunners.import')}
-            </Button>
-          </li>
-        {/each}
-      </ul>
+      {#if events.length > 0}
+        <ul class="event-list" data-testid="import-event-list">
+          {#each events as ev (ev.eventId)}
+            <li class="event-row" data-testid="import-event-row">
+              <div class="event-meta">
+                <span class="event-name">{ev.name}</span>
+                <span class="muted small mono">
+                  {ev.date}{ev.clock ? ` · ${ev.clock.slice(0, 5)}` : ''} · ID {ev.eventId}
+                </span>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onclick={() => void (relinking ? relinkEvent(ev) : importEvent(ev))}
+                disabled={importingEventId !== null}
+                data-testid="import-event-btn"
+              >
+                {importingEventId === ev.eventId
+                  ? t('importRunners.importing')
+                  : relinking
+                    ? t('import.relink')
+                    : t('importRunners.import')}
+              </Button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </section>
 
@@ -474,6 +602,28 @@
   }
   .search-row :global(.field) {
     flex: 1 1 200px;
+  }
+  /* Linked-event card (Plan 11) */
+  .linked-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 10px 12px;
+    background: var(--ok-soft);
+    border: 1px solid var(--ok);
+    border-radius: var(--radius);
+  }
+  .linked-meta {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .linked-actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-shrink: 0;
   }
   .event-list {
     list-style: none;

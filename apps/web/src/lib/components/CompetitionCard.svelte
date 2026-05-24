@@ -62,6 +62,11 @@
   <div class="meta">
     <span>{t('home.starters')} <b>{starters ?? '—'}</b></span>
     <span>{t('home.finished')} <b>{finished ?? '—'}</b></span>
+    {#if competition.eventor_event_id}
+      <span class="eventor-chip" data-testid="eventor-chip">
+        {t('competition.eventorChip', { id: competition.eventor_event_id })}
+      </span>
+    {/if}
   </div>
 </button>
 
@@ -144,5 +149,16 @@
     color: var(--fg);
     font-weight: 600;
     font-family: var(--font-mono);
+  }
+  /* Plan 11 — Eventor linkage chip inside the card meta row */
+  .eventor-chip {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-sunken);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    font-weight: 600;
   }
 </style>

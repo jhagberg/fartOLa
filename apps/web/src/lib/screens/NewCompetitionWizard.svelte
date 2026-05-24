@@ -60,6 +60,9 @@
   let preview: PreviewMeta | null = $state(null);
   let dropError: string | null = $state(null);
   let importError: string | null = $state(null);
+  /** Plan 11 — Eventor event ID set by the wizard Eventor quickstart.
+   * Flows through to the from-wizard POST body. */
+  let eventorEventId: number | null = $state(null);
 
   /** Dirty-check (UI/UX audit #2, 2026-05-17). Accidental scrim tap on
    * a 3-step wizard would drop the operator's name + date + file work —
@@ -100,6 +103,16 @@
     pendingFile = null;
     preview = null;
     dropError = null;
+  }
+
+  // Plan 11 — Eventor quickstart handlers.
+  function acceptEventorQuickstart(id: number, parsedName: string, parsedDate: string): void {
+    eventorEventId = id;
+    if (parsedName) name = parsedName;
+    if (parsedDate && /^\d{4}-\d{2}-\d{2}$/.test(parsedDate)) date = parsedDate;
+  }
+  function clearEventorQuickstart(): void {
+    eventorEventId = null;
   }
 
   function acceptFile(f: File, p: PreviewMeta): void {
@@ -198,6 +211,9 @@
           ondatechange={setDate}
           onquickstart={acceptQuickstart}
           onquickstartclear={clearQuickstart}
+          oneventorquickstart={acceptEventorQuickstart}
+          oneventorquickstartclear={clearEventorQuickstart}
+          {eventorEventId}
         />
       {:else if step === 2}
         <WizardStep2
@@ -213,6 +229,7 @@
           {name}
           {date}
           {pendingFile}
+          {eventorEventId}
           onerror={handleImportError}
         />
         {#if importError}

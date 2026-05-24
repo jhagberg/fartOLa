@@ -487,5 +487,17 @@
   "kvariskov.elapsed": "Elapsed",
   "kvariskov.copied": "Copied!",
   "kvariskov.refreshed": "Refreshed",
-  "kvariskov.hint": "Connect the BSF8 check unit and click Read to see who is still in the forest."
+  "kvariskov.hint": "Connect the BSF8 check unit and click Read to see who is still in the forest.",
+
+  "wizard.eventor.title": "Fetch from Eventor",
+  "wizard.eventor.inputLabel": "Eventor event ID",
+  "wizard.eventor.fetch": "Fetch",
+  "wizard.eventor.fetching": "Fetching…",
+  "wizard.eventor.error": "Could not fetch event: {{message}}",
+  "wizard.eventor.loaded": "Eventor: {{name}} (ID {{id}})",
+  "import.linked": "Eventor: {{name}} (ID {{id}})",
+  "import.linked.import": "Import start list",
+  "import.relink": "Relink",
+  "import.relinking": "Updating…",
+  "competition.eventorChip": "Eventor: {{id}}"
 }

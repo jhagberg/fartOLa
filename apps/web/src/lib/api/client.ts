@@ -182,6 +182,8 @@ export interface CreateFromWizardInput {
   name: string;
   date: string;
   xml_file: { name: string; content_base64: string };
+  /** Plan 11 — optional Eventor event ID to link on creation. */
+  eventor_event_id?: number | null;
 }
 
 export interface CreateFromWizardOk {
@@ -638,6 +640,25 @@ export interface EventorEventListItem {
   date: string;
   /** HH:MM:SS — null for multi-day events. */
   clock: string | null;
+}
+
+/** GET /api/eventor/events/:id — fetch metadata for a single Eventor event.
+ *
+ * Used by the wizard Eventor quickstart to validate a typed event ID and
+ * prefill name + date. Returns structured event metadata on success.
+ * Throws ApiError on 400 (invalid id), 403 (forbidden), 404 (not found),
+ * 502 (eventor down), 503 (no API key). */
+export interface EventorEventMeta {
+  eventId: number;
+  name: string;
+  /** ISO date YYYY-MM-DD. */
+  startDate: string;
+  /** Organising club/organisation name; may be null. */
+  organisation: string | null;
+}
+
+export function getEventorEvent(eventId: number): Promise<EventorEventMeta> {
+  return apiFetch<EventorEventMeta>(`/api/eventor/events/${encodeURIComponent(String(eventId))}`);
 }
 
 export function listEventorEvents(opts: {

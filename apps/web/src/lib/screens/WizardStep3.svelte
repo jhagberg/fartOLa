@@ -42,12 +42,16 @@
     name: string;
     date: string;
     pendingFile: File | null;
+    /** Plan 11 — Eventor event ID from the wizard quickstart. When set,
+     * passed through to the from-wizard POST so ImportRunnersView can
+     * show the linked-event card after creation. */
+    eventorEventId?: number | null;
     /** Surface the result back up to the wizard so it can drive the
      * inline error banner. */
     onerror: (msg: string) => void;
   }
 
-  let { name, date, pendingFile, onerror }: Props = $props();
+  let { name, date, pendingFile, eventorEventId = null, onerror }: Props = $props();
 
   let readerStatus: ReaderStatus = $state('opening');
   let submitting = $state(false);
@@ -109,6 +113,9 @@
         name,
         date,
         xml_file: { name: pendingFile.name, content_base64 },
+        // Plan 11 — pass Eventor linkage through to the atomic POST so
+        // the row is linked from creation without a separate PATCH.
+        ...(eventorEventId !== null ? { eventor_event_id: eventorEventId } : {}),
       });
       if (result.ok) {
         // Set the active competition so reload + bridge reconnect both

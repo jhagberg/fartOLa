@@ -30,6 +30,8 @@
 -->
 <script lang="ts">
   import { t } from '$lib/i18n/index.ts';
+  import { getEventorEvent } from '$lib/api/client.ts';
+  import { ApiError } from '$lib/api/client.ts';
 
   interface PreviewMeta {
     filename: string;
@@ -51,6 +53,13 @@
      * the parsed values (operator can still edit them). */
     onquickstart: (file: File, parsedName: string, parsedDate: string, preview: PreviewMeta) => void;
     onquickstartclear: () => void;
+    /** Eventor quickstart callback — fires when the operator fetched event
+     * metadata via the Eventor event ID field. The wizard stores the ID so
+     * it flows through to the final from-wizard POST. */
+    oneventorquickstart?: (eventorEventId: number, parsedName: string, parsedDate: string) => void;
+    oneventorquickstartclear?: () => void;
+    /** Current Eventor event ID (null = not linked). */
+    eventorEventId?: number | null;
   }
 
   let {
@@ -61,10 +70,19 @@
     ondatechange,
     onquickstart,
     onquickstartclear,
+    oneventorquickstart,
+    oneventorquickstartclear,
+    eventorEventId = null,
   }: Props = $props();
 
   let quickstartError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+
+  // --- Eventor quickstart state ------------------------------------------
+  /** The raw text the operator types in the Eventor event ID field. */
+  let eventorIdInput = $state('');
+  let eventorFetching = $state(false);
+  let eventorError = $state<string | null>(null);
 
   /** Same 4 KB head sample Step 2 uses — enough to land the root
    * element + the small <Event> block at the top of an IOF document. */
@@ -163,6 +181,50 @@
     onquickstartclear();
   }
 
+  // --- Eventor quickstart handlers ----------------------------------------
+
+  async function fetchEventorQuickstart(): Promise<void> {
+    eventorError = null;
+    const id = Number.parseInt(eventorIdInput.trim(), 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      eventorError = t('wizard.eventor.error', { message: 'Ogiltigt ID' });
+      return;
+    }
+    eventorFetching = true;
+    try {
+      const meta = await getEventorEvent(id);
+      // Prefill name and date from the fetched event. Operator can still
+      // edit them before advancing.
+      if (meta.name) onnamechange(meta.name);
+      if (meta.startDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.startDate)) {
+        ondatechange(meta.startDate);
+      }
+      oneventorquickstart?.(meta.eventId, meta.name, meta.startDate);
+    } catch (e) {
+      let msg: string;
+      if (e instanceof ApiError) {
+        const body = e.body as { error?: string } | undefined;
+        const code = body?.error ?? '';
+        if (code === 'not_found') msg = 'Tävlingen hittades inte i Eventor';
+        else if (code === 'no_key') msg = 'Eventor API-nyckel saknas';
+        else if (code === 'forbidden') msg = 'Åtkomst nekad av Eventor';
+        else if (code === 'eventor_down') msg = 'Eventor svarar inte';
+        else msg = code || e.message;
+      } else {
+        msg = (e as Error).message || 'okänt fel';
+      }
+      eventorError = t('wizard.eventor.error', { message: msg });
+    } finally {
+      eventorFetching = false;
+    }
+  }
+
+  function clearEventorQuickstart(): void {
+    eventorIdInput = '';
+    eventorError = null;
+    oneventorquickstartclear?.();
+  }
+
   /** "Idag"-knapp — stoppar in dagens datum i ISO-format. Audit follow-
    * up #7: efter att vi tagit bort den native date-pickern fanns ingen
    * snabbväg för en frivillig som inte vill memorera datumformatet. */
@@ -223,6 +285,57 @@
           class="btn ghost small-btn"
           onclick={clearImport}
           data-testid="wiz-step1-quickstart-clear"
+        >
+          {t('wiz.step1.quickstart.clear')}
+        </button>
+      </div>
+    {/if}
+  </section>
+
+  <!-- Eventor quickstart panel — lets the operator type an Eventor event ID
+       to prefill name + date without needing the course XML file first.
+       Sits below the file quickstart; either path can prefill the fields. -->
+  <section class="quickstart eventor-qs" aria-labelledby="evqs-title">
+    <h3 id="evqs-title">{t('wizard.eventor.title')}</h3>
+    {#if eventorEventId === null}
+      <form
+        class="evqs-row"
+        onsubmit={(e) => { e.preventDefault(); void fetchEventorQuickstart(); }}
+      >
+        <label class="sr-only" for="evqs-id">{t('wizard.eventor.inputLabel')}</label>
+        <input
+          id="evqs-id"
+          class="input mono evqs-input"
+          type="text"
+          inputmode="numeric"
+          bind:value={eventorIdInput}
+          placeholder={t('wizard.eventor.inputLabel')}
+          disabled={eventorFetching}
+          data-testid="wiz-evqs-input"
+        />
+        <button
+          type="submit"
+          class="btn primary"
+          disabled={eventorFetching || eventorIdInput.trim() === ''}
+          data-testid="wiz-evqs-fetch"
+        >
+          {eventorFetching ? t('wizard.eventor.fetching') : t('wizard.eventor.fetch')}
+        </button>
+      </form>
+      {#if eventorError}
+        <p class="err small" role="alert" data-testid="wiz-evqs-error">{eventorError}</p>
+      {/if}
+    {:else}
+      <div class="loaded-row" data-testid="wiz-evqs-loaded">
+        <span class="ok-icon" aria-hidden="true">✓</span>
+        <div class="grow">
+          <div class="loaded-msg">{t('wizard.eventor.loaded', { name: name || String(eventorEventId), id: eventorEventId })}</div>
+        </div>
+        <button
+          type="button"
+          class="btn ghost small-btn"
+          onclick={clearEventorQuickstart}
+          data-testid="wiz-evqs-clear"
         >
           {t('wiz.step1.quickstart.clear')}
         </button>
@@ -460,5 +573,27 @@
     letter-spacing: 0.06em;
     font-weight: 500;
     margin: 4px 0 -4px;
+  }
+  /* Eventor quickstart row: ID input + Hämta button side-by-side. */
+  .evqs-row {
+    display: flex;
+    gap: var(--space-xs);
+    align-items: stretch;
+  }
+  .evqs-input {
+    flex: 1;
+    min-width: 0;
+  }
+  /* Screen-reader-only label for the Eventor ID input. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 </style>
