@@ -50,6 +50,13 @@
       "when": 1779177600000,
       "tag": "0006_eventor_fts_update_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779624654210,
+      "tag": "0007_phase2_1_schema",
+      "breakpoints": true
     }
   ]
 }

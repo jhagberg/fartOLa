@@ -81,6 +81,26 @@ export type EventPayload =
       card_type: string;
     }
   | {
+      // Phase 2.1 — voided leg. Emitted by
+      // POST /api/competitions/:id/competitors/:cid/void-leg.
+      // The reducer subtracts min(actual_leg_ms, max_seconds * 1000) from
+      // elapsed_time_ms. Reversible via leg_unvoided.
+      event_type: 'leg_voided';
+      competitor_id: string;
+      /** SPORTident control code of the leg being voided. */
+      control_code: number;
+      /** Optional time cap for this leg in seconds (null = uncapped). */
+      max_seconds: number | null;
+      /** Optional operator reason. */
+      reason?: string;
+    }
+  | {
+      // Phase 2.1 — unvoid leg. Reverses a prior leg_voided event.
+      event_type: 'leg_unvoided';
+      competitor_id: string;
+      control_code: number;
+    }
+  | {
       event_type: 'card_read';
       card_number: number;
       card_type: string;
@@ -200,6 +220,15 @@ export const competitions = sqliteTable('competitions', {
    * cache so the reducer + frontend don't have to scan the log to know
    * the current phase. */
   raceStartedAtMs: integer('race_started_at_ms'),
+  /** Phase 2.1 — liveresultat.orientering.se competition ID for result push. */
+  liveresultatId: text('liveresultat_id'),
+  /** Phase 2.1 — liveresultat upload password. */
+  liveresultatPwd: text('liveresultat_pwd'),
+  /** Phase 2.1 — linked Eventor event ID for result/start-list push. */
+  eventorEventId: integer('eventor_event_id'),
+  /** Phase 2.1 D-17 — display format for elapsed times: 'seconds' or 'tenths'.
+   * Sprint events typically use 'tenths'; road/forest use 'seconds'. */
+  timingFormat: text('timing_format').default('seconds'),
 });
 
 // ---------------------------------------------------------------------------
@@ -217,6 +246,15 @@ export const classes = sqliteTable(
       .references(() => competitions.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     shortName: text('short_name'),
+    /** Phase 2.1 D-05 — epoch ms of the first start slot for this class.
+     * NULL = no start list drawn yet. */
+    firstStartMs: integer('first_start_ms'),
+    /** Phase 2.1 D-05 — seconds between start slots (e.g. 60 for 1-minute
+     * intervals). NULL = no start list drawn yet. */
+    startIntervalSec: integer('start_interval_sec'),
+    /** Phase 2.1 D-08 — class time cap in seconds. NULL = no cap.
+     * Reducer promotes OK/MP to MAX when elapsed_time_ms/1000 > maxTimeSec. */
+    maxTimeSec: integer('max_time_sec'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
@@ -317,6 +355,9 @@ export const competitors = sqliteTable(
     source: text('source', { enum: ['walkup', 'entrylist', 'meos'] })
       .notNull()
       .default('walkup'),
+    /** Phase 2.1 D-05 — assigned start time as epoch ms. NULL = not drawn
+     * (walk-up or late entry without a start slot). */
+    startTimeMs: integer('start_time_ms'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
@@ -544,4 +585,37 @@ export const hiredCards = sqliteTable(
     note: text('note'),
   },
   (t) => [primaryKey({ columns: [t.competitionId, t.cardNumber] })]
+);
+
+// ===========================================================================
+// Phase 2.1 — D-15: course_replacements.
+//
+// Alternative control codes accepted in lieu of the expected control code on
+// a given course. The reducer looks up replacement codes before comparing
+// expected vs actual punches — if the punched code is in the replacement set
+// for the expected code, it counts as a match. One-level lookup only (no
+// chaining).
+//
+// Unique index prevents duplicate mappings for the same (course, expected)
+// pair.
+// ===========================================================================
+
+export const courseReplacements = sqliteTable(
+  'course_replacements',
+  {
+    id: text('id').primaryKey(),
+    competitionId: text('competition_id')
+      .notNull()
+      .references(() => competitions.id, { onDelete: 'cascade' }),
+    courseId: text('course_id')
+      .notNull()
+      .references(() => courses.id, { onDelete: 'cascade' }),
+    /** The expected control code in the course sequence. */
+    controlCode: integer('control_code').notNull(),
+    /** An alternative punched code that counts as a hit on controlCode. */
+    alternativeCode: integer('alternative_code').notNull(),
+  },
+  (t) => [
+    uniqueIndex('course_replacements_unique').on(t.courseId, t.controlCode, t.alternativeCode),
+  ]
 );

@@ -110,7 +110,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     // receipt_template as TEXT (no enum at the column layer, by design — plan
     // 02 left enum narrowing to the Zod boundary so post-Phase-1 templates
     // don't require a schema migration).
-    const row = {
+    const row: Competition = {
       id,
       name: parsed.data.name,
       date: parsed.data.date,
@@ -121,6 +121,11 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       // flips this via POST /api/competitions/:id/start-race when the
       // race actually begins.
       raceStartedAtMs: null,
+      // Phase 2.1 columns — null on creation; set later via PATCH or wizard.
+      liveresultatId: null,
+      liveresultatPwd: null,
+      eventorEventId: null,
+      timingFormat: 'seconds',
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
     return reply.code(201).send(competitionRowToDTO(row));

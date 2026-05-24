@@ -424,6 +424,87 @@ describe('schema (phase 2): eventor_competitors indexes', () => {
   });
 });
 
+describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', () => {
+  test('course_replacements table exists with unique index', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const rows = handle.sqlite
+        .prepare<
+          unknown[],
+          SqliteMasterRow
+        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .all();
+      const names = rows.map((r) => r.name);
+      assert.ok(
+        names.includes('course_replacements'),
+        `course_replacements missing in ${names.join(',')}`
+      );
+      // Unique index must exist.
+      const indexes = handle.sqlite
+        .prepare<unknown[], PragmaIndexListRow>('PRAGMA index_list(course_replacements)')
+        .all();
+      const uniqueIdx = indexes.find(
+        (i) => i.name === 'course_replacements_unique' && i.unique === 1
+      );
+      assert.ok(
+        uniqueIdx,
+        `course_replacements_unique index not found in ${JSON.stringify(indexes)}`
+      );
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('classes has first_start_ms, start_interval_sec, max_time_sec columns (nullable)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all();
+      for (const col of ['first_start_ms', 'start_interval_sec', 'max_time_sec']) {
+        const found = cols.find((c) => c.name === col);
+        assert.ok(found, `classes.${col} column missing`);
+        assert.equal(found.notnull, 0, `classes.${col} must be nullable`);
+      }
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('competitors has start_time_ms column (nullable)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(competitors)')
+        .all();
+      const col = cols.find((c) => c.name === 'start_time_ms');
+      assert.ok(col, 'competitors.start_time_ms column missing');
+      assert.equal(col.notnull, 0, 'competitors.start_time_ms must be nullable');
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('competitions has liveresultat_id, liveresultat_pwd, eventor_event_id, timing_format columns', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(competitions)')
+        .all();
+      for (const col of ['liveresultat_id', 'liveresultat_pwd', 'eventor_event_id']) {
+        const found = cols.find((c) => c.name === col);
+        assert.ok(found, `competitions.${col} column missing`);
+        assert.equal(found.notnull, 0, `competitions.${col} must be nullable`);
+      }
+      const timingFmt = cols.find((c) => c.name === 'timing_format');
+      assert.ok(timingFmt, 'competitions.timing_format column missing');
+      assert.equal(timingFmt.dflt_value, "'seconds'", "timing_format default must be 'seconds'");
+    } finally {
+      handle.close();
+    }
+  });
+});
+
 describe('schema (phase 2): meos_* tables have no competition_id', () => {
   test('meos_competitors / meos_classes / meos_clubs lack competition_id', () => {
     const handle = openDatabase(':memory:');
