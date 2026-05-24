@@ -63,6 +63,7 @@ import registerHiredCardsRoutes from './routes/hiredCards.ts';
 import registerSettingsRoutes from './routes/settings.ts';
 import registerMipRoute from './integrations/meos/mip.ts';
 import registerMopRoute from './integrations/meos/mop.ts';
+import registerLiveresultatRoutes from './routes/liveresultat.ts';
 import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
@@ -309,6 +310,12 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // posture as MIP — MeOS hard-codes its push URL. D-MOP-4: no auth,
     // always-on; D-MOP-1..3 govern the shadow-table writes and auto-merge.
     await app.register(registerMopRoute);
+    // Phase 2.1 Plan 02.1-07 — Liveresultat push trigger routes.
+    //   POST /api/competitions/:id/liveresultat/push  → 202 (fire-and-forget)
+    //   GET  /api/competitions/:id/liveresultat/status → queue status snapshot
+    // The PushQueueHandle is decorated by bin/fartola.ts after listen().
+    // When absent (tests without a queue), the routes return 503.
+    await app.register(registerLiveresultatRoutes);
     await app.register(registerDevRoutes);
   }
 
