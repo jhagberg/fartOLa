@@ -13,7 +13,7 @@ orienteer at a real event (training counts).
 - [x] **Phase 1: Single-laptop training MVP** — Run a real club training using only this software on one laptop. (Merged to main 2026-05-16 via PR #3.)
 - [x] **Phase 1.5: Public demo + landing page** — GitHub Pages site with a clickable mock so anyone can test the UI and leave feedback. (Merged to main 2026-05-15.)
 - [ ] **Phase 2.0: 4-klubbs MVP (parallel with MeOS)** — Run fartOLa as primary registration + readout at a 4-klubbs training on 2026-05-20, with MeOS as parallel safety backup via MIP+MOP sync.
-- [ ] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, gap-analysis quick wins.
+- [x] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, gap-analysis quick wins. (completed 2026-05-24)
 - [ ] **Phase 3: Children's finish, public engagement** — Kids' finish screen, parent notifications, embeddable live widget.
 - [ ] **Phase 4: Multi-arena, radio controls** — Radio controls feeding live punches, multiple WiFi cells, peer-to-peer sync.
 - [ ] **Phase 5: O-ringen scale** — Demonstrable capacity for a five-stage event with 25 000+ starters.
@@ -127,9 +127,9 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
   - [x] 02-05-PLAN.md — Wave 2: hiredCards REST (GET list + PATCH return) + readout.ts hired_card_open extension + HyrbrickaToast + ReadoutView Set-based dismissal + ActiveHyrbrickorView admin page + hyrbricka e2e
   - [x] 02-06-PLAN.md — Wave 3: retention.ts hired_cards.contact_* scrub + docs/ops/parallel-meos-runbook.md + bench-smoke-phase2.sh + Wednesday-morning bench checkpoint
   - [x] 02-07-PLAN.md — Settings UI + integration-keys API for managing EVENTOR_API_KEY (and future Livelox / Liveresultat keys) from the operator UI instead of env files
-  - [ ] 02-08-PLAN.md — Wave deferred → Phase 2.1: Event admin codes (`<word>-<NNN>`) for mobile sekretariat-helpers; LOCKED 35-word Swedish O-feature wordlist; rate-limited /access endpoint + signed cookie + redact extension; ADR-0010
+  - [x] 02-08-PLAN.md — Wave deferred → Phase 2.1: Event admin codes (`<word>-<NNN>`) for mobile sekretariat-helpers; LOCKED 35-word Swedish O-feature wordlist; rate-limited /access endpoint + signed cookie + redact extension; ADR-0010 (completed 2026-05-24)
   - [ ] 02-09-PLAN.md — Wave 3 [BLOCKING for walk-up autocomplete]: Drop UNIQUE on `eventor_competitors.si_card` (federation data has legitimate duplicates); tri-state `lookupBySiCard` with context-aware disambiguation (active-competition match → recency rule fallback); WalkupModal `+N andra` chip + override picker; added 2026-05-17 after real Eventor ingest crashed against a working API key
-  - [ ] 02-10-PLAN.md — Wave deferred → Phase 2.1: Persistent Eventor event-ID linkage on `competitions` table; wizard step-1 Eventor-quickstart prefill; ImportRunnersView linked-card collapse with [Relink]; Tävling list Eventor chip
+  - [x] 02-10-PLAN.md — Wave deferred → Phase 2.1: Persistent Eventor event-ID linkage on `competitions` table; wizard step-1 Eventor-quickstart prefill; ImportRunnersView linked-card collapse with [Relink]; Tävling list Eventor chip (completed 2026-05-24)
 
 ### Phase 2.1: Sanctioned-competition foundations
 
@@ -158,7 +158,7 @@ Plans:
   - [x] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
   - [x] 02.1-10-PLAN.md — Wave 2: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
   - [x] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
-  - [ ] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
+  - [x] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
   - [x] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
 
 Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred to Phase 2.2+.
@@ -225,7 +225,7 @@ These must be respected throughout, not deferred to a phase:
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 12/13 | In Progress|  |
+| 2.1. Sanctioned-competition foundations | 13/13 | Complete   | 2026-05-24 |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
