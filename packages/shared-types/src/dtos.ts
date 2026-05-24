@@ -97,6 +97,10 @@ export const CompetitionDTO = z.object({
   /** Phase 2.1 D-17 — display format for elapsed times. 'seconds' is the
    * default; 'tenths' enables one-decimal rendering for sprint events. */
   timing_format: z.enum(['seconds', 'tenths']).default('seconds'),
+  /** Phase 2.1 Plan 11 — linked Eventor event ID. NULL = not linked to
+   * any Eventor event. Set by the wizard Eventor quickstart or by
+   * PATCH /api/competitions/:id with eventor_event_id. */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 
@@ -105,6 +109,9 @@ export const CompetitionCreateInput = z.object({
   date: ISO_DATE,
   receipt_template: RECEIPT_TEMPLATE.optional(),
   auto_print: z.boolean().optional(),
+  /** Phase 2.1 Plan 11 — optional Eventor event ID to link on creation
+   * (e.g. set by the wizard Eventor quickstart path). */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionCreateInput = z.infer<typeof CompetitionCreateInput>;
 
@@ -115,6 +122,9 @@ export const CompetitionPatchInput = z.object({
   auto_print: z.boolean().optional(),
   /** Phase 2.1 D-17 — toggle subsecond display for sprint events. */
   timing_format: z.enum(['seconds', 'tenths']).optional(),
+  /** Phase 2.1 Plan 11 — link (positive integer) or unlink (null) an
+   * Eventor event. PATCH with null removes an existing link. */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 

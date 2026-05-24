@@ -42,6 +42,7 @@ import {
   searchClubsByName,
 } from '../eventor/lookup.ts';
 import { listEventorEvents } from '../eventor/events.ts';
+import { fetchEventorEvent } from '../eventor/fetchEvent.ts';
 import { eventorCompetitors, config as configTable } from '../db/schema.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { resolveSecret, resolveSecretSource } from '../config/secrets.ts';
@@ -180,6 +181,46 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
       }
     }
   );
+
+  // GET /api/eventor/events/:id — fetch metadata for a single Eventor event.
+  //
+  // Used by the wizard Eventor quickstart to validate an event ID the
+  // operator typed and to prefill name + date. Path param is validated
+  // as a positive integer. Delegates to fetchEventorEvent() which calls
+  // GET /api/event/:id on the Eventor API with the ApiKey header.
+  //
+  // Error mapping:
+  //   404 → not_found (Eventor returned 404 or event ID doesn't exist)
+  //   403 → forbidden (API key rejected by Eventor)
+  //   key absent → no_key (503)
+  //   network failure → eventor_down (502)
+  //
+  // T-02.1-22: wizard validates event ID via this call before persisting it
+  // on the competition row — ensures the ID belongs to a real Eventor event.
+  app.get<{ Params: { id: string } }>('/api/eventor/events/:id', async (req, reply) => {
+    const eventId = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(eventId) || eventId <= 0) {
+      return reply.code(400).send({ error: 'invalid_event_id' });
+    }
+    const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
+    if (!apiKey || apiKey.length === 0) {
+      return reply.code(503).send({ error: 'no_key' });
+    }
+    try {
+      const event = await fetchEventorEvent({ apiKey, eventId });
+      return event;
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (msg.includes('not_found') || msg.includes('404')) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      if (msg.includes('forbidden') || msg.includes('403')) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      app.log.warn({ err: msg, eventId }, 'eventor event fetch failed');
+      return reply.code(502).send({ error: 'eventor_down', detail: msg });
+    }
+  });
 
   app.get('/api/eventor/status', async () => {
     // Request-time env eval — closure captures process.env which is mutable

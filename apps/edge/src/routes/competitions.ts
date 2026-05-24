@@ -84,6 +84,8 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     created_at_ms: row.createdAtMs,
     race_started_at_ms: row.raceStartedAtMs,
     timing_format: (row.timingFormat === 'tenths' ? 'tenths' : 'seconds') as 'seconds' | 'tenths',
+    // Plan 11 — expose Eventor linkage; null when not linked.
+    eventor_event_id: row.eventorEventId ?? null,
   };
 }
 
@@ -125,7 +127,9 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       // Phase 2.1 columns — null on creation; set later via PATCH or wizard.
       liveresultatId: null,
       liveresultatPwd: null,
-      eventorEventId: null,
+      // Plan 11 — caller may supply eventor_event_id to link on creation
+      // (wizard Eventor quickstart path).
+      eventorEventId: parsed.data.eventor_event_id ?? null,
       timingFormat: 'seconds',
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
@@ -223,6 +227,9 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       patch.receiptTemplate = parsed.data.receipt_template;
     if (parsed.data.auto_print !== undefined) patch.autoPrint = parsed.data.auto_print;
     if (parsed.data.timing_format !== undefined) patch.timingFormat = parsed.data.timing_format;
+    // Plan 11 — null explicitly unlinks; positive integer links a new event.
+    if ('eventor_event_id' in parsed.data)
+      patch.eventorEventId = parsed.data.eventor_event_id ?? null;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.

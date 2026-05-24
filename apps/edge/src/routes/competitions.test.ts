@@ -348,4 +348,78 @@ describe('competitions REST CRUD', () => {
     });
     assert.equal(res.statusCode, 404);
   });
+
+  // Plan 02.1-11 — eventor_event_id linkage
+
+  test('Plan 11: POST /api/competitions with eventor_event_id stores and echoes it', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Eventor Linked', date: '2026-06-01', eventor_event_id: 42001 },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { id: string; eventor_event_id: number | null };
+    assert.equal(body.eventor_event_id, 42001);
+
+    // GET should also return it.
+    const getRes = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${body.id}` });
+    const detail = getRes.json() as { competition: { eventor_event_id: number | null } };
+    assert.equal(detail.competition.eventor_event_id, 42001);
+  });
+
+  test('Plan 11: POST /api/competitions without eventor_event_id returns null', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'No Eventor', date: '2026-06-02' },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { eventor_event_id: number | null };
+    assert.equal(body.eventor_event_id, null);
+  });
+
+  test('Plan 11: PATCH /api/competitions/:id with eventor_event_id links', async () => {
+    const createRes = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Patch Link', date: '2026-06-03' },
+    });
+    const { id } = createRes.json() as { id: string };
+
+    const patchRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}`,
+      payload: { eventor_event_id: 55000 },
+    });
+    assert.equal(patchRes.statusCode, 200);
+    const patched = patchRes.json() as { eventor_event_id: number | null };
+    assert.equal(patched.eventor_event_id, 55000);
+  });
+
+  test('Plan 11: PATCH /api/competitions/:id with null eventor_event_id unlinks', async () => {
+    const createRes = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Unlink Test', date: '2026-06-04', eventor_event_id: 99001 },
+    });
+    const { id } = createRes.json() as { id: string };
+
+    // Verify it's linked first.
+    const linked = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` });
+    assert.equal(
+      (linked.json() as { competition: { eventor_event_id: number | null } }).competition
+        .eventor_event_id,
+      99001
+    );
+
+    // Unlink via PATCH.
+    const patchRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}`,
+      payload: { eventor_event_id: null },
+    });
+    assert.equal(patchRes.statusCode, 200);
+    const unlinked = patchRes.json() as { eventor_event_id: number | null };
+    assert.equal(unlinked.eventor_event_id, null);
+  });
 });
