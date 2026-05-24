@@ -738,6 +738,84 @@ export function returnHiredCard(
 }
 
 // ---------------------------------------------------------------------------
+// Lottning — start-time draw (Phase 2.1 Plan 02.1-02 routes)
+// ---------------------------------------------------------------------------
+
+export interface LottningBody {
+  mode: 'SOFT' | 'Random' | 'Simultaneous';
+  firstStartMs: number;
+  intervalSec: number;
+  vacantSlots?: number;
+}
+
+export interface StartListEntry {
+  id: string;
+  name: string;
+  club: string | null;
+  card_number: number | null;
+  start_time_ms: number | null;
+}
+
+export interface LottningResponse {
+  class: {
+    id: string;
+    name: string;
+    first_start_ms: number | null;
+    start_interval_sec: number | null;
+    max_time_sec: number | null;
+  };
+  start_list: StartListEntry[];
+}
+
+/** POST /api/competitions/:id/lottning/:classId — draw start times for a class.
+ * Returns { drawn: N } where N is the number of competitors assigned times. */
+export function postLottning(
+  competitionId: string,
+  classId: string,
+  body: LottningBody
+): Promise<{ drawn: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}`,
+    { method: 'POST', body }
+  );
+}
+
+/** GET /api/competitions/:id/lottning/:classId — fetch the current start list
+ * for a class, sorted by start_time_ms ascending. */
+export function getLottning(competitionId: string, classId: string): Promise<LottningResponse> {
+  return apiFetch<LottningResponse>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}`
+  );
+}
+
+/** PATCH /api/competitions/:id/classes/:classId — update class settings
+ * (max_time_sec, etc.). Owned by Plan 02.1-02; this plan only consumes it. */
+export function patchClass(
+  competitionId: string,
+  classId: string,
+  body: { maxTimeSec?: number | null }
+): Promise<{ ok: true }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/classes/${encodeURIComponent(classId)}`,
+    { method: 'PATCH', body }
+  );
+}
+
+/** PATCH /api/competitions/:id/competitors/:competitorId/start-time —
+ * update a competitor's individual start_time_ms (D-07 per-runner edit).
+ * Owned by Plan 02.1-02; this plan only consumes it. */
+export function patchCompetitorStartTime(
+  competitionId: string,
+  competitorId: string,
+  startTimeMs: number
+): Promise<{ ok: true }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}/start-time`,
+    { method: 'PATCH', body: { start_time_ms: startTimeMs } }
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sessions (active competition pointer + bridge reconnect)
 // ---------------------------------------------------------------------------
 

@@ -96,6 +96,15 @@
   </NavItem>
 
   <NavItem
+    active={route === 'lottning'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('lottning')}
+  >
+    {#snippet icon()}<Icon name="shuffle" />{/snippet}
+    {t('nav.lottning')}
+  </NavItem>
+
+  <NavItem
     active={route === 'results'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('results')}

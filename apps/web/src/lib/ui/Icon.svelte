@@ -29,7 +29,8 @@
     | 'edit'
     | 'info'
     | 'chevron-right'
-    | 'chevron-down';
+    | 'chevron-down'
+    | 'shuffle';
 
   interface Props {
     name: IconName;
@@ -133,5 +134,13 @@
   {:else if name === 'chevron-down'}
     <!-- dropdown affordance — competition pill switcher -->
     <path d="m6 9 6 6 6-6" />
+  {:else if name === 'shuffle'}
+    <!-- shuffle / random-draw — Lottning nav item -->
+    <path d="M16 3h5v5" />
+    <path d="m21 3-9 9" />
+    <path d="M16 21h5v-5" />
+    <path d="m21 21-9-9" />
+    <path d="M3 3h5" />
+    <path d="m3 21 9-9" />
   {/if}
 </svg>
