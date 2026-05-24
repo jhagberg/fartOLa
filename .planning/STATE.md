@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.0.1
 milestone_name: milestone
 status: Phase 2 complete
-stopped_at: Phase 2.1 context gathered
-last_updated: "2026-05-24T20:20:29.076Z"
+stopped_at: Completed 02.1-06-PLAN.md (kvar-i-skogen)
+last_updated: "2026-05-24T21:22:57.910Z"
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 37
-  completed_plans: 34
+  completed_plans: 36
   percent: 25
 ---
 
@@ -25,7 +25,7 @@ not duplicated here.
 ## Current position
 
 Phase: 02.1 (sanctioned-competition-foundations) — EXECUTING
-Plan: 2 of 13
+Plan: 3 of 13
 **Phase:** Phase 2.0 — 4-klubbs MVP (parallel with MeOS)
 **Hard deadline:** Wednesday **2026-05-20** (4-klubbs training at Stora Tuna OK)
 **Next concrete action:** Run `/gsd-discuss-phase 2` in worktree
@@ -234,6 +234,11 @@ allestuetsmerweh/sportident\.js` — literal "Ported from" would have
 failed on real existing headers like "Ported (simplified) from" in
 SiStation/\* files. Pattern preserves the audit intent.
 
+- [Phase ?]: Physical finish punch
+- [Phase ?]: Route returns both cardNumbers and returnedCardNumbers in one response to avoid extra round-trip
+- [Phase ?]: BridgeLifecycle.getStation() added as public method for route access to underlying SiMainStation
+- [Phase ?]: MAX_ITERATIONS=512 caps readBackupMemory loop (T-02.1-11 DoS mitigation)
+
 ## Open questions (deferred until we have working code)
 
 - Does Electric scale to 30 000 concurrent public viewers at O-ringen,
@@ -259,8 +264,8 @@ None. Phase 0 plans created.
 
 ## Session Continuity
 
-Last session: 2026-05-24T20:20:29.058Z
-Stopped At: Phase 2.1 context gathered
+Last session: 2026-05-24T21:22:57.902Z
+Stopped At: Completed 02.1-06-PLAN.md (kvar-i-skogen)
 Resume File: None
 
 ---
