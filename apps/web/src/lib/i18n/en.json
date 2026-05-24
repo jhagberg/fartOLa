@@ -7,6 +7,7 @@
   "nav.results": "Results",
   "nav.export": "Export",
   "nav.hyrbrickor": "Hired cards",
+  "nav.eventor": "Eventor",
   "nav.info": "Competition info",
   "info.title": "Competition info",
   "info.hint": "Inspect courses, classes and settings. Edit fields as needed.",
@@ -452,5 +453,15 @@
   "err.import.invalid": "File format not supported",
   "err.print.offline": "Printer is offline",
   "err.ws.disconnected": "Readout disconnected — trying to reconnect…",
-  "err.required": "Required field"
+  "err.required": "Required field",
+
+  "eventor.publish.title": "Publish to Eventor",
+  "eventor.publish.results": "Publish results",
+  "eventor.publish.results.desc": "Sends IOF XML 3.0 ResultList to Eventor.",
+  "eventor.publish.startlist": "Publish start list",
+  "eventor.publish.startlist.desc": "Sends IOF XML 3.0 StartList to Eventor.",
+  "eventor.publish.success": "Published!",
+  "eventor.publish.noKey": "Eventor API key not configured. Set it under Settings.",
+  "eventor.publish.error": "Publish failed: {{message}}",
+  "eventor.publish.pushing": "Sending…"
 }

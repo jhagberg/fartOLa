@@ -7,6 +7,7 @@
   "nav.results": "Resultat",
   "nav.export": "Export",
   "nav.hyrbrickor": "Hyrbrickor",
+  "nav.eventor": "Eventor",
   "nav.info": "Tävlingsinfo",
   "info.title": "Tävlingsinfo",
   "info.hint": "Visa banor, klasser och inställningar. Redigera de fält som behövs.",
@@ -452,5 +453,15 @@
   "err.import.invalid": "Filformat stöds inte",
   "err.print.offline": "Skrivaren är offline",
   "err.ws.disconnected": "Avläsning frånkopplad — försöker återansluta…",
-  "err.required": "Obligatoriskt fält"
+  "err.required": "Obligatoriskt fält",
+
+  "eventor.publish.title": "Publicera till Eventor",
+  "eventor.publish.results": "Publicera resultat",
+  "eventor.publish.results.desc": "Skickar IOF XML 3.0 ResultList till Eventor.",
+  "eventor.publish.startlist": "Publicera startlista",
+  "eventor.publish.startlist.desc": "Skickar IOF XML 3.0 StartList till Eventor.",
+  "eventor.publish.success": "Publicerat!",
+  "eventor.publish.noKey": "Eventor API-nyckel saknas. Konfigurera under Inställningar.",
+  "eventor.publish.error": "Publicering misslyckades: {{message}}",
+  "eventor.publish.pushing": "Skickar…"
 }

@@ -816,6 +816,24 @@ export function patchCompetitorStartTime(
 }
 
 // ---------------------------------------------------------------------------
+// Eventor push (Phase 2.1 Plan 02.1-08)
+// ---------------------------------------------------------------------------
+
+export function postEventorPushResults(competitionId: string): Promise<{ url: string }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/eventor/push-results`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+export function postEventorPushStartlist(competitionId: string): Promise<{ url: string }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/eventor/push-startlist`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Sessions (active competition pointer + bridge reconnect)
 // ---------------------------------------------------------------------------
 

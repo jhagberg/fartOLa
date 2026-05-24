@@ -133,6 +133,16 @@
   </NavItem>
 
   <NavItem
+    active={route === 'eventor-publish'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('eventor-publish')}
+  >
+    {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
+    {t('nav.eventor')}
+    {#snippet badge()}Eventor{/snippet}
+  </NavItem>
+
+  <NavItem
     active={route === 'info'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('info')}
