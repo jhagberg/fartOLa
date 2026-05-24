@@ -310,6 +310,8 @@
   "walk.discard.msg": "Vill du verkligen avbryta? Det du har skrivit försvinner.",
   "walk.discard.keep": "Fortsätt skriva",
   "walk.discard.discard": "Kasta",
+  "walk.alternatives.chip": "+{{n}} andra",
+  "walk.alternatives.picker.title": "Välj rätt deltagare",
   "wiz.discard.msg": "Vill du verkligen avbryta guiden? Det du har skrivit försvinner.",
   "wiz.discard.keep": "Fortsätt",
   "wiz.discard.discard": "Avbryt guiden",

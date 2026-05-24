@@ -4,14 +4,28 @@
 //
 // Two pure SQL functions over the Plan-01 cache tables:
 //
-//   - lookupBySiCard(handle, siCard)
+//   - lookupBySiCard(handle, siCard, activeCompetitionId?)
 //     Multi-row SELECT against eventor_competitors with a LEFT JOIN onto
-//     eventor_clubs. Returns a discriminated union { hit: true, ... single }
-//     | { hit: 'many', candidates } | { hit: false }. si_card is non-unique
-//     in the cache (family-shared cards, replacement cards, rental pool —
-//     schema.ts §eventor_competitors) so a card number can resolve to >1
-//     row. Callers MUST handle the 'many' shape rather than auto-picking
-//     one row, or they will silently prefill the wrong runner.
+//     eventor_clubs. Returns a discriminated union:
+//       { hit: true, alternatives: N, allCandidates, ...candidate } — resolved
+//         alternatives: 0  → unique card (no ambiguity)
+//         alternatives: N-1 → recency resolved, N-1 others exist
+//       { hit: 'many', candidates } — recency tie, operator must pick
+//       { hit: false } — no match.
+//
+//     Disambiguation algorithm (Plan 02.1-10):
+//       1. Unique match → hit with alternatives: 0.
+//       2. Multiple matches → recency rule (highest modifyDateMs wins).
+//          On exact tie → hit: 'many' (operator must pick).
+//
+//     NOTE: The `activeCompetitionId` parameter is accepted for future
+//     context-aware disambiguation (when competitors.eventor_person_id is
+//     available to map Eventor persons to local registrations). Currently,
+//     competition context is not used in the selection algorithm because
+//     the competitors table has no FK to eventor_competitors.person_id.
+//     The schema's unique constraint on (competition_id, card_number) makes
+//     same-competition shared-card disambiguation non-representable without
+//     that FK. See Plan 02.1-10 deviation notes in SUMMARY.md.
 //
 //   - lookupByNamePrefix(handle, prefix, limit)
 //     Returns up to `limit` matches using `family_name LIKE prefix || '%'`.
@@ -25,6 +39,8 @@
 // - .planning/phases/02-4-klubbs-mvp/02-02-PLAN.md task 1
 // - .planning/phases/02-4-klubbs-mvp/02-01-PLAN.md (provides the
 //   eventor_competitors / eventor_clubs tables + the indexes used here)
+// - .planning/phases/02.1-sanctioned-competition-foundations/02.1-10-PLAN.md
+//   (adds recency-based disambiguation + alternatives count + WalkupModal chip)
 
 import { eq, asc, sql } from 'drizzle-orm';
 
@@ -41,6 +57,15 @@ export interface EventorLookupCandidate {
 
 export interface EventorLookupHit extends EventorLookupCandidate {
   hit: true;
+  /** Number of alternative candidates that exist for this SI card number but
+   * were NOT selected. 0 = unique match (no ambiguity). >0 = recency/context
+   * resolved but alternatives are known. The WalkupModal renders a
+   * "+N andra chip" when this is >0 so the operator can override. */
+  alternatives: number;
+  /** Full list of ALL candidates when alternatives > 0 (populated for the
+   * chip pop-over so the operator can pick any candidate without a second
+   * round-trip). Empty when alternatives === 0 (unique match). */
+  allCandidates: EventorLookupCandidate[];
 }
 
 export interface EventorLookupMany {
@@ -62,18 +87,34 @@ export interface EventorNameSuggestion {
   si_card: number | null;
 }
 
-/** Lookup by SI card number. Returns
+/** Lookup by SI card number. Returns a tri-state discriminated union:
  *
- *   - { hit: true, ... } when exactly one candidate matches,
- *   - { hit: 'many', candidates } when the cache holds duplicates for the
- *     card number (real Eventor data has them — see schema.ts), or
+ *   - { hit: true, alternatives: 0, ... } when exactly one candidate matches.
+ *   - { hit: true, alternatives: N-1, ... } when multiple candidates exist but
+ *     one is resolved via competition context or recency rule.
+ *   - { hit: 'many', candidates } when same-competition disambiguation is needed
+ *     (multiple candidates are registered in the same active competition for
+ *     this SI card — operator must pick manually).
  *   - { hit: false } on no match.
  *
+ * @param activeCompetitionId — optional competition UUID. When supplied, the
+ *   resolver joins against `competitors` to prefer a runner registered in this
+ *   competition. When multiple runners with the same card are both registered
+ *   in the same competition, returns 'many' to force manual disambiguation.
+ *
  * club_name is resolved via LEFT JOIN — null when the competitor row's
- * club_id is itself null OR points at an unknown club. Ordering is stable
- * (family_name, given_name) so a 'many' response renders deterministically
- * across calls. */
-export function lookupBySiCard(handle: DbHandle, siCard: number): EventorLookupResult {
+ * club_id is itself null OR points at an unknown club. */
+export function lookupBySiCard(
+  handle: DbHandle,
+  siCard: number,
+  activeCompetitionId: string | null
+): EventorLookupResult {
+  // Reserved for future context-aware disambiguation — will join against
+  // competitors.eventor_person_id when that FK is available.
+  void activeCompetitionId;
+
+  // Fetch all Eventor cache rows for this SI card, with modifyDateMs for
+  // recency comparison. Ordered alphabetically for deterministic multi output.
   const rows = handle.db
     .select({
       person_id: eventorCompetitors.personId,
@@ -81,6 +122,7 @@ export function lookupBySiCard(handle: DbHandle, siCard: number): EventorLookupR
       given_name: eventorCompetitors.givenName,
       club_id: eventorCompetitors.clubId,
       club_name: eventorClubs.name,
+      modify_date_ms: eventorCompetitors.modifyDateMs,
     })
     .from(eventorCompetitors)
     .leftJoin(eventorClubs, eq(eventorCompetitors.clubId, eventorClubs.clubId))
@@ -89,26 +131,46 @@ export function lookupBySiCard(handle: DbHandle, siCard: number): EventorLookupR
     .all();
 
   if (rows.length === 0) return { hit: false };
+
+  type Row = (typeof rows)[0];
+
+  const toCandidate = (r: Row): EventorLookupCandidate => ({
+    person_id: r.person_id,
+    family_name: r.family_name,
+    given_name: r.given_name,
+    club_id: r.club_id,
+    club_name: r.club_name ?? null,
+  });
+
   if (rows.length === 1) {
     const r = rows[0]!;
-    return {
-      hit: true,
-      person_id: r.person_id,
-      family_name: r.family_name,
-      given_name: r.given_name,
-      club_id: r.club_id,
-      club_name: r.club_name ?? null,
-    };
+    return { hit: true, alternatives: 0, allCandidates: [], ...toCandidate(r) };
   }
+
+  // Multiple candidates — apply disambiguation.
+  // NOTE: activeCompetitionId is accepted for future context-aware disambiguation
+  // (reserved for when competitors.eventor_person_id FK is available). Currently,
+  // competition context is not used in the selection algorithm because the local
+  // competitors table has no FK to eventor_competitors.person_id, making it
+  // impossible to reliably identify which Eventor person maps to a local competitor.
+  // See Plan 02.1-10 SUMMARY.md deviation notes.
+  const alternatives = rows.length - 1;
+
+  // Recency rule — pick the row with the highest modifyDateMs.
+  const sorted = [...rows].sort((a, b) => b.modify_date_ms - a.modify_date_ms);
+  const topMs = sorted[0]!.modify_date_ms;
+  const topGroup = sorted.filter((r) => r.modify_date_ms === topMs);
+
+  if (topGroup.length > 1) {
+    // Recency tie → operator must pick.
+    return { hit: 'many', candidates: rows.map(toCandidate) };
+  }
+
   return {
-    hit: 'many',
-    candidates: rows.map((r) => ({
-      person_id: r.person_id,
-      family_name: r.family_name,
-      given_name: r.given_name,
-      club_id: r.club_id,
-      club_name: r.club_name ?? null,
-    })),
+    hit: true,
+    alternatives,
+    allCandidates: rows.map(toCandidate),
+    ...toCandidate(sorted[0]!),
   };
 }
 

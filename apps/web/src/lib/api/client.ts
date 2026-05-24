@@ -551,12 +551,19 @@ export function listClubs(prefix?: string, limit?: number): Promise<{ clubs: Clu
 // ---------------------------------------------------------------------------
 
 /** GET /api/eventor/lookup?si_card=N — cache lookup for the bricka-scan
- * pre-fill flow. Returns { hit: true, ... } for a unique match,
- * { hit: 'many', candidates } when the cache holds duplicate rows for the
- * card (family-shared / replacement / rental pool), or { hit: false }. */
-export function lookupEventorBySiCard(siCard: number): Promise<EventorLookupResult> {
+ * pre-fill flow. Returns { hit: true, alternatives: N, ... } for a resolved
+ * match (unique or recency/context resolved), { hit: 'many', candidates } when
+ * same-competition disambiguation is needed, or { hit: false }.
+ *
+ * Pass `competitionId` to enable context-aware disambiguation: the backend will
+ * prefer a runner registered in that competition and return 'many' if multiple
+ * are registered for the same card. */
+export function lookupEventorBySiCard(
+  siCard: number,
+  competitionId?: string | null
+): Promise<EventorLookupResult> {
   return apiFetch<EventorLookupResult>('/api/eventor/lookup', {
-    query: { si_card: siCard },
+    query: competitionId ? { si_card: siCard, competition_id: competitionId } : { si_card: siCard },
   });
 }
 

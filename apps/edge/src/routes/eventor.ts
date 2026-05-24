@@ -60,6 +60,11 @@ const LookupQuery = z.object({
   // Stora Tuna OK isn't drowned by ranked homonyms from other clubs).
   club_id: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(50).optional(),
+  // Optional competition ID for context-aware SI card disambiguation
+  // (Plan 02.1-10, reserved for future use when competitors.eventor_person_id
+  // FK is available). Accepts any non-empty string (not UUID-only) because
+  // competition IDs are arbitrary text PKs in the schema.
+  competition_id: z.string().min(1).max(256).optional(),
 });
 
 const ClubsQuery = z.object({
@@ -87,13 +92,14 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
       q?: string;
       club_id?: string;
       limit?: string;
+      competition_id?: string;
     };
   }>('/api/eventor/lookup', async (req, reply) => {
     const parsed = LookupQuery.safeParse(req.query);
     if (!parsed.success) {
       return reply.code(400).send(issuesToErrors(parsed.error.issues));
     }
-    const { si_card, prefix, q, club_id, limit } = parsed.data;
+    const { si_card, prefix, q, club_id, limit, competition_id } = parsed.data;
 
     // Mutual-exclusion gate — exactly one of si_card / prefix / q must
     // be supplied. We keep the old `conflicting_query` / `missing_query`
@@ -109,7 +115,7 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
     }
 
     if (si_card !== undefined) {
-      return lookupBySiCard(app.fartolaDb, si_card);
+      return lookupBySiCard(app.fartolaDb, si_card, competition_id ?? null);
     }
     if (q !== undefined) {
       const suggestions = searchCompetitorsByName(app.fartolaDb, q, limit ?? 20, club_id);

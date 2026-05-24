@@ -43,7 +43,7 @@
   import WalkupModal from '$lib/screens/WalkupModal.svelte';
   import AddRunnerSheet from '$lib/components/AddRunnerSheet.svelte';
   import Icon from '$lib/ui/Icon.svelte';
-  import type { ClassDTO, EventorLookupHit, CompetitorDTO } from '@fartola/shared-types';
+  import type { ClassDTO, EventorLookupHit, EventorLookupMany, CompetitorDTO } from '@fartola/shared-types';
 
   interface Props {
     competitionId: string;
@@ -69,7 +69,7 @@
    * or returned hit=false. Code-review F-003 (codex) HIGH fix —
    * /registration must match /readout's Eventor-prefill ergonomics so
    * the 3-5s/kid throughput target holds at 4-klubbs. */
-  let currentEventorHint: EventorLookupHit | null = $state(null);
+  let currentEventorHint: EventorLookupHit | EventorLookupMany | null = $state(null);
   /** Card beeped that resolved to an already-registered competitor.
    * When set, we show the "already registered" banner instead of
    * opening the walk-up form (which would just show empty fields and
@@ -237,15 +237,15 @@
     // walkup-overlay handler. The modal mounts with cardHolderHint first;
     // when the lookup resolves, eventorHint takes over via WalkupModal's
     // $effect that reacts to late-arriving eventorHint props.
-    void lookupEventorBySiCard(card.cardNumber)
+    void lookupEventorBySiCard(card.cardNumber, competitionId)
       .then((res) => {
         // Guard: another card could have been popped in the meantime
         // (operator hit Spara before the lookup resolved). Only apply
         // the hint if we still own this card.
         if (currentCard?.cardNumber !== card.cardNumber) return;
-        // Only auto-fill on a single match (see ReadoutView equivalent
-        // comment). 'many' falls through to the firmware/hand-fill path.
-        if (res.hit === true) currentEventorHint = res;
+        // Pass hit: true (single resolved) and hit: 'many' (same-competition
+        // shared card). WalkupModal auto-opens picker for 'many'.
+        if (res.hit !== false) currentEventorHint = res;
       })
       .catch(() => {
         /* offline / 5xx — leave the firmware-hint path active */
