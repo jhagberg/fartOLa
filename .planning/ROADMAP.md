@@ -148,18 +148,18 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
 
 Plans:
   - [x] 02.1-01-PLAN.md — Wave 1: Schema migration 0007 (start_time_ms, max_time_sec, liveresultat cols, course_replacements table) + reducer extensions (MAX auto-compute, voided legs, replacement controls) + voided-leg routes
-  - [ ] 02.1-02-PLAN.md — Wave 2: Start list draw algorithms (SOFT club-blocking, Random, Simultaneous) + lottning route + re-lotta + per-runner edit
-  - [ ] 02.1-03-PLAN.md — Wave 2: IOF XML 3.0 StartList export (buildStartListXml) + StartList import + export/import routes + thermal print
-  - [ ] 02.1-04-PLAN.md — Wave 2: Multi-serial SI readers (repeatable --serial flag, BridgeLifecycle array, position-aware WS broadcast, per-reader health)
+  - [x] 02.1-02-PLAN.md — Wave 2: Start list draw algorithms (SOFT club-blocking, Random, Simultaneous) + lottning route + re-lotta + per-runner edit
+  - [x] 02.1-03-PLAN.md — Wave 2: IOF XML 3.0 StartList export (buildStartListXml) + StartList import + export/import routes + thermal print
+  - [x] 02.1-04-PLAN.md — Wave 2: Multi-serial SI readers (repeatable --serial flag, BridgeLifecycle array, position-aware WS broadcast, per-reader health)
   - [ ] 02.1-05-PLAN.md — Wave 3: LottningView UI + start-time column in RegistrationView/ReadoutView + subsecond timing display
   - [ ] 02.1-06-PLAN.md — Wave 3: Kvar-i-skogen (readBackupMemory in sportident package, checkunit snapshot route, KvarISkovenView diff + safety-call summary)
-  - [ ] 02.1-07-PLAN.md — Wave 3: Liveresultat push (MOP XML 2.0 builder, pushToLiveresultat, async retry queue, trigger route)
+  - [x] 02.1-07-PLAN.md — Wave 3: Liveresultat push (MOP XML 2.0 builder, pushToLiveresultat, async retry queue, trigger route)
   - [ ] 02.1-08-PLAN.md — Wave 3: Eventor results + startlist push (pushToEventor with PKZIP-archived IOF XML 3.0 via yazl, push routes, EventorPublishView)
-  - [ ] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
-  - [ ] 02.1-10-PLAN.md — Wave 2: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
+  - [x] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
+  - [x] 02.1-10-PLAN.md — Wave 2: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
   - [ ] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
   - [ ] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
-  - [ ] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
+  - [x] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
 
 Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred to Phase 2.2+.
 Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup), 02-10 (Eventor event linkage).
@@ -225,7 +225,7 @@ These must be respected throughout, not deferred to a phase:
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 1/13 | In Progress|  |
+| 2.1. Sanctioned-competition foundations | 8/13 | In Progress|  |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
