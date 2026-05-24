@@ -63,6 +63,7 @@ import registerHiredCardsRoutes from './routes/hiredCards.ts';
 import registerSettingsRoutes from './routes/settings.ts';
 import registerMipRoute from './integrations/meos/mip.ts';
 import registerMopRoute from './integrations/meos/mop.ts';
+import registerLottningRoutes from './routes/lottning.ts';
 import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
@@ -309,6 +310,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // posture as MIP — MeOS hard-codes its push URL. D-MOP-4: no auth,
     // always-on; D-MOP-1..3 govern the shadow-table writes and auto-merge.
     await app.register(registerMopRoute);
+    // Phase 2.1 Plan 02.1-02 — Start list draw (lottning).
+    // POST + GET /api/competitions/:id/lottning/:classId.
+    await app.register(registerLottningRoutes);
     await app.register(registerDevRoutes);
   }
 
