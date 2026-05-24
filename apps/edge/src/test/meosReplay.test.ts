@@ -51,7 +51,7 @@ async function boot(): Promise<Ctx> {
       name: 'Test MeOS Replay Competition',
       date: '2026-05-24',
       receiptTemplate: 'classic',
-      autoPrint: 0,
+      autoPrint: false,
       createdAtMs: Date.now(),
       // Set race_started_at_ms to 0 (epoch) so all replayed card reads score
       // through the reducer's race-phase gate. Without this, the reducer treats
@@ -384,7 +384,7 @@ describe('meosReplay — real MeOS dump (4-klubbs 2026-05-20)', () => {
             name: '4-klubbs 2026-05-20 (MeOS replay)',
             date: '2026-05-20',
             receiptTemplate: 'classic',
-            autoPrint: 0,
+            autoPrint: false,
             createdAtMs: Date.now(),
             raceStartedAtMs: 0,
           })

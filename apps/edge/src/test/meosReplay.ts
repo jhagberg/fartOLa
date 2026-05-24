@@ -37,6 +37,7 @@ import { reduce } from '../projection/reduce.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import type { DbHandle } from '../db/index.ts';
+import { eq, and } from 'drizzle-orm';
 import { classes as classesTable, competitors as competitorsTable } from '../db/schema.ts';
 
 // ---------------------------------------------------------------------------
@@ -332,9 +333,11 @@ export function importMeosDump(
       classIdMap.set(cls.meosId, id);
     } catch {
       // Class name already exists (uniqueIndex) — find it
-      const existing = handle.db.query.classes.findFirst({
-        where: (t, { and, eq }) => and(eq(t.competitionId, competitionId), eq(t.name, cls.name)),
-      });
+      const existing = handle.db
+        .select({ id: classesTable.id })
+        .from(classesTable)
+        .where(and(eq(classesTable.competitionId, competitionId), eq(classesTable.name, cls.name)))
+        .get();
       if (existing) classIdMap.set(cls.meosId, existing.id);
     }
   }
