@@ -499,5 +499,29 @@
   "import.linked.import": "Importera startlista",
   "import.relink": "Länka om",
   "import.relinking": "Uppdaterar…",
-  "competition.eventorChip": "Eventor: {{id}}"
+  "competition.eventorChip": "Eventor: {{id}}",
+
+  "access.title": "Logga in som hjälpare",
+  "access.selectCompetition": "Välj tävling",
+  "access.codePlaceholder": "Kod (t.ex. sänkan-127)",
+  "access.submit": "Logga in",
+  "access.submitting": "Loggar in…",
+  "access.error.invalid_code": "Ogiltig kod",
+  "access.error.expired": "Koden har gått ut",
+  "access.error.revoked": "Koden är återkallad",
+  "access.error.rate_limited": "För många försök – försök igen om en stund",
+  "access.error.unknown": "Inloggning misslyckades",
+
+  "settings.helperCodes.title": "Hjälpkoder",
+  "settings.helperCodes.description": "Koder för sekretariatshjälpare att registrera walk-up-deltagare från telefon.",
+  "settings.helperCodes.generate": "Generera ny kod",
+  "settings.helperCodes.generating": "Genererar…",
+  "settings.helperCodes.noCompetition": "Välj en tävling ovan.",
+  "settings.helperCodes.empty": "Inga aktiva koder.",
+  "settings.helperCodes.revoke": "Återkalla",
+  "settings.helperCodes.revoking": "Återkallar…",
+  "settings.helperCodes.expires": "Går ut",
+  "settings.helperCodes.revoked": "Återkallad",
+  "settings.helperCodes.reveal": "Visa",
+  "settings.helperCodes.revealed": "Kod (synlig i 30 s):"
 }

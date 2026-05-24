@@ -36,7 +36,12 @@
     setIntegration,
     type IntegrationStatus,
     type IntegrationSource,
+    listEventCodes,
+    generateEventCode,
+    revokeEventCode,
+    type EventCodeSummary,
   } from '$lib/api/client.ts';
+  import { activeCompetition } from '$lib/stores/activeCompetition.svelte.ts';
   import Button from '$lib/ui/Button.svelte';
 
   // Per-row UI state. Keyed by integration key so we can find a row
@@ -147,6 +152,81 @@
     if (state === 'error') return t('settings.integrations.saveError');
     return null;
   }
+
+  // ---------------------------------------------------------------------------
+  // Hjälpkoder (event admin codes)
+  // ---------------------------------------------------------------------------
+
+  let helperCodes: EventCodeSummary[] = $state([]);
+  let helperCodesLoading = $state(false);
+  let generatingCode = $state(false);
+  let revokingId: string | null = $state(null);
+  /** id → revealed plaintext code (visible for 30s) */
+  let revealedCodes: Record<string, string> = $state({});
+  /** id → setTimeout handle */
+  const revealTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  const currentCompId = $derived(activeCompetition.id);
+
+  async function loadHelperCodes(): Promise<void> {
+    if (!currentCompId) return;
+    helperCodesLoading = true;
+    try {
+      const r = await listEventCodes(currentCompId);
+      helperCodes = r.codes;
+    } catch {
+      // soft fail — list stays stale
+    } finally {
+      helperCodesLoading = false;
+    }
+  }
+
+  async function handleGenerate(): Promise<void> {
+    if (!currentCompId || generatingCode) return;
+    generatingCode = true;
+    try {
+      const generated = await generateEventCode(currentCompId);
+      // Show the plaintext code immediately for 30 seconds.
+      revealedCodes[generated.id] = generated.code;
+      if (revealTimers[generated.id]) clearTimeout(revealTimers[generated.id]);
+      revealTimers[generated.id] = setTimeout(() => {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete revealedCodes[generated.id];
+      }, 30_000);
+      await loadHelperCodes();
+    } catch {
+      // soft fail
+    } finally {
+      generatingCode = false;
+    }
+  }
+
+  async function handleRevoke(codeId: string): Promise<void> {
+    if (!currentCompId || revokingId) return;
+    revokingId = codeId;
+    try {
+      await revokeEventCode(currentCompId, codeId);
+      await loadHelperCodes();
+    } catch {
+      // soft fail
+    } finally {
+      revokingId = null;
+    }
+  }
+
+  function formatExpiry(ms: number): string {
+    return new Date(ms).toLocaleDateString('sv-SE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  }
+
+  $effect(() => {
+    // Reload helper codes whenever the active competition changes.
+    void currentCompId;
+    void loadHelperCodes();
+  });
 </script>
 
 <section class="settings-view" data-testid="settings-view">
@@ -238,6 +318,81 @@
           </li>
         {/each}
       </ul>
+    {/if}
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Hjälpkoder section                                                   -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="helper-codes-section">
+    <header class="section-head">
+      <h2>{t('settings.helperCodes.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.helperCodes.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted" data-testid="helper-codes-no-competition">
+        {t('settings.helperCodes.noCompetition')}
+      </p>
+    {:else}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={generatingCode}
+          onclick={() => void handleGenerate()}
+          data-testid="helper-codes-generate"
+        >
+          {generatingCode
+            ? t('settings.helperCodes.generating')
+            : t('settings.helperCodes.generate')}
+        </Button>
+      </div>
+
+      {#if helperCodesLoading && helperCodes.length === 0}
+        <p class="muted">{t('settings.integrations.loading')}</p>
+      {:else if helperCodes.length === 0}
+        <p class="muted" data-testid="helper-codes-empty">{t('settings.helperCodes.empty')}</p>
+      {:else}
+        <ul class="code-list">
+          {#each helperCodes as code (code.id)}
+            <li
+              class="code-row"
+              class:revoked={code.revoked_at_ms !== null}
+              data-testid="helper-code-row"
+            >
+              <div class="code-meta">
+                {#if revealedCodes[code.id]}
+                  <span class="code-reveal" data-testid="helper-code-revealed">
+                    {t('settings.helperCodes.revealed')}
+                    <span class="code-mono">{revealedCodes[code.id]}</span>
+                  </span>
+                {:else}
+                  <span class="code-masked" data-testid="helper-code-masked">{code.masked_code}</span>
+                {/if}
+                <span class="code-expiry muted small">
+                  {code.revoked_at_ms !== null
+                    ? t('settings.helperCodes.revoked')
+                    : `${t('settings.helperCodes.expires')} ${formatExpiry(code.expires_at_ms)}`}
+                </span>
+              </div>
+              {#if code.revoked_at_ms === null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={revokingId === code.id}
+                  onclick={() => void handleRevoke(code.id)}
+                  data-testid="helper-code-revoke"
+                >
+                  {revokingId === code.id
+                    ? t('settings.helperCodes.revoking')
+                    : t('settings.helperCodes.revoke')}
+                </Button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </section>
 </section>
@@ -361,5 +516,48 @@
   }
   .toast-err {
     color: var(--dnf);
+  }
+  .generate-row {
+    display: flex;
+    align-items: center;
+  }
+  .code-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+  .code-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) 0;
+    border-top: 1px solid var(--border);
+  }
+  .code-row:first-child {
+    border-top: none;
+  }
+  .code-row.revoked {
+    opacity: 0.5;
+  }
+  .code-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .code-masked,
+  .code-reveal {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+  }
+  .code-mono {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .code-expiry {
+    font-size: 12px;
   }
 </style>

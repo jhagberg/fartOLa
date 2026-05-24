@@ -499,5 +499,29 @@
   "import.linked.import": "Import start list",
   "import.relink": "Relink",
   "import.relinking": "Updating…",
-  "competition.eventorChip": "Eventor: {{id}}"
+  "competition.eventorChip": "Eventor: {{id}}",
+
+  "access.title": "Sign in as helper",
+  "access.selectCompetition": "Select competition",
+  "access.codePlaceholder": "Code (e.g. sänkan-127)",
+  "access.submit": "Sign in",
+  "access.submitting": "Signing in…",
+  "access.error.invalid_code": "Invalid code",
+  "access.error.expired": "Code has expired",
+  "access.error.revoked": "Code has been revoked",
+  "access.error.rate_limited": "Too many attempts – try again shortly",
+  "access.error.unknown": "Sign-in failed",
+
+  "settings.helperCodes.title": "Helper codes",
+  "settings.helperCodes.description": "Codes for sekretariat helpers to register walk-up competitors from a phone.",
+  "settings.helperCodes.generate": "Generate new code",
+  "settings.helperCodes.generating": "Generating…",
+  "settings.helperCodes.noCompetition": "Select a competition above.",
+  "settings.helperCodes.empty": "No active codes.",
+  "settings.helperCodes.revoke": "Revoke",
+  "settings.helperCodes.revoking": "Revoking…",
+  "settings.helperCodes.expires": "Expires",
+  "settings.helperCodes.revoked": "Revoked",
+  "settings.helperCodes.reveal": "Reveal",
+  "settings.helperCodes.revealed": "Code (visible for 30 s):"
 }

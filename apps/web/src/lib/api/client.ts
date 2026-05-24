@@ -915,6 +915,60 @@ export function postCheckunitSnapshot(
 }
 
 // ---------------------------------------------------------------------------
+// Event codes — admin surface (Plan 02.1-12 / D-18)
+// ---------------------------------------------------------------------------
+
+export interface EventCodeSummary {
+  /** UUID of the event code row. */
+  id: string;
+  /** Masked preview, e.g. `sän****27`. Full plaintext NEVER returned by GET. */
+  masked_code: string;
+  /** Epoch ms when this code expires. */
+  expires_at_ms: number;
+  /** Epoch ms when the operator revoked this code; null = still active. */
+  revoked_at_ms: number | null;
+}
+
+export interface GeneratedEventCode {
+  id: string;
+  /** Full plaintext code — returned ONCE at generation time only. */
+  code: string;
+  expires_at_ms: number;
+}
+
+/** POST /api/competitions/:id/event-codes — generate a fresh code.
+ * Returns the plaintext code exactly once; re-fetching is not possible. */
+export function generateEventCode(competitionId: string): Promise<GeneratedEventCode> {
+  return apiFetch<GeneratedEventCode>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes`,
+    { method: 'POST', body: {} }
+  );
+}
+
+/** GET /api/competitions/:id/event-codes — list masked codes for the competition. */
+export function listEventCodes(competitionId: string): Promise<{ codes: EventCodeSummary[] }> {
+  return apiFetch<{ codes: EventCodeSummary[] }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes`
+  );
+}
+
+/** POST /api/competitions/:id/event-codes/:codeId/revoke — revoke an active code. */
+export function revokeEventCode(competitionId: string, codeId: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes/${encodeURIComponent(codeId)}/revoke`,
+    { method: 'POST', body: {} }
+  );
+}
+
+/** POST /access — authenticate with an event code; sets a signed HttpOnly cookie. */
+export function postAccess(competitionId: string, code: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>('/access', {
+    method: 'POST',
+    body: { competition_id: competitionId, code },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dev — Simulate read (gated by FARTOLA_DEV=1 server-side)
 // ---------------------------------------------------------------------------
 
