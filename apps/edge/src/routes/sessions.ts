@@ -127,7 +127,20 @@ declare module 'fastify' {
     activeCompetitionId: string | null;
     /** Optional hook owned by apps/edge/src/bin/fartola.ts. When set, the
      * POST /api/sessions/reconnect-bridge route invokes it to trigger a
-     * SerialTransport teardown + retry chain. Absent in tests / --no-bridge. */
+     * SerialTransport teardown + retry chain. Absent in tests / --no-bridge.
+     * Plan 04: reconnects ALL lifecycles in parallel. */
     reconnectBridge?: () => Promise<void>;
+    /** Plan 04 (D-02 / REQ-OPS-004) — live array of per-reader lifecycle
+     * objects, one per --serial entry. Empty array when --no-bridge is set.
+     * Read by GET /api/health to report per-reader status. Set by
+     * bin/fartola.ts before app.listen(). */
+    bridgeLifecycles: Array<{
+      status(): {
+        path: string;
+        position: string | null;
+        connected: boolean;
+        lastPunchAt: number | null;
+      };
+    }>;
   }
 }

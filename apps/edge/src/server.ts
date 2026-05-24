@@ -316,6 +316,14 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerDevRoutes);
   }
 
+  // Plan 04 (D-02 / REQ-OPS-004) — per-reader lifecycle array. Decorated
+  // unconditionally (even when no dbHandle is provided) so /api/health always
+  // returns a valid readers array. The bin overwrites this after listen() with
+  // real lifecycles; tests and --no-bridge boots stay at empty array.
+  if (!app.hasDecorator('bridgeLifecycles')) {
+    app.decorate('bridgeLifecycles', []);
+  }
+
   await registerHealthRoute(app);
 
   // Plan 18 — production static-serve. The factory accepts an explicit
@@ -370,3 +378,6 @@ declare module 'fastify' {
     bridgeState: 'opening' | 'open' | 'closed' | 'error';
   }
 }
+
+// sessions.ts owns the declarations for activeCompetitionId, reconnectBridge,
+// and bridgeLifecycles. No re-declaration here to avoid duplicate augmentation.

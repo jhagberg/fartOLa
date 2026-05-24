@@ -507,13 +507,25 @@ export const HiredCardOpen = z.object({
 export type HiredCardOpen = z.infer<typeof HiredCardOpen>;
 
 // ---------------------------------------------------------------------------
-// Health — plan 01 baseline. Kept here so apps/edge keeps a single import
-// surface for shared schemas + types.
+// Health — plan 01 baseline. Plan 04 adds per-reader status (REQ-OPS-004).
 // ---------------------------------------------------------------------------
+
+export const ReaderStatusDTO = z.object({
+  path: z.string(),
+  position: z.string().nullable(),
+  connected: z.boolean(),
+  /** Epoch-ms of the last card_read event on this reader, or null if none
+   * since boot. */
+  last_punch_at: z.number().int().nullable(),
+});
+export type ReaderStatusDTO = z.infer<typeof ReaderStatusDTO>;
 
 export const HealthDTO = z.object({
   status: z.literal('ok'),
   node_id: z.string(),
   uptime_ms: z.number(),
+  /** Plan 04 (D-01 / REQ-OPS-004) — per-reader status. Empty array when
+   * --no-bridge is set. One entry per --serial flag. */
+  readers: z.array(ReaderStatusDTO),
 });
 export type HealthDTO = z.infer<typeof HealthDTO>;
