@@ -83,6 +83,7 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     auto_print: row.autoPrint,
     created_at_ms: row.createdAtMs,
     race_started_at_ms: row.raceStartedAtMs,
+    timing_format: (row.timingFormat === 'tenths' ? 'tenths' : 'seconds') as 'seconds' | 'tenths',
   };
 }
 
@@ -221,6 +222,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     if (parsed.data.receipt_template !== undefined)
       patch.receiptTemplate = parsed.data.receipt_template;
     if (parsed.data.auto_print !== undefined) patch.autoPrint = parsed.data.auto_print;
+    if (parsed.data.timing_format !== undefined) patch.timingFormat = parsed.data.timing_format;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.

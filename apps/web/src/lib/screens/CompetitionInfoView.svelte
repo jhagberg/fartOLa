@@ -54,6 +54,7 @@
   let formDate = $state('');
   let formTemplate: CompetitionDTO['receipt_template'] = $state('classic');
   let formAutoPrint = $state(false);
+  let formTimingFormat: 'seconds' | 'tenths' = $state('seconds');
   let saving = $state(false);
   let saveErr: string | null = $state(null);
   let savedToast: string | null = $state(null);
@@ -66,7 +67,8 @@
       formName.trim() !== c.name ||
       formDate !== c.date ||
       formTemplate !== c.receipt_template ||
-      formAutoPrint !== c.auto_print
+      formAutoPrint !== c.auto_print ||
+      formTimingFormat !== c.timing_format
     );
   });
 
@@ -115,6 +117,7 @@
       formDate = detail.competition.date;
       formTemplate = detail.competition.receipt_template;
       formAutoPrint = detail.competition.auto_print;
+      formTimingFormat = detail.competition.timing_format;
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
     } finally {
@@ -132,6 +135,7 @@
         date: formDate,
         receipt_template: formTemplate,
         auto_print: formAutoPrint,
+        timing_format: formTimingFormat,
       });
       competition = updated;
       flashSaved();
@@ -204,6 +208,13 @@
             data-testid="info-auto-print"
           />
           <span>{t('info.fields.autoPrint')}</span>
+        </label>
+        <label class="field">
+          <span>{t('settings.timing.label')}</span>
+          <select bind:value={formTimingFormat} data-testid="info-timing-format">
+            <option value="seconds">{t('settings.timing.seconds')}</option>
+            <option value="tenths">{t('settings.timing.tenths')}</option>
+          </select>
         </label>
       </div>
       <div class="card-foot">

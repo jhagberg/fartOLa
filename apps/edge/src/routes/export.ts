@@ -82,6 +82,7 @@ interface CompetitionRow {
   autoPrint: boolean;
   createdAtMs: number;
   raceStartedAtMs: number | null;
+  timingFormat: string | null;
 }
 
 interface ClassRow {
@@ -103,6 +104,7 @@ function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
     auto_print: row.autoPrint,
     created_at_ms: row.createdAtMs,
     race_started_at_ms: row.raceStartedAtMs,
+    timing_format: row.timingFormat === 'tenths' ? 'tenths' : 'seconds',
   };
 }
 

@@ -102,6 +102,21 @@ export function formatElapsed(ms: number | null): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/** Format elapsed duration with one decimal place for sprint/tenths display
+ * (D-17). Returns `M:SS.t` or `H:MM:SS.t`. The tenths digit is computed
+ * from the sub-second ms remainder so display is consistent with the
+ * internal ms precision. */
+export function formatElapsedTenths(ms: number | null): string {
+  if (ms === null || ms < 0) return '—';
+  const tenths = Math.floor((ms % 1000) / 100);
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
+  return `${m}:${String(s).padStart(2, '0')}.${tenths}`;
+}
+
 /** Format split as `M:SS` from a duration in half-day seconds. */
 function formatSplit(sec: number): string {
   if (sec < 0) sec += 43200;

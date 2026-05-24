@@ -92,6 +92,8 @@
     type ReadoutStatus,
     historyKey,
     formatTimeOfDay,
+    formatElapsed,
+    formatElapsedTenths,
     toReceiptRead,
   } from './readout-types.ts';
 
@@ -234,6 +236,16 @@
     return history[0] ?? null;
   });
 
+  /** Format a start_time_ms value (ms since midnight) as HH:MM:SS. */
+  function formatStartTimeMs(ms: number | null | undefined): string {
+    if (ms == null) return '—';
+    const totalSec = Math.floor((ms % 86_400_000) / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
   /** Build the LatestReadCard input. */
   const latestReadProp = $derived.by(() => {
     const row = currentRow;
@@ -245,9 +257,19 @@
       name: row.competitor_name,
       cls: cls?.name ?? '—',
       club: competitor?.club ?? null,
-      startTime: '—',
+      startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),
-      elapsed: '—',
+      elapsed: (() => {
+        if (row.finish_seconds_in_half_day === null) return '—';
+        const base = row.start_seconds_in_half_day ?? row.punches[0]?.seconds_in_half_day ?? null;
+        if (base === null) return '—';
+        let delta = row.finish_seconds_in_half_day - base;
+        if (delta < 0) delta += 43200;
+        const elapsedMs = delta * 1000;
+        return competition?.timing_format === 'tenths'
+          ? formatElapsedTenths(elapsedMs)
+          : formatElapsed(elapsedMs);
+      })(),
       status: row.status as ReadoutStatus,
       // Phase 2.1 (plan 13): pass manual_status through so LatestReadCard
       // can distinguish auto-DNF (no clear button) from operator override.

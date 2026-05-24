@@ -129,6 +129,7 @@ function competitorRowToDTO(row: Competitor): CompetitorDTO {
     consent_at_ms: row.consentAtMs,
     consent_status: row.consentStatus,
     scrubbed_at_ms: row.scrubbedAtMs,
+    start_time_ms: row.startTimeMs ?? null,
   };
 }
 
@@ -292,6 +293,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         consent_at_ms: target.consentAtMs,
         consent_status: target.consentStatus,
         scrubbed_at_ms: target.scrubbedAtMs,
+        start_time_ms: target.startTimeMs ?? null,
       };
       return reply.code(200).send(dto);
     }
@@ -523,6 +525,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       consent_at_ms: now,
       consent_status: 'explicit',
       scrubbed_at_ms: null,
+      start_time_ms: null,
     };
     return reply.code(201).send(dto);
   });
