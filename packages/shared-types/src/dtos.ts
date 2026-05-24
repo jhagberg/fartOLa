@@ -394,6 +394,14 @@ export type EventorLookupCandidate = z.infer<typeof EventorLookupCandidate>;
 
 export const EventorLookupHit = EventorLookupCandidate.extend({
   hit: z.literal(true),
+  /** Number of alternative Eventor competitors for the same SI card that were
+   * NOT selected by the disambiguation algorithm. 0 = unique match (no
+   * ambiguity). >0 = resolved by recency/context but alternatives exist.
+   * The WalkupModal renders a "+N andra chip" when this is >0. */
+  alternatives: z.number().int().min(0),
+  /** All candidates including the winner, populated when alternatives > 0.
+   * Used by the WalkupModal chip popover without a second round-trip. */
+  allCandidates: z.array(EventorLookupCandidate),
 });
 export type EventorLookupHit = z.infer<typeof EventorLookupHit>;
 

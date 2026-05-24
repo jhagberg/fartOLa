@@ -310,6 +310,8 @@
   "walk.discard.msg": "Discard the form? Any typed values will be lost.",
   "walk.discard.keep": "Keep editing",
   "walk.discard.discard": "Discard",
+  "walk.alternatives.chip": "+{{n}} others",
+  "walk.alternatives.picker.title": "Select the correct competitor",
   "wiz.discard.msg": "Cancel the wizard? Any typed values will be lost.",
   "wiz.discard.keep": "Keep editing",
   "wiz.discard.discard": "Cancel wizard",

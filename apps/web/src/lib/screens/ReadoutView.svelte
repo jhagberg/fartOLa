@@ -75,7 +75,7 @@
     lookupEventorBySiCard,
     returnHiredCard,
   } from '$lib/api/client.ts';
-  import type { EventorLookupHit } from '@fartola/shared-types';
+  import type { EventorLookupHit, EventorLookupMany } from '@fartola/shared-types';
   import LatestReadCard from '$lib/components/LatestReadCard.svelte';
   import PunchGrid from '$lib/components/PunchGrid.svelte';
   import SplitsTable from '$lib/components/SplitsTable.svelte';
@@ -142,10 +142,10 @@
   });
 
   // Phase 2.0 Plan 02-02 — fetch the Eventor cache lookup whenever the
-  // walkup card changes so the modal can pre-fill name + klubb. Stored
-  // as an EventorLookupHit (null when miss/network-down) so the modal's
-  // eventorHint prop can be passed without further reshaping.
-  let eventorHint: EventorLookupHit | null = $state(null);
+  // walkup card changes so the modal can pre-fill name + klubb.
+  // Plan 02.1-10: also passes 'many' results so WalkupModal auto-opens the
+  // disambiguation picker for same-competition shared cards.
+  let eventorHint: EventorLookupHit | EventorLookupMany | null = $state(null);
   let _lastLookedUpCard: number | null = $state(null);
   $effect(() => {
     // Re-evaluate when walkupCard changes.
@@ -164,14 +164,12 @@
     _lastLookedUpCard = n;
     void (async () => {
       try {
-        const r = await lookupEventorBySiCard(n);
-        // Only auto-fill the modal when the cache resolves to exactly one
-        // candidate. 'many' shapes (family-shared / replacement / rental
-        // cards) must NOT auto-prefill — picking one arbitrarily would
-        // silently mis-attribute the runner. The operator can still type
-        // the name into the SmartRunnerSearch box, which surfaces a
-        // disambiguation list against the same card number.
-        eventorHint = r.hit === true ? r : null;
+        const r = await lookupEventorBySiCard(n, competitionId);
+        // Pass hit: true (single resolved) and hit: 'many' (same-competition
+        // shared card) to the modal. WalkupModal handles both: auto-fills on
+        // hit: true and auto-opens the picker on hit: 'many'.
+        // hit: false (miss) clears the hint so the form starts empty.
+        eventorHint = r.hit === false ? null : r;
       } catch {
         eventorHint = null;
       }

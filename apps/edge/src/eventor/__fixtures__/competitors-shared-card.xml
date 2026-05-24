@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fixture for Plan 02.1-10 Task 2 — shared SI card dedup tests.
+
+  Three competitors:
+    1001 Alfa Familjen  — si_card 8410001 (shared with Beta)
+    1002 Beta Familjen  — si_card 8410001 (shared with Alfa)
+    1003 Solo Ensamme   — si_card 7777777 (unique)
+
+  Used to exercise the tri-state lookupBySiCard disambiguation:
+    - Test 2: no context → recency rule picks latest modifyTime
+    - Test 3: activeCompetitionId matches one → that one wins
+    - Test 8: activeCompetitionId matches both → kind: 'multi'
+-->
+<CompetitorList iofVersion="3.0" createTime="2026-05-24T12:00:00Z" creator="fartola-test"
+                xmlns="http://www.orienteering.org/datastandard/3.0">
+  <Competitor modifyTime="2023-01-01T00:00:00Z">
+    <Person sex="M">
+      <Id type="Sweden">1001</Id>
+      <Name><Family>Familjen</Family><Given>Alfa</Given></Name>
+      <BirthDate>1980-01-01</BirthDate>
+    </Person>
+    <Organisation type="Club">
+      <Id type="Sweden">637</Id>
+      <Name>Stora Tuna OK</Name>
+    </Organisation>
+    <ControlCard punchingSystem="SI">8410001</ControlCard>
+  </Competitor>
+  <Competitor modifyTime="2024-06-01T00:00:00Z">
+    <!-- Beta has a more recent modifyTime → wins recency rule when no context -->
+    <Person sex="F">
+      <Id type="Sweden">1002</Id>
+      <Name><Family>Familjen</Family><Given>Beta</Given></Name>
+      <BirthDate>1985-06-15</BirthDate>
+    </Person>
+    <Organisation type="Club">
+      <Id type="Sweden">637</Id>
+      <Name>Stora Tuna OK</Name>
+    </Organisation>
+    <ControlCard punchingSystem="SI">8410001</ControlCard>
+  </Competitor>
+  <Competitor modifyTime="2024-01-01T00:00:00Z">
+    <!-- Unique card — always resolves to kind: 'hit' -->
+    <Person sex="M">
+      <Id type="Sweden">1003</Id>
+      <Name><Family>Ensamme</Family><Given>Solo</Given></Name>
+      <BirthDate>1990-03-20</BirthDate>
+    </Person>
+    <Organisation type="Club">
+      <Id type="Sweden">637</Id>
+      <Name>Stora Tuna OK</Name>
+    </Organisation>
+    <ControlCard punchingSystem="SI">7777777</ControlCard>
+  </Competitor>
+</CompetitorList>

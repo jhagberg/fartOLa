@@ -53,7 +53,7 @@ function withSeededDb(fn: (handle: DbHandle) => void | Promise<void>): Promise<v
 describe('eventor lookup module', () => {
   test('lookupBySiCard returns hit shape with JOIN-resolved club_name', async () => {
     await withSeededDb((handle) => {
-      const res = lookupBySiCard(handle, 8535005);
+      const res = lookupBySiCard(handle, 8535005, null);
       assert.equal(res.hit, true);
       const hit = res as EventorLookupHit;
       assert.equal(hit.person_id, 1001);
@@ -66,18 +66,19 @@ describe('eventor lookup module', () => {
 
   test('lookupBySiCard returns miss shape for unseeded card', async () => {
     await withSeededDb((handle) => {
-      const res = lookupBySiCard(handle, 99999999);
+      const res = lookupBySiCard(handle, 99999999, null);
       assert.equal(res.hit, false);
     });
   });
 
-  test("lookupBySiCard returns 'many' shape when the cache holds duplicate si_card rows", async () => {
-    // Schema explicitly tolerates duplicate si_card values (family-shared,
-    // replacement, rental pool — schema.ts §eventor_competitors).
-    // Auto-picking one row would silently mis-attribute the runner;
-    // assert the caller-facing shape exposes ALL candidates so the UI can
-    // disambiguate.
+  test('lookupBySiCard returns hit with alternatives:1 when duplicate si_card resolved by recency', async () => {
+    // Schema tolerates duplicate si_card values (family-shared, replacement,
+    // rental pool — schema.ts §eventor_competitors). Plan 02.1-10 adds
+    // context-aware disambiguation: recency rule picks the winner when no
+    // competition context is supplied, and the WalkupModal shows +N andra chip.
     await withSeededDb((handle) => {
+      // Anna gets an older modifyDateMs than Jonas (2024-12-12 fixture) so
+      // Jonas wins the recency rule.
       handle.db
         .insert(eventorCompetitors)
         .values({
@@ -87,16 +88,51 @@ describe('eventor lookup module', () => {
           clubId: 637,
           siCard: 8535005,
           emitCard: null,
-          modifyDateMs: 1_700_000_000_000,
+          modifyDateMs: 1_700_000_000_000, // 2023-11-15 — older than Jonas
         })
         .run();
 
-      const res = lookupBySiCard(handle, 8535005);
+      const res = lookupBySiCard(handle, 8535005, null);
+      // Jonas (2024-12-12) has a higher modifyDateMs → wins recency rule.
+      assert.equal(res.hit, true);
+      const hit = res as EventorLookupHit;
+      assert.equal(hit.given_name, 'Jonas', 'Jonas wins recency over Anna');
+      assert.equal(hit.alternatives, 1, 'one alternative exists (Anna)');
+      assert.equal(hit.club_name, 'Stora Tuna OK');
+    });
+  });
+
+  test("lookupBySiCard returns 'many' shape for exact recency-tie duplicates", async () => {
+    // When two candidates share the same modifyDateMs (exact tie), the
+    // recency rule cannot pick a winner → return 'many' to force operator pick.
+    await withSeededDb((handle) => {
+      // Jonas fixture has modifyDateMs from "2024-12-12T09:46:45Z" — use
+      // the same value for Anna to create a tie.
+      const jonasMsRow = handle.sqlite
+        .prepare<
+          [],
+          { v: number }
+        >(`SELECT modify_date_ms AS v FROM eventor_competitors WHERE person_id = 1001`)
+        .get();
+      const jonasMs = jonasMsRow?.v ?? 0;
+      handle.db
+        .insert(eventorCompetitors)
+        .values({
+          personId: 9_999_999,
+          familyName: 'Hagberg',
+          givenName: 'Anna',
+          clubId: 637,
+          siCard: 8535005,
+          emitCard: null,
+          modifyDateMs: jonasMs, // exact tie → 'many'
+        })
+        .run();
+
+      const res = lookupBySiCard(handle, 8535005, null);
       assert.equal(res.hit, 'many');
       const many = res as EventorLookupMany;
       assert.equal(many.candidates.length, 2);
-      // Family-name asc, given-name asc — deterministic ordering so the UI
-      // renders the same list across calls.
+      // Family-name asc, given-name asc — deterministic ordering.
       assert.equal(many.candidates[0]!.given_name, 'Anna');
       assert.equal(many.candidates[1]!.given_name, 'Jonas');
       assert.equal(many.candidates[0]!.club_name, 'Stora Tuna OK');

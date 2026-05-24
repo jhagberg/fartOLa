@@ -41,7 +41,13 @@
   import SmartClubSearch from '$lib/components/SmartClubSearch.svelte';
   import type { EventorClubSuggestion } from '@fartola/shared-types';
   import { ApiError } from '$lib/api/client.ts';
-  import type { ClassDTO, EventorLookupHit, EventorNameSuggestion } from '@fartola/shared-types';
+  import type {
+    ClassDTO,
+    EventorLookupHit,
+    EventorLookupMany,
+    EventorLookupCandidate,
+    EventorNameSuggestion,
+  } from '@fartola/shared-types';
 
   interface Props {
     cardNumber: number;
@@ -55,8 +61,11 @@
      * of `lookupEventorBySiCard(cardNumber)`). When `hit: true`, the name
      * AND klubb fields populate from this — wins over `cardHolderHint`
      * per RESEARCH §"Plan 2 nuance". When null OR `hit: false`, the
-     * cardHolderHint fallback applies. */
-    eventorHint?: EventorLookupHit | null;
+     * cardHolderHint fallback applies.
+     * Plan 02.1-10: also accepts EventorLookupMany — when hit: 'many', the
+     * picker auto-opens so the operator chooses the correct person. When
+     * hit: true and alternatives > 0, a +N andra chip appears. */
+    eventorHint?: EventorLookupHit | EventorLookupMany | null;
     /** Phase 2.0 Plan 02-02b — parent-driven close callback. When
      * supplied (RegistrationView, plan 02-02b task 3), `close()` calls
      * this INSTEAD of `goto(/readout)` so the parent can drive
@@ -85,14 +94,14 @@
   // carried one (rental fleet cards usually didn't; personal cards often
   // did). Operator can still edit before submit.
   function initialName(): string {
-    if (eventorHint && eventorHint.hit) {
+    if (eventorHint && eventorHint.hit === true) {
       return `${eventorHint.family_name}, ${eventorHint.given_name}`;
     }
     if (cardHolderHint && cardHolderHint.length > 0) return cardHolderHint;
     return '';
   }
   function initialClub(): string {
-    if (eventorHint && eventorHint.hit && eventorHint.club_name) {
+    if (eventorHint && eventorHint.hit === true && eventorHint.club_name) {
       return eventorHint.club_name;
     }
     return '';
@@ -105,13 +114,30 @@
    * FTS5 query to this club (drowns-by-rank fix for common names).
    * Cleared when the operator types freely into Klubb. */
   let selectedClubId = $state<number | null>(null);
+
+  // Plan 02.1-10 — +N andra chip state.
+  // When the Eventor lookup resolves to hit: true with alternatives > 0,
+  // the chip shows "+N andra" beside the pre-filled name. When the result
+  // is hit: 'many' (same-competition shared card), the picker auto-opens
+  // so the operator must disambiguate before continuing.
+  let showAlternativesPicker = $state(
+    untrack(() => eventorHint?.hit === 'many')
+  );
+  let alternativesCandidates = $state<EventorLookupCandidate[]>(
+    untrack(() => {
+      if (eventorHint?.hit === 'many') return eventorHint.candidates;
+      if (eventorHint?.hit === true && eventorHint.alternatives > 0) return eventorHint.allCandidates;
+      return [];
+    })
+  );
+
   // When eventorHint arrives asynchronously after mount (the parent
   // ReadoutView fetches the lookup in an $effect), reflect the cached
   // values into the form state as long as the operator hasn't already
   // typed something. This makes the late-arriving hit "win" over the
   // empty initial state without clobbering operator edits.
   $effect(() => {
-    if (eventorHint && eventorHint.hit) {
+    if (eventorHint && eventorHint.hit === true) {
       if (name.trim() === '') {
         name = `${eventorHint.family_name}, ${eventorHint.given_name}`;
       }
@@ -122,6 +148,14 @@
         selectedClubId = eventorHint.club_id;
       }
       if (eventorFillNote === null) eventorFillNote = t('walk.eventor.fill');
+      // Update candidates list when hint arrives asynchronously.
+      if (eventorHint.alternatives > 0 && alternativesCandidates.length === 0) {
+        alternativesCandidates = eventorHint.allCandidates;
+      }
+    } else if (eventorHint && eventorHint.hit === 'many') {
+      // Same-competition shared card → auto-open picker.
+      showAlternativesPicker = true;
+      alternativesCandidates = eventorHint.candidates;
     }
   });
   let classId = $state('');
@@ -147,7 +181,7 @@
   // Lightweight info note when the form was pre-filled from the Eventor
   // cache. Cleared on first edit so it doesn't linger.
   let eventorFillNote = $state<string | null>(
-    untrack(() => (eventorHint && eventorHint.hit ? t('walk.eventor.fill') : null))
+    untrack(() => (eventorHint && eventorHint.hit === true ? t('walk.eventor.fill') : null))
   );
 
   // --- ui state -------------------------------------------------------------
@@ -334,18 +368,35 @@
   async function doCardLookup(): Promise<void> {
     if (typeof cardNumberLocal !== 'number' || cardNumberLocal < 1) return;
     try {
-      const r = await lookupEventorBySiCard(cardNumberLocal);
-      // Only auto-fill on an unambiguous single match. 'many' (duplicate
-      // si_card in cache — see EventorLookupResult docs) leaves the form
-      // untouched; operator types the name into the smart search instead.
+      const r = await lookupEventorBySiCard(cardNumberLocal, competitionId);
       if (r.hit === true) {
+        // Resolved single winner (unique or recency/context). Auto-fill name
+        // and club; show chip when alternatives > 0.
         if (name.trim() === '') name = `${r.family_name}, ${r.given_name}`;
         if (club.trim() === '' && r.club_name) club = r.club_name;
         eventorFillNote = t('walk.eventor.fill');
+        if (r.alternatives > 0) {
+          alternativesCandidates = r.allCandidates;
+        }
+      } else if (r.hit === 'many') {
+        // Same-competition shared card → open picker so operator disambiguates.
+        showAlternativesPicker = true;
+        alternativesCandidates = r.candidates;
       }
+      // r.hit === false (miss) → leave form untouched.
     } catch {
       // Soft fail — the form still works without the cache.
     }
+  }
+
+  /** Pick a candidate from the alternatives picker (called from the chip popover
+   * or the auto-opened same-competition disambiguation picker). */
+  function onAlternativePick(candidate: EventorLookupCandidate): void {
+    name = `${candidate.family_name}, ${candidate.given_name}`;
+    if (candidate.club_name) club = candidate.club_name;
+    selectedClubId = candidate.club_id;
+    eventorFillNote = t('walk.eventor.fill');
+    showAlternativesPicker = false;
   }
 
   /** 409 replace-card path: re-issue the POST with
@@ -411,6 +462,42 @@
 
       {#if eventorFillNote}
         <p class="info" data-testid="walkup-eventor-fill">{eventorFillNote}</p>
+      {/if}
+
+      {#if eventorHint?.hit === true && eventorHint.alternatives > 0}
+        <!-- +N andra chip: operator confirmed the recency pick but can override -->
+        <button
+          type="button"
+          class="alternatives-chip"
+          data-testid="walkup-alternatives-chip"
+          onclick={() => {
+            showAlternativesPicker = !showAlternativesPicker;
+          }}
+        >
+          {t('walk.alternatives.chip', { n: String(eventorHint.alternatives) })}
+        </button>
+      {/if}
+
+      {#if showAlternativesPicker && alternativesCandidates.length > 0}
+        <!-- Alternatives picker: shown for +N chip or auto-opened for 'many' -->
+        <div class="alternatives-picker" data-testid="walkup-alternatives-picker" role="listbox" aria-label={t('walk.alternatives.picker.title')}>
+          <p class="alternatives-picker-title">{t('walk.alternatives.picker.title')}</p>
+          {#each alternativesCandidates as candidate (candidate.person_id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <div
+              class="alternatives-candidate"
+              data-testid="walkup-alternative-{candidate.person_id}"
+              role="option"
+              aria-selected={false}
+              onclick={() => onAlternativePick(candidate)}
+            >
+              <span class="alt-name">{candidate.family_name}, {candidate.given_name}</span>
+              {#if candidate.club_name}
+                <span class="alt-club">{candidate.club_name}</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
       {/if}
 
       <Field label={t('walk.club')} htmlFor="walkup-club">
@@ -733,5 +820,62 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+  /* +N andra chip — indicates recency-resolved duplicate, lets operator override */
+  .alternatives-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--mp-soft, rgba(200, 150, 0, 0.1));
+    border: 1px solid var(--mp, #c89600);
+    border-radius: 99px;
+    color: var(--mp, #c89600);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    align-self: flex-start;
+    line-height: 1.4;
+  }
+  .alternatives-chip:hover {
+    background: var(--mp-soft, rgba(200, 150, 0, 0.2));
+  }
+  /* Alternatives picker — inline popover listing all candidates */
+  .alternatives-picker {
+    background: var(--bg-elev, #fff);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .alternatives-picker-title {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .alternatives-candidate {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 12px;
+    cursor: pointer;
+    gap: 2px;
+  }
+  .alternatives-candidate:hover {
+    background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+  }
+  .alternatives-candidate + .alternatives-candidate {
+    border-top: 1px solid var(--border);
+  }
+  .alt-name {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .alt-club {
+    font-size: 12px;
+    color: var(--fg-muted);
   }
 </style>
