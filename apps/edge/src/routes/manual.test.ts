@@ -212,6 +212,151 @@ describe('POST /api/competitions/:id/competitors/:competitorId/manual-dnf', () =
   });
 });
 
+describe('POST /api/competitions/:id/competitors/:competitorId/status (idempotency)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('Phase-2.1: POST /status with same status → 200 idempotent (no duplicate event)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // First assertion: 201
+    const res1 = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'DNS', reason: 'no-show' },
+    });
+    assert.equal(res1.statusCode, 201);
+
+    // Second identical assertion: 200 (idempotent)
+    const res2 = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'DNS', reason: 'no-show' },
+    });
+    assert.equal(res2.statusCode, 200);
+    const body2 = res2.json() as { idempotent: boolean };
+    assert.equal(body2.idempotent, true);
+
+    // Only ONE manual_status_set event should exist.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    assert.equal(evtRows.filter((e) => e.eventType === 'manual_status_set').length, 1);
+  });
+
+  test('Phase-2.1: POST /clear-status when already null → 200 idempotent', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // No manual status set → manual_status is null → should be idempotent
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/clear-status`,
+      payload: {},
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { idempotent: boolean };
+    assert.equal(body.idempotent, true);
+
+    // No clear_manual_status event should exist.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    assert.equal(evtRows.filter((e) => e.eventType === 'clear_manual_status').length, 0);
+  });
+});
+
+describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('Phase-2.1: void-leg → 201 with leg_voided event; projection.voided_legs contains code', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42, max_seconds: null },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { local_seq: number };
+    assert.ok(body.local_seq > 0);
+
+    // Event row inserted.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    const voidRow = evtRows.find((e) => e.eventType === 'leg_voided');
+    assert.ok(voidRow);
+    const payload = voidRow.payload as { control_code: number; max_seconds: number | null };
+    assert.equal(payload.control_code, 42);
+    assert.equal(payload.max_seconds, null);
+
+    // Projection reflects voided leg.
+    const projection = ctx.app.projectionStore.recomputeNow(competitionId);
+    const view = projection?.competitors.get(competitorId);
+    assert.ok(view);
+    assert.deepEqual(view.voided_legs, [42]);
+  });
+
+  test('Phase-2.1: void-leg with invalid body → 400', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 'not-a-number', max_seconds: null },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  test('Phase-2.1: void-leg for unknown competitor → 404', async () => {
+    const { competitionId } = await seedCompetitionAndCompetitor(ctx.app);
+    const bogus = '00000000-0000-0000-0000-000000000000';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${bogus}/void-leg`,
+      payload: { control_code: 31, max_seconds: null },
+    });
+    assert.equal(res.statusCode, 404);
+  });
+
+  test('Phase-2.1: unvoid-leg → 201 with leg_unvoided event; voided_legs cleared', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // First void.
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42, max_seconds: null },
+    });
+    // Then unvoid.
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/unvoid-leg`,
+      payload: { control_code: 42 },
+    });
+    assert.equal(res.statusCode, 201);
+
+    const projection = ctx.app.projectionStore.recomputeNow(competitionId);
+    const view = projection?.competitors.get(competitorId);
+    assert.ok(view);
+    assert.deepEqual(view.voided_legs, []);
+  });
+});
+
 describe('POST /api/competitions/:id/competitors/:competitorId/un-dnf', () => {
   let ctx: Ctx;
 

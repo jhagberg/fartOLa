@@ -338,6 +338,28 @@ export const ClearManualStatusInput = z.object({}).passthrough();
 export type ClearManualStatusInput = z.infer<typeof ClearManualStatusInput>;
 
 // ---------------------------------------------------------------------------
+// Phase 2.1 (D-16) — voided-leg REST inputs.
+//
+// POST /api/competitions/:id/competitors/:cid/void-leg
+//   body: { control_code: number, max_seconds: number | null, reason?: string }
+//
+// POST /api/competitions/:id/competitors/:cid/unvoid-leg
+//   body: { control_code: number }
+// ---------------------------------------------------------------------------
+
+export const VoidLegInput = z.object({
+  control_code: z.number().int().positive(),
+  max_seconds: z.number().int().positive().nullable(),
+  reason: z.string().max(500).optional(),
+});
+export type VoidLegInput = z.infer<typeof VoidLegInput>;
+
+export const UnvoidLegInput = z.object({
+  control_code: z.number().int().positive(),
+});
+export type UnvoidLegInput = z.infer<typeof UnvoidLegInput>;
+
+// ---------------------------------------------------------------------------
 // Club — walk-up autocomplete cache.
 // ---------------------------------------------------------------------------
 
