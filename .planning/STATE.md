@@ -4,7 +4,7 @@ milestone: v0.0.1
 milestone_name: milestone
 status: Phase 2 complete
 stopped_at: Phase 2.1 context gathered
-last_updated: "2026-05-24T06:47:08.177Z"
+last_updated: "2026-05-24T12:05:14.628Z"
 progress:
   total_phases: 8
   completed_phases: 2
@@ -24,8 +24,8 @@ not duplicated here.
 
 ## Current position
 
-Phase: 2 — COMPLETE
-Plan: 0 of TBD (suggested 5–6, see CONTEXT.md)
+Phase: 02.1 (sanctioned-competition-foundations) — EXECUTING
+Plan: 1 of 13
 **Phase:** Phase 2.0 — 4-klubbs MVP (parallel with MeOS)
 **Hard deadline:** Wednesday **2026-05-20** (4-klubbs training at Stora Tuna OK)
 **Next concrete action:** Run `/gsd-discuss-phase 2` in worktree

@@ -147,7 +147,7 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
 **Plans**: 13 plans
 
 Plans:
-  - [ ] 02.1-01-PLAN.md — Wave 1: Schema migration 0007 (start_time_ms, max_time_sec, liveresultat cols, course_replacements table) + reducer extensions (MAX auto-compute, voided legs, replacement controls) + voided-leg routes
+  - [x] 02.1-01-PLAN.md — Wave 1: Schema migration 0007 (start_time_ms, max_time_sec, liveresultat cols, course_replacements table) + reducer extensions (MAX auto-compute, voided legs, replacement controls) + voided-leg routes
   - [ ] 02.1-02-PLAN.md — Wave 2: Start list draw algorithms (SOFT club-blocking, Random, Simultaneous) + lottning route + re-lotta + per-runner edit
   - [ ] 02.1-03-PLAN.md — Wave 2: IOF XML 3.0 StartList export (buildStartListXml) + StartList import + export/import routes + thermal print
   - [ ] 02.1-04-PLAN.md — Wave 2: Multi-serial SI readers (repeatable --serial flag, BridgeLifecycle array, position-aware WS broadcast, per-reader health)
@@ -225,7 +225,7 @@ These must be respected throughout, not deferred to a phase:
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 0/13 | Planned | target: Gundes Sommarsprint June 2026 |
+| 2.1. Sanctioned-competition foundations | 1/13 | In Progress|  |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
