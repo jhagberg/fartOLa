@@ -588,7 +588,16 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
     assert.ok(xml.includes('StorTuna OK'), 'must include club name');
   });
 
-  test('test 6: CANCEL status maps to <Status>Cancelled</Status> in buildStartListXml', () => {
+  test('test 6: CANCEL competitor is excluded from StartList (IOF XSD has no Status in PersonRaceStart)', () => {
+    // NOTE: The IOF XML 3.0 PersonRaceStart element does NOT include a Status
+    // child (unlike PersonRaceResult). Including <Status>Cancelled</Status> in
+    // PersonRaceStart would fail XSD validation. The correct behavior for a
+    // CANCEL competitor in a StartList is exclusion — the competitor is not
+    // announced at all. This mirrors how PEND is excluded from ResultList.
+    //
+    // D-14 (CANCEL → Cancelled) applies only to buildResultListXml, not
+    // buildStartListXml. The existing Phase 2.0 test already covers D-14 for
+    // the ResultList.
     const input = makeStartListInput({
       classes: [
         {
@@ -600,11 +609,10 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
         },
       ],
     });
-    const { xml } = buildStartListXml(input);
-    assert.ok(
-      xml.includes('<Status>Cancelled</Status>'),
-      'CANCEL must produce <Status>Cancelled</Status>'
-    );
+    const { xml, summary } = buildStartListXml(input);
+    assert.ok(!xml.includes('Andersson'), 'CANCEL competitor must not appear in StartList');
+    assert.ok(xml.includes('Berg'), 'non-cancelled competitor must still appear');
+    assert.equal(summary.person_start_count, 1, 'only 1 non-cancelled drawn competitor');
   });
 
   test('test 6b: buildResultListXml CANCEL maps to Cancelled (D-14 regression)', async () => {
