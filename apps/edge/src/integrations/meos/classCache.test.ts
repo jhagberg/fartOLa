@@ -49,6 +49,8 @@ describe('classCache — refreshClassCache', () => {
   });
 
   test('test 2: network error → returns empty Map (graceful degradation)', async () => {
+    // Reset so there is no stale cache to serve; test 1 may have populated it.
+    resetClassCacheForTest();
     const mockFetch = async (): Promise<Response> => {
       throw new Error('Network unreachable');
     };
@@ -58,6 +60,8 @@ describe('classCache — refreshClassCache', () => {
   });
 
   test('test 3: empty class list → returns empty Map', async () => {
+    // Reset so there is no stale cache from earlier tests.
+    resetClassCacheForTest();
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <MOPComplete xmlns="http://www.melin.nu/mop">
 </MOPComplete>`;
