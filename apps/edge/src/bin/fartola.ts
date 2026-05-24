@@ -734,7 +734,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         .from(classes)
         .where(eq(classes.competitionId, competitionId))
         .all();
-      const clubRows = handle.db.select({ id: clubs.id, name: clubs.name }).from(clubs).all();
+      const clubRows = handle.db.select({ id: clubs.name, name: clubs.name }).from(clubs).all();
       return { classes: classRows, clubs: clubRows };
     },
   });
