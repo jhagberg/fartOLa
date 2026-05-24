@@ -66,6 +66,7 @@ import {
 import type { EventPayload } from '../../db/schema.ts';
 import { issuesToErrors } from '../../routes/_zod-errors.ts';
 import { MIP_NS, coerceInt } from './shared.ts';
+import { refreshClassCache } from './classCache.ts';
 
 const ACTIVE_COMP_KEY = 'active_competition_id';
 
@@ -85,6 +86,7 @@ interface MipEntryNode {
   '@_id': number;
   '@_extId': string;
   '@_classname': string;
+  '@_classid': number;
   name: string;
   club?: string;
   card?: { '#text': number; '@_hired'?: 'true' };
@@ -198,6 +200,27 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     // (5) Hydrate competitor + class + hired_card data via three batched
     // queries (one inArray per table) instead of a SELECT per card_bound
     // event. Class name "cache" is now just the pre-built Map.
+    //
+    // classCache: fetch MeOS class list so we can include classid on each
+    // <entry> (D-13 / "Okänd klass" fix). The MeOS host is derived from
+    // the polling client's source IP. IPv6-mapped IPv4 addresses (::ffff:
+    // prefix) are stripped to their plain IPv4 form. On any fetch failure
+    // the cache returns an empty Map and entries fall back to classid=0.
+    const meosHost = (() => {
+      const raw = req.socket?.remoteAddress ?? '127.0.0.1';
+      // Strip IPv6-mapped IPv4 prefix (::ffff:192.168.x.x → 192.168.x.x).
+      if (raw.startsWith('::ffff:')) return raw.slice(7);
+      // Wrap bare IPv6 addresses in brackets for URL construction.
+      if (raw.includes(':')) return `[${raw}]`;
+      return raw;
+    })();
+    // The class cache is module-level in classCache.ts. Integration tests
+    // call getClassCacheForTest().seed() BEFORE this handler runs so the
+    // TTL guard is already satisfied and refreshClassCache returns the
+    // seeded Map without making a network call. No special wiring needed
+    // here — the module-level cache is shared within the process.
+    const meosCacheMap = await refreshClassCache(meosHost);
+
     const entries: MipEntryNode[] = [];
     let maxSeq = lastid;
 
@@ -296,10 +319,16 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
       // Hired-card lookup against the pre-fetched set (see above).
       const hired = competitor.cardNumber !== null && hiredCardSet.has(competitor.cardNumber);
 
+      // D-13: include classid so MeOS doesn't reject with "Okänd klass".
+      // Falls back to 0 when the class is not in the cache; MeOS then
+      // uses classname for lookup (safe for small events).
+      const classId = meosCacheMap.get(className) ?? 0;
+
       const entry: MipEntryNode = {
         '@_id': row.localSeq,
         '@_extId': competitor.id,
         '@_classname': className,
+        '@_classid': classId,
         name: competitor.name,
       };
       if (competitor.club !== null && competitor.club.length > 0) {
