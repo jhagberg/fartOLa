@@ -535,6 +535,38 @@ describe('reduce — CompetitionState projection', () => {
     assert.equal(anna.elapsed_time_ms, 600 * 1000);
   });
 
+  test('Phase-2.1 DQ zeroes punch fields (contamination prevention)', () => {
+    // Regression: before the fix, a DQ override left missing_codes /
+    // extra_codes / latest_punches populated from the prior card_read.
+    // After fix: DQ clears all punch analysis fields so the receipt/UI
+    // does not show stale punch data for a disqualified runner.
+    seqCounter = 0;
+    const events = [
+      cardRead(1, [p(31), p(32)], hd(10 * 3600), null), // MP card_read
+      evt({
+        event_type: 'manual_status_set',
+        competitor_id: 'c-anna',
+        status: 'DQ',
+        reason: 'rule-infringement',
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'DQ');
+    assert.deepEqual(anna.missing_codes, [], 'DQ must zero missing_codes');
+    assert.deepEqual(anna.extra_codes, [], 'DQ must zero extra_codes');
+    assert.deepEqual(anna.out_of_order_codes, [], 'DQ must zero out_of_order_codes');
+    assert.deepEqual(anna.latest_punches, [], 'DQ must zero latest_punches');
+    assert.equal(anna.elapsed_time_ms, null, 'DQ must zero elapsed_time_ms');
+  });
+
   test('Phase-2.0 clear_manual_status reverts to auto-detected status', () => {
     seqCounter = 0;
     const events = [

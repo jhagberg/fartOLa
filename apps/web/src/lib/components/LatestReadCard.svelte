@@ -38,6 +38,11 @@
     readTime: string;
     elapsed: string;
     status: 'OK' | 'MP' | 'DNF' | 'PEND' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+    /** Phase 2.1 (plan 13): non-null when the current status was asserted
+     * by the operator via manual_status_set. null means auto-detected
+     * (from card_read + course). Used to decide whether the clear button
+     * should appear — auto-DNF shows an explanation popover instead. */
+    manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
     place: number | null;
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
@@ -100,16 +105,18 @@
   let dnfReason = $state('');
   let pickedStatus = $state<ManualStatus>('DNF');
 
-  // True when the current row already carries an operator-asserted override.
-  // In that case the primary button is a single-click "clear", matching the
-  // pre-Phase-2.0 un-DNF UX.
-  function isOverridden(s: Read['status']): boolean {
-    return s === 'DNF' || s === 'DNS' || s === 'DQ' || s === 'CANCEL' || s === 'MAX';
+  // True when the current row carries an OPERATOR-ASSERTED override.
+  // Phase 2.1 fix: use manual_status (non-null = operator set) rather than
+  // checking the computed status value — auto-DNF (manual_status=null,
+  // status='DNF') should NOT show the clear button; only manual overrides
+  // should show it (02-11 MEDIUM: auto-DNF vs manual-DNF distinction).
+  function isOverridden(r: Read): boolean {
+    return r.manual_status !== null;
   }
 
   function toggleDnf(): void {
     if (!read || !read.competitorId) return;
-    if (isOverridden(read.status)) {
+    if (isOverridden(read)) {
       // Single-click clear — preserves the pre-Phase-2.0 un-DNF gesture.
       if (onClearManualStatus) onClearManualStatus(read.competitorId);
       else onUnDnf?.(read.competitorId);
@@ -253,7 +260,7 @@
             data-testid="manual-dnf-btn"
             onclick={toggleDnf}
           >
-            {isOverridden(read.status) ? t('ro.undnf') : t('ro.dnf')}
+            {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
           </button>
           {#if dnfOpen}
             <div class="dnf-pop" role="dialog">

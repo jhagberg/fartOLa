@@ -52,6 +52,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   ManualDnfInput,
   ManualStatusInput,
+  ClearManualStatusInput,
   VoidLegInput,
   UnvoidLegInput,
   readoutChannel,
@@ -208,6 +209,11 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
     '/api/competitions/:id/competitors/:competitorId/clear-status',
     async (req, reply) => {
       const { id: competitionId, competitorId } = req.params;
+      // Reject unexpected body fields (02-11 LOW: was passthrough, now strict).
+      const parsedBody = ClearManualStatusInput.safeParse(req.body ?? {});
+      if (!parsedBody.success) {
+        return reply.code(400).send(issuesToErrors(parsedBody.error.issues));
+      }
       const competitor = app.fartolaDb.db
         .select({ id: competitorsTable.id })
         .from(competitorsTable)

@@ -106,6 +106,12 @@ interface HistoryRow {
   /** Ordered expected control codes for the competitor's course.
    * Empty array when the competitor's class has no course. */
   expected_codes: number[];
+  /** Phase 2.1 (plan 13) — mirrors CompetitorView.manual_status. Non-null
+   * when the operator set an override via the manual_status_set event.
+   * null means the status is auto-detected (from card_read + course).
+   * The UI uses this to distinguish auto-DNF (no clear button) from
+   * manual-DNF (clear button visible). */
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side
@@ -275,6 +281,10 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           extra_codes: view?.extra_codes ?? [],
           out_of_order_codes: view?.out_of_order_codes ?? [],
           expected_codes: competitor ? (expectedByClassId.get(competitor.classId) ?? []) : [],
+          // Phase 2.1 (plan 13) — expose manual_status so the web client can
+          // distinguish auto-DNF (manual_status=null) from operator-set DNF
+          // (manual_status='DNF'). Null for unmatched / pre-read cards.
+          manual_status: view?.manual_status ?? null,
         };
       });
 

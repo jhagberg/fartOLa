@@ -321,10 +321,21 @@ export function reduce(input: ReduceInput): CompetitionState {
           // so the receipt/UI doesn't show stale punches from a prior read
           // that was then overridden to DNS/CANCEL. DNF/MAX/DQ keep the punch
           // history because the runner did at least attempt the course.
+          //
+          // DQ: also zero punch fields to prevent contamination. The runner is
+          // disqualified — stale punch analysis from the prior card_read is
+          // misleading on the receipt / readout card (02-11-MAX-AUTOCOMPUTE-TODO
+          // MEDIUM: "DQ keeps punch fields after contaminated read").
           if (payload.status === 'DNS' || payload.status === 'CANCEL') {
             view.missing_codes = [];
             view.extra_codes = [];
             view.out_of_order_codes = [];
+            view.elapsed_time_ms = null;
+          } else if (payload.status === 'DQ') {
+            view.missing_codes = [];
+            view.extra_codes = [];
+            view.out_of_order_codes = [];
+            view.latest_punches = [];
             view.elapsed_time_ms = null;
           }
         }
@@ -339,6 +350,16 @@ export function reduce(input: ReduceInput): CompetitionState {
         if (view !== undefined) {
           view.manual_dnf_reason = null;
           view.manual_status = null;
+          // Phase 2.1: If DQ zeroed latest_punches for contamination
+          // prevention, restore from card_read_history so re-detection works.
+          const latestRead = view.card_read_history[view.card_read_history.length - 1];
+          if (
+            view.latest_punches.length === 0 &&
+            latestRead !== undefined &&
+            latestRead.punches.length > 0
+          ) {
+            view.latest_punches = [...latestRead.punches];
+          }
           const competitor = competitorsByCompetition.find((c) => c.id === payload.competitor_id);
           const course = competitor ? courseByClass.get(competitor.classId) : undefined;
           const expected = course?.control_codes ?? [];
