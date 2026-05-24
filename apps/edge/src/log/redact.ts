@@ -48,6 +48,11 @@
  *     in any top-level or nested log object. Both snake_case (DB column name)
  *     and camelCase (TS property name) are covered so neither form leaks.
  *     T-02.1-13 mitigate.
+ *   - `body.code` / `*.body.code` / `req.body.code` — event admin code in
+ *     POST /access and POST /api/competitions/:id/event-codes request bodies.
+ *     The plaintext code is returned ONCE on generation and must never appear
+ *     in logs. T-02.1-26 mitigate.
+ *   - `body.event_code` — alternative field name alias for belt-and-suspenders.
  *
  * Intentionally scoped to the `body.value` shape for API keys — a bare
  * top-level `value` would mask unrelated debug data (e.g. `log.info({ value:
@@ -66,6 +71,14 @@ export const LOGGER_REDACT_PATHS: readonly string[] = [
   '*.liveresultat_pwd',
   'liveresultatPwd',
   '*.liveresultatPwd',
+  // event admin code — T-02.1-26 mitigate (plan 02.1-12)
+  // Covers req.body.code (POST /access) and res body code (POST /event-codes).
+  'body.code',
+  '*.body.code',
+  'req.body.code',
+  'request.body.code',
+  'body.event_code',
+  '*.body.event_code',
 ];
 
 /** Default pino redact config for buildServer. Censor matches the pino

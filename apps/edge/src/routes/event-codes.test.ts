@@ -44,7 +44,7 @@ async function boot(): Promise<Ctx> {
   const competitionId = 'comp-test-1';
   handle.sqlite
     .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES (?, ?, ?, ?)`)
-    .run(competitionId, 'Testvasan', '2026-05-24', Date.now());
+    .run(competitionId, 'Testvasan', '2026-12-31', Date.now());
 
   return { app, handle, tmpDir, competitionId };
 }

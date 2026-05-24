@@ -67,7 +67,11 @@ import registerLottningRoutes from './routes/lottning.ts';
 import registerLiveresultatRoutes from './routes/liveresultat.ts';
 import registerEventorPushRoutes from './routes/eventorPush.ts';
 import registerCheckunitRoutes from './routes/checkunit.ts';
+import registerEventCodesRoutes from './routes/event-codes.ts';
+import registerAccessRoute from './routes/access.ts';
 import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
+import { verifyCookie } from './auth/event-code.ts';
+import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
 import type { PrinterSink } from './print/sink.ts';
@@ -321,6 +325,98 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // Phase 2.1 Plan 02.1-06 — Kvar-i-skogen check-unit backup readout.
     // POST /api/competitions/:id/checkunit/snapshot.
     await app.register(registerCheckunitRoutes);
+    // Phase 2.1 Plan 02.1-12 — Admin event-code routes (localhost-only).
+    // POST/GET /api/competitions/:id/event-codes, POST revoke.
+    await app.register(registerEventCodesRoutes);
+    // Phase 2.1 Plan 02.1-12 — POST /access (open to LAN — auth endpoint).
+    // Rate-limited; sets signed HttpOnly cookie scoped to competitionId.
+    await app.register(registerAccessRoute);
+
+    // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on all write routes
+    // under /api/competitions/:id/**  (POST/PATCH/DELETE) for non-localhost
+    // requests without a valid signed cookie (T-02.1-27 / T-02.1-27b).
+    //
+    // Localhost bypass: uses socket.remoteAddress ONLY. X-Forwarded-For is
+    // EXPLICITLY IGNORED to prevent header spoofing (T-02.1-27 mitigation).
+    //
+    // Cookie competitionId scope: the cookie payload's cid field must match
+    // the route's :id param. Mismatch → 403 cookie_competition_mismatch
+    // (T-02.1-25b mitigation — helper authenticated for comp A cannot write
+    // to comp B).
+    //
+    // Blanket approach: gates all POST/PATCH/DELETE under /api/competitions/:id/**
+    // automatically — new write routes added in future plans are protected
+    // without an explicit inventory update.
+    app.addHook('onRequest', async (request, reply) => {
+      const method = request.method.toUpperCase();
+      const url = request.url;
+
+      // Only gate write methods under /api/competitions/:id/...
+      if (!['POST', 'PATCH', 'DELETE'].includes(method)) return;
+      if (!url.startsWith('/api/competitions/')) return;
+
+      // Extract the :id segment from the URL path.
+      // Pattern: /api/competitions/<id>/...  (must have a suffix after the id)
+      const urlParts = url.split('/');
+      // urlParts: ['', 'api', 'competitions', '<id>', ...rest]
+      if (urlParts.length < 5) return; // no suffix — let the route handle 404
+      const routeCompetitionId = urlParts[3];
+
+      // Exclude /api/competitions/:id/event-codes routes — they are admin-only
+      // (localhost-gated) routes with their own localhost check. The blanket
+      // gate is for helper-facing write routes, not operator-only admin surfaces.
+      // Exclude both the generate (POST /event-codes) and revoke
+      // (POST /event-codes/:codeId/revoke) paths.
+      if (url.includes('/event-codes')) return;
+
+      // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
+      const remoteAddr = request.socket.remoteAddress;
+      const isLocalhost =
+        remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
+      if (isLocalhost) return;
+
+      // Non-localhost: require a valid signed cookie.
+      const rawCookie = request.headers.cookie;
+      const cookieValue = rawCookie
+        ? rawCookie
+            .split(';')
+            .map((s) => s.trim())
+            .find((s) => s.startsWith('fartola_event_code='))
+            ?.slice('fartola_event_code='.length)
+        : undefined;
+
+      if (!cookieValue) {
+        return reply.code(403).send({ error: 'event_code_required' });
+      }
+
+      const secret = getOrCreateSigningSecret(app);
+      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', secret);
+
+      if (!payload) {
+        // Either signature invalid, expired, or competitionId mismatch.
+        // Check if signature is valid for SOME competition to distinguish
+        // mismatch from tampered/missing.
+        // For simplicity: if cookie parses but cid doesn't match, return mismatch.
+        // Otherwise, return event_code_required (don't leak why verification failed).
+        //
+        // To distinguish: try verifying without the cid check — not exposed by
+        // verifyCookie API. Instead, check if cookie looks structurally valid
+        // (two dot-separated base64url parts) and report mismatch, otherwise
+        // report missing.
+        const parts = cookieValue.split('.');
+        if (parts.length === 2 && parts[0] && parts[1]) {
+          // Structurally valid cookie but failed verification — likely cid mismatch
+          // or signature tampered. Report competition_mismatch for UX clarity on
+          // the most common case (helper navigating between competitions).
+          return reply.code(403).send({ error: 'cookie_competition_mismatch' });
+        }
+        return reply.code(403).send({ error: 'event_code_required' });
+      }
+
+      // Verified. payload.competitionId already matches routeCompetitionId
+      // (verifyCookie enforces this). No additional check needed.
+    });
+
     await app.register(registerDevRoutes);
   }
 

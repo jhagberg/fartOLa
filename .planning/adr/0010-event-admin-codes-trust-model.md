@@ -1,297 +1,160 @@
+# ADR-0010: Event Admin Codes — Trust Model, Entropy, and Rate-Limit Math
+
+**Date:** 2026-05-25
+**Status:** Accepted
+**Deciders:** Jonas Hagberg (author), cross-AI review (DeepSeek v4 Pro, Gemini 3.1 Pro, GPT-5.5)
+**Plan:** Phase 2.1, Plan 02.1-12 (carry-over from Phase 2.0 Plan 02-08)
+
 ---
-status: proposed
-date: 2026-05-17
-decision-makers: [Jonas Hagberg]
-consulted: [Phase 2.1 planning session, Plan 02-07 settings UI implementation]
-informed: []
+
+## Context
+
+Mobile sekretariat-helpers at orienteering events need a way to register
+walk-up competitors from their phones without exposing the edge bridge to
+unauthenticated LAN writes. Real accounts (username + password, MFA, OAuth)
+are overkill for this use case: events are 4–8 hours long, helpers are
+trusted club members, and the threat model is a closed club LAN, not the
+public internet.
+
+The requirement (D-18) calls for a minimal auth mechanism: the operator
+generates a short, memorable code and shouts it across the parking lot.
+Helpers type it on `/access` on their phones. Anyone with the code can
+register runners; nobody else can.
+
 ---
 
-# Event admin codes — minimal auth for mobile sekretariat-helpers
+## Decision: Word-Number Codes with Signed Competition-Scoped Cookies
 
-## Context and Problem Statement
+### Code format
 
-Phase 2.0 deployed fartOLa at the 4-klubbs onsdagsträning with
-`--bind-host 0.0.0.0 --allow-lan` so the MeOS laptop and the
-registration-desk operator could both reach the bridge over the club
-Wi-Fi. That posture exposes the FULL sekretariat surface
-(`/competition/:id/registration`, walkup modal, `POST /api/competitors`,
-DNF, edit, queue advance) to **anyone on the same Wi-Fi**. At a
-training session that's everyone in the parking lot — including the
-runners themselves, parents waiting for kids, the dog-walker on the
-adjacent trail with their phone in pocket.
+`<word>-<NNN>` where:
 
-Phase 2.1 expands the operator model from "one person on the desk
-laptop" to "one operator + 2-5 helpers with phones doing walk-up
-registration in parallel". We need a way to let trusted helpers add
-runners without (a) exposing the surface to everyone on the LAN, and
-(b) the operational overhead of provisioning per-person accounts the
-day before a training session.
+- `word` in EVENT_CODE_WORDS (35 entries from SOFT 2024 kontrollbeskrivningar)
+- `NNN` in [100..999] (900 values, zero-padding prohibited)
+- Example: `sänkan-127`, `branten-403`, `röset-999`
 
-The use case is small-club training events. The operator knows the
-helpers by name, can shout a code across the parking lot, and trusts
-all of them equally. There is no business need for per-helper audit
-trails or role separation — if a helper enters a wrong runner, the
-operator fixes it in person.
+**Why the floor at 100:** every spoken number is exactly 3 syllables
+("fyra-fem-sex"). Zero-padded numbers (007) produce confusing `noll-noll-sju`
+which gets misheard at the start line.
 
-This ADR locks in the auth model. The implementation lives in Plan
-02-08.
+**Why a dash:** clear spoken separator ("dungen STRECK fyra-fem-sex") and
+avoids ambiguous typed input (`sänkan 42` vs `sänkan-42`).
 
-## Decision Drivers
+**Why an orienteering wordlist:** memorable across a parking lot; domain-flavored;
+curated for phonetic distinctiveness (no homophones, no compounds).
 
-- **REQ-OPS-003** (new) — sekretariat-helpers can register runners
-  from their phones without installing software or making accounts.
-- **REQ-OPS-001** — single-binary install, no internet required at
-  event time (rules out OAuth, SSO, hosted IAM).
-- **REQ-PRIV-002** — 30-day PII retention; the auth artifacts
-  (event_codes, signing secret) live in the same SQLite DB that gets
-  scrubbed at the same cadence.
-- **ADR-0008** — single-user laptop trust model; full-disk encryption
-  is the recommended mitigation for laptop loss/theft.
-- **Operator UX gravity** — at a training session the operator's hands
-  are busy (BSM reader + walkup modal + handing out hyrbrickor). Any
-  auth scheme that requires the operator to spend > 30 s onboarding a
-  helper will get bypassed — back to `--allow-lan` no-auth.
-- **Helper UX gravity** — helpers bring their personal phones. They
-  haven't installed anything, haven't visited the page before, and the
-  page must look correct on the first tap. iOS Safari is the worst-
-  case browser; Chrome on Android the typical case.
-- **Public-internet escape hatch** — Phase 5 (O-Ringen scale)
-  eventually wants the bridge reachable beyond the local LAN; the
-  decision MUST make explicit what stops working then so the future
-  work has a clear gate.
+### Entropy analysis
 
-## Considered Options
+35 words x 900 numbers = 31 500 combinations ≈ 14.9 bits
 
-### A. No auth — keep `--allow-lan` open (status quo)
+This is low in the absolute sense but acceptable within the fenced threat model:
 
-The Phase 2.0 default. Anyone on the LAN can do anything.
+1. **Closed LAN deployment.** The bridge is only accessible on the club's event
+   Wi-Fi. Public-internet exposure is explicitly out of scope for Phase 2.1.
 
-**Rejected.** Works only for the trust model where the LAN itself is
-the security boundary (no untrusted devices on the same Wi-Fi). A
-training session at a public parking lot breaks that assumption: the
-club's Wi-Fi is open or has the WPA2 key shared on a printed sign.
+2. **Rate limit defense-in-depth.** 10 attempts / 60 seconds per IP.
+   At sustained 10 attempts/min, exhausting 31 500 codes takes ~52.5 hours.
+   Well past the 24-hour code expiry window.
 
-### B. Per-user accounts with username + password
+3. **Exponential backoff.** After 5 consecutive failures, delay doubles
+   (1s, 2s, 4s, ... capped at 60s). Effectively drops sustained rate to ~1-2/min.
 
-Standard auth: helpers get a username, set a password, log in. Could be
-backed by SQLite users table, bcrypt hashes, session cookies.
+4. **Per-event expiry.** Codes expire at competition.date + 24h.
 
-**Rejected** for the training-event use case. Reasons:
+5. **Revocation.** Operator can revoke any code instantly.
 
-- Onboarding cost — operator must create N accounts and distribute
-  credentials before the event. Helpers must remember a password they
-  set 3 months ago for the prior training session.
-- Password recovery — a forgotten password at 17:25 with helpers
-  arriving creates a worse outage than open LAN. We don't want to
-  build email-reset.
-- Audit trail — none of the data the system collects benefits from
-  per-user attribution (the runner record doesn't care who typed it
-  in; the operator handles disputes face-to-face).
-- Right answer for Phase 5 (sanctioned competition with paid
-  sekretariatschef), wrong answer for training events.
+**Rate-limit failure scenario:** If rate limit completely fails AND attacker
+pushes 100 attempts/min from the LAN:
+31500 / 100/min = 315 min ~= 5.2 hours
+Less than 1/5 of the event-day window. Unauthorized registrations immediately
+detectable.
 
-Keep in the back pocket for Phase 5+; the per-user model becomes the
-right primitive when audit trails matter for federation submission.
+### Cookie design
 
-### C. Shared event code + signed cookie (CHOSEN)
+The signed cookie is scoped to a specific competition_id:
 
-Operator generates a short shared code per competition (`sänkan-127`).
-Helper types it on `/access`, server validates against the
-`event_codes` table, server sets a signed HMAC cookie scoped to the
-competition_id. The cookie is a bearer credential for all subsequent
-write requests; revoked when the operator revokes the code, expires
-when the code expires (default `competition.date + 24h`).
+- Name: fartola_event_code
+- Format: base64url(payload).base64url(HMAC-SHA256(payload, secret))
+- Payload: { competitionId, expiresAt, issuedAt, v: 1 }
+- Attrs: HttpOnly; SameSite=Lax; Path=/; Max-Age=n
+- NOT Secure — LAN HTTP deployment.
 
-**Chosen.** Trade-offs in the next section.
+**competitionId in payload:** The preHandler validates payload.competitionId
+against the route's :id param. A helper authenticated for competition A cannot
+write to competition B (T-02.1-25b).
 
-### D. mTLS / device pairing
+**Signing secret persistence:** Stored in SQLite config table as
+`event_code_signing_secret`. Generated once via crypto.randomBytes(32).
+Persisted across edge server restarts — volunteers stay logged in if the
+operator reboots the laptop during the event.
 
-Helpers' devices pair with the bridge (QR-scan + key exchange), the
-bridge whitelists the device's cert. Subsequent requests are authed
-via the cert.
+### Localhost bypass
 
-**Rejected** for the training-event use case. Reasons:
+Operator desk laptop always bypasses the cookie gate.
+Check uses socket.remoteAddress ONLY — never X-Forwarded-For (T-02.1-27).
+XFF is unauthenticated user-controlled input; ignoring it prevents header
+spoofing bypass attacks.
 
-- iOS Safari does not gracefully support client cert installation
-  without a configuration profile (signed by Apple). Operationally
-  impossible on a typical helper's phone.
-- Mistake-cost is high: revoking a paired device is a JSON edit.
-- Buys properties we don't need (non-repudiation, per-device audit).
+### Blanket write-route protection
 
-Right answer for Phase 6+ if fartOLa ever ships to clubs with strict
-device management requirements.
+onRequest hook gates all POST/PATCH/DELETE under /api/competitions/:id/**
+for non-localhost requests without a valid cookie. Covers current and future
+write routes automatically.
 
-### E. Rely on Wi-Fi WPA2-PSK as the security boundary
+Excluded from gate:
+- POST /access (is the auth endpoint)
+- /api/competitions/:id/event-codes (operator-only, own localhost gate)
 
-"The Wi-Fi password IS the auth." Don't add any application-layer
-auth.
+### Log redaction
 
-**Rejected.** Two problems:
+Plaintext event code never appears in logs (T-02.1-26). Extended redact.ts
+with body.code, *.body.code, req.body.code, body.event_code paths.
+Code returned plaintext once only (POST /event-codes response).
+GET list returns masked codes (san****27).
 
-1. The whole reason this ADR exists is that the LAN trust model is
-   too broad — even on a WPA2 network everyone who knows the password
-   can hit the sekretariat surface.
-2. Many small clubs run open Wi-Fi at training events specifically to
-   make hyrbricka registration easier for visitors. The premise
-   doesn't hold.
+---
 
-## Decision Outcome
+## Threat Register
 
-**Chosen option: C — shared event code + signed cookie.**
+| Threat ID | Category | Component | Disposition | Notes |
+|-----------|----------|-----------|-------------|-------|
+| T-02.1-24 | Spoofing | Brute-force event code | mitigate | 10/60s + exp backoff; 14.9 bits; 24h expiry |
+| T-02.1-25 | Tampering | Cookie forgery | mitigate | HMAC-SHA256 + timingSafeEqual |
+| T-02.1-25b | Tampering | Cross-competition cookie reuse | mitigate | competitionId in payload; preHandler validates |
+| T-02.1-26 | Info Disclosure | Code in logs | mitigate | pino redact paths |
+| T-02.1-27 | Elevation of Privilege | LAN write without auth | mitigate | Blanket onRequest gate; localhost via socket.remoteAddress |
+| T-02.1-27b | Elevation of Privilege | XFF spoofing bypass | mitigate | XFF explicitly ignored |
 
-Encoded as `<word>-<NNN>` where:
-
-- `word` ∈ `EVENT_CODE_WORDS` — a LOCKED 35-entry curated wordlist
-  drawn from SOFT 2024 kontrollbeskrivningar (definite-article form,
-  1-2 syllables, distinct consonants, no homophones, no compounds,
-  no generic words). See Plan 02-08 Task 1 for the exact list and
-  source PDF.
-- `NNN` ∈ `[100..999]` — 3-digit integer, NEVER zero-padded. The 100
-  floor is deliberate: it makes every spoken number exactly 3 distinct
-  syllables (`fyra-fem-sex` or `fyrahundrafemtiosex`) instead of the
-  failure mode `dungen-noll-noll-sju` where listeners mishear the
-  leading nolls and type the wrong code.
-- Dash separator is mandatory in both stored form and input: gives a
-  clear word boundary when shouted (`dungen STRECK fyra-fem-sex`) and
-  in the input box (avoids ambiguous `dungen 456` space-as-separator
-  parses).
-
-**Total entropy:** 35 × 900 = **31 500 combinations ≈ 14.9 bits.**
-
-**Cookie:** HMAC-SHA256-signed payload
-`{ cid: <competition_id>, exp: <ms>, iat: <ms>, v: 1 }`. Server-side
-secret auto-generated via `crypto.randomBytes(32).toString('hex')` on
-first `/event-codes` write and persisted in the `config` table as
-`event_code_signing_secret` (config-only, no env-var override —
-matches the rationale that this is a closed-LAN secret not meant for
-operator handling).
-
-**Gate:** Fastify preHandler hook on the write surface:
-
-- `POST /api/competitors`
-- `POST /api/competitors/from-wizard`
-- `PATCH /api/competitors/:id`
-- `POST /api/competitors/:id/dnf`
-- (others added as Phase 2.1 expands)
-
-**Localhost bypass:** requests with `req.ip` ∈ `{127.0.0.1, ::1,
-::ffff:127.0.0.1}` skip the cookie check entirely. The operator on
-the desk laptop is always allowed — same trust model as the FARTOLA_DEV
-admin routes.
-
-**Rate limit:** per-IP token bucket on `POST /access`:
-
-- 10 attempts per 60 s window
-- After 5 consecutive failures: exponential backoff (1 → 2 → 4 → 8 →
-  16 → 32 → 60s cap)
-- In-memory map, cleaned every 5 minutes
+---
 
 ## Consequences
 
 ### Positive
 
-- **Helper onboarding is a single typed code.** From the helper's
-  point of view: open URL → type `sänkan-127` → land on
-  `/registration`. No app install, no account, no password.
-- **Operator onboarding is one button click.** "Generera kod" in
-  `/installningar` → kod modal pops with copy button → operator SMSes
-  or shouts it.
-- **Per-event natural rotation.** Code expires 24h after
-  `competition.date` by default. No leaked-from-last-season scenarios.
-- **Blast radius is bounded to the ADD surface.** A code cannot
-  delete, edit other operators' work, export PII, modify settings,
-  hit `/api/__admin/*`, or touch MIP/MOP. Even a fully-compromised
-  helper account does limited damage.
-- **No new infra dependencies.** Pure SQLite + HMAC + a Fastify
-  cookie plugin (`@fastify/cookie`, ~50 KB).
+- Simple memorable auth for helpers — no app install, no account setup.
+- Domain-flavored (Swedish O-feature words match the sport).
+- Competition-scoped cookies prevent cross-competition writes.
+- Signing secret survives restarts.
+- Blanket preHandler protects all current and future write routes.
+- No external dependencies beyond @fastify/cookie.
 
-### Negative
+### Negative / Risks
 
-- **15 bits of entropy is weak in the absolute sense.** Anyone who can
-  bypass or saturate the rate limit (e.g., from a botnet of distinct
-  IPs) can brute-force the code space in hours. This is the explicit
-  trade-off for memorability — every bit shaved off the entropy is a
-  bit added to the speak-and-type usability budget.
-- **No per-helper audit trail.** Two helpers using the same code look
-  identical in the `competitors.source = 'walkup'` rows. If a wrong
-  registration shows up, the operator can't trace it to a specific
-  helper. Acceptable for the training-event use case (operator-
-  resolved face-to-face).
-- **Codes survive helper turnover within the 24h window.** A helper
-  who leaves mid-event keeps the cookie on their phone until the code
-  expires or the operator revokes it. Operator must explicitly revoke
-  if a phone is lost or a helper goes home antagonistic.
-- **Cookie is NOT marked `Secure`.** The bridge serves HTTP on LAN
-  (no TLS termination at this tier). Anyone passively sniffing the
-  network can capture the signed cookie. Mitigated by the closed-LAN
-  trust model + 24h expiry; broken if the bridge ever goes public-
-  internet.
+- 14.9 bits of entropy is low. If ever exposed to the public internet,
+  rate limiting is insufficient. Gate expansion on real auth before any
+  internet exposure.
+- Cookie is not Secure (HTTP LAN only). LAN sniffing possible. Accepted.
+- In-memory rate-limit state lost on server restart. Accepted (physical
+  access to bridge laptop already grants full access).
 
-### Neutral
+---
 
-- **Localhost bypass.** Operator on the desk laptop never needs a
-  code. Matches the existing FARTOLA_DEV admin-route pattern; consistent
-  with the trust model that the laptop itself is the trust boundary
-  for operator-level actions.
-- **Helpers and the operator both write to `competitors.source =
-'walkup'`.** The `source` field is not used for permissions, only
-  for downstream PII-scrub and observability. No schema change needed.
+## Alternatives Considered
 
-## Public-internet escape hatch
-
-This ADR is explicitly **NOT sufficient** if the bridge is exposed to
-the public internet. Concretely, the assumptions that break:
-
-1. Per-IP rate limit is trivially bypassed by a distributed attacker;
-   31 500 codes fall in seconds.
-2. Passive network sniffing captures unsigned-cookie HTTP traffic.
-3. The 24h-window assumption (attacker must complete attack within
-   event day) no longer scopes blast-radius — the attacker has weeks
-   between events to enumerate the public surface.
-
-Before any public-internet exposure happens, this ADR MUST be revisited
-and either:
-
-- (a) extended with proper auth (Option B reconsidered), OR
-- (b) the code space expanded to ≥80 bits AND HTTPS termination added,
-  AND a global rate limit at the edge AND CAPTCHA on `/access`.
-
-Phase 5 (O-Ringen scale) is the natural trigger to revisit. Anything
-earlier that puts the bridge behind a public domain (e.g., a Phase 4
-spectator-results page) must explicitly carve the gated routes out of
-the public surface or upgrade auth.
-
-## Verification
-
-Plan 02-08 Task 6 enumerates the manual test plan that exercises this
-ADR's assumptions:
-
-1. **Brute-force probe** — scripted POST loop hits the rate limit
-   ceiling by attempt 11.
-2. **Log scrub** — `audit-canary-99` code in a POST body produces zero
-   matches in `journalctl --user -u fartola`.
-3. **Cookie scrub** — HttpOnly verified in browser DevTools (cookie
-   not exposed to `document.cookie`).
-4. **Localhost bypass** — operator-desk curl POST succeeds without a
-   cookie.
-5. **Revocation propagation** — revoked code rejects on the very next
-   write attempt from any cookie that previously validated against it.
-6. **24h expiry** — fast-forward test (testClock injection) confirms
-   the code stops working at `competition.date + 24h`.
-
-The manual run happens once during 02-08 implementation; the
-automated tests in Plan 02-08 cover the regression surface for
-subsequent changes.
-
-## Cross-references
-
-- Plan 02-08 — implementation (Phase 2.1 sub-plan, deferred from
-  Phase 2.0)
-- Plan 02-07 — Settings UI (provides the `/installningar` host page
-  for the "Hjälpkoder" section + the `config`-table pattern this ADR
-  reuses for `event_code_signing_secret`)
-- ADR-0008 — PII in append-only event log (parent trust model;
-  single-user laptop + FDE)
-- REQ-OPS-001 — offline-first single-binary deployment
-- REQ-OPS-003 — NEW; minimal auth for mobile sekretariat-helpers
-  (added to `.planning/REQUIREMENTS.md` by Plan 02-08 Task 1)
+| Alternative | Why rejected |
+|-------------|--------------|
+| 4-digit PIN | 10 000 combinations; no domain flavor |
+| JWT tokens with real user accounts | Overkill for Phase 2.1 helper use case |
+| QR code distribution | Better UX but adds complexity; deferred to Phase 3 |
+| Per-helper named accounts | Audit-trail benefit; deferred to Phase 3 |
+| Long random token (e.g. UUID) | Cannot be shouted across a parking lot |
