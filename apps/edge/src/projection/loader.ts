@@ -27,6 +27,7 @@ import {
   courseControls,
   controls,
   competitors,
+  courseReplacements,
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { ReduceInput, CourseWithControlCodes } from './reduce.ts';
@@ -80,6 +81,33 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
     .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
     .all();
 
+  // Phase 2.1 (D-15): load course_replacements and build the nested map
+  // courseId → (controlCode → alternativeCodes[]).
+  const replacementRows = handle.db
+    .select({
+      courseId: courseReplacements.courseId,
+      controlCode: courseReplacements.controlCode,
+      alternativeCode: courseReplacements.alternativeCode,
+    })
+    .from(courseReplacements)
+    .where(eq(courseReplacements.competitionId, competitionId))
+    .all();
+
+  const replacementControls = new Map<string, Map<number, number[]>>();
+  for (const row of replacementRows) {
+    let courseMap = replacementControls.get(row.courseId);
+    if (courseMap === undefined) {
+      courseMap = new Map();
+      replacementControls.set(row.courseId, courseMap);
+    }
+    let alternatives = courseMap.get(row.controlCode);
+    if (alternatives === undefined) {
+      alternatives = [];
+      courseMap.set(row.controlCode, alternatives);
+    }
+    alternatives.push(row.alternativeCode);
+  }
+
   return {
     competition_id: competitionId,
     race_started_at_ms: competition.raceStartedAtMs,
@@ -87,5 +115,6 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
     competitors: competitorsRows,
     classes: classesRows,
     courses: coursesWithCodes,
+    replacementControls: replacementControls as ReadonlyMap<string, ReadonlyMap<number, number[]>>,
   };
 }

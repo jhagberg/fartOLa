@@ -39,6 +39,7 @@
 // - REQ-EVT-CMP-005 (auto-attach card → competitor)
 // - REQ-EVT-CMP-006 (DNF/MP from event log)
 
+import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { detectStatus } from './dnfMp.ts';
@@ -72,6 +73,12 @@ export interface ReduceInput {
   competitors: readonly Competitor[];
   classes: readonly Class[];
   courses: readonly CourseWithControlCodes[];
+  /** Phase 2.1 (D-15): replacement controls map, keyed by courseId →
+   * (expectedControlCode → [alternativeCodes]).
+   * When a punch matches an alternative code for the expected position,
+   * it counts as a match. Lookup is a single-level Map.get — no chaining,
+   * no recursion, no cycle risk. Omit / leave undefined for no replacements. */
+  replacementControls?: ReadonlyMap<string, ReadonlyMap<number, number[]>>;
 }
 
 // Sort order on results tables: finished runners first (OK → MP), then runners
@@ -126,6 +133,14 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (c.classId !== null) courseByClass.set(c.classId, c);
   }
 
+  // Phase 2.1 (D-08): class max-time lookup by class_id.
+  const maxTimeByClass = new Map<string, number>();
+  for (const cls of input.classes) {
+    if (cls.maxTimeSec !== null && cls.maxTimeSec !== undefined) {
+      maxTimeByClass.set(cls.id, cls.maxTimeSec);
+    }
+  }
+
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
   for (const c of competitorsByCompetition) {
@@ -146,10 +161,15 @@ export function reduce(input: ReduceInput): CompetitionState {
       elapsed_time_ms: null,
       manual_dnf_reason: null,
       manual_status: null,
+      voided_legs: [],
+      start_time_ms: c.startTimeMs,
     });
   }
   const pendingUnknownCards = new Set<number>();
   let lastEventSeq = 0;
+  // Phase 2.1 (D-16): track leg_voided max_seconds caps per competitor.
+  // Maps competitorId → (controlCode → maxSeconds | null).
+  const voidedLegCapsByCompetitor = new Map<string, Map<number, number | null>>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
   // race_started_at_ms), but a replayed `race_started` event below can
   // re-seed this mid-walk if the column got out of sync. Three states:
@@ -199,15 +219,36 @@ export function reduce(input: ReduceInput): CompetitionState {
         if (view.manual_status === null && inRacePhase) {
           const course = courseByClass.get(competitor.classId);
           const expected = course?.control_codes ?? [];
+          // Phase 2.1 (D-15): if replacement controls exist for this course,
+          // rewrite the expected list for positions where the punched code is
+          // a valid alternative. Lookup is single-level only — no chaining.
+          const courseReplacements =
+            course && input.replacementControls
+              ? input.replacementControls.get(course.id)
+              : undefined;
+          const resolvedExpected = courseReplacements
+            ? applyReplacements(expected, payload.punches, courseReplacements)
+            : expected;
           const detected = detectStatus(
             { start: payload.start, finish: payload.finish, punches: payload.punches },
-            expected
+            resolvedExpected
           );
           view.status = detected.status;
           view.missing_codes = detected.missing_codes;
           view.extra_codes = detected.extra_codes;
           view.out_of_order_codes = detected.out_of_order_codes;
           view.elapsed_time_ms = detected.elapsed_time_ms;
+          // Phase 2.1 (D-08): MAX auto-compute — if the competitor finished OK
+          // (or MP, though MP never has elapsed) and their class has a time cap,
+          // promote to MAX when elapsed exceeds the cap.
+          const maxTimeSec = maxTimeByClass.get(competitor.classId);
+          if (
+            maxTimeSec !== undefined &&
+            view.elapsed_time_ms !== null &&
+            view.elapsed_time_ms / 1000 > maxTimeSec
+          ) {
+            view.status = 'MAX';
+          }
         }
         break;
       }
@@ -306,19 +347,35 @@ export function reduce(input: ReduceInput): CompetitionState {
             view.latest_finish !== null ||
             view.latest_start !== null
           ) {
+            const courseReplacements =
+              course && input.replacementControls
+                ? input.replacementControls.get(course.id)
+                : undefined;
+            const resolvedExpected = courseReplacements
+              ? applyReplacements(expected, view.latest_punches, courseReplacements)
+              : expected;
             const detected = detectStatus(
               {
                 start: view.latest_start,
                 finish: view.latest_finish,
                 punches: view.latest_punches,
               },
-              expected
+              resolvedExpected
             );
             view.status = detected.status;
             view.missing_codes = detected.missing_codes;
             view.extra_codes = detected.extra_codes;
             view.out_of_order_codes = detected.out_of_order_codes;
             view.elapsed_time_ms = detected.elapsed_time_ms;
+            // Re-apply MAX auto-compute gate after clearing manual override.
+            const maxTimeSec = competitor ? maxTimeByClass.get(competitor.classId) : undefined;
+            if (
+              maxTimeSec !== undefined &&
+              view.elapsed_time_ms !== null &&
+              view.elapsed_time_ms / 1000 > maxTimeSec
+            ) {
+              view.status = 'MAX';
+            }
           } else {
             view.status = 'PEND';
             view.missing_codes = [];
@@ -329,6 +386,33 @@ export function reduce(input: ReduceInput): CompetitionState {
         }
         break;
       }
+      case 'leg_voided': {
+        // Phase 2.1 (D-16): add control_code to view.voided_legs.
+        const view = competitorViews.get(payload.competitor_id);
+        if (view !== undefined) {
+          if (!view.voided_legs.includes(payload.control_code)) {
+            view.voided_legs = [...view.voided_legs, payload.control_code].sort((a, b) => a - b);
+          }
+          // Track max_seconds cap for this voided leg.
+          let caps = voidedLegCapsByCompetitor.get(payload.competitor_id);
+          if (caps === undefined) {
+            caps = new Map();
+            voidedLegCapsByCompetitor.set(payload.competitor_id, caps);
+          }
+          caps.set(payload.control_code, payload.max_seconds);
+        }
+        break;
+      }
+      case 'leg_unvoided': {
+        // Phase 2.1 (D-16): remove control_code from view.voided_legs.
+        const view = competitorViews.get(payload.competitor_id);
+        if (view !== undefined) {
+          view.voided_legs = view.voided_legs.filter((c) => c !== payload.control_code);
+          const caps = voidedLegCapsByCompetitor.get(payload.competitor_id);
+          if (caps !== undefined) caps.delete(payload.control_code);
+        }
+        break;
+      }
       // card_inserted, card_removed, frame_error, connection_changed,
       // consent_confirmed do not change the projection state. consent_confirmed
       // flips a competitor's consent_status column (mutated outside the reducer
@@ -336,6 +420,53 @@ export function reduce(input: ReduceInput): CompetitionState {
       // about punches + DNF.
       default:
         break;
+    }
+  }
+
+  // Phase 2.1 (D-16): post-pass voided-leg elapsed recomputation.
+  // We defer this to after the event loop so that leg_voided events that
+  // arrive after card_read events still affect the elapsed time (event order
+  // within the sorted log should not change the projection of derived state).
+  for (const [competitorId, caps] of voidedLegCapsByCompetitor) {
+    const view = competitorViews.get(competitorId);
+    if (view === undefined || view.elapsed_time_ms === null) continue;
+    if (view.voided_legs.length === 0) continue;
+    // Re-derive elapsed from the latest card_read history entry.
+    const latestRead = view.card_read_history[view.card_read_history.length - 1];
+    if (latestRead === undefined) continue;
+    // Start from the raw detected elapsed (before any voided-leg subtraction).
+    // We need the original detectStatus elapsed, not an already-adjusted one.
+    // Re-detect from the latest read's punches and timestamps.
+    const competitor = competitorsByCompetition.find((c) => c.id === competitorId);
+    const course = competitor ? courseByClass.get(competitor.classId) : undefined;
+    const expected = course?.control_codes ?? [];
+    const courseReplacements =
+      course && input.replacementControls ? input.replacementControls.get(course.id) : undefined;
+    const resolvedExpected = courseReplacements
+      ? applyReplacements(expected, latestRead.punches, courseReplacements)
+      : expected;
+    const detected = detectStatus(
+      { start: latestRead.start, finish: latestRead.finish, punches: latestRead.punches },
+      resolvedExpected
+    );
+    if (detected.elapsed_time_ms === null) continue;
+    const adjustedElapsed = computeVoidedElapsed(
+      detected.elapsed_time_ms,
+      view.voided_legs,
+      latestRead.punches,
+      latestRead.start,
+      caps
+    );
+    view.elapsed_time_ms = adjustedElapsed;
+    // Re-apply MAX gate after voided adjustment.
+    if (view.manual_status === null && competitor !== undefined) {
+      const maxTimeSec = maxTimeByClass.get(competitor.classId);
+      if (maxTimeSec !== undefined && adjustedElapsed / 1000 > maxTimeSec) {
+        view.status = 'MAX';
+      } else if (view.status === 'MAX') {
+        // Was MAX from the gate, now under cap — revert to detected status.
+        view.status = detected.status;
+      }
     }
   }
 
@@ -385,4 +516,81 @@ export function reduce(input: ReduceInput): CompetitionState {
     pending_unknown_cards: [...pendingUnknownCards].sort((a, b) => a - b),
     last_event_seq: lastEventSeq,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2.1 helper functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 2.1 (D-15): Apply replacement controls to an expected course sequence.
+ *
+ * For each position i in `expected`, if the punched code at position i
+ * matches one of the replacement codes for expected[i], substitute the
+ * expected code so detectStatus sees a match. This is single-level only —
+ * no chaining (a replacement of a replacement is never followed).
+ *
+ * The substitution only fires when the actual punched code is in the
+ * alternatives list; otherwise the original expected code is kept
+ * (detectStatus will then detect it as MP/mismatch naturally).
+ */
+function applyReplacements(
+  expected: readonly number[],
+  punches: readonly NdjsonPunch[],
+  replacements: ReadonlyMap<number, number[]>
+): number[] {
+  return expected.map((code, i) => {
+    const alternatives = replacements.get(code);
+    if (alternatives === undefined) return code;
+    const punchedCode = punches[i]?.code;
+    if (punchedCode !== undefined && alternatives.includes(punchedCode)) {
+      return punchedCode; // treat punched alternative as if it were the expected code
+    }
+    return code;
+  });
+}
+
+/**
+ * Phase 2.1 (D-16): Compute elapsed_time_ms after subtracting voided leg durations.
+ *
+ * For each voided control code, find the leg in the punch sequence:
+ *   leg_ms = punch_at_control_ms - punch_at_previous_control_ms
+ * where previous control = the punch immediately before in the sequence.
+ * If the control is the first punch, leg_ms = punch_ms - start_ms.
+ *
+ * Subtract min(leg_ms, max_seconds * 1000) from elapsed.
+ * The max_seconds cap comes from the leg_voided event payload.
+ */
+function computeVoidedElapsed(
+  elapsedMs: number,
+  voidedLegs: readonly number[],
+  punches: readonly NdjsonPunch[],
+  start: HalfDayClock | null,
+  caps: ReadonlyMap<number, number | null>
+): number {
+  let adjusted = elapsedMs;
+  for (const controlCode of voidedLegs) {
+    const idx = punches.findIndex((p) => p.code === controlCode);
+    if (idx === -1) continue;
+    const punch = punches[idx]!;
+    // Compute punch time in seconds within the same half-day as the start.
+    const punchSec = punch.seconds_in_half_day + punch.half_day * 12 * 3600;
+    let prevSec: number | null = null;
+    if (idx === 0) {
+      // First punch — previous reference is the start punch.
+      if (start !== null) {
+        prevSec = start.seconds_in_half_day + start.half_day * 12 * 3600;
+      }
+    } else {
+      const prev = punches[idx - 1]!;
+      prevSec = prev.seconds_in_half_day + prev.half_day * 12 * 3600;
+    }
+    if (prevSec === null) continue;
+    const legSec = punchSec - prevSec;
+    if (legSec <= 0) continue;
+    const maxSec = caps.get(controlCode);
+    const deductSec = maxSec !== null && maxSec !== undefined ? Math.min(legSec, maxSec) : legSec;
+    adjusted -= deductSec * 1000;
+  }
+  return Math.max(0, adjusted);
 }

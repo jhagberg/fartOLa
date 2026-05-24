@@ -48,6 +48,8 @@ export {
   UnDnfInput,
   ManualStatusInput,
   ClearManualStatusInput,
+  VoidLegInput,
+  UnvoidLegInput,
   ClubDTO,
   EventorLookupCandidate,
   EventorLookupHit,

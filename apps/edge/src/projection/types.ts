@@ -76,6 +76,13 @@ export interface CompetitorView {
    * card_read. When set, the reducer skips auto-detection (the override
    * wins until cleared via clear_manual_status). */
   manual_status: ManualStatus | null;
+  /** Phase 2.1 (D-16): control codes voided by leg_voided events. Sorted
+   * ascending for deterministic snapshots. Voiding a leg removes it from
+   * the course-match check and subtracts the leg duration from elapsed. */
+  voided_legs: number[];
+  /** Phase 2.1 (D-05): assigned start time for the competitor (epoch ms),
+   * NULL when no start time has been drawn. Loaded from competitors.start_time_ms. */
+  start_time_ms: number | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection

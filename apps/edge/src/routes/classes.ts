@@ -73,6 +73,10 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       competitionId: id,
       name: parsed.data.name,
       shortName: parsed.data.short_name ?? null,
+      // Phase 2.1 D-05/D-08: new nullable columns; null on creation.
+      firstStartMs: null,
+      startIntervalSec: null,
+      maxTimeSec: null,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

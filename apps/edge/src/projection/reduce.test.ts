@@ -100,6 +100,8 @@ function comp(overrides: Partial<Competitor>): Competitor {
     consentAtMs: null,
     consentStatus: 'explicit',
     scrubbedAtMs: null,
+    source: 'walkup',
+    startTimeMs: null,
     ...overrides,
   } as Competitor;
 }
@@ -110,7 +112,15 @@ function cls(id: string, name = id): Class {
     competitionId: 'comp-1',
     name,
     shortName: null,
+    firstStartMs: null,
+    startIntervalSec: null,
+    maxTimeSec: null,
   } as Class;
+}
+
+/** Class with a max_time_sec cap set. */
+function clsWithMax(id: string, maxTimeSec: number, name = id): Class {
+  return { ...cls(id, name), maxTimeSec };
 }
 
 function course(classId: string, controlCodes: readonly number[]): CourseWithControlCodes {
@@ -780,5 +790,318 @@ describe('reduce — CompetitionState projection', () => {
       rows.map((r) => r.status),
       ['OK', 'MP', 'DNF', 'DQ', 'MAX', 'DNS', 'CANCEL', 'PEND']
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.1 — D-08/D-15/D-16 reducer extensions.
+//
+// Tests 1-12 below drive the RED phase for:
+//   - MAX auto-compute from class.maxTimeSec (D-08)
+//   - Voided legs (D-16): leg_voided / leg_unvoided events
+//   - Replacement controls (D-15): alternative punched codes count as a match
+//
+// These tests MUST FAIL before the reducer extensions are applied.
+// ---------------------------------------------------------------------------
+
+describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement controls', () => {
+  // Test 1: OK with elapsed over cap → MAX
+  test('test 1: MAX auto-compute — OK but elapsed/1000 > class.maxTimeSec → status is MAX', () => {
+    seqCounter = 0;
+    // Anna finishes OK (all controls + finish) in 700s. Class cap is 600s.
+    const events = [cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700))];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'MAX');
+    assert.equal(anna.elapsed_time_ms, 700 * 1000);
+  });
+
+  // Test 2: OK with elapsed within cap → status stays OK
+  test('test 2: MAX auto-compute — elapsed within cap → status stays OK', () => {
+    seqCounter = 0;
+    // Anna finishes in 500s. Class cap is 600s. Should stay OK.
+    const events = [cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 500))];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+  });
+
+  // Test 3: No cap → no MAX promotion
+  test('test 3: MAX auto-compute — class.maxTimeSec is null → no MAX promotion', () => {
+    seqCounter = 0;
+    // cls() has maxTimeSec: null. Even 9999s should stay OK.
+    const events = [cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 9999))];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+  });
+
+  // Test 4: manual MAX + clear → auto-compute re-fires (MAX if over cap)
+  test('test 4: clear_manual_status re-derives MAX from auto-compute when over cap', () => {
+    seqCounter = 0;
+    // Anna over cap. Operator sets MAX manually. Then clears it → should still be MAX.
+    const events = [
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
+      evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'MAX', reason: 'x' }),
+      evt({ event_type: 'clear_manual_status', competitor_id: 'c-anna' }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'MAX');
+    assert.equal(anna.manual_status, null);
+  });
+
+  // Test 5: manual DNS not overridden by MAX auto-compute
+  test('test 5: manual DNS is NOT overridden by MAX auto-compute', () => {
+    seqCounter = 0;
+    // Card read arrives (over cap), but then DNS is set manually. DNS must win.
+    const events = [
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
+      evt({
+        event_type: 'manual_status_set',
+        competitor_id: 'c-anna',
+        status: 'DNS',
+        reason: 'no-show',
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'DNS');
+  });
+
+  // Test 6: leg_voided adds control_code to voided_legs
+  test('test 6: leg_voided event adds control_code to view.voided_legs', () => {
+    seqCounter = 0;
+    const events = [
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: null,
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: null })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.deepEqual(anna.voided_legs, [32]);
+  });
+
+  // Test 7: leg_unvoided removes control_code from voided_legs
+  test('test 7: leg_unvoided removes control_code from view.voided_legs', () => {
+    seqCounter = 0;
+    const events = [
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: null,
+      }),
+      evt({ event_type: 'leg_unvoided', competitor_id: 'c-anna', control_code: 32 }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: null })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.deepEqual(anna.voided_legs, []);
+  });
+
+  // Test 8: replacement controls — code 32 replaces expected code 31 → OK
+  test('test 8: replacement controls — punched code 32 replaces expected code 31 → OK', () => {
+    seqCounter = 0;
+    // Course expects [31, 32, 33, 34]. Anna punches [32, 32, 33, 34].
+    // Wait, that doesn't make sense. The replacement maps expected 31 → allowed 32.
+    // So when position expects 31, punching 32 counts as a match.
+    // Anna punches [32, 32, 33, 34] but course expects [31, 32, 33, 34] —
+    // at position 0 she punches 32 instead of 31, which is a valid replacement.
+    const events = [cardRead(1, [p(32), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600))];
+    // replacementControls: courseId → (expectedCode → [alternativeCodes])
+    const replacementControls: ReadonlyMap<string, ReadonlyMap<number, number[]>> = new Map([
+      ['course-cls-H21', new Map([[31, [32]]])],
+    ]);
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+      replacementControls,
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+  });
+
+  // Test 9: no replacement mapping for code 33 → MP
+  test('test 9: replacement controls — no replacement for code 31 → 33 → status is MP', () => {
+    seqCounter = 0;
+    // Course expects [31, 32, 33, 34]. Anna punches [33, 32, 33, 34].
+    // Only 31→32 replacement exists, not 31→33. So punching 33 at pos 0 is MP.
+    const events = [cardRead(1, [p(33), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600))];
+    const replacementControls: ReadonlyMap<string, ReadonlyMap<number, number[]>> = new Map([
+      ['course-cls-H21', new Map([[31, [32]]])],
+    ]);
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+      replacementControls,
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'MP');
+  });
+
+  // Test 10: cyclic mapping (31→32, 32→31) — no infinite loop, depth=1 only
+  test('test 10: cyclic replacement mapping does not cause infinite loop (depth=1)', () => {
+    seqCounter = 0;
+    // Course expects [31, 32]. Anna punches [32, 31].
+    // If we had chaining: 31→32→31→... — but we only do one level.
+    // Expected 31, punched 32 → matches (31→32 replacement exists).
+    // Expected 32, punched 31 → matches (32→31 replacement exists).
+    // Result: OK.
+    const events = [cardRead(1, [p(32), p(31)], hd(10 * 3600), hd(10 * 3600 + 300))];
+    const replacementControls: ReadonlyMap<string, ReadonlyMap<number, number[]>> = new Map([
+      [
+        'course-cls-H21',
+        new Map([
+          [31, [32]],
+          [32, [31]],
+        ]),
+      ],
+    ]);
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+      replacementControls,
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+  });
+
+  // Test 11: voided leg elapsed recomputation — subtract leg duration
+  test('test 11: voided leg — elapsed recalculated by subtracting voided leg duration', () => {
+    seqCounter = 0;
+    // Anna has punches: 31 at 10:00:00, 32 at 10:01:00 (60s leg), finish at 10:05:00 (300s total).
+    // Voiding control 32 (60s leg, no cap) → elapsed = 300 - 60 = 240s.
+    const baseMs = 10 * 3600; // 10:00:00 in seconds
+    const events = [
+      cardRead(
+        1,
+        [
+          { code: 31, seconds_in_half_day: baseMs + 60, half_day: 0, weekday: null },
+          { code: 32, seconds_in_half_day: baseMs + 120, half_day: 0, weekday: null },
+          { code: 33, seconds_in_half_day: baseMs + 180, half_day: 0, weekday: null },
+          { code: 34, seconds_in_half_day: baseMs + 240, half_day: 0, weekday: null },
+        ],
+        hd(baseMs),
+        hd(baseMs + 300)
+      ),
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: null,
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    // Original elapsed = 300s. Voided leg 32: punch_at_32 - punch_at_31 = 120-60 = 60s. Subtract 60s → 240s.
+    assert.equal(anna.elapsed_time_ms, 240 * 1000);
+  });
+
+  // Test 12: voided leg with max_seconds cap — subtract min(actual, cap)
+  test('test 12: voided leg with max_seconds cap — subtracts min(actual, cap)', () => {
+    seqCounter = 0;
+    // Anna's leg 32 is 90s actual, but max_seconds is 60 → subtract 60s.
+    const baseMs = 10 * 3600;
+    const events = [
+      cardRead(
+        1,
+        [
+          { code: 31, seconds_in_half_day: baseMs + 60, half_day: 0, weekday: null },
+          { code: 32, seconds_in_half_day: baseMs + 150, half_day: 0, weekday: null }, // 90s leg
+          { code: 33, seconds_in_half_day: baseMs + 200, half_day: 0, weekday: null },
+          { code: 34, seconds_in_half_day: baseMs + 250, half_day: 0, weekday: null },
+        ],
+        hd(baseMs),
+        hd(baseMs + 300)
+      ),
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: 60, // cap at 60s even though actual leg is 90s
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    // Original elapsed = 300s. Voided leg actual = 90s but capped at 60s → subtract 60s → 240s.
+    assert.equal(anna.elapsed_time_ms, 240 * 1000);
   });
 });

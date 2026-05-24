@@ -49,7 +49,13 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 
-import { ManualDnfInput, ManualStatusInput, readoutChannel } from '@fartola/shared-types';
+import {
+  ManualDnfInput,
+  ManualStatusInput,
+  VoidLegInput,
+  UnvoidLegInput,
+  readoutChannel,
+} from '@fartola/shared-types';
 import { competitors as competitorsTable } from '../db/schema.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -163,6 +169,14 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         .get();
       if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
 
+      // Idempotency: if the current projection already has the same manual_status
+      // asserted, skip the event insertion and return 200 (not 201).
+      const projection = app.projectionStore.recomputeNow(competitionId);
+      const view = projection?.competitors.get(competitorId);
+      if (view?.manual_status === parsed.data.status) {
+        return reply.code(200).send({ idempotent: true });
+      }
+
       const r = insertEvent(
         app.fartolaDb,
         app.fartolaNodeId,
@@ -206,6 +220,13 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         .get();
       if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
 
+      // Idempotency: if manual_status is already null, return 200 without event.
+      const projection = app.projectionStore.recomputeNow(competitionId);
+      const view = projection?.competitors.get(competitorId);
+      if (view !== undefined && view.manual_status === null) {
+        return reply.code(200).send({ idempotent: true });
+      }
+
       const r = insertEvent(
         app.fartolaDb,
         app.fartolaNodeId,
@@ -217,6 +238,116 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
       app.wsBroadcast(readoutChannel(competitionId), {
         type: 'clear_manual_status',
         payload: { competitor_id: competitorId },
+        seq: r.local_seq,
+      });
+      app.projectionStore.markDirty(competitionId);
+      return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Phase 2.1 (D-16) — voided-leg routes.
+  //
+  //   POST /api/competitions/:id/competitors/:cid/void-leg
+  //   POST /api/competitions/:id/competitors/:cid/unvoid-leg
+  //
+  // Both endpoints follow the same pattern as the manual-status routes:
+  //   1. Cross-competition pre-flight (404 if competitor not in competition).
+  //   2. Zod-validate body.
+  //   3. Insert event via insertEvent.
+  //   4. Broadcast on readout channel.
+  //   5. markDirty for projection recompute.
+  //
+  // T-02.1-01 mitigation: control_code is validated as integer by Zod;
+  // competitor ownership is verified by the cross-competition pre-flight.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Params: { id: string; competitorId: string } }>(
+    '/api/competitions/:id/competitors/:competitorId/void-leg',
+    async (req, reply) => {
+      const { id: competitionId, competitorId } = req.params;
+      const parsed = VoidLegInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+      const competitor = app.fartolaDb.db
+        .select({ id: competitorsTable.id })
+        .from(competitorsTable)
+        .where(
+          and(
+            eq(competitorsTable.id, competitorId),
+            eq(competitorsTable.competitionId, competitionId)
+          )
+        )
+        .get();
+      if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      const r = insertEvent(
+        app.fartolaDb,
+        app.fartolaNodeId,
+        'leg_voided',
+        Date.now(),
+        {
+          event_type: 'leg_voided',
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+          max_seconds: parsed.data.max_seconds,
+          ...(parsed.data.reason !== undefined ? { reason: parsed.data.reason } : {}),
+        },
+        competitionId
+      );
+      app.wsBroadcast(readoutChannel(competitionId), {
+        type: 'leg_voided',
+        payload: {
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+          max_seconds: parsed.data.max_seconds,
+        },
+        seq: r.local_seq,
+      });
+      app.projectionStore.markDirty(competitionId);
+      return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  app.post<{ Params: { id: string; competitorId: string } }>(
+    '/api/competitions/:id/competitors/:competitorId/unvoid-leg',
+    async (req, reply) => {
+      const { id: competitionId, competitorId } = req.params;
+      const parsed = UnvoidLegInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+      const competitor = app.fartolaDb.db
+        .select({ id: competitorsTable.id })
+        .from(competitorsTable)
+        .where(
+          and(
+            eq(competitorsTable.id, competitorId),
+            eq(competitorsTable.competitionId, competitionId)
+          )
+        )
+        .get();
+      if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      const r = insertEvent(
+        app.fartolaDb,
+        app.fartolaNodeId,
+        'leg_unvoided',
+        Date.now(),
+        {
+          event_type: 'leg_unvoided',
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+        },
+        competitionId
+      );
+      app.wsBroadcast(readoutChannel(competitionId), {
+        type: 'leg_unvoided',
+        payload: {
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+        },
         seq: r.local_seq,
       });
       app.projectionStore.markDirty(competitionId);
