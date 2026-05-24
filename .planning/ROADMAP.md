@@ -157,7 +157,7 @@ Plans:
   - [x] 02.1-08-PLAN.md — Wave 3: Eventor results + startlist push (pushToEventor with PKZIP-archived IOF XML 3.0 via yazl, push routes, EventorPublishView)
   - [x] 02.1-09-PLAN.md — Wave 2: MeOS classid fix (classCache from REST ?get=class, MIP entry builder classid emission)
   - [x] 02.1-10-PLAN.md — Wave 2: SI card dedup carry-over (migration 0008, tri-state lookupBySiCard, WalkupModal +N andra chip)
-  - [ ] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
+  - [x] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
   - [ ] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
   - [x] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
 
@@ -225,7 +225,7 @@ These must be respected throughout, not deferred to a phase:
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 11/13 | In Progress|  |
+| 2.1. Sanctioned-competition foundations | 12/13 | In Progress|  |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
