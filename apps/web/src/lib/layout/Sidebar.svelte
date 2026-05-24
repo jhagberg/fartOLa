@@ -143,6 +143,15 @@
   </NavItem>
 
   <NavItem
+    active={route === 'kvariskov'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('kvariskov')}
+  >
+    {#snippet icon()}<Icon name="alert-triangle" />{/snippet}
+    {t('nav.kvariskov')}
+  </NavItem>
+
+  <NavItem
     active={route === 'info'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('info')}

@@ -71,6 +71,7 @@
     if (p.endsWith('/export')) return 'export';
     if (p.endsWith('/hyrbrickor')) return 'hyrbrickor';
     if (p.endsWith('/eventor-publish')) return 'eventor-publish';
+    if (p.endsWith('/kvar-i-skogen')) return 'kvariskov';
     if (p.endsWith('/info')) return 'info';
     return 'home';
   });
@@ -95,6 +96,8 @@
     else if (route === 'hyrbrickor') void goto(`/competition/${activeCompId}/hyrbrickor`);
     else if (route === 'eventor-publish')
       void goto(`/competition/${activeCompId}/eventor-publish`);
+    else if (route === 'kvariskov')
+      void goto(`/competition/${activeCompId}/kvar-i-skogen`);
     else if (route === 'info') void goto(`/competition/${activeCompId}/info`);
   }
 

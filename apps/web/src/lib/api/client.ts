@@ -861,6 +861,39 @@ export function getBridgeStatus(): Promise<{ state: 'opening' | 'open' | 'closed
 }
 
 // ---------------------------------------------------------------------------
+// Checkunit snapshot (Phase 2.1 Plan 02.1-06 — kvar-i-skogen)
+// ---------------------------------------------------------------------------
+
+export interface CheckunitSnapshotResult {
+  /** SI card numbers read from the check-unit backup memory (started). */
+  cardNumbers: number[];
+  /** SI card numbers that have physically returned (card_read with finish
+   * punch). NOT based on computed status — only physical finish reads. */
+  returnedCardNumbers: number[];
+  /** True when the check-unit's backup memory wrapped around (older records
+   * may be missing). The UI warns the operator when this flag is set. */
+  overflow: boolean;
+  /** Total number of card numbers returned (convenience field). */
+  readCount: number;
+}
+
+/** POST /api/competitions/:id/checkunit/snapshot
+ * Reads the BSF8 check-unit backup memory via the active SI bridge reader.
+ * Optional `reader` query param selects which reader to use when multiple are
+ * connected (defaults to the first available reader). */
+export function postCheckunitSnapshot(
+  competitionId: string,
+  opts: { reader?: string } = {}
+): Promise<CheckunitSnapshotResult> {
+  const query: Record<string, string> = {};
+  if (opts.reader !== undefined) query['reader'] = opts.reader;
+  return apiFetch<CheckunitSnapshotResult>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/checkunit/snapshot`,
+    { method: 'POST', body: {}, ...(Object.keys(query).length > 0 ? { query } : {}) }
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Dev — Simulate read (gated by FARTOLA_DEV=1 server-side)
 // ---------------------------------------------------------------------------
 

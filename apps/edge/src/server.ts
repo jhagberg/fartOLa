@@ -66,6 +66,7 @@ import registerMopRoute from './integrations/meos/mop.ts';
 import registerLottningRoutes from './routes/lottning.ts';
 import registerLiveresultatRoutes from './routes/liveresultat.ts';
 import registerEventorPushRoutes from './routes/eventorPush.ts';
+import registerCheckunitRoutes from './routes/checkunit.ts';
 import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
@@ -317,6 +318,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // Phase 2.1 Plan 02.1-08 — Eventor results + startlist push.
     // POST /api/competitions/:id/eventor/push-results|push-startlist.
     await app.register(registerEventorPushRoutes);
+    // Phase 2.1 Plan 02.1-06 — Kvar-i-skogen check-unit backup readout.
+    // POST /api/competitions/:id/checkunit/snapshot.
+    await app.register(registerCheckunitRoutes);
     await app.register(registerDevRoutes);
   }
 

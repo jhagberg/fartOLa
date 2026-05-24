@@ -364,6 +364,14 @@ class BridgeLifecycle {
     };
   }
 
+  /** Exposes the currently open SiMainStation for checkunit snapshot readout.
+   * Returns null when the bridge is not connected (transport not open yet,
+   * in the reconnect back-off window, or --no-bridge boot). The caller must
+   * handle the null case and return an appropriate HTTP error. */
+  getStation(): SiMainStation | null {
+    return this.station;
+  }
+
   async start(): Promise<void> {
     this.shutdownRequested = false;
     await this.openAttempt();

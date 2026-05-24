@@ -141,6 +141,9 @@ declare module 'fastify' {
         connected: boolean;
         lastPunchAt: number | null;
       };
+      /** Plan 06 (Phase 2.1) — returns the active SiMainStation for
+       * checkunit backup readout, or null when the bridge is not connected. */
+      getStation(): import('@fartola/sportident').SiMainStation | null;
     }>;
   }
 }
