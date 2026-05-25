@@ -232,8 +232,11 @@ describe('signCookie + verifyCookie', () => {
   test('Test 8: verifyCookie returns null for tampered cookie (single char flip in signature)', () => {
     const cookie = signCookie('comp-1', TEST_SECRET, Date.now() + 86_400_000);
     const [payloadPart, sigPart] = cookie.split('.');
-    // Flip one character in the signature
-    const tamperedSig = sigPart.slice(0, -1) + (sigPart.at(-1) === 'a' ? 'b' : 'a');
+    // Flip a character near the start of the signature (avoiding the last
+    // char whose low bits are base64 padding for 32-byte HMAC output).
+    const i = 2;
+    const tamperedSig =
+      sigPart.slice(0, i) + (sigPart[i] === 'A' ? 'B' : 'A') + sigPart.slice(i + 1);
     const tamperedCookie = `${payloadPart}.${tamperedSig}`;
     const result = verifyCookie(tamperedCookie, 'comp-1', TEST_SECRET);
     assert.equal(result, null, 'expected null for tampered cookie');

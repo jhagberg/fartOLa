@@ -48,8 +48,14 @@
   let competitors = $state<CompetitorDTO[]>([]);
   /** Classes map for class name lookup. */
   let classesMap = $state<Map<string, string>>(new Map());
-  /** Card numbers the operator has manually confirmed safe. */
-  let confirmedSafe = $state<Set<number>>(new Set());
+  /** Card numbers the operator has manually confirmed safe.
+   * Persisted to sessionStorage so safety-critical state survives page refresh. */
+  let confirmedSafe = $state<Set<number>>((() => {
+    try {
+      const saved = sessionStorage.getItem(`fartola-safe-${competitionId}`);
+      return saved ? new Set(JSON.parse(saved) as number[]) : new Set();
+    } catch { return new Set(); }
+  })());
   /** Whether a snapshot has been fetched at least once. */
   let hasFetched = $state(false);
   let loading = $state(false);
@@ -114,11 +120,12 @@
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
-  /** Elapsed since start_time_ms. Handles midnight wrap. */
+  /** Elapsed since start_time_ms (ms since midnight local). Handles midnight wrap. */
   function elapsed(startMs: number | null | undefined): string {
     if (startMs == null) return '—';
-    const now = Date.now();
-    const diffMs = ((now - startMs) % 86400000 + 86400000) % 86400000;
+    const d = new Date();
+    const localNowMs = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1000 + d.getMilliseconds();
+    const diffMs = ((localNowMs - startMs) % 86400000 + 86400000) % 86400000;
     return formatTime(diffMs);
   }
 
@@ -168,6 +175,7 @@
     const next = new Set(confirmedSafe);
     next.add(cardNumber);
     confirmedSafe = next;
+    try { sessionStorage.setItem(`fartola-safe-${competitionId}`, JSON.stringify([...next])); } catch {}
   }
 
   async function copyToClipboard(): Promise<void> {

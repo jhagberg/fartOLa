@@ -60,7 +60,7 @@ export interface CookiePayload {
 
 /** Pre-check regex — rejects inputs that can't possibly match a valid code.
  * Must match: <Swedish-lowercase>-<NNN> where NNN is 100-999 (first digit 1-9). */
-const CODE_REGEX = /^[a-zåäö]+-[1-9][0-9]{2}$/;
+export const CODE_REGEX = /^[a-zåäö]+-[1-9][0-9]{2}$/;
 
 /**
  * Generate a fresh event admin code of the form `<word>-<NNN>` where

@@ -199,6 +199,10 @@
       const h = parts[0] ?? 0;
       const m = parts[1] ?? 0;
       const s = parts[2] ?? 0;
+      if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) {
+        error = t('lottning.invalidTime');
+        return;
+      }
       newMs = (h * 3600 + m * 60 + s) * 1000;
     }
     if (newMs === null) { cancelEditTime(id); return; }

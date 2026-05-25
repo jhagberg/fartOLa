@@ -33,10 +33,10 @@
 //   - T-02.1-25b (competition-scoped cookie)
 
 import type { FastifyInstance } from 'fastify';
-import { and, eq, isNull, lt, not } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { eventCodes } from '../db/schema.ts';
-import { signCookie } from '../auth/event-code.ts';
+import { signCookie, CODE_REGEX } from '../auth/event-code.ts';
 import { getOrCreateSigningSecret } from './event-codes.ts';
 
 // ---------------------------------------------------------------------------
@@ -157,60 +157,45 @@ export default async function registerAccessRoute(app: FastifyInstance): Promise
 
     const nowMs = Date.now();
 
-    // Check for revoked first (gives a distinct error from invalid/expired).
-    // We query specifically for revoked codes to distinguish from expired.
-    const revokedRow = app.fartolaDb.db
-      .select({ id: eventCodes.id })
-      .from(eventCodes)
-      .where(
-        and(
-          eq(eventCodes.competitionId, competitionId),
-          eq(eventCodes.code, code),
-          not(isNull(eventCodes.revokedAtMs))
-        )
-      )
-      .get();
-    if (revokedRow) {
-      recordAttempt(ip, false);
-      return reply.code(401).send({ error: 'revoked' });
-    }
+    // Normalize: lowercase + NFC (mobile keyboards auto-capitalize).
+    const normalizedCode = code.trim().toLowerCase().normalize('NFC');
 
-    // Check for expired codes (gives a distinct error from invalid/revoked).
-    const expiredRow = app.fartolaDb.db
-      .select({ id: eventCodes.id })
-      .from(eventCodes)
-      .where(
-        and(
-          eq(eventCodes.competitionId, competitionId),
-          eq(eventCodes.code, code),
-          isNull(eventCodes.revokedAtMs),
-          lt(eventCodes.expiresAtMs, nowMs)
-        )
-      )
-      .get();
-    if (expiredRow) {
-      recordAttempt(ip, false);
-      return reply.code(401).send({ error: 'expired' });
-    }
-
-    // Full validation (non-expired, non-revoked, correct competition).
-    const { validateCode } = await import('../auth/event-code.ts');
-    const validRow = await validateCode(app.fartolaDb, competitionId, code, nowMs);
-    if (!validRow) {
+    // Fast regex pre-check — no DB hit for malformed inputs.
+    if (!CODE_REGEX.test(normalizedCode)) {
       recordAttempt(ip, false);
       return reply.code(401).send({ error: 'invalid_code' });
     }
 
+    // Single query: fetch the code row regardless of state, then derive
+    // revoked/expired/invalid in-memory (replaces three separate queries).
+    const row = app.fartolaDb.db
+      .select({
+        id: eventCodes.id,
+        expiresAtMs: eventCodes.expiresAtMs,
+        revokedAtMs: eventCodes.revokedAtMs,
+      })
+      .from(eventCodes)
+      .where(and(eq(eventCodes.competitionId, competitionId), eq(eventCodes.code, normalizedCode)))
+      .get();
+
+    if (!row) {
+      recordAttempt(ip, false);
+      return reply.code(401).send({ error: 'invalid_code' });
+    }
+    if (row.revokedAtMs != null) {
+      recordAttempt(ip, false);
+      return reply.code(401).send({ error: 'revoked' });
+    }
+    if (row.expiresAtMs <= nowMs) {
+      recordAttempt(ip, false);
+      return reply.code(401).send({ error: 'expired' });
+    }
+
     recordAttempt(ip, true);
 
-    // Get the signing secret (auto-created if not yet initialised).
     const secret = getOrCreateSigningSecret(app);
-
-    // Sign cookie scoped to this competitionId (T-02.1-25b).
-    const cookieValue = signCookie(competitionId, secret, validRow.expiresAtMs);
-
-    // Max-Age in seconds.
-    const maxAge = Math.max(0, Math.floor((validRow.expiresAtMs - nowMs) / 1000));
+    const cookieValue = signCookie(competitionId, secret, row.expiresAtMs);
+    const maxAge = Math.max(0, Math.floor((row.expiresAtMs - nowMs) / 1000));
 
     // Set the HttpOnly SameSite=Lax cookie (NOT Secure — LAN HTTP deployment).
     void reply.header(

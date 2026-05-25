@@ -332,6 +332,10 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // Rate-limited; sets signed HttpOnly cookie scoped to competitionId.
     await app.register(registerAccessRoute);
 
+    // Cache the signing secret once at startup — avoids a DB hit on every
+    // authenticated write request.
+    const eventCodeSigningSecret = getOrCreateSigningSecret(app);
+
     // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on all write routes
     // under /api/competitions/:id/**  (POST/PATCH/DELETE) for non-localhost
     // requests without a valid signed cookie (T-02.1-27 / T-02.1-27b).
@@ -363,11 +367,8 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       const routeCompetitionId = urlParts[3];
 
       // Exclude /api/competitions/:id/event-codes routes — they are admin-only
-      // (localhost-gated) routes with their own localhost check. The blanket
-      // gate is for helper-facing write routes, not operator-only admin surfaces.
-      // Exclude both the generate (POST /event-codes) and revoke
-      // (POST /event-codes/:codeId/revoke) paths.
-      if (url.includes('/event-codes')) return;
+      // (localhost-gated) routes with their own localhost check.
+      if (urlParts[4] === 'event-codes') return;
 
       // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
       const remoteAddr = request.socket.remoteAddress;
@@ -389,8 +390,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
         return reply.code(403).send({ error: 'event_code_required' });
       }
 
-      const secret = getOrCreateSigningSecret(app);
-      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', secret);
+      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', eventCodeSigningSecret);
 
       if (!payload) {
         // Either signature invalid, expired, or competitionId mismatch.

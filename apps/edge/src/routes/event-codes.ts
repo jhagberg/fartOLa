@@ -52,8 +52,9 @@ function isLocalhost(remoteAddress: string | undefined): boolean {
 /** Mask a plaintext code for the GET list: first 3 chars + **** + last 2.
  * e.g. `sänkan-127` → `sän****27`. */
 function maskCode(code: string): string {
-  if (code.length <= 5) return '****';
-  return `${code.slice(0, 3)}****${code.slice(-2)}`;
+  const dashIdx = code.indexOf('-');
+  if (dashIdx < 1) return '****';
+  return `${code.slice(0, Math.min(3, dashIdx))}****`;
 }
 
 /** Read or create the per-install cookie signing secret.
