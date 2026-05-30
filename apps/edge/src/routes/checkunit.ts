@@ -116,12 +116,10 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
       // deduplicate by card_number keeping only the most recent, then filter
       // for non-null finish.
       interface CardReadRow {
-        cardNumber: number;
         payload: EventPayload;
       }
       const cardReadRows = app.fartolaDb.db
         .select({
-          cardNumber: events.payload,
           payload: events.payload,
         })
         .from(events)

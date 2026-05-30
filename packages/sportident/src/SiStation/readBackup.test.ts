@@ -111,7 +111,12 @@ function makeMockStation(responses: number[][][]): {
   let idx = 0;
   const station: ISiStation = {
     sendMessage(message) {
-      calls.push({ command: message.command, parameters: message.parameters ?? [] });
+      // readBackupMemory only ever sends command-style messages (mode-less);
+      // narrow the SiMessage union so command/parameters are accessible.
+      if (!('command' in message)) {
+        return Promise.reject(new Error('MockStation: expected a command-style SiMessage'));
+      }
+      calls.push({ command: message.command, parameters: message.parameters });
       const resp = responses[idx++];
       if (resp === undefined) {
         return Promise.reject(new Error(`MockStation: no response for call #${idx}`));

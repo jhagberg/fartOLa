@@ -93,7 +93,7 @@ describe('draw algorithms', () => {
       const result = drawSOFT(input, { rngFn: makeLcgRng(5) });
       const real = result.order.filter((s): s is DrawRunner => s !== null);
       assert.equal(real.length, 1);
-      assert.equal(real[0].id, 'solo');
+      assert.equal(real[0]!.id, 'solo');
     });
 
     test('test 7: vacantSlots=3 with 10 runners → 13 slots, 3 are null', () => {

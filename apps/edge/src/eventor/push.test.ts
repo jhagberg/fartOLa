@@ -63,7 +63,11 @@ function makeCapturingFetch(
     const rawBody = init?.body;
     let bodyBytes = new Uint8Array();
     if (rawBody instanceof Uint8Array) {
-      bodyBytes = rawBody;
+      bodyBytes = new Uint8Array(
+        rawBody.buffer as ArrayBuffer,
+        rawBody.byteOffset,
+        rawBody.byteLength
+      );
     } else if (rawBody instanceof ArrayBuffer) {
       bodyBytes = new Uint8Array(rawBody);
     } else if (typeof rawBody === 'string') {

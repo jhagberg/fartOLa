@@ -108,6 +108,7 @@ describe('POST /access — valid code flow', () => {
     assert.equal(res.statusCode, 200);
     const setCookie = res.headers['set-cookie'];
     const cookieStr = Array.isArray(setCookie) ? setCookie[0] : String(setCookie);
+    assert.ok(cookieStr !== undefined, 'set-cookie header must include a cookie');
     // Extract the cookie value (before first semicolon)
     const cookieValue = cookieStr.split('=').slice(1).join('=').split(';')[0];
     assert.ok(cookieValue && cookieValue.length > 0, 'cookie value must be non-empty');
@@ -309,7 +310,7 @@ describe('preHandler gate on write routes', () => {
       .get() as { value: string };
 
     // Sign cookie for comp-A, but send request to comp-access-1
-    const cookie = signCookie('comp-A', secretRow.value, Date.now() + 86400000);
+    const cookie = signCookie('comp-A', 'code-A', secretRow.value, Date.now() + 86400000);
 
     const res = await ctx.app.inject({
       method: 'POST',

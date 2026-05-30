@@ -182,7 +182,7 @@ describe('lottning route', () => {
     const times = rows.map((r) => r.startTimeMs as number);
     assert.equal(times[0], firstStartMs);
     for (let i = 1; i < times.length; i++) {
-      assert.equal(times[i] - times[i - 1], intervalSec * 1000);
+      assert.equal(times[i]! - times[i - 1]!, intervalSec * 1000);
     }
   });
 
@@ -206,7 +206,7 @@ describe('lottning route', () => {
       .orderBy(asc(competitors.startTimeMs))
       .all();
     const times = rows.map((r) => r.startTimeMs as number);
-    const hasGap = times.some((_, i) => i > 0 && times[i] - times[i - 1] > intervalSec * 1000);
+    const hasGap = times.some((_, i) => i > 0 && times[i]! - times[i - 1]! > intervalSec * 1000);
     assert.ok(hasGap, `Expected a gap > ${intervalSec}s but times were ${times.join(',')}`);
   });
 
@@ -395,7 +395,7 @@ describe('lottning route', () => {
     assert.equal(body.start_list.length, 5);
     for (let i = 1; i < body.start_list.length; i++) {
       assert.ok(
-        body.start_list[i].start_time_ms >= body.start_list[i - 1].start_time_ms,
+        body.start_list[i]!.start_time_ms >= body.start_list[i - 1]!.start_time_ms,
         'Start list not sorted'
       );
     }

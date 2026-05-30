@@ -194,7 +194,7 @@ export default async function registerAccessRoute(app: FastifyInstance): Promise
     recordAttempt(ip, true);
 
     const secret = getOrCreateSigningSecret(app);
-    const cookieValue = signCookie(competitionId, secret, row.expiresAtMs);
+    const cookieValue = signCookie(competitionId, row.id, secret, row.expiresAtMs);
     const maxAge = Math.max(0, Math.floor((row.expiresAtMs - nowMs) / 1000));
 
     // Set the HttpOnly SameSite=Lax cookie (NOT Secure — LAN HTTP deployment).

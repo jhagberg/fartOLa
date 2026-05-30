@@ -157,16 +157,19 @@ export function createPushQueue(opts: PushQueueOpts): PushQueueHandle {
     });
 
     const url = config.liveresultatUrl ?? DEFAULT_LIVERESULTAT_URL;
+    const pushOpts = {
+      url,
+      competitionId: config.liveresultatId,
+      password: config.liveresultatPwd,
+      mopXml,
+    };
+    if (opts.fetchImpl !== undefined) {
+      Object.assign(pushOpts, { fetchImpl: opts.fetchImpl });
+    }
 
     lastPushAt = Date.now();
     try {
-      await pushToLiveresultat({
-        url,
-        competitionId: config.liveresultatId,
-        password: config.liveresultatPwd,
-        mopXml,
-        fetchImpl: opts.fetchImpl,
-      });
+      await pushToLiveresultat(pushOpts);
       lastSuccessAt = Date.now();
       lastError = null;
       retryCount = 0;
