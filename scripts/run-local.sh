@@ -91,9 +91,9 @@ if [[ ${#PASSTHRU[@]} -gt 0 ]]; then
 else
   echo "  reader  : (default /dev/ttyUSB0 — pass --no-bridge for UI-only)"
 fi
-echo "  open    : http://localhost:$PORT"
+echo "  open    : http://localhost:$PORT   (use this on THIS laptop — operator)"
 if [[ -n "$LAN_IP" && ${#LAN_FLAG[@]} -gt 0 ]]; then
-  echo "  LAN     : http://$LAN_IP:$PORT   (open this on the other computer)"
+  echo "  LAN     : http://$LAN_IP:$PORT   (other computers — need an event code)"
 fi
 echo ""
 

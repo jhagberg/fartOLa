@@ -14,12 +14,14 @@
 // Test 10: preHandler rejects valid cookie with mismatched competitionId → 403
 // Test 11: blanket gate — POST /api/competitions/:id/import/startlist/confirm non-localhost no cookie → 403
 // Test 12: secret-persist — signing secret survives app restart (read from DB not regenerated)
+// Test 13: operator-self bypass — POST from this host's own LAN IP (allowLan) is not gated
+// Test 14: allowLan does NOT blanket-trust the LAN — a foreign LAN IP still needs a cookie → 403
 
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
 
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../server.ts';
@@ -34,12 +36,12 @@ interface Ctx {
   competitionId: string;
 }
 
-async function boot(dbPath?: string): Promise<Ctx> {
+async function boot(dbPath?: string, allowLan = false): Promise<Ctx> {
   const tmpDir = mkdtempSync(path.join(tmpdir(), 'fartola-access-test-'));
   const resolvedDbPath = dbPath ?? path.join(tmpDir, 'fartola.db');
   const handle = openDatabase(resolvedDbPath);
   const nodeId = ensureNodeId(handle);
-  const app = await buildServer({ logger: false, dbHandle: handle, nodeId });
+  const app = await buildServer({ logger: false, dbHandle: handle, nodeId, allowLan });
 
   const competitionId = 'comp-access-1';
   handle.sqlite
@@ -376,5 +378,65 @@ describe('preHandler gate on write routes', () => {
     await app2.close();
     handle2.close();
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+describe('preHandler gate — operator-self bypass (allowLan)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot(undefined, true); // bind-to-LAN posture (operator laptop on 0.0.0.0)
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  /** First real non-loopback IPv4 address of THIS host — the same source
+   * socket.remoteAddress reports when the operator opens the UI via the
+   * laptop's own LAN IP. Deterministic on any machine with a LAN interface. */
+  function ownLanIp(): string | undefined {
+    for (const list of Object.values(networkInterfaces())) {
+      for (const a of list ?? []) {
+        if (a.family === 'IPv4' && !a.internal) return a.address;
+      }
+    }
+    return undefined;
+  }
+
+  test("Test 13: POST from this host's own LAN IP bypasses the gate", async () => {
+    const ip = ownLanIp();
+    if (ip === undefined) return; // headless box with no LAN interface — nothing to assert
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      remoteAddress: ip,
+      payload: {
+        competition_id: ctx.competitionId,
+        name: 'Runner',
+        club: 'Club',
+        class_id: 'class-1',
+        consent: true,
+      },
+    });
+    // May be 404/422 (missing class) but must NOT be 403 — preHandler let it through.
+    assert.notEqual(res.statusCode, 403, 'operator self-connect via own LAN IP must bypass');
+  });
+
+  test('Test 14: foreign LAN IP still needs a cookie even with allowLan → 403', async () => {
+    // allowLan must NOT blanket-trust the LAN — only THIS host's own addresses.
+    // 203.0.113.0/24 (TEST-NET-3) is reserved and never a real interface address.
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      remoteAddress: '203.0.113.9',
+      payload: {
+        competition_id: ctx.competitionId,
+        name: 'Runner',
+        club: 'Club',
+        class_id: 'class-1',
+        consent: true,
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.json<{ error: string }>().error, 'event_code_required');
   });
 });
