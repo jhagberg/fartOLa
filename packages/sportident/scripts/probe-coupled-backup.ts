@@ -7,16 +7,23 @@
 // station — none of the HTTP / pino / web layers in the way.
 //
 // Usage (from packages/sportident/):
-//   node --import tsx scripts/probe-coupled-backup.ts [--serial /dev/ttyUSB0] [--raw] [--direct]
+//   node --import tsx scripts/probe-coupled-backup.ts [--serial /dev/ttyUSB0] [--raw|--info|--direct]
 //
 //   --serial <path>   serial device (default /dev/ttyUSB0)
+//   --info            identify the coupled station: read its config block and
+//                     print code number, MODE (Start/Finish/Control/Check/...),
+//                     and serial number. Use this to confirm WHICH unit you
+//                     placed (Start vs Mål vs control 136/110).
 //   --raw             skip the high-level readCoupledBackupMemory(); instead
 //                     send SET_MS(0x53) → GET_SYS_VAL → (GET_BACKUP) → SET_MS(0x4D)
 //                     ONE AT A TIME with a long timeout, dumping every reply byte
 //                     INCLUDING bare NAK/ACK that the multiplexer normally drops.
 //                     This is the diagnostic mode — use it first.
 //   --direct          run readBackupMemory() (direct, no coupling) for comparison.
-//   --timeout <ms>    per-command timeout in raw mode (default 3000).
+//   --timeout <ms>    per-command timeout in raw/info mode (default 3000).
+//
+// Reminder: SI stations sleep. If you get all-NAK, dip a card into the station
+// to wake it, then run again immediately.
 //
 // Nothing here writes to the DB or competition — it's read-only against the
 // station. Ctrl-C to abort; the port is closed on exit.
@@ -43,7 +50,23 @@ function opt(name: string, def: string): string {
 const serialPath = opt('--serial', '/dev/ttyUSB0');
 const rawMode = flag('--raw');
 const directMode = flag('--direct');
+const infoMode = flag('--info');
 const rawTimeoutMs = Number(opt('--timeout', '3000'));
+
+/** Station mode byte (config offset 0x71) → human name. From BaseSiStation
+ * StationMode + common SI mode codes. Unknown values shown as hex. */
+function modeName(modeByte: number): string {
+  const names: { [k: number]: string } = {
+    0x02: 'Control',
+    0x03: 'Start',
+    0x04: 'Finish (Mål)',
+    0x05: 'Readout',
+    0x06: 'Clear',
+    0x07: 'Check',
+    0x12: 'Workstation',
+  };
+  return names[modeByte] ?? `unknown (0x${hex(modeByte)})`;
+}
 
 const hex = (b: number): string => b.toString(16).padStart(2, '0');
 const dump = (bytes: number[]): string => bytes.map(hex).join(' ');
@@ -87,6 +110,10 @@ class LoggingTransport {
     this.inner.on(event as 'data', listener as (b: number[]) => void);
     return this;
   }
+  off(event: 'data' | 'error' | 'close', listener: (...a: never[]) => void): this {
+    this.inner.off(event as 'data', listener as (b: number[]) => void);
+    return this;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +138,7 @@ async function rawSend(
   transport.on('data', onData);
   await transport.send(wire);
   await new Promise((r) => setTimeout(r, waitMs));
-  // (listener stays attached — fine for a short script)
+  transport.off('data', onData); // avoid the MaxListeners leak across many sends
   if (collected.length === 0) {
     console.log(`${now()}  (no reply in ${waitMs}ms)`);
   }
@@ -217,6 +244,64 @@ async function runRaw(transport: LoggingTransport): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// info probe — identify a coupled station (code, mode, serial)
+// ---------------------------------------------------------------------------
+
+async function runInfo(transport: LoggingTransport): Promise<void> {
+  console.log(`\n### INFO probe — read the coupled station's config block ###`);
+  console.log(`### Tells you WHICH unit and WHAT mode (Start/Finish/Control/Check). ###`);
+
+  await rawSendRetry(
+    transport,
+    'SET_MS 0x53 (transparent — forward to coupled station)',
+    { command: proto.cmd.SET_MS, parameters: [proto.P_MS_REMOTE] },
+    proto.cmd.SET_MS
+  );
+
+  // Read the full 128-byte config block: GET_SYS_VAL address 0x00, length 0x80.
+  const reply = await rawSendRetry(
+    transport,
+    'GET_SYS_VAL config block [addr=0x00, len=0x80]',
+    { command: proto.cmd.GET_SYS_VAL, parameters: [0x00, 0x80] },
+    proto.cmd.GET_SYS_VAL
+  );
+
+  // Frame: 02 83 LEN CN1 CN0 ADDR <128 config bytes> CRC CRC 03.
+  // The config blob starts after [STX cmd LEN CN1 CN0 ADDR] = skip 6 from STX.
+  const stx = reply.indexOf(proto.STX);
+  if (stx >= 0 && reply[stx + 1] === proto.cmd.GET_SYS_VAL) {
+    const cn = (reply[stx + 3]! << 8) | reply[stx + 4]!;
+    const cfg = reply.slice(stx + 6); // 128-byte config blob (+ crc/etx tail)
+    // Verified offsets (BaseSiStation.STATION_CONFIG_OFFSETS):
+    //   0x00..0x03 serial number (big-endian), 0x71 mode, 0x72 code-low.
+    const serial =
+      ((cfg[0] ?? 0) << 24) | ((cfg[1] ?? 0) << 16) | ((cfg[2] ?? 0) << 8) | (cfg[3] ?? 0);
+    const mode = cfg[0x71] ?? 0;
+    const codeLow = cfg[0x72] ?? 0;
+    console.log(`\n=== STATION INFO ===`);
+    console.log(`  code number  : ${cn}  (also config byte 0x72 = ${codeLow})`);
+    console.log(`  mode         : ${modeName(mode)}  (byte 0x71 = 0x${hex(mode)})`);
+    console.log(`  serial number: ${serial >>> 0}`);
+    console.log(
+      `\n  full config block (for mapping firmware/series later):\n  ${cfg
+        .slice(0, 128)
+        .map(hex)
+        .join(' ')}`
+    );
+  } else {
+    console.log(`\n  (no clean config frame — station may be asleep; dip a card and retry)`);
+  }
+
+  await rawSendRetry(
+    transport,
+    'SET_MS 0x4D (restore direct/master)',
+    { command: proto.cmd.SET_MS, parameters: [proto.P_MS_DIRECT] },
+    proto.cmd.SET_MS
+  );
+  console.log(`\n### INFO probe done. ###`);
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -224,7 +309,7 @@ async function main(): Promise<void> {
   console.log(`fartola coupled-backup probe`);
   console.log(`  serial : ${serialPath}`);
   console.log(
-    `  mode   : ${rawMode ? 'RAW (manual command-by-command)' : directMode ? 'DIRECT readBackupMemory' : 'COUPLED readCoupledBackupMemory'}`
+    `  mode   : ${infoMode ? 'INFO (identify station — code/mode/serial)' : rawMode ? 'RAW (manual command-by-command)' : directMode ? 'DIRECT readBackupMemory' : 'COUPLED readCoupledBackupMemory'}`
   );
   console.log(`  baud   : 38400\n`);
 
@@ -249,7 +334,9 @@ async function main(): Promise<void> {
   });
 
   try {
-    if (rawMode) {
+    if (infoMode) {
+      await runInfo(transport);
+    } else if (rawMode) {
       await runRaw(transport);
     } else {
       const station = new SiMainStation(real); // real station drives the multiplexer
