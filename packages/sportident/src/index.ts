@@ -80,8 +80,8 @@ export {
   readBackupMemory,
   readCoupledBackupMemory,
   parseBackupBlock,
-  parseMemPointer,
-  parseOverflowFlag,
+  parseBackupPointerFrame,
+  parseBackupDataFrame,
   BLOCK_SIZE,
   MAX_ITERATIONS,
 } from './SiStation/readBackup.ts';

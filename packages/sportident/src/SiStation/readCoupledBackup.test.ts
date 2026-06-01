@@ -23,39 +23,42 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { proto } from '../constants.ts';
-import { readCoupledBackupMemory, parseBackupBlock, type BackupRecord } from './readBackup.ts';
+import { readCoupledBackupMemory, parseBackupDataFrame, type BackupRecord } from './readBackup.ts';
 import type { ISiStation } from './ISiStation.ts';
 import type { SiMessage } from '../siProtocol.ts';
 
 // ---------------------------------------------------------------------------
-// Fixtures (mirror readBackup.test.ts helpers)
+// Fixtures — build real frame shapes [cmd, len, ...payload] (see
+// readBackup.test.ts / readBackupHardware.test.ts for the layout rationale).
 // ---------------------------------------------------------------------------
 
-function makeBlock(records: Array<{ cardNumber: number }>): Uint8Array {
-  const block = new Uint8Array(128);
-  const recLen = proto.REC_LEN;
-  for (let i = 0; i < records.length; i++) {
-    const rec = records[i];
-    if (!rec) continue;
-    const offset = i * recLen;
-    if (offset + recLen > 128) break;
-    const cn = rec.cardNumber;
-    block[offset + proto.BC_CN + 0] = (cn >>> 24) & 0xff;
-    block[offset + proto.BC_CN + 1] = (cn >>> 16) & 0xff;
-    block[offset + proto.BC_CN + 2] = (cn >>> 8) & 0xff;
-    block[offset + proto.BC_CN + 3] = cn & 0xff;
-  }
-  return block;
+import { cardNumber2arr } from '../siProtocol.ts';
+
+function cardBytes(cn: number): [number, number, number] {
+  const [b0, b1, b2] = cardNumber2arr(cn);
+  return [b2 as number, b1 as number, b0 as number];
 }
 
-function makeSysValParams(memPointer: number, overflow = false): number[] {
-  const params = new Array<number>(128).fill(0);
-  params[0x1c] = (memPointer >>> 24) & 0xff;
-  params[0x1d] = (memPointer >>> 16) & 0xff;
-  params[0x1e] = (memPointer >>> 8) & 0xff;
-  params[0x1f] = memPointer & 0xff;
-  if (overflow) params[0x1b] = 0x01;
-  return params;
+/** GET_BACKUP response FRAME: [cmd, len, CN1, CN0, ADR2, ADR1, ADR0, ...data]. */
+function backupFrame(cards: number[]): number[] {
+  const data: number[] = [];
+  for (let i = 0; i < cards.length; i++) {
+    const [a, b, c] = cardBytes(cards[i]!);
+    data.push(a, b, c, 0x69, 0x69, 0x00, 0x00, i & 0xff);
+  }
+  while (data.length < 128) data.push(0x00);
+  const payload = [0x00, 0x02, 0x00, 0x01, 0x00, ...data];
+  return [proto.cmd.GET_BACKUP, payload.length & 0xff, ...payload];
+}
+
+/** GET_SYS_VAL pointer response FRAME for an absolute pointer. */
+function pointerFrame(pointer: number): number[] {
+  const ep3 = (pointer >>> 24) & 0xff;
+  const ep2 = (pointer >>> 16) & 0xff;
+  const ep1 = (pointer >>> 8) & 0xff;
+  const ep0 = pointer & 0xff;
+  const payload = [0x00, 0x02, 0x1c, ep3, ep2, 0x00, 0x00, 0x00, ep1, ep0];
+  return [proto.cmd.GET_SYS_VAL, payload.length & 0xff, ...payload];
 }
 
 // ---------------------------------------------------------------------------
@@ -114,12 +117,11 @@ const noSleep = (): Promise<void> => Promise.resolve();
 
 describe('coupled backup', () => {
   test('Test 1: brackets the read with SET_MS(0x53) then SET_MS(0x4D)', async () => {
-    const memPointer = 128; // one block
-    const block = makeBlock([{ cardNumber: 1428824 }, { cardNumber: 7501853 }]);
+    const pointer = 0x100 + 128; // one block beyond base
     const { station, calls } = makeMockStation({
       [proto.cmd.SET_MS]: [{ kind: 'frame', frame: [0x4d] }],
-      [proto.cmd.GET_SYS_VAL]: [{ kind: 'frame', frame: makeSysValParams(memPointer) }],
-      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: Array.from(block) }],
+      [proto.cmd.GET_SYS_VAL]: [{ kind: 'frame', frame: pointerFrame(pointer) }],
+      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: backupFrame([1428824, 7501853]) }],
     });
 
     const result = await readCoupledBackupMemory(station, { sleep: noSleep });
@@ -138,17 +140,16 @@ describe('coupled backup', () => {
   });
 
   test('Test 2: retries a forwarded command on transient failure (NAK/timeout)', async () => {
-    const memPointer = 128;
-    const block = makeBlock([{ cardNumber: 248215 }]);
+    const pointer = 0x100 + 128;
     const { station, calls } = makeMockStation({
       [proto.cmd.SET_MS]: [{ kind: 'frame', frame: [0x4d] }],
       // First GET_SYS_VAL attempt fails (inductive sync not yet established),
       // second succeeds — exactly the §2.5 scenario.
       [proto.cmd.GET_SYS_VAL]: [
         { kind: 'reject', message: 'simulated NAK/timeout' },
-        { kind: 'frame', frame: makeSysValParams(memPointer) },
+        { kind: 'frame', frame: pointerFrame(pointer) },
       ],
-      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: Array.from(block) }],
+      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: backupFrame([248215]) }],
     });
 
     const result = await readCoupledBackupMemory(station, { sleep: noSleep });
@@ -178,25 +179,24 @@ describe('coupled backup', () => {
     assert.equal(calls.filter((c) => c.command === proto.cmd.GET_SYS_VAL).length, 3);
   });
 
-  test('Test 4: empty coupled memory (pointer 0) returns no records, still restores', async () => {
+  test('Test 4: empty coupled memory (pointer at base) returns no records, still restores', async () => {
     const { station, calls } = makeMockStation({
       [proto.cmd.SET_MS]: [{ kind: 'frame', frame: [0x4d] }],
-      [proto.cmd.GET_SYS_VAL]: [{ kind: 'frame', frame: makeSysValParams(0) }],
-      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: [] }],
+      [proto.cmd.GET_SYS_VAL]: [{ kind: 'frame', frame: pointerFrame(0x100) }],
+      [proto.cmd.GET_BACKUP]: [{ kind: 'frame', frame: backupFrame([]) }],
     });
 
     const result = await readCoupledBackupMemory(station, { sleep: noSleep });
     assert.equal(result.records.length, 0);
-    // No GET_BACKUP should have been sent (pointer 0 short-circuits).
+    // No GET_BACKUP should have been sent (pointer at base short-circuits).
     assert.equal(calls.filter((c) => c.command === proto.cmd.GET_BACKUP).length, 0);
     // Direct mode restored.
     const last = calls[calls.length - 1]!;
     assert.equal(last.parameters[0], proto.P_MS_DIRECT);
   });
 
-  test('Test 5: parseBackupBlock still works on a coupled-read block (sanity)', () => {
-    const block = makeBlock([{ cardNumber: 999001 }]);
-    const records = parseBackupBlock(block, proto.REC_LEN);
+  test('Test 5: parseBackupDataFrame works on a coupled-read frame (sanity)', () => {
+    const records = parseBackupDataFrame(backupFrame([999001]));
     assert.equal(records[0]!.cardNumber, 999001);
   });
 });

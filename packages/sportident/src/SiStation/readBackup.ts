@@ -18,6 +18,7 @@
 // - REQ-OPS-004
 
 import { proto } from '../constants.ts';
+import { arr2cardNumber } from '../siProtocol.ts';
 import type { ISiStation } from './ISiStation.ts';
 
 // ---------------------------------------------------------------------------
@@ -31,14 +32,32 @@ export const BLOCK_SIZE = 128;
  * BSF8 has max 32 KB backup memory → 256 blocks; we cap at 2× for safety. */
 export const MAX_ITERATIONS = 512;
 
-// Offsets into the GET_SYS_VAL response parameters (128-byte config blob).
-//
-// Byte 0x1B: bit 0 = overflow flag (memory wrapped around and old records
-//   were overwritten).
-// Bytes 0x1C..0x1F: big-endian uint32 current write pointer (number of bytes
-//   written to backup memory since last erase).
-const OVERFLOW_FLAG_OFFSET = 0x1b;
-const MEM_POINTER_OFFSET = 0x1c; // 4 bytes big-endian
+// Backup memory address range (pcprog §3.1, BSx7/8). The lowest usable backup
+// address is 0x100; the GET_SYS_VAL backup-pointer is the ABSOLUTE next-free
+// address, so the data spans [0x100, pointer).
+const BACKUP_BASE_ADDRESS = 0x100;
+
+// GET_SYS_VAL backup-pointer request: address 0x1C, length 0x07 (pcprog §3.1).
+// The 7 data bytes that come back are `EP3 EP2 xx xx xx EP1 EP0`; the pointer is
+// the big-endian uint32 EP3 EP2 EP1 EP0.
+const BACKUP_POINTER_ADDR = 0x1c;
+const BACKUP_POINTER_LEN = 0x07;
+
+// Response FRAME header lengths. station.sendMessage() returns frames shaped
+// `[cmd, len, ...payload]` (the multiplexer strips STX/CRC/ETX). For both
+// GET_SYS_VAL and GET_BACKUP the payload begins with a station/address header
+// that must be skipped before the real data:
+//   GET_SYS_VAL pointer reply payload: CN1 CN0 ADDR + 7 data bytes   → skip 3
+//   GET_BACKUP  reply payload:         CN1 CN0 ADR2 ADR1 ADR0 + data → skip 5
+const SYSVAL_PAYLOAD_HEADER = 3; // CN1, CN0, ADDR-echo
+const BACKUP_PAYLOAD_HEADER = 5; // CN1, CN0, ADR2, ADR1, ADR0
+const FRAME_HEADER = 2; // cmd, len
+
+// Per-record layout within the backup data (8-byte records, hardware-verified
+// 2026-06-01 — see __fixtures__/coupled-backup-golden.md):
+//   bytes 0..2 : SI card number (3-byte field, decoded via arr2cardNumber)
+//   bytes 3..4 : fixed 0x69 0x69 marker
+//   bytes 5..7 : punch time (monotonic)
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,11 +65,44 @@ const MEM_POINTER_OFFSET = 0x1c; // 4 bytes big-endian
 
 /** A single record read from the check-unit's backup memory. */
 export interface BackupRecord {
-  /** SI card number (non-zero; zero-card records are skipped). */
+  /** SI card number (non-zero; zero-card records are skipped). Decoded with the
+   * canonical arr2cardNumber so it matches the live card-read path. */
   cardNumber: number;
-  /** Punch timestamp as a half-day clock value, or null if time bytes are
-   * absent or zero. */
-  punchTime: { secondsInHalfDay: number; halfDay: number } | null;
+  /** Raw 3-byte punch-time field (bytes 5..7 of the record) as a big-endian
+   * integer. Monotonic across a block; used for ordering, not wall-clock. */
+  rawTime: number;
+}
+
+// ---------------------------------------------------------------------------
+// Frame parsers (hardware-verified — readBackupHardware.test.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a GET_SYS_VAL backup-pointer response FRAME into the absolute next-free
+ * backup address. Frame shape: `[cmd, len, CN1, CN0, ADDR, EP3, EP2, xx, xx,
+ * xx, EP1, EP0]`. The pointer is big-endian `EP3 EP2 EP1 EP0`.
+ */
+export function parseBackupPointerFrame(frame: number[]): number {
+  // payload = frame after [cmd, len]; data = payload after [CN1, CN0, ADDR].
+  const data = frame.slice(FRAME_HEADER + SYSVAL_PAYLOAD_HEADER);
+  if (data.length < 7) return 0;
+  const ep3 = data[0] ?? 0;
+  const ep2 = data[1] ?? 0;
+  const ep1 = data[5] ?? 0;
+  const ep0 = data[6] ?? 0;
+  return ((ep3 << 24) | (ep2 << 16) | (ep1 << 8) | ep0) >>> 0;
+}
+
+/**
+ * Parse a GET_BACKUP response FRAME into BackupRecord[]. Frame shape:
+ * `[cmd, len, CN1, CN0, ADR2, ADR1, ADR0, ...data]`. The data is a run of
+ * 8-byte records; card number = bytes 0..2 via arr2cardNumber; bytes 5..7 are
+ * the punch time. Zero-card records (empty slots) are skipped; a trailing
+ * partial record is ignored.
+ */
+export function parseBackupDataFrame(frame: number[]): BackupRecord[] {
+  const data = frame.slice(FRAME_HEADER + BACKUP_PAYLOAD_HEADER);
+  return parseBackupBlock(new Uint8Array(data), proto.REC_LEN);
 }
 
 // ---------------------------------------------------------------------------
@@ -58,64 +110,47 @@ export interface BackupRecord {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a GET_BACKUP response block into BackupRecord[].
+ * Parse the DATA portion of a GET_BACKUP block into BackupRecord[]. `block` is
+ * the record bytes only (header already stripped by parseBackupDataFrame).
  *
- * Each record occupies `recLen` bytes within the block at a fixed stride.
- * Card number: big-endian uint32 at bytes BC_CN..BC_CN+3 within the record
- *   (proto.BC_CN = 3).
- * Time: bytes 0..1 = secondsInHalfDay (big-endian uint16);
- *       byte 2 bit 0 = halfDay flag.
- * Records with cardNumber === 0 are empty slots and are skipped.
- * If the block is shorter than one complete record the result is empty.
+ * Layout (hardware-verified 2026-06-01, BSF8 check unit — see
+ * __fixtures__/coupled-backup-golden.md):
+ *   bytes 0..2 : SI card number (3-byte field). Decoded with arr2cardNumber
+ *     (LSB-first) so legacy SI5 numbers match the live card-read path — plain
+ *     big-endian is WRONG for cards whose high byte ≤ 4 (e.g. 0x02f767 is
+ *     263335, not 194407).
+ *   bytes 3..4 : fixed 0x69 0x69 marker (not interpreted).
+ *   bytes 5..7 : punch time, big-endian (monotonic; ordering only).
+ * Records with cardNumber 0 are empty slots and are skipped. A trailing partial
+ * record (fewer than recLen bytes) is ignored.
  *
- * @param block  Raw bytes from the GET_BACKUP response.
- * @param recLen Bytes per record (default proto.REC_LEN = 8).
+ * @param block  Record bytes from the GET_BACKUP response (no header).
+ * @param recLen Bytes per record (proto.REC_LEN = 8).
  */
 export function parseBackupBlock(block: Uint8Array, recLen: number): BackupRecord[] {
   const records: BackupRecord[] = [];
   const count = Math.floor(block.length / recLen);
   for (let i = 0; i < count; i++) {
     const offset = i * recLen;
-    const cnOffset = offset + proto.BC_CN;
-    // Guard: ensure all 4 card-number bytes are within bounds.
-    if (cnOffset + 3 >= block.length) break;
-    const cardNumber =
-      ((block[cnOffset]! << 24) |
-        (block[cnOffset + 1]! << 16) |
-        (block[cnOffset + 2]! << 8) |
-        block[cnOffset + 3]!) >>>
-      0; // >>> 0 ensures unsigned 32-bit
-    if (cardNumber === 0) continue; // empty slot
+    if (offset + recLen > block.length) break;
 
-    // Time: bytes 0..2 within the record.
-    const secondsInHalfDay = ((block[offset]! << 8) | block[offset + 1]!) >>> 0;
-    const halfDay = block[offset + 2]! & 0x01;
-    const punchTime =
-      secondsInHalfDay === 0 && halfDay === 0 ? null : { secondsInHalfDay, halfDay };
+    // Card number: 3-byte field at bytes 0..2, big-endian on the wire. The
+    // canonical arr2cardNumber takes LSB-first, so reverse the three bytes.
+    const b0 = block[offset]!;
+    const b1 = block[offset + 1]!;
+    const b2 = block[offset + 2]!;
+    if (b0 === 0 && b1 === 0 && b2 === 0) continue; // empty slot
+    const cardNumber = arr2cardNumber([b2, b1, b0]) ?? 0;
+    if (cardNumber === 0) continue;
 
-    records.push({ cardNumber, punchTime });
+    // Punch time: 3-byte field at bytes 5..7, big-endian. Used only for
+    // ordering within a block, not as a wall-clock time.
+    const rawTime =
+      ((block[offset + 5]! << 16) | (block[offset + 6]! << 8) | block[offset + 7]!) >>> 0;
+
+    records.push({ cardNumber, rawTime });
   }
   return records;
-}
-
-/**
- * Extract the current memory write pointer from a GET_SYS_VAL response.
- * The pointer is a big-endian uint32 at bytes 0x1C..0x1F of the params array.
- */
-export function parseMemPointer(sysValParams: number[]): number {
-  const b0 = sysValParams[MEM_POINTER_OFFSET] ?? 0;
-  const b1 = sysValParams[MEM_POINTER_OFFSET + 1] ?? 0;
-  const b2 = sysValParams[MEM_POINTER_OFFSET + 2] ?? 0;
-  const b3 = sysValParams[MEM_POINTER_OFFSET + 3] ?? 0;
-  return ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) >>> 0;
-}
-
-/**
- * Extract the overflow flag from a GET_SYS_VAL response.
- * Returns true if bit 0 of byte 0x1B is set (memory wrapped around).
- */
-export function parseOverflowFlag(sysValParams: number[]): boolean {
-  return ((sysValParams[OVERFLOW_FLAG_OFFSET] ?? 0) & 0x01) !== 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,13 +160,12 @@ export function parseOverflowFlag(sysValParams: number[]): boolean {
 /**
  * Read all backup records from the check-unit's backup memory.
  *
- * Protocol:
- *   1. Send GET_SYS_VAL(0, 128) — returns 128-byte config blob with the
- *      current memory pointer and overflow flag.
- *   2. Compute how many 128-byte blocks to read: ceil(memPointer / BLOCK_SIZE).
- *   3. Loop GET_BACKUP(blockIndex, BLOCK_SIZE) for each block.
- *   4. Cap at MAX_ITERATIONS blocks (T-02.1-11 DoS mitigation). If the loop
- *      hits the cap, set overflow=true in the result.
+ * Protocol (pcprog §3.1, hardware-verified):
+ *   1. GET_SYS_VAL[0x1C, 0x07] → the absolute next-free backup address.
+ *   2. Walk GET_BACKUP from BACKUP_BASE_ADDRESS (0x100) up to that pointer in
+ *      BLOCK_SIZE (128-byte) reads, parsing 8-byte records out of each.
+ *   3. Cap at MAX_ITERATIONS reads (T-02.1-11 DoS mitigation); set overflow if
+ *      the cap is hit.
  *
  * @param station  Any ISiStation (SiMainStation or test double).
  * @returns Object with parsed records and flags.
@@ -140,49 +174,43 @@ export async function readBackupMemory(station: ISiStation): Promise<{
   records: BackupRecord[];
   overflow: boolean;
 }> {
-  // Step 1: GET_SYS_VAL — returns the 128-byte config blob.
-  // Parameters: start offset 0, length 128.
-  const sysValResponses = await station.sendMessage(
-    { command: proto.cmd.GET_SYS_VAL, parameters: [0x00, 0x00, 0x80] },
+  // station.sendMessage() returns each response as the full frame
+  // `[cmd, len, ...payload]` (the multiplexer reconstructs it that way; see
+  // BaseSiStation.readInfo which relies on the same shape). The frame parsers
+  // below consume that directly.
+
+  // Step 1: read the backup pointer (absolute next-free address).
+  const ptrResponses = await station.sendMessage(
+    { command: proto.cmd.GET_SYS_VAL, parameters: [BACKUP_POINTER_ADDR, BACKUP_POINTER_LEN] },
     1
   );
-  const sysValParams = sysValResponses[0] ?? [];
+  const pointer = parseBackupPointerFrame(ptrResponses[0] ?? []);
 
-  const memPointer = parseMemPointer(sysValParams);
-  const hwOverflow = parseOverflowFlag(sysValParams);
-
-  if (memPointer === 0) {
-    // Empty backup memory.
-    return { records: [], overflow: hwOverflow };
+  if (pointer <= BACKUP_BASE_ADDRESS) {
+    // Empty backup memory (next-free address is at or below the base).
+    return { records: [], overflow: false };
   }
 
-  // Step 2: Calculate block count.
-  const blocksNeeded = Math.ceil(memPointer / BLOCK_SIZE);
+  // Step 2: walk [BASE, pointer) in BLOCK_SIZE reads.
+  const totalBytes = pointer - BACKUP_BASE_ADDRESS;
+  const blocksNeeded = Math.ceil(totalBytes / BLOCK_SIZE);
   const loopCapped = blocksNeeded > MAX_ITERATIONS;
   const blockCount = loopCapped ? MAX_ITERATIONS : blocksNeeded;
 
-  // Step 3: Loop GET_BACKUP.
   const allRecords: BackupRecord[] = [];
   for (let i = 0; i < blockCount; i++) {
-    const byteOffset = i * BLOCK_SIZE;
-    // GET_BACKUP parameters: 3-byte address (big-endian) + 1-byte length.
-    const addrHi = (byteOffset >>> 16) & 0xff;
-    const addrMid = (byteOffset >>> 8) & 0xff;
-    const addrLo = byteOffset & 0xff;
+    const address = BACKUP_BASE_ADDRESS + i * BLOCK_SIZE;
+    const addrHi = (address >>> 16) & 0xff;
+    const addrMid = (address >>> 8) & 0xff;
+    const addrLo = address & 0xff;
     const backupResponses = await station.sendMessage(
-      {
-        command: proto.cmd.GET_BACKUP,
-        parameters: [addrHi, addrMid, addrLo, BLOCK_SIZE],
-      },
+      { command: proto.cmd.GET_BACKUP, parameters: [addrHi, addrMid, addrLo, BLOCK_SIZE] },
       1
     );
-    const blockParams = backupResponses[0] ?? [];
-    const block = new Uint8Array(blockParams);
-    const records = parseBackupBlock(block, proto.REC_LEN);
-    allRecords.push(...records);
+    allRecords.push(...parseBackupDataFrame(backupResponses[0] ?? []));
   }
 
-  return { records: allRecords, overflow: hwOverflow || loopCapped };
+  return { records: allRecords, overflow: loopCapped };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,42 +309,40 @@ export async function readCoupledBackupMemory(
   );
 
   try {
-    // Step 2a: GET_SYS_VAL (forwarded to the coupled station).
-    const sysValResponses = await sendWithRetry(
+    // Step 2a: read the backup pointer (absolute next-free address), forwarded
+    // to the coupled station. GET_SYS_VAL[0x1C, 0x07] per pcprog §3.1.
+    const ptrResponses = await sendWithRetry(
       station,
-      { command: proto.cmd.GET_SYS_VAL, parameters: [0x00, 0x00, 0x80] },
+      { command: proto.cmd.GET_SYS_VAL, parameters: [BACKUP_POINTER_ADDR, BACKUP_POINTER_LEN] },
       retryOpts
     );
-    const sysValParams = sysValResponses[0] ?? [];
-    const memPointer = parseMemPointer(sysValParams);
-    const hwOverflow = parseOverflowFlag(sysValParams);
+    const pointer = parseBackupPointerFrame(ptrResponses[0] ?? []);
 
-    if (memPointer === 0) {
-      return { records: [], overflow: hwOverflow };
+    if (pointer <= BACKUP_BASE_ADDRESS) {
+      return { records: [], overflow: false };
     }
 
-    // Step 2b: GET_BACKUP loop.
-    const blocksNeeded = Math.ceil(memPointer / BLOCK_SIZE);
+    // Step 2b: walk [BASE, pointer) in BLOCK_SIZE reads.
+    const totalBytes = pointer - BACKUP_BASE_ADDRESS;
+    const blocksNeeded = Math.ceil(totalBytes / BLOCK_SIZE);
     const loopCapped = blocksNeeded > MAX_ITERATIONS;
     const blockCount = loopCapped ? MAX_ITERATIONS : blocksNeeded;
 
     const allRecords: BackupRecord[] = [];
     for (let i = 0; i < blockCount; i++) {
-      const byteOffset = i * BLOCK_SIZE;
-      const addrHi = (byteOffset >>> 16) & 0xff;
-      const addrMid = (byteOffset >>> 8) & 0xff;
-      const addrLo = byteOffset & 0xff;
+      const address = BACKUP_BASE_ADDRESS + i * BLOCK_SIZE;
+      const addrHi = (address >>> 16) & 0xff;
+      const addrMid = (address >>> 8) & 0xff;
+      const addrLo = address & 0xff;
       const backupResponses = await sendWithRetry(
         station,
         { command: proto.cmd.GET_BACKUP, parameters: [addrHi, addrMid, addrLo, BLOCK_SIZE] },
         retryOpts
       );
-      const blockParams = backupResponses[0] ?? [];
-      const block = new Uint8Array(blockParams);
-      allRecords.push(...parseBackupBlock(block, proto.REC_LEN));
+      allRecords.push(...parseBackupDataFrame(backupResponses[0] ?? []));
     }
 
-    return { records: allRecords, overflow: hwOverflow || loopCapped };
+    return { records: allRecords, overflow: loopCapped };
   } finally {
     // Step 3: ALWAYS restore direct/master mode so live card reads resume.
     // Best-effort — if even this fails we don't want to mask the original
