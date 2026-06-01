@@ -140,7 +140,11 @@ UNRESOLVED:
   model/firmware id lives at an address not yet read. Capture more windows
   (e.g. 0x08..0x10) from a BSF8 vs BSF9 to locate it. Low priority.
 
-## Question to SPORTident (drafted 2026-06-01)
+## Question to SPORTident (SENT 2026-06-01 — awaiting reply)
+
+Empirical capture pass deferred to its own todo:
+2026-06-01-siac-airplus-dump-capture.md (run --dump diff when bench time allows).
+
 
 The SIAC AIR+/beacon register is undocumented in all refs we hold, and their
 licensed .NET Communication library can't be used as a source (LICENSE.txt

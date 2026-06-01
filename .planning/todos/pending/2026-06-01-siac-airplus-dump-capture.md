@@ -1,0 +1,55 @@
+---
+created: 2026-06-01T15:30:00+02:00
+title: Capture SIAC air+ beacon bit (and model byte) via probe --dump diff
+area: sportident
+blocked_by: needs bench time + units; partly superseded if SPORTident replies
+files:
+  - packages/sportident/scripts/probe-coupled-backup.ts
+  - packages/sportident/src/SiStation/__fixtures__/station-info-captures.md
+---
+
+## What
+
+Empirically locate the **SIAC AIR+ (beacon) config bit** — undocumented in every
+reference we hold — by diffing a config dump of the same station with air+ ON vs
+OFF. Same label-diff method that cracked serial (0x00) and mode (0x71). While
+dumping, also locate the **model/firmware byte** (BSF8 vs BSF9), which my narrow
+--info windows (0x00, 0x70) skip.
+
+NOT urgent — deferred so Jonas can focus on testing the rest of phase 2.1.
+A question was already sent to SPORTident (2026-06-01) asking for the beacon
+register + an authoritative config map; if they reply, this capture may just be
+confirmation rather than discovery.
+
+## How (bench procedure)
+
+Tool already built: `probe --dump` (read-only, GET_SYS_VAL 0x83 only).
+
+1. Stop the edge server so the serial port is free.
+2. Wake the unit (dip a card), place it on the mini reader.
+3. From `packages/sportident/`:
+   ```
+   node --import tsx scripts/probe-coupled-backup.ts --dump
+   ```
+   (default range 0x00..0x80; widen with `--from 0x00 --to 0x100` if needed.)
+4. Toggle AIR+ on that unit in SPORTident Config+ (or use a second unit you KNOW
+   is in the opposite state), then `--dump` again.
+5. Paste BOTH dumps + which is air+ on / off. The byte/bit that changes between
+   them IS the beacon flag.
+
+For the model byte: `--dump` the BSF9 (unit 110) and any BSF8 (e.g. 136) and
+compare — the bytes that differ beyond code+serial are candidates for
+model/firmware id.
+
+## Then (once the bit is known)
+
+- Read it via GET_SYS_VAL 0x83, set via SET_SYS_VAL 0x82 (both exist in the lib).
+- Belongs in the SIAC air+ operation of the SportIdent-config menu phase
+  (see 2026-06-01-sportident-config-menu.md, operation #4) — gated behind a
+  confirm + read-back-verify, since writing config changes station behaviour.
+
+## Provenance
+
+Derive the bit from our own --dump capture or SPORTident's direct answer — NOT
+from their proprietary .NET library/docs — to keep the clean-room story intact.
+See [[feedback-no-copy-claims]] and the parent config-menu todo.
