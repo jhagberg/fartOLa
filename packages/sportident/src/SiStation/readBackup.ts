@@ -217,6 +217,26 @@ export async function readBackupMemory(station: ISiStation): Promise<{
 // Coupled (inductive) backup readout
 // ---------------------------------------------------------------------------
 
+/**
+ * Thrown when the FIRST forwarded command (the backup-pointer read) never gets
+ * a reply through the inductive link. The overwhelmingly common cause is a
+ * SLEEPING check unit: SI stations run on battery and sleep, and §2.5 requires
+ * the slaved station to be in active mode for coupling to sync. The master
+ * cannot wake it through the coil — the operator must dip a card into the check
+ * unit to wake it, then retry. The route maps this to a friendly 503 so the UI
+ * can prompt the operator instead of showing a raw timeout.
+ */
+export class CoupledStationAsleepError extends Error {
+  constructor(command: number, attempts: number) {
+    super(
+      `coupled read: the check unit did not respond after ${attempts} attempts ` +
+        `(command 0x${command.toString(16)}). The station is most likely asleep — ` +
+        `dip an SI card into the check unit to wake it, then read again.`
+    );
+    this.name = 'CoupledStationAsleepError';
+  }
+}
+
 /** Options for readCoupledBackupMemory (all optional; defaults match §2.5). */
 export interface CoupledReadOptions {
   /** Max attempts per forwarded command before giving up (§2.5: "Repeat
@@ -250,7 +270,10 @@ async function sendWithRetry(
   message: { command: number; parameters: number[] },
   opts: Required<Pick<CoupledReadOptions, 'maxRetries' | 'retryDelayMs' | 'attemptTimeoutMs'>> & {
     sleep: (ms: number) => Promise<void>;
-  }
+  },
+  /** When true, an exhausted retry budget throws CoupledStationAsleepError
+   * (used for the FIRST forwarded command, where no reply ≈ asleep station). */
+  asleepOnExhaustion = false
 ): Promise<number[][]> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < opts.maxRetries; attempt++) {
@@ -263,6 +286,9 @@ async function sendWithRetry(
     } catch (err) {
       lastErr = err;
     }
+  }
+  if (asleepOnExhaustion) {
+    throw new CoupledStationAsleepError(message.command, opts.maxRetries);
   }
   throw new Error(
     `coupled read: command 0x${message.command.toString(16)} failed after ${opts.maxRetries} attempts ` +
@@ -294,9 +320,9 @@ export async function readCoupledBackupMemory(
   options: CoupledReadOptions = {}
 ): Promise<{ records: BackupRecord[]; overflow: boolean }> {
   const retryOpts = {
-    maxRetries: options.maxRetries ?? 5,
-    retryDelayMs: options.retryDelayMs ?? 15,
-    attemptTimeoutMs: options.attemptTimeoutMs ?? 1500,
+    maxRetries: options.maxRetries ?? 6,
+    retryDelayMs: options.retryDelayMs ?? 20,
+    attemptTimeoutMs: options.attemptTimeoutMs ?? 1200,
     sleep: options.sleep ?? defaultSleep,
   };
 
@@ -310,11 +336,15 @@ export async function readCoupledBackupMemory(
 
   try {
     // Step 2a: read the backup pointer (absolute next-free address), forwarded
-    // to the coupled station. GET_SYS_VAL[0x1C, 0x07] per pcprog §3.1.
+    // to the coupled station. GET_SYS_VAL[0x1C, 0x07] per pcprog §3.1. This is
+    // the FIRST command that actually reaches the coupled station — if it never
+    // answers, the unit is asleep, so surface the typed asleep error for a
+    // friendly "dip a card to wake it" prompt.
     const ptrResponses = await sendWithRetry(
       station,
       { command: proto.cmd.GET_SYS_VAL, parameters: [BACKUP_POINTER_ADDR, BACKUP_POINTER_LEN] },
-      retryOpts
+      retryOpts,
+      true // asleepOnExhaustion
     );
     const pointer = parseBackupPointerFrame(ptrResponses[0] ?? []);
 

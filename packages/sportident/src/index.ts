@@ -79,6 +79,7 @@ export { inferCardType } from './SiCard/cardTypeFromNumber.ts';
 export {
   readBackupMemory,
   readCoupledBackupMemory,
+  CoupledStationAsleepError,
   parseBackupBlock,
   parseBackupPointerFrame,
   parseBackupDataFrame,

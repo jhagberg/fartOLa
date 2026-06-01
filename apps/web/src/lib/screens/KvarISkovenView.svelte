@@ -133,9 +133,14 @@
   // Actions
   // ---------------------------------------------------------------------------
 
+  /** True when the last fetch failed because the check unit was asleep —
+   * drives a friendly "dip a card to wake it" callout instead of a raw error. */
+  let asleep = $state(false);
+
   async function fetchSnapshot(): Promise<void> {
     loading = true;
     error = null;
+    asleep = false;
     try {
       const result = await postCheckunitSnapshot(competitionId);
       startedCards = result.cardNumbers;
@@ -143,7 +148,16 @@
       overflow = result.overflow;
       hasFetched = true;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      // The edge returns { error: 'station_asleep' } (503) when the coupled
+      // unit never synced — almost always because it's asleep. Show the
+      // localized wake instructions rather than the raw backend message.
+      const code = (err as { body?: { error?: string } } | null)?.body?.error;
+      if (code === 'station_asleep') {
+        asleep = true;
+        error = t('kvariskov.asleep');
+      } else {
+        error = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       loading = false;
     }
@@ -203,6 +217,14 @@
     <p class="muted">{t('kvariskov.hint')}</p>
   </header>
 
+  <!-- How-to instructions (always visible — the wake step is easy to forget) -->
+  <section class="sec box info" data-testid="kvariskov-instructions">
+    <strong>{t('kvariskov.instructions')}</strong>
+    <p class="step">{t('kvariskov.step1')}</p>
+    <p class="step">{t('kvariskov.step2')}</p>
+    <p class="step">{t('kvariskov.step3')}</p>
+  </section>
+
   <!-- Fetch button -->
   <section class="sec">
     <button class="btn primary" onclick={() => void fetchSnapshot()} disabled={loading}>
@@ -212,7 +234,11 @@
         {t('kvariskov.fetch')}
       {/if}
     </button>
-    {#if error !== null}
+    {#if asleep}
+      <div class="box warn" data-testid="kvariskov-asleep">
+        <strong>{t('kvariskov.asleep')}</strong>
+      </div>
+    {:else if error !== null}
       <div class="box err" data-testid="kvariskov-error">
         <strong>{error}</strong>
       </div>
@@ -383,6 +409,15 @@
   .box.warn {
     background: color-mix(in srgb, var(--warn, orange) 12%, transparent);
     border: 1px solid var(--warn, orange);
+  }
+  .box.info {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+  }
+  .box.info .step {
+    margin: 6px 0 0;
+    color: var(--fg-muted);
+    font-size: 14px;
   }
   .box.ok {
     background: color-mix(in srgb, var(--ok) 12%, transparent);

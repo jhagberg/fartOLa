@@ -489,6 +489,11 @@
   "kvariskov.copied": "Copied!",
   "kvariskov.refreshed": "Refreshed",
   "kvariskov.hint": "Place the BSF8 check unit on the mini reader (inductive coupling) and click Read to see who is still in the forest.",
+  "kvariskov.instructions": "How to read a check unit:",
+  "kvariskov.step1": "1. Wake the unit: dip an SI card into the check unit itself (it sleeps otherwise).",
+  "kvariskov.step2": "2. Place the unit on the mini reader (USB) — it couples inductively.",
+  "kvariskov.step3": "3. Click Read right after waking it (it falls asleep again after a while).",
+  "kvariskov.asleep": "The check unit isn't responding — it's probably asleep. Dip an SI card into the unit to wake it, then click Read again.",
 
   "wizard.eventor.title": "Fetch from Eventor",
   "wizard.eventor.inputLabel": "Eventor event ID",

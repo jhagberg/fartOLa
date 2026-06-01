@@ -89,6 +89,22 @@ function makeStationWithCards(cn1: number, cn2: number): MockStation {
   };
 }
 
+/** A station that never answers GET_SYS_VAL — models a SLEEPING coupled unit.
+ * SET_MS echoes (the master is awake), but the forwarded pointer read times
+ * out every attempt, so readCoupledBackupMemory throws CoupledStationAsleepError. */
+function makeAsleepStation(): MockStation {
+  return {
+    sendMessage(message: SiMessageWithoutMode) {
+      if (message.command === proto.cmd.SET_MS) {
+        return Promise.resolve([[proto.cmd.SET_MS, 0x01, 0x4d]]);
+      }
+      // GET_SYS_VAL (and anything forwarded to the coupled station): reject,
+      // as the multiplexer would on a dropped NAK / timeout.
+      return Promise.reject(new Error('Send timed out (simulated asleep)'));
+    },
+  };
+}
+
 /** Lifecycle shape expected by bridgeLifecycles. */
 interface MockLifecycle {
   status(): {
@@ -279,5 +295,17 @@ describe('checkunit', () => {
     assert.ok(body.cardNumbers.includes(333333), 'right reader cards should be present');
     assert.ok(body.cardNumbers.includes(444444), 'right reader cards should be present');
     assert.ok(!body.cardNumbers.includes(111111), 'left reader cards should not be present');
+  });
+
+  test('Test 7: sleeping coupled unit → 503 station_asleep (not a raw 500)', async () => {
+    ctx.app.bridgeLifecycles = [makeLifecycle(makeAsleepStation())];
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/checkunit/snapshot`,
+    });
+    assert.equal(res.statusCode, 503);
+    const body = JSON.parse(res.body) as { error: string; message: string };
+    assert.equal(body.error, 'station_asleep');
+    assert.match(body.message, /wake|asleep|dip/i);
   });
 });

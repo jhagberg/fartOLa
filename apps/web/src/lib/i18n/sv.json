@@ -489,6 +489,11 @@
   "kvariskov.copied": "Kopierat!",
   "kvariskov.refreshed": "Uppdaterat",
   "kvariskov.hint": "Lägg BSF8-checkdosan på mini-läsaren (induktiv koppling) och klicka Hämta för att se vem som är kvar i skogen.",
+  "kvariskov.instructions": "Så här läser du av en stämpeldosa:",
+  "kvariskov.step1": "1. Väck dosan: sätt en SI-bricka i själva stämpeldosan (den sover annars).",
+  "kvariskov.step2": "2. Lägg dosan på mini-läsaren (USB) — den kopplas induktivt.",
+  "kvariskov.step3": "3. Klicka Hämta direkt efter att du väckt den (den somnar igen efter en stund).",
+  "kvariskov.asleep": "Stämpeldosan svarar inte — den sover troligen. Sätt en SI-bricka i dosan för att väcka den och klicka Hämta igen.",
 
   "wizard.eventor.title": "Hämta från Eventor",
   "wizard.eventor.inputLabel": "Eventor tävlings-ID",
