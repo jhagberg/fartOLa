@@ -53,21 +53,6 @@ const directMode = flag('--direct');
 const infoMode = flag('--info');
 const rawTimeoutMs = Number(opt('--timeout', '3000'));
 
-/** Station mode byte (config offset 0x71) → human name. From BaseSiStation
- * StationMode + common SI mode codes. Unknown values shown as hex. */
-function modeName(modeByte: number): string {
-  const names: { [k: number]: string } = {
-    0x02: 'Control',
-    0x03: 'Start',
-    0x04: 'Finish (Mål)',
-    0x05: 'Readout',
-    0x06: 'Clear',
-    0x07: 'Check',
-    0x12: 'Workstation',
-  };
-  return names[modeByte] ?? `unknown (0x${hex(modeByte)})`;
-}
-
 const hex = (b: number): string => b.toString(16).padStart(2, '0');
 const dump = (bytes: number[]): string => bytes.map(hex).join(' ');
 
@@ -297,23 +282,28 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
     // --info if they NAK — the code number above already identifies the unit.
     const w0 = await readWindow('serial', 0x00, 0x08);
     const w70 = await readWindow('mode/code', 0x70, 0x08);
-    if (w0) {
-      const sd = w0.data;
-      const serial =
-        ((sd[0] ?? 0) << 24) | ((sd[1] ?? 0) << 16) | ((sd[2] ?? 0) << 8) | (sd[3] ?? 0);
-      console.log(`  serial number: ${serial >>> 0}`);
-      console.log(`  raw 0x00 window: ${sd.map(hex).join(' ')}`);
-    } else {
-      console.log(`  serial number: (config read at 0x00 not served over coupling)`);
-    }
+    // NOTE: serial + mode decoding from the config windows is NOT yet verified
+    // against hardware (one sample read mode=0x32, which doesn't match the
+    // simple enum; the serial offset is also unconfirmed). Print the RAW
+    // windows as the source of truth and label decoded values as guesses, so
+    // we don't trust a wrong number. Map these properly once we have Start /
+    // Finish / known-Control captures — see the SI-config-menu backlog todo.
     if (w70) {
       const md = w70.data;
-      const mode = md[0x71 - 0x70] ?? 0;
-      console.log(`  mode         : ${modeName(mode)}  (byte 0x71 = 0x${hex(mode)})`);
-      console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}`);
+      console.log(`  config 0x72 (code): ${md[0x72 - 0x70] ?? '?'}  (should match code number)`);
+      console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}   <-- mode lives here (offset TBD)`);
     } else {
-      console.log(`  mode         : (config read at 0x70 not served over coupling)`);
+      console.log(`  raw 0x70 window: (NAK — re-run; dip a card to wake)`);
     }
+    if (w0) {
+      console.log(`  raw 0x00 window: ${w0.data.map(hex).join(' ')}   <-- serial lives here (TBD)`);
+    } else {
+      console.log(`  raw 0x00 window: (NAK — re-run; dip a card to wake)`);
+    }
+    console.log(
+      `\n  (mode/serial decoding is unverified — paste these raw windows + the\n` +
+        `   number on the unit's label so the offsets can be mapped correctly.)`
+    );
   }
 
   await rawSendRetry(

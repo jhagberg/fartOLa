@@ -68,6 +68,38 @@ surface, and (for destructive ops) a confirm + save-first guard.
 - **Hardware-verified frame shape**: station.sendMessage() returns
   `[cmd, len, ...payload]`; see __fixtures__/coupled-backup-golden.md.
 
+## Hardware findings (2026-06-01 bench, probe --info on coupled units)
+
+VERIFIED:
+- Config-memory reads (GET_SYS_VAL 0x00, 0x70) DO work over the inductive link
+  once the station is awake — earlier all-NAK runs were SLEEP, not an address
+  limitation. Must wake (card dip) first; the 0x1C liveness read NAKs forever
+  if asleep.
+- A 128-byte GET_SYS_VAL never syncs over coupling — read in small (≤8-byte)
+  windows. (pcprog §3.1: as few bytes per cycle as possible.)
+- Station code is reliable two ways: the reply header CN1 CN0, AND config byte
+  0x72. Confirmed: unit "110" → header 0x006e AND config[0x72]=0x6e. So the
+  STATION_CONFIG_OFFSETS code-low offset is correct against real hardware.
+- Captured sample, unit 110: serial 589578;
+    raw 0x00 window = 00 08 ff 0a ff 36 35 36
+    raw 0x70 window = 38 32 6e 37 01 19 06 10  (byte 0x72 = 6e = 110 ✓)
+
+UNRESOLVED — need more samples before trusting:
+- MODE byte: read 0x32 for unit 110. Does NOT match the simple enum
+  (Control=0x02/Start=0x03/Finish=0x04). Low nibble 0x2 = Control would fit IF
+  110 is a control, but that's one sample — DO NOT ship mode decoding until we
+  have Start + Finish + a known Control captured to confirm the encoding (it may
+  be high-nibble flags + low-nibble mode, or a different offset entirely).
+- SERIAL decode: printed 589578 from 0x00 window bytes [00 08 ff 0a] but the
+  window also shows `ff 36 35 36` (ASCII "656"?) — the serial offset/width may
+  be wrong. Re-verify against a unit whose serial is physically printed on it.
+- FIRMWARE / model: not located yet. Capture the relevant config windows from a
+  unit of known firmware to map it.
+
+To finish the mapping: run `--info` on Start, Mål (finish), a known Control, and
+136, and record each unit's raw 0x00 + 0x70 windows + the number printed on the
+unit's label. Then map mode/serial/firmware from the cross-product.
+
 ## UI
 
 - New nav menu item "Stämpeldosor" / "SportIdent" with sub-actions: Hämta &
