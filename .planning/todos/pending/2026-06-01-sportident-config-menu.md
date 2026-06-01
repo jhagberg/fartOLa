@@ -140,6 +140,33 @@ UNRESOLVED:
   model/firmware id lives at an address not yet read. Capture more windows
   (e.g. 0x08..0x10) from a BSF8 vs BSF9 to locate it. Low priority.
 
+## Question to SPORTident (drafted 2026-06-01)
+
+The SIAC AIR+/beacon register is undocumented in all refs we hold, and their
+licensed .NET Communication library can't be used as a source (LICENSE.txt
+forbids decompile/disassemble/deriving know-how from the binary; the example
+only exposes card-readout SIAC options — SiacReadonlyMode, SiacMeasureBatteryOn
+Read — not the station beacon toggle or any wire addresses). So ask them
+directly, then confirm with --dump:
+
+> Subject: Reading/setting SIAC AIR+ (beacon) mode via the serial protocol
+>
+> I'm developing an orienteering timing application that talks to BSF7/8 and
+> BS11 stations directly over the serial protocol (GET_SYS_VAL 0x83 /
+> SET_SYS_VAL 0x82), rather than via the .NET Communication library — our stack
+> is cross-platform Node.js. Two questions:
+> 1. Which system-memory address / config bit controls SIAC AIR+ (beacon) mode,
+>    so I can read it with 0x83 and enable/disable it with 0x82?
+> 2. Is there an up-to-date station configuration register map for series
+>    7/8/10/11? PC Programmer's Guide 5 is deprecated and documents only a few
+>    addresses (0x1C, 0x33, 0x74). I've confirmed serial at 0x00, mode at 0x71,
+>    code at 0x72 empirically, but an authoritative map would help.
+
+PROVENANCE NOTE: keep fartola's implementation derived from SPORTident's direct
+answer or our own --dump capture — NOT from their proprietary library/docs — so
+the clean-room story (re-implemented from public specs + hardware) holds. See
+[[feedback-no-copy-claims]].
+
 ## UI
 
 - New nav menu item "Stämpeldosor" / "SportIdent" with sub-actions: Hämta &
