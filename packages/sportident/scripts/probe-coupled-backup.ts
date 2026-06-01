@@ -271,9 +271,21 @@ async function main(): Promise<void> {
       console.log(`  records  : ${result.records.length}`);
       const cards = [...new Set(result.records.map((r) => r.cardNumber))];
       console.log(`  unique cards (${cards.length}): ${cards.join(', ') || '(none)'}`);
+      console.log(
+        `\n  >> Tip: the station's code number is the CN1 CN0 bytes in each RX frame above\n` +
+          `     (e.g. "02 83 .. 00 88 .." = station 0x0088 = 136). Use it to confirm WHICH\n` +
+          `     unit you read — place Start / Mål / 136 / 110 one at a time.`
+      );
     }
   } catch (err) {
-    console.error(`\n!! read failed: ${(err as Error).message}`);
+    const msg = (err as Error).message ?? String(err);
+    if (/asleep|did not respond/i.test(msg)) {
+      console.error(
+        `\n!! the unit didn't respond — it's asleep. Dip an SI card into the station to wake it, then run again immediately.`
+      );
+    } else {
+      console.error(`\n!! read failed: ${msg}`);
+    }
   } finally {
     await transport.close();
   }
