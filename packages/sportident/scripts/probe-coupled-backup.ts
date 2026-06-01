@@ -232,6 +232,19 @@ async function runRaw(transport: LoggingTransport): Promise<void> {
 // info probe — identify a coupled station (code, mode, serial)
 // ---------------------------------------------------------------------------
 
+// SI operating modes (low nibble of config byte 0x71). Hardware-verified on the
+// 2026-06-01 bench: töm→Clear(7), mål→Finish(4), start→Start(3), check→Check(10),
+// numbered controls→Control(2). See __fixtures__/station-info-captures.md.
+const MODE_NAMES: Record<number, string> = {
+  2: 'Control',
+  3: 'Start',
+  4: 'Finish',
+  5: 'Readout',
+  7: 'Clear',
+  10: 'Check',
+  11: 'Printout',
+};
+
 async function runInfo(transport: LoggingTransport): Promise<void> {
   console.log(`\n### INFO probe — read the coupled station's config block ###`);
   console.log(`### Tells you WHICH unit and WHAT mode (Start/Finish/Control/Check). ###`);
@@ -276,34 +289,41 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
     console.log(`\n=== STATION INFO ===`);
     console.log(`  code number  : ${idRead.cn}   <-- this is the unit you placed`);
 
-    // STEP 2 — BEST-EFFORT config reads for mode + serial. These read config
-    // MEMORY addresses (0x00, 0x70) rather than the live 0x1C system value, and
-    // may not be served over the inductive link the same way. We do NOT fail
-    // --info if they NAK — the code number above already identifies the unit.
+    // STEP 2 — config reads for mode + serial. These read config MEMORY (0x00,
+    // 0x70) rather than the live 0x1C system value, but DO sync over coupling
+    // once the unit is awake. We do NOT fail --info if they NAK — the code
+    // number above already identifies the unit.
+    //
+    // Both decodings below are HARDWARE-VERIFIED (bench 2026-06-01, 6 units
+    // cross-checked against printed labels; see __fixtures__/station-info-
+    // captures.md):
+    //   serial = uint32 BE at 0x00..0x03
+    //   mode   = byte 0x71, low nibble = SI mode enum (Control 2 / Start 3 /
+    //            Finish 4 / Clear 7 / Check 10)
     const w0 = await readWindow('serial', 0x00, 0x08);
     const w70 = await readWindow('mode/code', 0x70, 0x08);
-    // NOTE: serial + mode decoding from the config windows is NOT yet verified
-    // against hardware (one sample read mode=0x32, which doesn't match the
-    // simple enum; the serial offset is also unconfirmed). Print the RAW
-    // windows as the source of truth and label decoded values as guesses, so
-    // we don't trust a wrong number. Map these properly once we have Start /
-    // Finish / known-Control captures — see the SI-config-menu backlog todo.
+    if (w0) {
+      const s = w0.data;
+      const serial = ((s[0] ?? 0) << 24) | ((s[1] ?? 0) << 16) | ((s[2] ?? 0) << 8) | (s[3] ?? 0);
+      console.log(`  serial number: ${serial >>> 0}   (0x00..03 BE)`);
+      console.log(`  raw 0x00 window: ${s.map(hex).join(' ')}`);
+    } else {
+      console.log(`  serial number: (NAK — re-run; dip a card to wake)`);
+    }
     if (w70) {
       const md = w70.data;
+      const modeByte = md[0x71 - 0x70] ?? 0;
+      const mode = modeByte & 0x0f;
+      const flags = modeByte & 0xf0;
+      console.log(
+        `  mode: ${MODE_NAMES[mode] ?? 'unknown'} (0x${hex(modeByte)}` +
+          `${flags ? `, flags 0x${hex(flags)}` : ''})`
+      );
       console.log(`  config 0x72 (code): ${md[0x72 - 0x70] ?? '?'}  (should match code number)`);
-      console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}   <-- mode lives here (offset TBD)`);
+      console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}`);
     } else {
-      console.log(`  raw 0x70 window: (NAK — re-run; dip a card to wake)`);
+      console.log(`  mode: (NAK — re-run; dip a card to wake)`);
     }
-    if (w0) {
-      console.log(`  raw 0x00 window: ${w0.data.map(hex).join(' ')}   <-- serial lives here (TBD)`);
-    } else {
-      console.log(`  raw 0x00 window: (NAK — re-run; dip a card to wake)`);
-    }
-    console.log(
-      `\n  (mode/serial decoding is unverified — paste these raw windows + the\n` +
-        `   number on the unit's label so the offsets can be mapped correctly.)`
-    );
   }
 
   await rawSendRetry(

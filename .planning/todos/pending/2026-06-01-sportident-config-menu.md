@@ -70,6 +70,9 @@ surface, and (for destructive ops) a confirm + save-first guard.
 
 ## Hardware findings (2026-06-01 bench, probe --info on coupled units)
 
+Six units read and cross-checked against printed labels (110, 136, mål, töm,
+start, check). Full byte dump: __fixtures__/station-info-captures.md.
+
 VERIFIED:
 - Config-memory reads (GET_SYS_VAL 0x00, 0x70) DO work over the inductive link
   once the station is awake — earlier all-NAK runs were SLEEP, not an address
@@ -77,28 +80,30 @@ VERIFIED:
   if asleep.
 - A 128-byte GET_SYS_VAL never syncs over coupling — read in small (≤8-byte)
   windows. (pcprog §3.1: as few bytes per cycle as possible.)
-- Station code is reliable two ways: the reply header CN1 CN0, AND config byte
-  0x72. Confirmed: unit "110" → header 0x006e AND config[0x72]=0x6e. So the
-  STATION_CONFIG_OFFSETS code-low offset is correct against real hardware.
-- Captured sample, unit 110: serial 589578;
-    raw 0x00 window = 00 08 ff 0a ff 36 35 36
-    raw 0x70 window = 38 32 6e 37 01 19 06 10  (byte 0x72 = 6e = 110 ✓)
+- STATION CODE (low byte) = config byte 0x72, also = reply header CN1 CN0.
+  Confirmed on all 6 units.
+- SERIAL number = uint32 BIG-ENDIAN at config 0x00..0x03. Decodes EXACTLY to the
+  printed serial on all 6 units (e.g. 110→0x0008ff0a=589578, 136→0x0002d193=
+  184723, töm→0x0001d509=120073). The trailing `ff 36 35 36` ("656") at
+  0x04..0x07 is a CONSTANT on every unit — NOT part of the serial (that's what
+  made it look ambiguous before).
+- OPERATING MODE = config byte 0x71, LOW NIBBLE = SI mode enum:
+  Control=2, Start=3, Finish=4, Clear=7, Check=10 (0x0A). Proven by the Swedish
+  labels — töm→Clear(7), mål→Finish(4), start→Start(3), check→Check(10),
+  numbered controls 110/136→Control(2). The two controls also carry 0x30 in the
+  high nibble (flag bits; meaning TBD but irrelevant to mode identification —
+  mask with & 0x0f).
+- probe --info now decodes serial + mode for real (was printing raw windows
+  only). MODE_NAMES lookup added.
 
-UNRESOLVED — need more samples before trusting:
-- MODE byte: read 0x32 for unit 110. Does NOT match the simple enum
-  (Control=0x02/Start=0x03/Finish=0x04). Low nibble 0x2 = Control would fit IF
-  110 is a control, but that's one sample — DO NOT ship mode decoding until we
-  have Start + Finish + a known Control captured to confirm the encoding (it may
-  be high-nibble flags + low-nibble mode, or a different offset entirely).
-- SERIAL decode: printed 589578 from 0x00 window bytes [00 08 ff 0a] but the
-  window also shows `ff 36 35 36` (ASCII "656"?) — the serial offset/width may
-  be wrong. Re-verify against a unit whose serial is physically printed on it.
-- FIRMWARE / model: not located yet. Capture the relevant config windows from a
-  unit of known firmware to map it.
-
-To finish the mapping: run `--info` on Start, Mål (finish), a known Control, and
-136, and record each unit's raw 0x00 + 0x70 windows + the number printed on the
-unit's label. Then map mode/serial/firmware from the cross-product.
+UNRESOLVED:
+- HIGH-NIBBLE FLAGS on byte 0x71 (0x30 on the two numbered controls, 0x00 on the
+  function stations) — exact meaning unknown (autosend? extended protocol?
+  beacon?). Doesn't block anything; mask it off for mode.
+- MODEL / firmware (BSF8 vs BSF9): unit 110 is a BSF9, the other five BSF8 (start
+  unknown). Their 0x70/0x00 windows are identical apart from code+serial, so the
+  model/firmware id lives at an address not yet read. Capture more windows
+  (e.g. 0x08..0x10) from a BSF8 vs BSF9 to locate it. Low priority.
 
 ## UI
 
