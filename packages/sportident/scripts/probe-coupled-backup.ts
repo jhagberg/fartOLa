@@ -258,36 +258,51 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
     proto.cmd.SET_MS
   );
 
-  // Read the full 128-byte config block: GET_SYS_VAL address 0x00, length 0x80.
-  const reply = await rawSendRetry(
-    transport,
-    'GET_SYS_VAL config block [addr=0x00, len=0x80]',
-    { command: proto.cmd.GET_SYS_VAL, parameters: [0x00, 0x80] },
-    proto.cmd.GET_SYS_VAL
-  );
+  // Read the config in SMALL windows. Over the inductive link a 128-byte
+  // GET_SYS_VAL never syncs (it NAKs every time — confirmed on 110/136),
+  // matching pcprog §3.1: "the number of bytes read in one cycle should be as
+  // small as possible". So read two 8-byte windows: 0x00 (serial) and 0x70
+  // (mode/code). Each parses the same as the small reads that work.
 
-  // Frame: 02 83 LEN CN1 CN0 ADDR <128 config bytes> CRC CRC 03.
-  // The config blob starts after [STX cmd LEN CN1 CN0 ADDR] = skip 6 from STX.
-  const stx = reply.indexOf(proto.STX);
-  if (stx >= 0 && reply[stx + 1] === proto.cmd.GET_SYS_VAL) {
-    const cn = (reply[stx + 3]! << 8) | reply[stx + 4]!;
-    const cfg = reply.slice(stx + 6); // 128-byte config blob (+ crc/etx tail)
-    // Verified offsets (BaseSiStation.STATION_CONFIG_OFFSETS):
-    //   0x00..0x03 serial number (big-endian), 0x71 mode, 0x72 code-low.
-    const serial =
-      ((cfg[0] ?? 0) << 24) | ((cfg[1] ?? 0) << 16) | ((cfg[2] ?? 0) << 8) | (cfg[3] ?? 0);
-    const mode = cfg[0x71] ?? 0;
-    const codeLow = cfg[0x72] ?? 0;
+  /** Read `len` config bytes starting at `addr`. Returns { cn, data } where cn
+   * is the station code from the reply's CN1 CN0 header (the value that worked
+   * in the backup captures) and data is the bytes after the header, or null. */
+  async function readWindow(
+    label: string,
+    addr: number,
+    len: number
+  ): Promise<{ cn: number; data: number[] } | null> {
+    const reply = await rawSendRetry(
+      transport,
+      `GET_SYS_VAL ${label} [addr=0x${hex(addr)}, len=0x${hex(len)}]`,
+      { command: proto.cmd.GET_SYS_VAL, parameters: [addr, len] },
+      proto.cmd.GET_SYS_VAL
+    );
+    const stx = reply.indexOf(proto.STX);
+    if (stx < 0 || reply[stx + 1] !== proto.cmd.GET_SYS_VAL) return null;
+    // Frame: STX cmd LEN [CN1 CN0 ADDR-echo ...data] CRC CRC ETX.
+    const cn = ((reply[stx + 3] ?? 0) << 8) | (reply[stx + 4] ?? 0);
+    return { cn, data: reply.slice(stx + 6, stx + 6 + len) };
+  }
+
+  // Window 1: serial number at 0x00..0x03 (big-endian).
+  const w0 = await readWindow('serial', 0x00, 0x08);
+  // Window 2: code low (0x72) + mode (0x71) live in the 0x70 window.
+  const w70 = await readWindow('mode/code', 0x70, 0x08);
+
+  if (w0 || w70) {
+    const sd = w0?.data ?? [];
+    const md = w70?.data ?? [];
+    const cn = w70?.cn ?? w0?.cn ?? 0;
+    const serial = ((sd[0] ?? 0) << 24) | ((sd[1] ?? 0) << 16) | ((sd[2] ?? 0) << 8) | (sd[3] ?? 0);
+    const mode = md[0x71 - 0x70] ?? 0; // byte 0x71 within the 0x70 window
+    const codeLow = md[0x72 - 0x70] ?? 0; // byte 0x72 within the 0x70 window
     console.log(`\n=== STATION INFO ===`);
-    console.log(`  code number  : ${cn}  (also config byte 0x72 = ${codeLow})`);
+    console.log(`  code number  : ${cn}  (reply header; config 0x72 = ${codeLow})`);
     console.log(`  mode         : ${modeName(mode)}  (byte 0x71 = 0x${hex(mode)})`);
     console.log(`  serial number: ${serial >>> 0}`);
-    console.log(
-      `\n  full config block (for mapping firmware/series later):\n  ${cfg
-        .slice(0, 128)
-        .map(hex)
-        .join(' ')}`
-    );
+    console.log(`  raw 0x00 window: ${sd.map(hex).join(' ') || '(none)'}`);
+    console.log(`  raw 0x70 window: ${md.map(hex).join(' ') || '(none)'}`);
   } else {
     console.log(`\n  (no clean config frame — station may be asleep; dip a card and retry)`);
   }
