@@ -258,15 +258,8 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
     proto.cmd.SET_MS
   );
 
-  // Read the config in SMALL windows. Over the inductive link a 128-byte
-  // GET_SYS_VAL never syncs (it NAKs every time — confirmed on 110/136),
-  // matching pcprog §3.1: "the number of bytes read in one cycle should be as
-  // small as possible". So read two 8-byte windows: 0x00 (serial) and 0x70
-  // (mode/code). Each parses the same as the small reads that work.
-
-  /** Read `len` config bytes starting at `addr`. Returns { cn, data } where cn
-   * is the station code from the reply's CN1 CN0 header (the value that worked
-   * in the backup captures) and data is the bytes after the header, or null. */
+  /** Read `len` bytes at `addr` via GET_SYS_VAL. Returns { cn, data } (cn from
+   * the reply's CN1 CN0 header) or null if it NAK'd every attempt. */
   async function readWindow(
     label: string,
     addr: number,
@@ -285,26 +278,42 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
     return { cn, data: reply.slice(stx + 6, stx + 6 + len) };
   }
 
-  // Window 1: serial number at 0x00..0x03 (big-endian).
-  const w0 = await readWindow('serial', 0x00, 0x08);
-  // Window 2: code low (0x72) + mode (0x71) live in the 0x70 window.
-  const w70 = await readWindow('mode/code', 0x70, 0x08);
-
-  if (w0 || w70) {
-    const sd = w0?.data ?? [];
-    const md = w70?.data ?? [];
-    const cn = w70?.cn ?? w0?.cn ?? 0;
-    const serial = ((sd[0] ?? 0) << 24) | ((sd[1] ?? 0) << 16) | ((sd[2] ?? 0) << 8) | (sd[3] ?? 0);
-    const mode = md[0x71 - 0x70] ?? 0; // byte 0x71 within the 0x70 window
-    const codeLow = md[0x72 - 0x70] ?? 0; // byte 0x72 within the 0x70 window
-    console.log(`\n=== STATION INFO ===`);
-    console.log(`  code number  : ${cn}  (reply header; config 0x72 = ${codeLow})`);
-    console.log(`  mode         : ${modeName(mode)}  (byte 0x71 = 0x${hex(mode)})`);
-    console.log(`  serial number: ${serial >>> 0}`);
-    console.log(`  raw 0x00 window: ${sd.map(hex).join(' ') || '(none)'}`);
-    console.log(`  raw 0x70 window: ${md.map(hex).join(' ') || '(none)'}`);
+  // STEP 1 — IDENTITY via the read we KNOW syncs over coupling: the backup
+  // pointer at 0x1C. Its reply header carries the station code (this is how we
+  // read 136/110/3/10). It also doubles as a liveness probe: if THIS NAKs every
+  // attempt the coupled station is genuinely asleep — dip a card and retry.
+  const idRead = await readWindow('identity (backup ptr 0x1C)', 0x1c, 0x07);
+  if (!idRead) {
+    console.log(
+      `\n  (the station never answered the 0x1C read — it's asleep or not coupled.\n   Dip an SI card into the station to wake it, then run --info again.)`
+    );
   } else {
-    console.log(`\n  (no clean config frame — station may be asleep; dip a card and retry)`);
+    console.log(`\n=== STATION INFO ===`);
+    console.log(`  code number  : ${idRead.cn}   <-- this is the unit you placed`);
+
+    // STEP 2 — BEST-EFFORT config reads for mode + serial. These read config
+    // MEMORY addresses (0x00, 0x70) rather than the live 0x1C system value, and
+    // may not be served over the inductive link the same way. We do NOT fail
+    // --info if they NAK — the code number above already identifies the unit.
+    const w0 = await readWindow('serial', 0x00, 0x08);
+    const w70 = await readWindow('mode/code', 0x70, 0x08);
+    if (w0) {
+      const sd = w0.data;
+      const serial =
+        ((sd[0] ?? 0) << 24) | ((sd[1] ?? 0) << 16) | ((sd[2] ?? 0) << 8) | (sd[3] ?? 0);
+      console.log(`  serial number: ${serial >>> 0}`);
+      console.log(`  raw 0x00 window: ${sd.map(hex).join(' ')}`);
+    } else {
+      console.log(`  serial number: (config read at 0x00 not served over coupling)`);
+    }
+    if (w70) {
+      const md = w70.data;
+      const mode = md[0x71 - 0x70] ?? 0;
+      console.log(`  mode         : ${modeName(mode)}  (byte 0x71 = 0x${hex(mode)})`);
+      console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}`);
+    } else {
+      console.log(`  mode         : (config read at 0x70 not served over coupling)`);
+    }
   }
 
   await rawSendRetry(
