@@ -184,3 +184,151 @@ export async function readBackupMemory(station: ISiStation): Promise<{
 
   return { records: allRecords, overflow: hwOverflow || loopCapped };
 }
+
+// ---------------------------------------------------------------------------
+// Coupled (inductive) backup readout
+// ---------------------------------------------------------------------------
+
+/** Options for readCoupledBackupMemory (all optional; defaults match §2.5). */
+export interface CoupledReadOptions {
+  /** Max attempts per forwarded command before giving up (§2.5: "Repeat
+   * number should be 3...5"). Default 5. */
+  maxRetries?: number;
+  /** Base inter-attempt delay in ms; the actual delay grows per attempt
+   * (§2.5: "delay time should vary in steps of some 10 ms"). Default 15. */
+  retryDelayMs?: number;
+  /** Per-attempt response timeout in ms passed to sendMessage. Kept short so a
+   * dropped NAK (which the multiplexer silently swallows) fails fast and the
+   * retry loop can re-issue. Default 1500. */
+  attemptTimeoutMs?: number;
+  /** Injectable sleep (tests pass a no-op). Default: real setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Send a forwarded command with the §2.5 retry-on-failure loop.
+ *
+ * The first instruction forwarded to a freshly-coupled station starts the
+ * inductive synchronisation and frequently NAKs or simply doesn't answer.
+ * The multiplexer drops bare NAK frames silently, so a NAK surfaces here as a
+ * SendTimeoutError. Both rejection and timeout are treated identically: wait a
+ * short, growing delay and retry, up to maxRetries attempts.
+ */
+async function sendWithRetry(
+  station: ISiStation,
+  message: { command: number; parameters: number[] },
+  opts: Required<Pick<CoupledReadOptions, 'maxRetries' | 'retryDelayMs' | 'attemptTimeoutMs'>> & {
+    sleep: (ms: number) => Promise<void>;
+  }
+): Promise<number[][]> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < opts.maxRetries; attempt++) {
+    if (attempt > 0) {
+      // Growing delay in ~10ms steps (§2.5).
+      await opts.sleep(opts.retryDelayMs * attempt);
+    }
+    try {
+      return await station.sendMessage(message, 1, opts.attemptTimeoutMs);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new Error(
+    `coupled read: command 0x${message.command.toString(16)} failed after ${opts.maxRetries} attempts ` +
+      `(transparent-mode sync to the coupled station never completed): ${
+        lastErr instanceof Error ? lastErr.message : String(lastErr)
+      }`
+  );
+}
+
+/**
+ * Read backup memory from a BSFx check unit that is INDUCTIVELY COUPLED on top
+ * of a BSMx master station ("mini reader"), per PC Programmer's Guide v5 §2.5.
+ *
+ * Sequence:
+ *   1. SET_MS(P_MS_REMOTE = 0x53) — switch the master into transparent mode so
+ *      all subsequent commands are forwarded to the coupled station.
+ *   2. GET_SYS_VAL + GET_BACKUP loop (identical to direct readBackupMemory),
+ *      each wrapped in the §2.5 retry-on-NAK loop because inductive sync is
+ *      flaky on the first forwarded instructions.
+ *   3. SET_MS(P_MS_DIRECT = 0x4D) in a finally — ALWAYS restore the master to
+ *      direct mode so the next live card read works, even if the backup read
+ *      throws.
+ *
+ * @param station  The master station (SiMainStation) the check unit sits on.
+ * @param options  Retry/timing knobs (see CoupledReadOptions).
+ */
+export async function readCoupledBackupMemory(
+  station: ISiStation,
+  options: CoupledReadOptions = {}
+): Promise<{ records: BackupRecord[]; overflow: boolean }> {
+  const retryOpts = {
+    maxRetries: options.maxRetries ?? 5,
+    retryDelayMs: options.retryDelayMs ?? 15,
+    attemptTimeoutMs: options.attemptTimeoutMs ?? 1500,
+    sleep: options.sleep ?? defaultSleep,
+  };
+
+  // Step 1: switch master → transparent/slave mode. This itself can need a
+  // retry; the master echoes the M/S byte back.
+  await sendWithRetry(
+    station,
+    { command: proto.cmd.SET_MS, parameters: [proto.P_MS_REMOTE] },
+    retryOpts
+  );
+
+  try {
+    // Step 2a: GET_SYS_VAL (forwarded to the coupled station).
+    const sysValResponses = await sendWithRetry(
+      station,
+      { command: proto.cmd.GET_SYS_VAL, parameters: [0x00, 0x00, 0x80] },
+      retryOpts
+    );
+    const sysValParams = sysValResponses[0] ?? [];
+    const memPointer = parseMemPointer(sysValParams);
+    const hwOverflow = parseOverflowFlag(sysValParams);
+
+    if (memPointer === 0) {
+      return { records: [], overflow: hwOverflow };
+    }
+
+    // Step 2b: GET_BACKUP loop.
+    const blocksNeeded = Math.ceil(memPointer / BLOCK_SIZE);
+    const loopCapped = blocksNeeded > MAX_ITERATIONS;
+    const blockCount = loopCapped ? MAX_ITERATIONS : blocksNeeded;
+
+    const allRecords: BackupRecord[] = [];
+    for (let i = 0; i < blockCount; i++) {
+      const byteOffset = i * BLOCK_SIZE;
+      const addrHi = (byteOffset >>> 16) & 0xff;
+      const addrMid = (byteOffset >>> 8) & 0xff;
+      const addrLo = byteOffset & 0xff;
+      const backupResponses = await sendWithRetry(
+        station,
+        { command: proto.cmd.GET_BACKUP, parameters: [addrHi, addrMid, addrLo, BLOCK_SIZE] },
+        retryOpts
+      );
+      const blockParams = backupResponses[0] ?? [];
+      const block = new Uint8Array(blockParams);
+      allRecords.push(...parseBackupBlock(block, proto.REC_LEN));
+    }
+
+    return { records: allRecords, overflow: hwOverflow || loopCapped };
+  } finally {
+    // Step 3: ALWAYS restore direct/master mode so live card reads resume.
+    // Best-effort — if even this fails we don't want to mask the original
+    // error, so swallow any restore failure.
+    try {
+      await sendWithRetry(
+        station,
+        { command: proto.cmd.SET_MS, parameters: [proto.P_MS_DIRECT] },
+        retryOpts
+      );
+    } catch {
+      /* best-effort restore; original error (if any) propagates */
+    }
+  }
+}

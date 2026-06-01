@@ -488,7 +488,7 @@
   "kvariskov.elapsed": "Elapsed",
   "kvariskov.copied": "Copied!",
   "kvariskov.refreshed": "Refreshed",
-  "kvariskov.hint": "Connect the BSF8 check unit and click Read to see who is still in the forest.",
+  "kvariskov.hint": "Place the BSF8 check unit on the mini reader (inductive coupling) and click Read to see who is still in the forest.",
 
   "wizard.eventor.title": "Fetch from Eventor",
   "wizard.eventor.inputLabel": "Eventor event ID",

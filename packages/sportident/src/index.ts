@@ -78,10 +78,11 @@ export { inferCardType } from './SiCard/cardTypeFromNumber.ts';
 // --- Backup readout (Phase 2.1 Plan 06 — kvar-i-skogen) --------------------
 export {
   readBackupMemory,
+  readCoupledBackupMemory,
   parseBackupBlock,
   parseMemPointer,
   parseOverflowFlag,
   BLOCK_SIZE,
   MAX_ITERATIONS,
 } from './SiStation/readBackup.ts';
-export type { BackupRecord } from './SiStation/readBackup.ts';
+export type { BackupRecord, CoupledReadOptions } from './SiStation/readBackup.ts';

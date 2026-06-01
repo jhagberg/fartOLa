@@ -45,18 +45,27 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc } from 'drizzle-orm';
 
 import { competitions, events } from '../db/schema.ts';
-import { readBackupMemory } from '@fartola/sportident';
+import { readBackupMemory, readCoupledBackupMemory } from '@fartola/sportident';
 import type { EventPayload } from '../db/schema.ts';
 
 export default async function registerCheckunitRoutes(app: FastifyInstance): Promise<void> {
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/checkunit/snapshot
   // ---------------------------------------------------------------------------
-  app.post<{ Params: { id: string }; Querystring: { reader?: string } }>(
+  // `mode` selects how the check unit is reached:
+  //   - 'coupled' (DEFAULT): the BSFx check unit is inductively coupled on top
+  //     of the BSMx master ("mini reader"). The master is switched to
+  //     transparent mode (SET_MS 0x53) and commands are forwarded to the
+  //     coupled station, then direct mode is restored. This is the normal
+  //     field setup — a BSF8 has no USB port (pcprog5 §2.5).
+  //   - 'direct': the station is itself plugged into USB and we read its own
+  //     backup memory. Escape hatch for benches / debugging.
+  app.post<{ Params: { id: string }; Querystring: { reader?: string; mode?: string } }>(
     '/api/competitions/:id/checkunit/snapshot',
     async (req, reply) => {
       const { id } = req.params;
       const readerPosition = req.query.reader ?? null;
+      const mode = req.query.mode === 'direct' ? 'direct' : 'coupled';
 
       // Verify competition exists.
       const compRow = app.fartolaDb.db
@@ -96,15 +105,20 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
         });
       }
 
-      // Read backup memory from the check unit.
+      // Read backup memory from the check unit. Coupled (default) wraps the
+      // read in the SET_MS transparent-mode relay + §2.5 retry loop; direct
+      // reads the USB-attached station's own memory.
       let readResult: { cardNumbers: number[]; overflow: boolean; readCount: number };
       try {
-        const { records, overflow } = await readBackupMemory(station);
+        const { records, overflow } =
+          mode === 'direct'
+            ? await readBackupMemory(station)
+            : await readCoupledBackupMemory(station);
         const cardNumbers = [...new Set(records.map((r) => r.cardNumber))];
         readResult = { cardNumbers, overflow, readCount: cardNumbers.length };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        app.log.error({ err, competitionId: id }, 'checkunit snapshot failed');
+        app.log.error({ err, competitionId: id, mode }, 'checkunit snapshot failed');
         return reply.code(500).send({ error: 'snapshot_failed', message });
       }
 
