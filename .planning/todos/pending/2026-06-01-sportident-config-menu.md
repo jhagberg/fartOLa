@@ -57,6 +57,41 @@ surface, and (for destructive ops) a confirm + save-first guard.
   BaseSiStation). Lower priority than 1 & 2 — start read-only (inspect), add
   write/clone later.
 
+### 4. SIAC air+ / beacon on/off
+- Read and toggle the station's SIAC beacon ("air+") mode so SIAC cards punch
+  contactlessly at the unit.
+- STATUS: the beacon bit is NOT documented in any reference we hold. pcprog5 is
+  deprecated and predates SIAC station config — its `information` sheet states
+  "SIAC1 has not yet been implemented into firmware of BS7/8 (version 5.68)".
+  So we cannot cite an address; it must be found empirically.
+- FIND IT: `probe --dump` (added 2026-06-01) reads config 0x00..0x80 in 8-byte
+  windows. Dump a unit with air+ ON and one with air+ OFF (or toggle one in
+  SPORTident Config+), diff → the changed byte/bit is the beacon flag. Same
+  label-diff method that cracked serial + mode.
+- DO NOT assume it's the 0x30 high-nibble flag seen on byte 0x71 of the numbered
+  controls (110/136): beacon mode is normally set on start/finish/radio controls,
+  yet here the FUNCTION stations had 0x00 high nibble and the plain numbered
+  controls had 0x30 — opposite of the beacon expectation. Confirm by dump-diff.
+- READ/SET once located: GET_SYS_VAL 0x83 to read, SET_SYS_VAL 0x82 to set (both
+  exist). Writing config changes station behaviour → destructive-ish; gate behind
+  a confirm + read-back-verify in the config phase.
+
+## Documented station registers (pcprog5 §2.3, §3.x) — the only ones in our refs
+
+| addr | name | meaning | used? |
+|------|------|---------|-------|
+| 0x1C | backup pointer | 7 bytes EP3 EP2 xx xx xx EP1 EP0 | YES (readBackup) |
+| 0x33 | CardBlocks | which SI-Card6 blocks to read (0xFF = all 8) | no |
+| 0x74 | CPC | protocol config bitmask (see below) | now decoded in --info |
+
+CPC (0x74) bits: 0x01 extended-protocol, 0x02 auto-send, 0x04 handshake,
+0x10 password-only, 0x80 readout-after-punch. All 6 bench units read 0x01
+(extended protocol on) → 8-byte backup records, which cross-confirms our
+readBackup 8-byte-record parser.
+
+Everything else we use (serial 0x00, mode 0x71, code 0x72) is UNDOCUMENTED and
+was found empirically — pcprog5 has no full register map.
+
 ## Shared infrastructure (already built — reuse)
 
 - **Inductive coupling relay**: SET_MS 0x53 → forwarded commands → SET_MS 0x4D,
@@ -108,7 +143,7 @@ UNRESOLVED:
 ## UI
 
 - New nav menu item "Stämpeldosor" / "SportIdent" with sub-actions: Hämta &
-  radera, Klock-synk, Inspektera/klona config.
+  radera, Klock-synk, Inspektera/klona config, SIAC air+ på/av (once located).
 - Each action: same wake instructions block already added to KvarISkovenView;
   destructive actions get a confirm.
 - The probe script (packages/sportident/scripts/probe-coupled-backup.ts) is the

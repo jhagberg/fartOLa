@@ -12,8 +12,11 @@
 //   --serial <path>   serial device (default /dev/ttyUSB0)
 //   --info            identify the coupled station: read its config block and
 //                     print code number, MODE (Start/Finish/Control/Check/...),
-//                     and serial number. Use this to confirm WHICH unit you
-//                     placed (Start vs Mål vs control 136/110).
+//                     serial number, and CPC protocol-config flags. Use this to
+//                     confirm WHICH unit you placed (Start vs Mål vs 136/110).
+//   --dump            read a swath of config memory (--from..--to, default
+//                     0x00..0x80) in 8-byte windows. Diff two runs (air+ on vs
+//                     off) to locate the undocumented SIAC/beacon bit. Read-only.
 //   --raw             skip the high-level readCoupledBackupMemory(); instead
 //                     send SET_MS(0x53) → GET_SYS_VAL → (GET_BACKUP) → SET_MS(0x4D)
 //                     ONE AT A TIME with a long timeout, dumping every reply byte
@@ -51,6 +54,9 @@ const serialPath = opt('--serial', '/dev/ttyUSB0');
 const rawMode = flag('--raw');
 const directMode = flag('--direct');
 const infoMode = flag('--info');
+const dumpMode = flag('--dump');
+const dumpFrom = Number(opt('--from', '0x00'));
+const dumpTo = Number(opt('--to', '0x80'));
 const rawTimeoutMs = Number(opt('--timeout', '3000'));
 
 const hex = (b: number): string => b.toString(16).padStart(2, '0');
@@ -245,6 +251,19 @@ const MODE_NAMES: Record<number, string> = {
   11: 'Printout',
 };
 
+// CPC = protocol configuration bitmask at config 0x74 (pcprog5 §2.3, documented).
+// NB: this is the PROTOCOL config — it does NOT carry the SIAC/air+ beacon flag,
+// which is undocumented in our refs and must be found by config-dump diff.
+function cpcFlags(cpc: number): string[] {
+  const out: string[] = [];
+  if (cpc & 0x01) out.push('extended-protocol');
+  if (cpc & 0x02) out.push('auto-send');
+  if (cpc & 0x04) out.push('handshake');
+  if (cpc & 0x10) out.push('password-only');
+  if (cpc & 0x80) out.push('readout-after-punch');
+  return out;
+}
+
 async function runInfo(transport: LoggingTransport): Promise<void> {
   console.log(`\n### INFO probe — read the coupled station's config block ###`);
   console.log(`### Tells you WHICH unit and WHAT mode (Start/Finish/Control/Check). ###`);
@@ -320,6 +339,9 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
           `${flags ? `, flags 0x${hex(flags)}` : ''})`
       );
       console.log(`  config 0x72 (code): ${md[0x72 - 0x70] ?? '?'}  (should match code number)`);
+      // CPC — protocol configuration bitmask at 0x74 (pcprog5 §2.3, documented).
+      const cpc = md[0x74 - 0x70] ?? 0;
+      console.log(`  CPC 0x74: 0x${hex(cpc)}  [${cpcFlags(cpc).join(', ') || 'none'}]`);
       console.log(`  raw 0x70 window: ${md.map(hex).join(' ')}`);
     } else {
       console.log(`  mode: (NAK — re-run; dip a card to wake)`);
@@ -336,6 +358,64 @@ async function runInfo(transport: LoggingTransport): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// dump probe — read a swath of config memory in 8-byte windows, for diffing.
+// ---------------------------------------------------------------------------
+//
+// Purpose: find UNDOCUMENTED config bits empirically — most importantly the
+// SIAC / air+ beacon flag, which is NOT in pcprog5 (deprecated, predates SIAC
+// station config). Procedure:
+//   1. Wake a unit, run:  --dump            (air+ in state A)
+//   2. Toggle air+ in SPORTident Config+ (or use a second unit in state B).
+//   3. Run --dump again and diff the two outputs — the byte(s) that changed
+//      between air-on and air-off ARE the beacon flag. Same method that cracked
+//      serial + mode against the printed labels.
+// Read-only: only GET_SYS_VAL (0x83). Never writes. Range: --from/--to (hex ok).
+async function runDump(transport: LoggingTransport): Promise<void> {
+  console.log(
+    `\n### DUMP probe — config 0x${hex(dumpFrom)}..0x${hex(dumpTo)} in 8-byte windows ###`
+  );
+  console.log(`### Diff two runs (air+ on vs off) to locate the beacon bit. Read-only. ###`);
+
+  await rawSendRetry(
+    transport,
+    'SET_MS 0x53 (transparent — forward to coupled station)',
+    { command: proto.cmd.SET_MS, parameters: [proto.P_MS_REMOTE] },
+    proto.cmd.SET_MS
+  );
+
+  const rows: string[] = [];
+  try {
+    for (let addr = dumpFrom; addr < dumpTo; addr += 0x08) {
+      const len = Math.min(0x08, dumpTo - addr);
+      const reply = await rawSendRetry(
+        transport,
+        `GET_SYS_VAL [addr=0x${hex(addr)}, len=0x${hex(len)}]`,
+        { command: proto.cmd.GET_SYS_VAL, parameters: [addr, len] },
+        proto.cmd.GET_SYS_VAL
+      );
+      const stx = reply.indexOf(proto.STX);
+      if (stx < 0 || reply[stx + 1] !== proto.cmd.GET_SYS_VAL) {
+        rows.push(`  0x${hex(addr)}: (NAK — dip a card to wake, then re-run)`);
+        continue;
+      }
+      const data = reply.slice(stx + 6, stx + 6 + len);
+      rows.push(`  0x${hex(addr)}: ${data.map(hex).join(' ')}`);
+    }
+  } finally {
+    await rawSendRetry(
+      transport,
+      'SET_MS 0x4D (restore direct/master)',
+      { command: proto.cmd.SET_MS, parameters: [proto.P_MS_DIRECT] },
+      proto.cmd.SET_MS
+    );
+  }
+
+  console.log(`\n=== CONFIG DUMP ===`);
+  for (const r of rows) console.log(r);
+  console.log(`\n### DUMP probe done. Paste this for both air+ states so I can diff. ###`);
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -343,7 +423,7 @@ async function main(): Promise<void> {
   console.log(`fartola coupled-backup probe`);
   console.log(`  serial : ${serialPath}`);
   console.log(
-    `  mode   : ${infoMode ? 'INFO (identify station — code/mode/serial)' : rawMode ? 'RAW (manual command-by-command)' : directMode ? 'DIRECT readBackupMemory' : 'COUPLED readCoupledBackupMemory'}`
+    `  mode   : ${infoMode ? 'INFO (identify station — code/mode/serial)' : dumpMode ? 'DUMP (config window dump for diffing)' : rawMode ? 'RAW (manual command-by-command)' : directMode ? 'DIRECT readBackupMemory' : 'COUPLED readCoupledBackupMemory'}`
   );
   console.log(`  baud   : 38400\n`);
 
@@ -370,6 +450,8 @@ async function main(): Promise<void> {
   try {
     if (infoMode) {
       await runInfo(transport);
+    } else if (dumpMode) {
+      await runDump(transport);
     } else if (rawMode) {
       await runRaw(transport);
     } else {
