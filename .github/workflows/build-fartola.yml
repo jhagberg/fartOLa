@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Enable Corepack (pins pnpm from package.json packageManager)
         run: corepack enable && corepack prepare --activate
       - uses: actions/setup-node@v6

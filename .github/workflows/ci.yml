@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Codex review #9: pnpm pinning via Corepack. Corepack reads the root
       # package.json `packageManager` field (set to pnpm@10.30.3 in Task 1)
       # and activates that exact version. No GHA context-variable substitution

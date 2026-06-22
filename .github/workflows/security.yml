@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # SHA pin per advisory GHSA-69fq-xp46-6x23 — supply-chain hardening.
       # 0.36.0 release; bump explicitly when upgrading.
       - name: Run Trivy filesystem scan
