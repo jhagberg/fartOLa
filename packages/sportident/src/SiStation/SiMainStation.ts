@@ -40,8 +40,10 @@ import type { ConnectionState, ISiMainStation } from './ISiMainStation.ts';
 // detectFromMessage can dispatch SI5_DET / SI8_DET frames.
 import '../SiCard/types/SiCard5.ts';
 import '../SiCard/types/SiCard6.ts';
+import '../SiCard/types/SiCard8.ts';
 import '../SiCard/types/SiCard9.ts';
 import '../SiCard/types/SiCard10.ts';
+import '../SiCard/types/SiCard11.ts';
 import '../SiCard/types/SIAC.ts';
 
 export class SiMainStation extends EventEmitter implements ISiMainStation {
