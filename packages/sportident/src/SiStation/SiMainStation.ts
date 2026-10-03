@@ -39,6 +39,7 @@ import type { ConnectionState, ISiMainStation } from './ISiMainStation.ts';
 // Side-effect imports: trigger registry population on BaseSiCard so
 // detectFromMessage can dispatch SI5_DET / SI8_DET frames.
 import '../SiCard/types/SiCard5.ts';
+import '../SiCard/types/SiCard6.ts';
 import '../SiCard/types/SiCard9.ts';
 import '../SiCard/types/SiCard10.ts';
 import '../SiCard/types/SIAC.ts';
@@ -189,8 +190,12 @@ export class SiMainStation extends EventEmitter implements ISiMainStation {
       }
       return;
     }
-    // SI5_DET / SI8_DET: card inserted -> dispatch + read.
-    if (message.command === proto.cmd.SI5_DET || message.command === proto.cmd.SI8_DET) {
+    // SI5_DET / SI6_DET / SI8_DET: card inserted -> dispatch + read.
+    if (
+      message.command === proto.cmd.SI5_DET ||
+      message.command === proto.cmd.SI6_DET ||
+      message.command === proto.cmd.SI8_DET
+    ) {
       const card = BaseSiCard.detectFromMessage(message);
       if (!card) return;
       card.mainStation = {

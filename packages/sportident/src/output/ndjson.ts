@@ -42,6 +42,7 @@ export interface NdjsonBase {
 
 export type CardType =
   | 'SI5'
+  | 'SI6'
   | 'SI8'
   | 'SI9'
   | 'SI10'
@@ -125,6 +126,7 @@ export type NdjsonEvent =
 /** Map a card instance's constructor name to its public card_type label. */
 const TYPE_MAP: Record<string, CardType> = {
   SiCard5: 'SI5',
+  SiCard6: 'SI6',
   SiCard8: 'SI8',
   SiCard9: 'SI9',
   SiCard10: 'SI10',

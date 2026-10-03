@@ -51,6 +51,7 @@ export { proto } from './constants.ts';
 // --- Card decoders (side-effect imports populate the registries) ------------
 export { BaseSiCard } from './SiCard/BaseSiCard.ts';
 export { SiCard5 } from './SiCard/types/SiCard5.ts';
+export { SiCard6 } from './SiCard/types/SiCard6.ts';
 export { SiCard9 } from './SiCard/types/SiCard9.ts';
 export { SiCard10 } from './SiCard/types/SiCard10.ts';
 export { SIAC } from './SiCard/types/SIAC.ts';
