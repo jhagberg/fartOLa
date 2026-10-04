@@ -183,6 +183,15 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           .send({ error: 'parse_failed', detail: 'ENTITY declarations not allowed' });
       }
 
+      const validation = await validateXml(xmlSource);
+      if (!validation.valid) {
+        return reply.code(400).send({
+          error: 'xsd_invalid',
+          message: 'StartList XML klarade inte XSD-validering.',
+          errors: validation.errors.slice(0, 10),
+        });
+      }
+
       let entries;
       try {
         entries = importStartList(xmlSource);
