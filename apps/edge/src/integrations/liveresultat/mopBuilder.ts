@@ -13,14 +13,11 @@
 //     The liveresultat server interprets this relative to competition date.
 //   - rt (running time, base @rt): elapsed in tenths. Math.round(elapsed_ms / 100).
 //
-// MOP status codes (MOP 2.0 spec, same as mop.xsd):
-//   0 = unknown (used for PEND — not started yet)
-//   1 = OK (finished, status OK)
-//   2 = DNS (did not start)
-//   3 = DNF / MissingPunch
-//   4 = DSQ
-//   9 = not started yet (alternative for future use)
-//   10 = cancelled
+// MOP status codes: MeOS, the reference MOP sender, writes its RunnerStatus
+// as `stat` (MeOS infoserver.cpp:533; values in oRunner.h:34-35), and MOP
+// receivers such as liveresultat read those codes:
+//   0 = unknown (PEND), 1 = OK, 2 = OK without timing, 3 = MP, 4 = DNF,
+//   5 = DQ, 6 = over max time, 20 = DNS, 21 = cancelled.
 //
 // Locked by:
 // - .planning/phases/02.1-sanctioned-competition-foundations/02.1-07-PLAN.md task 1
@@ -63,30 +60,24 @@ export interface MopBuildInput {
 // Status mapping
 // ---------------------------------------------------------------------------
 
-/** Map PunchStatus → MOP 2.0 stat integer.
- *
- * MOP 2.0 stat values:
- *   0 = unknown     (PEND)
- *   1 = OK          (OK)
- *   2 = DNS         (DNS)
- *   3 = DNF/MP      (MP, DNF, MAX: "Ej godkänd", SOFT TA till TR 7.8.2;
- *                    over max time the result is invalid, TR 4.21.1)
- *   4 = DSQ         (DQ)
- *   10 = cancelled  (CANCEL) */
-function mopStat(status: PunchStatus): number {
+/** Map PunchStatus → MOP stat (MeOS RunnerStatus codes, see the header).
+ * OK in a class without timing is 2 ("utan tidtagning"), as MeOS sends it. */
+function mopStat(status: PunchStatus, noTiming: boolean): number {
   switch (status) {
     case 'OK':
-      return 1;
-    case 'DNS':
-      return 2;
+      return noTiming ? 2 : 1;
     case 'MP':
-    case 'DNF':
-    case 'MAX':
       return 3;
-    case 'DQ':
+    case 'DNF':
       return 4;
+    case 'DQ':
+      return 5;
+    case 'MAX':
+      return 6;
+    case 'DNS':
+      return 20;
     case 'CANCEL':
-      return 10;
+      return 21;
     case 'PEND':
     default:
       return 0;
@@ -150,7 +141,7 @@ export function buildMopXml(input: MopBuildInput): string {
 
   // ---- <cmp> ---------------------------------------------------------------
   const cmpEls = Array.from(state.competitors.values()).map((cv) => {
-    const stat = mopStat(cv.status);
+    const stat = mopStat(cv.status, cv.no_timing);
     const orgId = cv.club ? (clubIdByName.get(cv.club) ?? null) : null;
 
     // Build base attributes
