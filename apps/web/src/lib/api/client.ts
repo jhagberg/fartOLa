@@ -843,13 +843,13 @@ export function patchClass(
 }
 
 /** PATCH /api/competitions/:id/competitors/:competitorId/start-time —
- * update a competitor's individual start_time_ms (epoch ms; D-07 per-runner edit).
- * Owned by Plan 02.1-02; this plan only consumes it. */
+ * update a competitor's individual start_time_ms (epoch ms, null clears;
+ * D-07 per-runner edit). Returns the updated competitor. */
 export function patchCompetitorStartTime(
   competitionId: string,
   competitorId: string,
-  startTimeMs: number
-): Promise<{ ok: true }> {
+  startTimeMs: number | null
+): Promise<CompetitorDTO> {
   return apiFetch(
     `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}/start-time`,
     { method: 'PATCH', body: { start_time_ms: startTimeMs } }

@@ -26,6 +26,7 @@
 
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { buildServer, type BroadcastSink } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -950,5 +951,97 @@ describe('Phase 2.0 — hired_card extension (Plan 02-02)', () => {
     assert.equal(second.statusCode, 409);
     const rows = ctx.handle.db.select().from(hiredCards).all();
     assert.equal(rows.length, 0, '409 must not leave a stray hired_cards row');
+  });
+});
+
+// Item G (02.1-14 follow-up): the web's patchCompetitorStartTime target.
+describe('PATCH /api/competitions/:id/competitors/:competitorId/start-time', () => {
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  async function seedRunner(): Promise<{ competitionId: string; competitorId: string }> {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: { competition_id: competitionId, name: 'Anna', class_id: classId, consent: true },
+    });
+    return { competitionId, competitorId: (res.json() as { id: string }).id };
+  }
+
+  const patch = (competitionId: string, competitorId: string, payload: unknown) =>
+    ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/start-time`,
+      payload: payload as Record<string, unknown>,
+    });
+
+  const START = Date.parse('2026-05-22T08:00:00Z');
+
+  test('sets start_time_ms and returns the competitor DTO; null clears it', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const res = await patch(competitionId, competitorId, { start_time_ms: START });
+    assert.equal(res.statusCode, 200);
+    const dto = res.json() as { id: string; start_time_ms: number | null };
+    assert.equal(dto.id, competitorId);
+    assert.equal(dto.start_time_ms, START);
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, competitorId))
+      .get();
+    assert.equal(row?.startTimeMs, START);
+
+    const cleared = await patch(competitionId, competitorId, { start_time_ms: null });
+    assert.equal(cleared.statusCode, 200);
+    assert.equal((cleared.json() as { start_time_ms: number | null }).start_time_ms, null);
+    const after = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, competitorId))
+      .get();
+    assert.equal(after?.startTimeMs, null);
+  });
+
+  test('bad value → 400', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    // Local ms-since-midnight (the old base), fractions, strings, missing.
+    for (const body of [
+      { start_time_ms: 36_000_000 },
+      { start_time_ms: START + 0.5 },
+      { start_time_ms: String(START) },
+      {},
+    ]) {
+      const res = await patch(competitionId, competitorId, body);
+      assert.equal(res.statusCode, 400, JSON.stringify(body));
+    }
+  });
+
+  test('operator-guarded: a LAN client without an event-code cookie → 403', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/start-time`,
+      payload: { start_time_ms: START },
+      remoteAddress: '10.0.0.5',
+    });
+    assert.equal(res.statusCode, 403);
+  });
+
+  test('unknown competitor (or one from another competition) → 404', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const other = await seedCompetitionAndClass(ctx.app);
+    const unknown = await patch(competitionId, crypto.randomUUID(), { start_time_ms: START });
+    assert.equal(unknown.statusCode, 404);
+    const cross = await patch(other.competitionId, competitorId, { start_time_ms: START });
+    assert.equal(cross.statusCode, 404);
   });
 });
