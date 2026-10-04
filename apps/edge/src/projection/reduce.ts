@@ -538,8 +538,13 @@ export function reduce(input: ReduceInput): CompetitionState {
   // within the sorted log should not change the projection of derived state).
   for (const [competitorId, caps] of voidedLegCapsByCompetitor) {
     const view = competitorViews.get(competitorId);
-    if (view === undefined || view.elapsed_time_ms === null) continue;
-    if (view.voided_legs.length === 0) continue;
+    if (view === undefined || view.voided_legs.length === 0) continue;
+    // The control verdict is re-derived for every scored read (PEND = no
+    // read, or one the race-phase gate kept from scoring), independently of
+    // the time: a runner without a start has no time but can still go
+    // MP → OK. The time is only adjusted where the view has one.
+    const rescoreStatus = view.manual_status === null && view.status !== 'PEND';
+    if (!rescoreStatus && view.elapsed_time_ms === null) continue;
     // Re-derive elapsed from the latest card_read history entry.
     const latestRead = view.card_read_history[view.card_read_history.length - 1];
     if (latestRead === undefined) continue;
@@ -564,13 +569,13 @@ export function reduce(input: ReduceInput): CompetitionState {
       alternativesOf(course)
     );
     // Post-pass also updates status to reflect voided legs (MP→OK transition).
-    if (view.manual_status === null) {
+    if (rescoreStatus) {
       view.status = detected.status;
       view.missing_codes = detected.missing_codes;
       view.extra_codes = detected.extra_codes;
       view.out_of_order_codes = detected.out_of_order_codes;
     }
-    if (detected.elapsed_time_ms === null) continue;
+    if (view.elapsed_time_ms === null || detected.elapsed_time_ms === null) continue;
     const adjustedElapsed = computeVoidedElapsed(
       detected.elapsed_time_ms,
       expected,

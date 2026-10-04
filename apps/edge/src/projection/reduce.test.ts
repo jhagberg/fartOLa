@@ -1446,6 +1446,40 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(state.competitors.get('c-anna')?.elapsed_time_ms, 20 * 60 * 1000);
   });
 
+  test('voiding the missing control of a runner without a start → OK, missing start flagged', () => {
+    seqCounter = 0;
+    // Course [31, 32]; finish and 32 punched, 31 missing, no start punch and
+    // no drawn start (no running time). Voiding 31 must still clear the MP.
+    const t = 10 * 3600;
+    const events = [
+      cardRead(
+        1,
+        [{ code: 32, seconds_in_half_day: t + 600, half_day: 0, weekday: null }],
+        null,
+        hd(t + 1200)
+      ),
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 31,
+        max_seconds: null,
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+    assert.deepEqual(anna.missing_codes, []);
+    assert.equal(anna.elapsed_time_ms, null);
+    assert.equal(anna.missing_start, true);
+  });
+
   // Test 14: clear_manual_status with voided leg — re-derive should filter voided
   test('test 14: clear_manual_status with voided leg re-derives correctly', () => {
     seqCounter = 0;
