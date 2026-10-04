@@ -31,7 +31,7 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitors } from '../db/schema.ts';
+import { competitors, events } from '../db/schema.ts';
 import type { Competitor } from '../db/types.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -702,5 +702,153 @@ describe('POST /api/competitions/:id/import/startlist/confirm', () => {
       payload: { matches: [] },
     });
     assert.equal(res.statusCode, 404);
+  });
+});
+
+describe('POST /api/competitions/:id/import — cached results follow the import', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    const handle = openDatabase(':memory:');
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 0,
+    });
+    ctx = { app, handle };
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+  const h21Rows = async (compId: string) => {
+    const res = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${compId}/results` });
+    const body = res.json() as {
+      classes: Array<{ class_name: string; rows: Array<{ name: string; status: string }> }>;
+    };
+    return body.classes.find((c) => c.class_name === 'H21')!.rows;
+  };
+
+  /** Course + entries imported, race started, Anna (H21, Bana 1 = 31-34)
+   * read out with punches 31, 32 only → MP, and that result is cached. */
+  async function annaMpCached(): Promise<string> {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries.xml',
+      readFixture('iof30-entrylist-sample.xml')
+    );
+    ctx.handle.sqlite
+      .prepare(`UPDATE competitions SET race_started_at_ms = 0 WHERE id = ?`)
+      .run(compId);
+    const clock = (s: number) => ({ half_day: 0 as const, seconds_in_half_day: s, weekday: null });
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'node-test',
+        localSeq: 1,
+        competitionId: compId,
+        eventType: 'card_read',
+        eventTimeMs: Date.UTC(2026, 4, 22, 12),
+        recordedAtMs: Date.UTC(2026, 4, 22, 12),
+        payload: {
+          event_type: 'card_read',
+          card_number: 7501853,
+          card_type: 'SI10',
+          start: clock(9 * 3600),
+          finish: clock(9 * 3600 + 1800),
+          check: null,
+          clear: null,
+          punch_count: 2,
+          punches: [
+            { code: 31, ...clock(9 * 3600 + 600) },
+            { code: 32, ...clock(9 * 3600 + 1200) },
+          ],
+          card_holder: null,
+        },
+      })
+      .run();
+    // Anna's card is already bound, so a later EntryList import binds nothing new.
+    const anna = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.cardNumber, 7501853))
+      .get()!;
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'node-test',
+        localSeq: 2,
+        competitionId: compId,
+        eventType: 'card_bound',
+        eventTimeMs: Date.UTC(2026, 4, 22, 12, 1),
+        recordedAtMs: Date.UTC(2026, 4, 22, 12, 1),
+        payload: {
+          event_type: 'card_bound',
+          competitor_id: anna.id,
+          card_number: 7501853,
+          walkup: false,
+          consent_at_ms: 0,
+        },
+      })
+      .run();
+    await settle(); // let the imports' own recompute land before caching the MP
+    const before = await h21Rows(compId);
+    assert.equal(before.find((r) => r.name === 'Anna Andersson')?.status, 'MP');
+    return compId;
+  }
+
+  test('a corrected CourseData import re-scores the cached results', async () => {
+    const compId = await annaMpCached();
+    // Bana 1 corrected to 31, 32.
+    const corrected = readFixture('iof30-coursedata-sample.xml')
+      .toString('utf8')
+      .replace(
+        /(<Name>Bana 1<\/Name>[\s\S]*?<Control>32<\/Control>\s*<\/CourseControl>)[\s\S]*?(<CourseControl type="Finish">)/,
+        '$1\n      $2'
+      );
+    assert.notEqual(corrected, readFixture('iof30-coursedata-sample.xml').toString('utf8'));
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course2.xml',
+      Buffer.from(corrected)
+    );
+    assert.equal(res.statusCode, 201);
+    await settle();
+    const after = await h21Rows(compId);
+    assert.equal(after.find((r) => r.name === 'Anna Andersson')?.status, 'OK');
+  });
+
+  test('an EntryList import without newly bound cards still refreshes the cached results', async () => {
+    const compId = await annaMpCached();
+    // Same list with Bo Berg renamed to a new runner, Dag Ek (no card).
+    const entries = readFixture('iof30-entrylist-sample.xml')
+      .toString('utf8')
+      .replace('<Family>Berg</Family>', '<Family>Ek</Family>')
+      .replace('<Given>Bo</Given>', '<Given>Dag</Given>');
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries2.xml',
+      Buffer.from(entries)
+    );
+    assert.equal(res.statusCode, 201);
+    await settle();
+    const after = await h21Rows(compId);
+    assert.ok(
+      after.some((r) => r.name === 'Dag Ek'),
+      JSON.stringify(after)
+    );
   });
 });

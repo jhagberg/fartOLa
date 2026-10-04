@@ -433,8 +433,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               .run();
           }
         })();
-        app.projectionStore.markDirty(competitionId);
       }
+      app.projectionStore.markDirty(competitionId);
 
       const result: StartListMatchResult = {
         exact: exactCount,
@@ -595,6 +595,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
     try {
       if (parsed.kind === 'CourseData') {
         const result = ingestCourseData(app.fartolaDb, competitionId, parsed.data);
+        // Courses/classes changed: cached results must be re-scored.
+        app.projectionStore.markDirty(competitionId);
         return reply.code(201).send({ kind: 'CourseData', ...result });
       } else {
         const result = ingestEntryList(app.fartolaDb, competitionId, parsed.data, Date.now());
@@ -604,9 +606,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         // synthetic card_bound per match so the next reduce() drops the
         // card from pending_unknown_cards AND attaches the prior read.
         const autoBind = autoBindNewCompetitors(app.fartolaDb, competitionId, app.fartolaNodeId);
-        if (autoBind.bound.length > 0) {
-          app.projectionStore.markDirty(competitionId);
-        }
+        // New runners (and any new bindings) change the cached results.
+        app.projectionStore.markDirty(competitionId);
         return reply.code(201).send({ kind: 'EntryList', ...result, auto_bound: autoBind.bound });
       }
     } catch (e) {
