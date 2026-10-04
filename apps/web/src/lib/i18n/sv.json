@@ -444,6 +444,7 @@
   "lottning.drawn": "{{count}} löpare lottade",
   "lottning.maxTime": "Maxtid (mm:ss)",
   "lottning.noTiming": "Utan tidtagning",
+  "lottning.ignoreStartPunch": "Ej startstämpling",
   "lottning.invalidTime": "Ogiltigt tidsformat. Använd HH:MM eller HH:MM:SS.",
 
   "settings.timing.label": "Tidvisning",

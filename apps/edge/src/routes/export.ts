@@ -91,6 +91,7 @@ interface ClassRow {
   name: string;
   shortName: string | null;
   noTiming: boolean;
+  ignoreStartPunch: boolean;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -116,6 +117,7 @@ function classRowToDTO(row: ClassRow): ClassDTO {
     name: row.name,
     short_name: row.shortName,
     no_timing: row.noTiming,
+    ignore_start_punch: row.ignoreStartPunch,
   };
 }
 

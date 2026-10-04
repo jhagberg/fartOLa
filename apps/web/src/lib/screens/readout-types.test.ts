@@ -1,8 +1,9 @@
 // Authored for fartola. Not ported from upstream.
 //
 // Vitest coverage for readElapsedMs (02.1-14 follow-up, item F): the readout
-// view's running time uses the drawn start when present, else the start
-// punch, and shows nothing otherwise (no first-punch fallback).
+// view's running time uses the start punch when present, else the drawn
+// start, and shows nothing otherwise (no first-punch fallback). Task 11:
+// a class that ignores start punches uses the drawn start when it has one.
 
 import { describe, it, expect } from 'vitest';
 import { localToEpochMs } from '@fartola/shared-types';
@@ -22,8 +23,22 @@ const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
 const drawn10 = localToEpochMs('2026-10-03', 10 * 3600);
 
 describe('readElapsedMs', () => {
-  it('drawn start wins over the start punch', () => {
-    expect(readElapsedMs(row({}), drawn10)).toBe(45 * 60 * 1000);
+  // 02.1-14 Task 11 (correction to Task 3): the start punch wins, as in
+  // MeOS. This test said "drawn start wins" (45 min) before the correction.
+  it('start punch wins over the drawn start', () => {
+    expect(readElapsedMs(row({}), drawn10)).toBe(44 * 60 * 1000);
+  });
+
+  it('class ignores start punches + drawn start → drawn start', () => {
+    expect(readElapsedMs(row({}), drawn10, true)).toBe(45 * 60 * 1000);
+  });
+
+  it('class ignores start punches, no drawn start → start punch', () => {
+    expect(readElapsedMs(row({}), null, true)).toBe(44 * 60 * 1000);
+  });
+
+  it('no start punch → drawn start', () => {
+    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10)).toBe(45 * 60 * 1000);
   });
 
   it('no drawn start → start punch', () => {
@@ -40,7 +55,11 @@ describe('readElapsedMs', () => {
 
   it('run across noon from a drawn start: 11:50 → 12:20 PM is 30 min', () => {
     const drawn = localToEpochMs('2026-10-03', 11 * 3600 + 50 * 60);
-    const r = row({ finish_seconds_in_half_day: 20 * 60, finish_half_day: 1 });
+    const r = row({
+      start_seconds_in_half_day: null,
+      finish_seconds_in_half_day: 20 * 60,
+      finish_half_day: 1,
+    });
     expect(readElapsedMs(r, drawn)).toBe(30 * 60 * 1000);
   });
 });

@@ -42,7 +42,7 @@
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
-import { detectStatus } from './dnfMp.ts';
+import { detectStatus, startMs } from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
@@ -164,6 +164,10 @@ export function reduce(input: ReduceInput): CompetitionState {
 
   // 02.1-14 Task 9: classes without timing.
   const noTimingClasses = new Set(input.classes.filter((c) => c.noTiming).map((c) => c.id));
+  // 02.1-14 Task 11: classes that ignore start punches ("Ej startstämpling").
+  const ignoreStartPunchClasses = new Set(
+    input.classes.filter((c) => c.ignoreStartPunch).map((c) => c.id)
+  );
 
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
@@ -271,6 +275,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               cardType: payload.card_type,
               readAtMs: e.eventTimeMs,
               drawnStartMs: competitor.startTimeMs,
+              ignoreStartPunch: ignoreStartPunchClasses.has(competitor.classId),
             },
             resolvedExpected
           );
@@ -427,6 +432,8 @@ export function reduce(input: ReduceInput): CompetitionState {
                 cardType: latestRead?.card_type ?? '',
                 readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
                 drawnStartMs: competitor?.startTimeMs ?? null,
+                ignoreStartPunch:
+                  competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
               },
               resolvedExpected
             );
@@ -523,6 +530,8 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
+        ignoreStartPunch:
+          competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
       },
       resolvedExpected
     );
@@ -538,7 +547,14 @@ export function reduce(input: ReduceInput): CompetitionState {
       detected.elapsed_time_ms,
       view.voided_legs,
       latestRead,
-      competitor?.startTimeMs ?? null,
+      startMs({
+        start: latestRead.start,
+        cardType: latestRead.card_type,
+        readAtMs: latestRead.event_time_ms,
+        drawnStartMs: competitor?.startTimeMs ?? null,
+        ignoreStartPunch:
+          competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
+      }),
       caps
     );
     view.elapsed_time_ms = adjustedElapsed;
@@ -676,9 +692,9 @@ function applyReplacements(
  * For each voided control code, find the leg in the punch sequence:
  *   leg_ms = punch_at_control_ms - punch_at_previous_control_ms
  * where previous control = the punch immediately before in the sequence.
- * If the control is the first punch, the leg runs from the same start the
- * running time uses: the drawn start when there is one, else the start
- * punch (02.1-14). Card clocks are made absolute like in detectStatus.
+ * If the control is the first punch, the leg runs from `runStartMs`, the
+ * same start the running time uses (dnfMp.startMs, 02.1-14 Task 11). Card
+ * clocks are made absolute like in detectStatus.
  *
  * Subtract min(leg_ms, max_seconds * 1000) from elapsed.
  * The max_seconds cap comes from the leg_voided event payload.
@@ -688,24 +704,20 @@ function computeVoidedElapsed(
   voidedLegs: readonly number[],
   read: {
     punches: readonly NdjsonPunch[];
-    start: HalfDayClock | null;
     card_type: string;
     event_time_ms: number;
   },
-  drawnStartMs: number | null,
+  runStartMs: number | null,
   caps: ReadonlyMap<number, number | null>
 ): number {
-  const { punches, start } = read;
+  const { punches } = read;
   const toEpoch = (c: HalfDayClock): number =>
     cardClockToEpochMs(c, read.card_type, read.event_time_ms);
   let adjusted = elapsedMs;
   for (const controlCode of voidedLegs) {
     const idx = punches.findIndex((p) => p.code === controlCode);
     if (idx === -1) continue;
-    const prevMs =
-      idx > 0
-        ? toEpoch(punches[idx - 1]!)
-        : (drawnStartMs ?? (start === null ? null : toEpoch(start)));
+    const prevMs = idx > 0 ? toEpoch(punches[idx - 1]!) : runStartMs;
     if (prevMs === null) continue;
     const legMs = toEpoch(punches[idx]!) - prevMs;
     if (legMs <= 0) continue;

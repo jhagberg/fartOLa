@@ -1252,10 +1252,12 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
 });
 
 // 02.1-14 Task 3: the reducer passes the drawn start and the read time.
+// Task 11 corrected the rule: the start punch wins over the drawn start
+// (MeOS oRunner.cpp:1331-1344); this test expected 45 min (drawn wins).
 describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
 
-  test('drawn 10:00, start punch 10:01, finish 10:45 → 45 min; open start → 44 min', () => {
+  test('drawn 10:00, start punch 10:01, finish 10:45 → 44 min; open start → 44 min', () => {
     seqCounter = 0;
     const punches = [p(31), p(32)];
     const read = (card: number): Event =>
@@ -1272,8 +1274,71 @@ describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
       classes: [cls('cls-H21')],
       courses: [course('cls-H21', [31, 32])],
     });
-    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 45 * 60 * 1000);
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 44 * 60 * 1000);
     assert.equal(state.competitors.get('open')!.elapsed_time_ms, 44 * 60 * 1000);
+  });
+});
+
+// 02.1-14 Task 11: start punch wins unless the class ignores start punches
+// ("Ej startstämpling") and the runner has a drawn start (oRunner.cpp:1226).
+describe('reduce — start punch vs drawn start (02.1-14 Task 11)', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+  const t = (code: number, sec: number): NdjsonPunch => ({ code, ...hd(sec) });
+  // DM dag 1, D10: moved to 10:22:00, punched start 10:22:06.
+  const read = (card: number, punches: NdjsonPunch[] = [p(31)]): Event =>
+    cardRead(card, punches, hd(10 * 3600 + 22 * 60 + 6), hd(10 * 3600 + 52 * 60), {
+      eventTimeMs: at(10 * 3600 + 55 * 60),
+    });
+  const drawn = at(10 * 3600 + 22 * 60);
+
+  test('drawn 10:22:00 + punch 10:22:06 → timed from 10:22:06', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101)],
+      competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31])],
+    });
+    assert.equal(state.competitors.get('a')!.elapsed_time_ms, (30 * 60 - 6) * 1000);
+  });
+
+  test('class with ignoreStartPunch → timed from the drawn 10:22:00', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101), read(102)],
+      competitors: [
+        comp({ id: 'a', cardNumber: 101, startTimeMs: drawn }),
+        // No drawn start: the punch is the only start there is.
+        comp({ id: 'open', cardNumber: 102 }),
+      ],
+      classes: [{ ...cls('cls-H21'), ignoreStartPunch: true }],
+      courses: [course('cls-H21', [31])],
+    });
+    assert.equal(state.competitors.get('a')!.elapsed_time_ms, 30 * 60 * 1000);
+    assert.equal(state.competitors.get('open')!.elapsed_time_ms, (30 * 60 - 6) * 1000);
+  });
+
+  test('voided first leg runs from the same start as the running time', () => {
+    seqCounter = 0;
+    // 31 at 10:25:06, 32 at 10:40; void 31.
+    const punches = [t(31, 10 * 3600 + 25 * 60 + 6), t(32, 10 * 3600 + 40 * 60)];
+    const voidLeg = (competitor_id: string): Event =>
+      evt({ event_type: 'leg_voided', competitor_id, control_code: 31, max_seconds: null });
+    const run = (ignoreStartPunch: boolean): number | null =>
+      reduce({
+        competition_id: 'comp-1',
+        events: [read(101, punches), voidLeg('a')],
+        competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
+        classes: [{ ...cls('cls-H21'), ignoreStartPunch }],
+        courses: [course('cls-H21', [31, 32])],
+      }).competitors.get('a')!.elapsed_time_ms;
+    // Voiding the first leg leaves finish − 31 (26:54) whichever start is
+    // used, as long as both use the same one. Punch: 29:54 − 3:00; drawn
+    // (ignoreStartPunch): 30:00 − 3:06. Mixed starts would give 26:48.
+    assert.equal(run(false), (26 * 60 + 54) * 1000);
+    assert.equal(run(true), (26 * 60 + 54) * 1000);
   });
 });
 
@@ -1431,7 +1496,8 @@ describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
 });
 
 // Item F (02.1-14 follow-up): a voided first leg is measured from the same
-// start the running time uses — the drawn start when there is one.
+// start the running time uses. Since Task 11 that is the start punch when
+// there is one (both runners here: 10 − 3 = 9 − 2 = 7 min either way).
 describe('reduce — voided first leg from the drawn start', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
   const t = (sec: number): NdjsonPunch => ({ code: 31, ...hd(sec) });

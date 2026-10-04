@@ -508,6 +508,21 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
     }
   });
 
+  test('classes has ignore_start_punch column (NOT NULL, default 0, 02.1-14 Task 11)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const col = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all()
+        .find((c) => c.name === 'ignore_start_punch');
+      assert.ok(col, 'classes.ignore_start_punch column missing');
+      assert.equal(col.notnull, 1, 'classes.ignore_start_punch must be NOT NULL');
+      assert.equal(col.dflt_value, 'false');
+    } finally {
+      handle.close();
+    }
+  });
+
   test('competitors has start_time_ms column (nullable)', () => {
     const handle = openDatabase(':memory:');
     try {

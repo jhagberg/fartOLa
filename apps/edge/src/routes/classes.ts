@@ -26,17 +26,21 @@ import { issuesToErrors } from './_zod-errors.ts';
 
 // Phase 2.1 D-08: PATCH class route for maxTimeSec editing.
 // Backend ownership here (consumed by Plan 05 UI).
-// 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field). Each
-// field is optional; only the fields sent are updated.
+// 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field), and
+// Task 11 ignore_start_punch. Each field is optional; only the fields sent
+// are updated.
 const PatchClassInput = z
   .object({
     maxTimeSec: z.number().int().positive().nullable().optional(),
     no_timing: z.boolean().optional(),
+    ignore_start_punch: z.boolean().optional(),
   })
   .strict()
-  .refine((b) => b.maxTimeSec !== undefined || b.no_timing !== undefined, {
-    message: 'maxTimeSec or no_timing required',
-  });
+  .refine(
+    (b) =>
+      b.maxTimeSec !== undefined || b.no_timing !== undefined || b.ignore_start_punch !== undefined,
+    { message: 'maxTimeSec, no_timing or ignore_start_punch required' }
+  );
 
 function classRowToDTO(row: Class): ClassDTO {
   return {
@@ -45,6 +49,7 @@ function classRowToDTO(row: Class): ClassDTO {
     name: row.name,
     short_name: row.shortName,
     no_timing: row.noTiming,
+    ignore_start_punch: row.ignoreStartPunch,
   };
 }
 
@@ -93,12 +98,13 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
         return reply.code(404).send({ error: 'class_not_found' });
       }
 
-      const { maxTimeSec, no_timing } = parsed.data;
+      const { maxTimeSec, no_timing, ignore_start_punch } = parsed.data;
       app.fartolaDb.db
         .update(classes)
         .set({
           ...(maxTimeSec !== undefined ? { maxTimeSec } : {}),
           ...(no_timing !== undefined ? { noTiming: no_timing } : {}),
+          ...(ignore_start_punch !== undefined ? { ignoreStartPunch: ignore_start_punch } : {}),
         })
         .where(eq(classes.id, classId))
         .run();
@@ -135,6 +141,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       // 02.1-14 Task 4: assigned by course import / course creation.
       courseId: null,
       noTiming: false,
+      ignoreStartPunch: false,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

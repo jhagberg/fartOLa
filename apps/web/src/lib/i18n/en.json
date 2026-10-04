@@ -444,6 +444,7 @@
   "lottning.drawn": "{{count}} runners drawn",
   "lottning.maxTime": "Max time (mm:ss)",
   "lottning.noTiming": "No timing",
+  "lottning.ignoreStartPunch": "Ignore start punch",
   "lottning.invalidTime": "Invalid time format. Use HH:MM or HH:MM:SS.",
 
   "settings.timing.label": "Time display",

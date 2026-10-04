@@ -77,6 +77,7 @@ function makeClasses(): ClassDTO[] {
       name: 'H21',
       short_name: null,
       no_timing: false,
+      ignore_start_punch: false,
     },
     {
       id: 'cls-d21',
@@ -84,6 +85,7 @@ function makeClasses(): ClassDTO[] {
       name: 'D21',
       short_name: null,
       no_timing: false,
+      ignore_start_punch: false,
     },
   ];
 }

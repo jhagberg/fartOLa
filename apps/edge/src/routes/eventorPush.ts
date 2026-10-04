@@ -63,6 +63,7 @@ interface ClassRow {
   name: string;
   shortName: string | null;
   noTiming: boolean;
+  ignoreStartPunch: boolean;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -128,6 +129,7 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
           name: r.name,
           short_name: r.shortName,
           no_timing: r.noTiming,
+          ignore_start_punch: r.ignoreStartPunch,
         })),
         courses: [],
         state,

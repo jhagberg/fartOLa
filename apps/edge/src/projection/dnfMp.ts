@@ -16,8 +16,9 @@
 //     contains only control-station punches — the decoder layer already
 //     separates start/finish/check at the storage→raceResult boundary.
 //
-//   - Elapsed time = absolute finish − (drawn start ?? absolute start
-//     punch); card clocks are placed in time by cardClockToEpochMs
+//   - Elapsed time = absolute finish − start, where start is the card's
+//     start punch, else the drawn start (startMs below, 02.1-14 Task 11);
+//     card clocks are placed in time by cardClockToEpochMs
 //     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3).
 //     Null when there is no finish or no start of either kind.
 //
@@ -46,6 +47,8 @@ export interface DetectInput {
   readAtMs: number;
   /** Drawn start (competitors.start_time_ms, epoch ms); null = open start. */
   drawnStartMs: number | null;
+  /** Class ignores start punches ("Ej startstämpling", MeOS IgnoreStart). */
+  ignoreStartPunch: boolean;
 }
 
 export interface StatusResult {
@@ -124,16 +127,25 @@ export function detectStatus(
   };
 }
 
-/** Running time = finish − start, both absolute (02.1-14 Task 3). The drawn
- * start wins over a start punch (MeOS default); open-start classes (no drawn
- * time) use the punch. Null without a finish or any start. */
+/** The start a running time is measured from (epoch ms), as in MeOS
+ * (02.1-14 Task 11): the card's start punch replaces the drawn start
+ * (oRunner.cpp:1331-1344), except in a class that ignores start punches when
+ * the runner has a drawn start (oRunner.cpp:1226-1227). Null without either. */
+export function startMs(
+  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'ignoreStartPunch'>
+): number | null {
+  if (input.ignoreStartPunch && input.drawnStartMs !== null) return input.drawnStartMs;
+  if (input.start === null) return input.drawnStartMs;
+  return cardClockToEpochMs(input.start, input.cardType, input.readAtMs);
+}
+
+/** Running time = finish − start, both absolute (02.1-14 Task 3); start per
+ * startMs above. Null without a finish or any start. */
 function elapsedMs(input: DetectInput): number | null {
   if (input.finish === null) return null;
-  const toEpoch = (c: HalfDayClock): number =>
-    cardClockToEpochMs(c, input.cardType, input.readAtMs);
-  const startMs = input.drawnStartMs ?? (input.start === null ? null : toEpoch(input.start));
-  if (startMs === null) return null;
-  const elapsed = toEpoch(input.finish) - startMs;
+  const start = startMs(input);
+  if (start === null) return null;
+  const elapsed = cardClockToEpochMs(input.finish, input.cardType, input.readAtMs) - start;
   // A finish before the start (wrong day / wrong drawn time) is no time,
   // not a winning negative one.
   return elapsed >= 0 ? elapsed : null;

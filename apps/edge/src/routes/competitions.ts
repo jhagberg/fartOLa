@@ -158,6 +158,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       name: c.name,
       short_name: c.shortName,
       no_timing: c.noTiming,
+      ignore_start_punch: c.ignoreStartPunch,
     }));
 
     // Courses + embedded controls. Two SELECTs: courses for the competition,

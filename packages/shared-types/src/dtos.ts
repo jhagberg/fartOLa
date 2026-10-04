@@ -140,6 +140,9 @@ export const ClassDTO = z.object({
   /** 02.1-14 Task 9: class without timing (IOF resultListMode=
    * "UnorderedNoTimes") — no running time or place is shown. */
   no_timing: z.boolean(),
+  /** 02.1-14 Task 11: class ignores start punches ("Ej startstämpling") —
+   * a runner with a drawn start is timed from it, not the start punch. */
+  ignore_start_punch: z.boolean(),
 });
 export type ClassDTO = z.infer<typeof ClassDTO>;
 

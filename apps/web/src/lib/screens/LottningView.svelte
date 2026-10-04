@@ -184,13 +184,19 @@
   const selectedNoTiming = $derived(
     classes.find((c) => c.id === selectedClassId)?.no_timing ?? false
   );
+  /** 02.1-14 Task 11: the selected class ignores start punches. */
+  const selectedIgnoreStartPunch = $derived(
+    classes.find((c) => c.id === selectedClassId)?.ignore_start_punch ?? false
+  );
 
-  async function saveNoTiming(noTiming: boolean): Promise<void> {
+  async function saveClassFlag(
+    flag: { no_timing: boolean } | { ignore_start_punch: boolean }
+  ): Promise<void> {
     if (!selectedClassId) return;
     const id = selectedClassId;
     try {
-      await patchClass(competitionId, id, { no_timing: noTiming });
-      classes = classes.map((c) => (c.id === id ? { ...c, no_timing: noTiming } : c));
+      await patchClass(competitionId, id, flag);
+      classes = classes.map((c) => (c.id === id ? { ...c, ...flag } : c));
     } catch (e) {
       error = (e as Error).message;
     }
@@ -327,10 +333,22 @@
         type="checkbox"
         checked={selectedNoTiming}
         disabled={!selectedClassId}
-        onchange={(e) => void saveNoTiming(e.currentTarget.checked)}
+        onchange={(e) => void saveClassFlag({ no_timing: e.currentTarget.checked })}
         data-testid="lottning-no-timing"
       />
       <span>{t('lottning.noTiming')}</span>
+    </label>
+
+    <!-- Class ignores start punches (02.1-14 Task 11) -->
+    <label class="check-row">
+      <input
+        type="checkbox"
+        checked={selectedIgnoreStartPunch}
+        disabled={!selectedClassId}
+        onchange={(e) => void saveClassFlag({ ignore_start_punch: e.currentTarget.checked })}
+        data-testid="lottning-ignore-start-punch"
+      />
+      <span>{t('lottning.ignoreStartPunch')}</span>
     </label>
 
     {#if error}

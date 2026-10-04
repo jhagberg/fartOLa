@@ -178,6 +178,36 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.equal(ctx.handle.db.select().from(classes).get()?.noTiming, false);
   });
 
+  // 02.1-14 Task 11: classes that ignore start punches ("Ej startstämpling").
+  test('PATCH ignore_start_punch toggles the flag and shows in the DTO', async () => {
+    const url = `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`;
+    const on = await ctx.app.inject({
+      method: 'PATCH',
+      url,
+      payload: { ignore_start_punch: true },
+    });
+    assert.equal(on.statusCode, 200);
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/classes`,
+    });
+    const dto = (
+      list.json() as {
+        classes: Array<{ id: string; ignore_start_punch: boolean; no_timing: boolean }>;
+      }
+    ).classes.find((c) => c.id === ctx.classId);
+    assert.equal(dto?.ignore_start_punch, true);
+    assert.equal(dto?.no_timing, false, 'no_timing untouched');
+
+    const off = await ctx.app.inject({
+      method: 'PATCH',
+      url,
+      payload: { ignore_start_punch: false },
+    });
+    assert.equal(off.statusCode, 200);
+    assert.equal(ctx.handle.db.select().from(classes).get()?.ignoreStartPunch, false);
+  });
+
   test('PATCH with an empty body → 400', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',

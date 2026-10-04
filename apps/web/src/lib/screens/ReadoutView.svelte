@@ -257,7 +257,11 @@
       startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: (() => {
-        const elapsedMs = readElapsedMs(row, competitor?.start_time_ms ?? null);
+        const elapsedMs = readElapsedMs(
+          row,
+          competitor?.start_time_ms ?? null,
+          cls?.ignore_start_punch ?? false
+        );
         // 02.1-14 Task 9: no running time for a class without timing.
         if (elapsedMs === null || cls?.no_timing) return '—';
         return competition?.timing_format === 'tenths'
@@ -281,8 +285,13 @@
     if (!row || row.unmatched) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
-    // Elapsed: finish − (drawn start ?? start punch), like the projection.
-    const elapsedMs = readElapsedMs(row, competitor?.start_time_ms ?? null);
+    // Elapsed: finish − start (punch unless the class ignores it), like the
+    // projection.
+    const elapsedMs = readElapsedMs(
+      row,
+      competitor?.start_time_ms ?? null,
+      cls?.ignore_start_punch ?? false
+    );
     return toReceiptRead({
       row,
       className: cls?.name ?? '—',

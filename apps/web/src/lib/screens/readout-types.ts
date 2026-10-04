@@ -84,19 +84,23 @@ export function historyKey(row: ReadoutHistoryRow): string {
 
 const HALF_DAY_SEC = 43200;
 
-/** Running time for a read: finish − (drawn start ?? start punch), as the
- * edge projection computes it (02.1-14). No start at all → null; the old
- * first-punch fallback showed a misleading time. Card clocks are compared
- * modulo 12 h (runs under 12 h), so SI5 cards without a PM bit work too. */
+/** Running time for a read: finish − start, as the edge projection computes
+ * it (dnfMp.startMs, 02.1-14 Task 11): the start punch wins over the drawn
+ * start, unless the class ignores start punches and there is a drawn start.
+ * No start at all → null; the old first-punch fallback showed a misleading
+ * time. Card clocks are compared modulo 12 h (runs under 12 h), so SI5 cards
+ * without a PM bit work too. */
 export function readElapsedMs(
   row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
-  drawnStartMs: number | null
+  drawnStartMs: number | null,
+  ignoreStartPunch = false
 ): number | null {
   if (row.finish_seconds_in_half_day === null) return null;
-  const base =
-    drawnStartMs !== null
-      ? epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC
-      : row.start_seconds_in_half_day;
+  const useDrawn =
+    drawnStartMs !== null && (ignoreStartPunch || row.start_seconds_in_half_day === null);
+  const base = useDrawn
+    ? epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC
+    : row.start_seconds_in_half_day;
   if (base === null) return null;
   const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
   return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
