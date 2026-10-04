@@ -68,10 +68,11 @@ while IFS= read -r f; do
   if is_allowlisted "$f"; then
     continue
   fi
-  # Accept any of: "Ported from", "Ported (qualifier) from", "Derived from"
-  # — every form anchors on `from allestuetsmerweh/sportident.js` which is the
-  # canonical upstream URL. Plain "Ported from upstream-name" matches too.
-  if ! head -10 "$f" | grep -qE '(Ported|Derived)( \([^)]+\))? from allestuetsmerweh/sportident\.js'; then
+  # Accept any of: "Ported from", "Ported (qualifier) from", "Derived from",
+  # "Test data from" — every form anchors on `from allestuetsmerweh/sportident.js`
+  # which is the canonical upstream URL. A file that declares itself
+  # "Authored for fartola" carries no upstream content and needs no notice.
+  if ! head -10 "$f" | grep -qE '(Ported|Derived|Test data)( \([^)]+\))? from allestuetsmerweh/sportident\.js|^// Authored for fartola'; then
     MISSING+=("$f")
   fi
 done < <(find packages/sportident/src packages/sportident/tests/fixtures/upstream -type f -name '*.ts' 2>/dev/null | sort)
