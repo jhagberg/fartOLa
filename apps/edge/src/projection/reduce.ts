@@ -226,9 +226,10 @@ export function reduce(input: ReduceInput): CompetitionState {
             course && input.replacementControls
               ? input.replacementControls.get(course.id)
               : undefined;
-          const resolvedExpected = courseReplacements
+          const afterReplacements = courseReplacements
             ? applyReplacements(expected, payload.punches, courseReplacements)
             : expected;
+          const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
           const detected = detectStatus(
             { start: payload.start, finish: payload.finish, punches: payload.punches },
             resolvedExpected
@@ -372,9 +373,10 @@ export function reduce(input: ReduceInput): CompetitionState {
               course && input.replacementControls
                 ? input.replacementControls.get(course.id)
                 : undefined;
-            const resolvedExpected = courseReplacements
+            const afterReplacements = courseReplacements
               ? applyReplacements(expected, view.latest_punches, courseReplacements)
               : expected;
+            const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
             const detected = detectStatus(
               {
                 start: view.latest_start,
@@ -463,13 +465,21 @@ export function reduce(input: ReduceInput): CompetitionState {
     const expected = course?.control_codes ?? [];
     const courseReplacements =
       course && input.replacementControls ? input.replacementControls.get(course.id) : undefined;
-    const resolvedExpected = courseReplacements
+    const afterReplacements = courseReplacements
       ? applyReplacements(expected, latestRead.punches, courseReplacements)
       : expected;
+    const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
     const detected = detectStatus(
       { start: latestRead.start, finish: latestRead.finish, punches: latestRead.punches },
       resolvedExpected
     );
+    // Post-pass also updates status to reflect voided legs (MP→OK transition).
+    if (view.manual_status === null) {
+      view.status = detected.status;
+      view.missing_codes = detected.missing_codes;
+      view.extra_codes = detected.extra_codes;
+      view.out_of_order_codes = detected.out_of_order_codes;
+    }
     if (detected.elapsed_time_ms === null) continue;
     const adjustedElapsed = computeVoidedElapsed(
       detected.elapsed_time_ms,
@@ -542,6 +552,11 @@ export function reduce(input: ReduceInput): CompetitionState {
 // ---------------------------------------------------------------------------
 // Phase 2.1 helper functions
 // ---------------------------------------------------------------------------
+
+function filterVoidedLegs(expected: readonly number[], voidedLegs: readonly number[]): number[] {
+  if (voidedLegs.length === 0) return [...expected];
+  return expected.filter((code) => !voidedLegs.includes(code));
+}
 
 /**
  * Phase 2.1 (D-15): Apply replacement controls to an expected course sequence.
