@@ -25,6 +25,22 @@ Numbers (card punch at 78 vs. an oPunch Type=78 within ±2 s):
 
 Arrival latency when it worked: median 1 s.
 
+It was not only 78. Same method over every online punch type, both days:
+
+| Day | Link        | Received     | Dead window (nothing arrived) |
+| --- | ----------- | ------------ | ----------------------------- |
+| 1   | finish (2)  | 441/596 74 % | 11:23–11:31                   |
+| 1   | 52          | 36/182 20 %  | poor all day                  |
+| 1   | 87          | 55/55        | —                             |
+| 2   | finish (2)  | 438/564 78 % | 11:08–11:23                   |
+| 2   | 100         | 424/562 75 % | 11:08–11:26                   |
+| 2   | 78          | 345/470 73 % | 11:17–11:32                   |
+| 2   | 31          | 325/326      | —                             |
+
+Start (1) and check (3) also lost 10–20 % in the start rush on dag 2.
+Finish and 100 died in the same minute on dag 2, so a shared receiver
+or gateway is as likely as a single transmitter.
+
 ## What
 
 1. **Watchdog (works with MeOS today).** Read the replica: per radio
