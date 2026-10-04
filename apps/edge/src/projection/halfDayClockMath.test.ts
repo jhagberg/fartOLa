@@ -128,3 +128,66 @@ describe('cardClockToEpochMs', () => {
     assert.equal(cardClockToEpochMs(si5(10 * 3600 + 30), 'SI5', read), at(10 * 3600 + 30));
   });
 });
+
+// Card clocks are local wall time; each punch is resolved with the UTC offset
+// in force at that punch, so a run across a DST switch has its real length.
+describe('cardClockToEpochMs across DST (Europe/Stockholm)', () => {
+  const H = 3600 * 1000;
+  const utc = (iso: string): number => Date.parse(iso);
+
+  test('2026-03-29: start 01:30 CET, finish 03:30 CEST, read 04:00 → 1 h', () => {
+    const read = utc('2026-03-29T02:00:00Z'); // 04:00 CEST
+    const start = cardClockToEpochMs(hd(1 * 3600 + 30 * 60), 'SIAC', read);
+    const finish = cardClockToEpochMs(hd(3 * 3600 + 30 * 60), 'SIAC', read);
+    assert.equal(start, utc('2026-03-29T00:30:00Z'));
+    assert.equal(finish, utc('2026-03-29T01:30:00Z'));
+    assert.equal(finish - start, 1 * H);
+  });
+
+  test('2026-03-29 (23 h day): a 12:00 punch read at 11:30 CEST is today (station clock ahead)', () => {
+    const read = utc('2026-03-29T09:30:00Z'); // 11:30 CEST
+    assert.equal(cardClockToEpochMs(hd(12 * 3600), 'SIAC', read), utc('2026-03-29T10:00:00Z'));
+  });
+
+  test('2026-03-29 on SI5 (no PM bit): same run → 1 h', () => {
+    const read = utc('2026-03-29T02:00:00Z');
+    const start = cardClockToEpochMs(hd(1 * 3600 + 30 * 60), 'SI5', read);
+    const finish = cardClockToEpochMs(hd(3 * 3600 + 30 * 60), 'SI5', read);
+    assert.equal(finish - start, 1 * H);
+  });
+
+  test('2026-10-25: start 01:30 CEST, finish 03:30 CET, read 04:00 → 3 h', () => {
+    const read = utc('2026-10-25T03:00:00Z'); // 04:00 CET
+    const start = cardClockToEpochMs(hd(1 * 3600 + 30 * 60), 'SIAC', read);
+    const finish = cardClockToEpochMs(hd(3 * 3600 + 30 * 60), 'SIAC', read);
+    assert.equal(start, utc('2026-10-24T23:30:00Z'));
+    assert.equal(finish, utc('2026-10-25T02:30:00Z'));
+    assert.equal(finish - start, 3 * H);
+  });
+
+  // 02:00–03:00 happens twice on 2026-10-25. A card time in that hour is
+  // ambiguous; the candidate inside the read window closest before the read
+  // wins (the runner read out soon after finishing).
+  test('2026-10-25 ambiguous 02:30, read 02:45 the second time → the CET 02:30', () => {
+    const read = utc('2026-10-25T01:45:00Z'); // 02:45 CET
+    assert.equal(
+      cardClockToEpochMs(hd(2 * 3600 + 30 * 60), 'SIAC', read),
+      utc('2026-10-25T01:30:00Z')
+    );
+  });
+
+  test('2026-10-25 ambiguous 02:30, read 02:45 the first time → the CEST 02:30, not one after the read', () => {
+    const read = utc('2026-10-25T00:45:00Z'); // 02:45 CEST
+    assert.equal(
+      cardClockToEpochMs(hd(2 * 3600 + 30 * 60), 'SIAC', read),
+      utc('2026-10-25T00:30:00Z')
+    );
+  });
+
+  test("2026-10-25 (25 h day): a 12:00 punch read at 10:30 is the day before's 12:00 CEST", () => {
+    // 12:00 is after the read (+ skew), so it is yesterday's wall-clock
+    // 12:00 — 24.5 h back in real time on the 25 h day.
+    const read = utc('2026-10-25T09:30:00Z'); // 10:30 CET
+    assert.equal(cardClockToEpochMs(hd(12 * 3600), 'SIAC', read), utc('2026-10-24T10:00:00Z'));
+  });
+});

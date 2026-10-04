@@ -11,5 +11,7 @@ export {
   COMPETITION_TZ,
   localToEpochMs,
   epochToLocalSeconds,
+  epochToWallClockMs,
+  wallClockToEpochMs,
   formatLocalTime,
 } from '@fartola/shared-types';
