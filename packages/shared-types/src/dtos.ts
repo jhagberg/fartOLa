@@ -152,6 +152,10 @@ export const ClassDTO = z.object({
   no_timing: z.boolean(),
   /** 02.1-14 Task 14: which start the running time is measured from. */
   start_method: StartMethod,
+  /** 02.1-14 Task 4: the course this class runs (classes.course_id). NULL =
+   * not assigned; readers fall back to the course whose class_id is this
+   * class. Omitted where the course is not needed. */
+  course_id: z.string().nullable().optional(),
 });
 export type ClassDTO = z.infer<typeof ClassDTO>;
 

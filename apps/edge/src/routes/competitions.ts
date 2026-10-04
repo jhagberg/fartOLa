@@ -40,10 +40,9 @@ import {
   CompetitionPatchInput,
   type CompetitionDTO,
   type ClassDTO,
-  type CourseDTO,
-  type CourseControlDTO,
 } from '@fartola/shared-types';
-import { competitions, classes, courses, courseControls, controls } from '../db/schema.ts';
+import { competitions, classes } from '../db/schema.ts';
+import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { insertEvent } from '../si/eventInserter.ts';
@@ -165,45 +164,10 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       short_name: c.shortName,
       no_timing: c.noTiming,
       start_method: c.startMethod,
+      course_id: c.courseId,
     }));
 
-    // Courses + embedded controls. Two SELECTs: courses for the competition,
-    // then a single joined SELECT of all course_controls × controls for those
-    // courses ordered by (course_id, order_idx). Group in TS by course_id.
-    const courseRows = app.fartolaDb.db
-      .select()
-      .from(courses)
-      .where(eq(courses.competitionId, id))
-      .orderBy(asc(courses.name))
-      .all();
-    const controlsByCourse = new Map<string, CourseControlDTO[]>();
-    for (const c of courseRows) controlsByCourse.set(c.id, []);
-    if (courseRows.length > 0) {
-      const joined = app.fartolaDb.db
-        .select({
-          courseId: courseControls.courseId,
-          orderIdx: courseControls.orderIdx,
-          code: controls.code,
-        })
-        .from(courseControls)
-        .innerJoin(controls, eq(courseControls.controlId, controls.id))
-        .where(eq(controls.competitionId, id))
-        .orderBy(asc(courseControls.courseId), asc(courseControls.orderIdx))
-        .all();
-      for (const row of joined) {
-        const arr = controlsByCourse.get(row.courseId);
-        if (arr) arr.push({ control_code: row.code, order_idx: row.orderIdx });
-      }
-    }
-    const courseDTOs: CourseDTO[] = courseRows.map((c) => ({
-      id: c.id,
-      competition_id: c.competitionId,
-      name: c.name,
-      class_id: c.classId,
-      length_m: c.lengthM,
-      climb_m: c.climbM,
-      controls: controlsByCourse.get(c.id) ?? [],
-    }));
+    const courseDTOs = loadCourseDTOs(app.fartolaDb, id);
 
     return {
       competition: competitionRowToDTO(compRow),

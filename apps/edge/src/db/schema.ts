@@ -393,6 +393,10 @@ export const competitors = sqliteTable(
     /** Phase 2.1 D-05 — assigned start time as epoch ms. NULL = not drawn
      * (walk-up or late entry without a start slot). */
     startTimeMs: integer('start_time_ms'),
+    /** SOFT TA till TR 7.8.3 — person id in Eventor, from the EntryList
+     * import (Person/Id). The ResultList export writes it back so Eventor
+     * links the result to the person. NULL = unknown. */
+    eventorPersonId: integer('eventor_person_id'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two

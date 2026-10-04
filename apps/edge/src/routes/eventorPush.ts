@@ -16,9 +16,12 @@
 //   - Return 200 { url: string } on success (the Eventor result/startlist URL)
 //   - Return 500 { error: 'push_failed', message: string } on push failure
 //
-// The route calls buildResultListXml / buildStartListXml (pure, no XSD
-// validation) since Eventor does its own format validation server-side.
-// XSD validation on the push path would double the latency for no benefit.
+// push-results validates the ResultList against the bundled IOF.xsd before
+// pushing (400 { error: 'xsd_invalid', errors } otherwise), like the export
+// download: it is the list Eventor builds Sverigelistan and the competition
+// report from (SOFT TR 7.8.3), with person ids and course lengths (TA till
+// TR 7.8.3, TR 7.8.2). push-startlist builds without validation; Eventor
+// validates the format server-side.
 //
 // Locked by:
 // - .planning/phases/02.1-sanctioned-competition-foundations/02.1-08-PLAN.md task 1
@@ -35,11 +38,8 @@ import {
 } from '../db/schema.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { pushToEventor } from '../eventor/push.ts';
-import {
-  buildResultListXml,
-  buildStartListXml,
-  type StartListCompetitor,
-} from '../xml/iofExport.ts';
+import { buildStartListXml, validateAndBuild, type StartListCompetitor } from '../xml/iofExport.ts';
+import { resultListInputs } from './_resultListInputs.ts';
 import type { CompetitionDTO, StartMethod } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -64,6 +64,7 @@ interface ClassRow {
   shortName: string | null;
   noTiming: boolean;
   startMethod: StartMethod;
+  courseId: string | null;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -115,13 +116,13 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
         .where(eq(classesTable.competitionId, id))
         .all() as ClassRow[];
 
-      // Build ResultList XML from projection (pure, no XSD validation).
+      // Build the final ResultList from the projection, validated.
       const state = app.projectionStore.recomputeNow(id);
       if (state === null) {
         return reply.code(404).send({ error: 'competition_not_found' });
       }
 
-      const { xml } = buildResultListXml({
+      const built = await validateAndBuild({
         competition: competitionRowToDTO(compRow),
         classes: classRows.map((r) => ({
           id: r.id,
@@ -130,10 +131,15 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
           short_name: r.shortName,
           no_timing: r.noTiming,
           start_method: r.startMethod,
+          course_id: r.courseId,
         })),
-        courses: [],
+        ...resultListInputs(app.fartolaDb, id),
         state,
       });
+      if (!built.valid) {
+        return reply.code(400).send({ error: 'xsd_invalid', errors: built.errors });
+      }
+      const { xml } = built.build;
 
       // Push to Eventor.
       try {

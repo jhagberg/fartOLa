@@ -421,6 +421,69 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     assert.ok(res.build.xml.includes('<Status>DidNotFinish</Status>'));
   });
 
+  test('SOFT TA till TR 7.8.3: the ResultList carries Eventor person ids, course length and start/finish times, and validates against IOF.xsd', async () => {
+    const state = makeSeededState();
+    // Anna (OK) read out: drawn start 10:00:00, finish punch 10:12:00 local
+    // (2026-05-19, CEST = UTC+2), read at 10:15.
+    const readAt = Date.parse('2026-05-19T08:15:00Z');
+    const anna = {
+      ...state.competitors.get('cmp-anna')!,
+      start_time_ms: Date.parse('2026-05-19T08:00:00Z'),
+      card_read_history: [
+        {
+          event_time_ms: readAt,
+          card_number: 7501853,
+          card_type: 'SI10',
+          punches: [],
+          start: null,
+          finish: { seconds_in_half_day: 10 * 3600 + 12 * 60, half_day: 0 as const, weekday: null },
+        },
+      ],
+    };
+    state.competitors.set(anna.id, anna);
+    const course = {
+      id: 'crs-a',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'Bana A',
+      class_id: null,
+      length_m: 4200,
+      climb_m: 85,
+      controls: [
+        { control_code: 31, order_idx: 0 },
+        { control_code: 32, order_idx: 1 },
+      ],
+    };
+    const classes = makeClasses().map((c) =>
+      c.id === 'cls-h21' ? { ...c, course_id: 'crs-a' } : c
+    );
+    const res = await validateAndBuild(
+      makeInput({
+        state,
+        classes,
+        courses: [course],
+        eventorPersonIds: new Map([['cmp-anna', 12345]]),
+      })
+    );
+    if (!res.valid) assert.fail(`XSD-invalid: ${JSON.stringify(res.errors)}`);
+    const xml = res.build.xml;
+    // Person > Id (type "Sweden", as Eventor writes it) before Name.
+    assert.match(xml, /<Person>\s*<Id type="Sweden">12345<\/Id>\s*<Name>\s*<Family>Andersson/);
+    // Only runners with a known id get one.
+    assert.equal(xml.match(/<Id /g)?.length, 1);
+    // TR 7.8.2: the class's course with its length.
+    assert.match(
+      xml,
+      /<Course>\s*<Name>Bana A<\/Name>\s*<Length>4200<\/Length>\s*<Climb>85<\/Climb>\s*<NumberOfControls>2<\/NumberOfControls>\s*<\/Course>/
+    );
+    // D21 has no course: no Course element for it.
+    assert.equal(xml.match(/<Course>/g)?.length, 1);
+    // Start and finish as xsd:dateTime.
+    assert.match(
+      xml,
+      /<StartTime>2026-05-19T08:00:00.000Z<\/StartTime>\s*<FinishTime>2026-05-19T08:12:00.000Z<\/FinishTime>\s*<Time>720<\/Time>/
+    );
+  });
+
   test('test 8: round-trip parse confirms structural fields', () => {
     const { xml } = buildResultListXml(makeInput());
     const parser = new XMLParser({

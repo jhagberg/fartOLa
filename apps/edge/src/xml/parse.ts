@@ -89,6 +89,9 @@ export interface ParsedEntryList {
     /** Numeric SI card number from <ControlCard punchingSystem="SI">.
      * Non-SI cards or empty card values become null. */
     card_number: number | null;
+    /** SOFT TA till TR 7.8.3: the person's id in Eventor (Person/Id), so
+     * the ResultList export can link results. Absent when not parsed. */
+    eventor_person_id?: number | null;
   }>;
 }
 
@@ -208,6 +211,23 @@ function asInt(x: unknown): number | null {
   if (n === null) return null;
   // SI codes are integers; truncate doubles like 31.0.
   return Math.trunc(n);
+}
+
+/** SOFT TA till TR 7.8.3: the Eventor person id from Person/Id. Eventor's
+ * IOF 3.0 output types it "Sweden" (eventor/__fixtures__/
+ * competitors-sample.xml); untyped and "Eventor" are accepted as in
+ * xml/iofImport.ts. Other types and non-numeric ids (another system's, or an
+ * anonymised export's "R0001") are not Eventor's. */
+const EVENTOR_ID_TYPES = new Set(['Sweden', 'Eventor']);
+function eventorPersonId(person: RawNode): number | null {
+  for (const id of toArray(person?.Id as unknown)) {
+    const node = typeof id === 'object' && id !== null ? (id as Record<string, unknown>) : null;
+    const type = node === null ? null : asString(node['@_type']);
+    if (type !== null && !EVENTOR_ID_TYPES.has(type)) continue;
+    const n = asInt(node === null ? id : node['#text']);
+    if (n !== null && n > 0) return n;
+  }
+  return null;
 }
 
 /** 02.1-14 Task 9: <Class resultListMode="UnorderedNoTimes"> is a class
@@ -388,6 +408,7 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
       class_name,
       ...(isNoTiming(klass as RawNode) ? { class_no_timing: true } : {}),
       card_number,
+      eventor_person_id: eventorPersonId(person),
     });
   }
 

@@ -35,6 +35,7 @@
   import ClassTabs from '$lib/components/ClassTabs.svelte';
   import ResultsTable from '$lib/components/ResultsTable.svelte';
   import MissingStartsPanel from '$lib/components/MissingStartsPanel.svelte';
+  import { classCourse, courseLengthLabel } from './class-course.ts';
 
   interface ResultRow {
     competitor_id: string;
@@ -72,7 +73,6 @@
 
   // --- state ----------------------------------------------------------------
   let competition: CompetitionDTO | null = $state(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let courses: CourseDTO[] = $state([]);
   let classesMeta: ClassDTO[] = $state([]);
   /** Per-class rows keyed by class_id; class_id 'ALL' is the aggregate
@@ -107,6 +107,14 @@
       return merged;
     }
     return classRows.get(activeId) ?? [];
+  });
+  /** SOFT TR 7.8.2: the active class's course and its length. */
+  const activeCourse = $derived.by(() => {
+    const cls = classesMeta.find((c) => c.id === activeId);
+    if (cls === undefined) return null;
+    const course = classCourse(cls, courses);
+    if (course === undefined) return null;
+    return { className: cls.name, name: course.name, length: courseLengthLabel(course.length_m) };
   });
   const finishedCount = $derived(activeRows.filter((r) => r.status === 'OK').length);
   const updatedLabel = $derived.by(() => {
@@ -285,6 +293,13 @@
 
   <ClassTabs classes={tabItems} {totalCount} {activeId} onSelect={onTabSelect} />
 
+  {#if activeCourse}
+    <p class="class-course" data-testid="results-class-course">
+      {activeCourse.className} · {t('res.course')}
+      {activeCourse.name}{activeCourse.length ? ` · ${activeCourse.length}` : ''}
+    </p>
+  {/if}
+
   <div class="table-wrap">
     <ResultsTable rows={activeRows} {flashIds} />
   </div>
@@ -305,6 +320,10 @@
     flex-direction: column;
     gap: 16px;
     height: 100%;
+  }
+  .class-course {
+    margin: 0;
+    font-weight: 600;
   }
   .res-head {
     display: flex;

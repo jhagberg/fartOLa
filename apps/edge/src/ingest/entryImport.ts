@@ -162,6 +162,7 @@ function doIngest(
         club: e.club,
         classId,
         cardNumber: e.card_number,
+        eventorPersonId: e.eventor_person_id ?? null,
         consentAtMs: null,
         consentStatus: 'pending_first_read',
         scrubbedAtMs: null,
