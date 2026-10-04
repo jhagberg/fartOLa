@@ -17,10 +17,10 @@
   },
   "dependencies": {
     "@fartola/sportident": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "tsx": "^4.22.3",
-    "typescript": "^5.6.3"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
   }
 }
