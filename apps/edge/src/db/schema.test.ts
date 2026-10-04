@@ -471,6 +471,28 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
     }
   });
 
+  test('classes has course_id column (nullable FK → courses, 02.1-14 Task 4)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const col = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all()
+        .find((c) => c.name === 'course_id');
+      assert.ok(col, 'classes.course_id column missing');
+      assert.equal(col.notnull, 0, 'classes.course_id must be nullable');
+      const fk = handle.sqlite
+        .prepare<unknown[], { table: string; from: string; on_delete: string }>(
+          'SELECT "table", "from", on_delete FROM pragma_foreign_key_list(\'classes\')'
+        )
+        .all()
+        .find((f) => f.from === 'course_id');
+      assert.equal(fk?.table, 'courses');
+      assert.equal(fk?.on_delete, 'SET NULL');
+    } finally {
+      handle.close();
+    }
+  });
+
   test('competitors has start_time_ms column (nullable)', () => {
     const handle = openDatabase(':memory:');
     try {

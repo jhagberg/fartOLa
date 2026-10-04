@@ -121,6 +121,8 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       firstStartMs: null,
       startIntervalSec: null,
       maxTimeSec: null,
+      // 02.1-14 Task 4: assigned by course import / course creation.
+      courseId: null,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

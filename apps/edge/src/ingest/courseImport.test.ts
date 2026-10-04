@@ -21,9 +21,19 @@ import { eq } from 'drizzle-orm';
 
 import { openDatabase } from '../db/index.ts';
 import type { DbHandle } from '../db/index.ts';
-import { classes, competitions, controls, courses, courseControls } from '../db/schema.ts';
+import {
+  classes,
+  competitions,
+  competitors,
+  controls,
+  courses,
+  courseControls,
+} from '../db/schema.ts';
 import { ingestCourseData } from './courseImport.ts';
 import type { ParsedCourseData } from '../xml/parse.ts';
+import { loadCompetitionInputs } from '../projection/loader.ts';
+import { reduce } from '../projection/reduce.ts';
+import type { Event } from '../db/types.ts';
 
 interface Ctx {
   handle: DbHandle;
@@ -313,5 +323,147 @@ describe('ingestCourseData', () => {
       .where(eq(courses.competitionId, ctx.competitionId))
       .all();
     assert.equal(courseRows.length, 0);
+  });
+
+  // 02.1-14 Task 4: classes point at courses; many classes per course.
+  const SHARED: ParsedCourseData = {
+    kind: 'CourseData',
+    event_name: 'Shared course',
+    classes: [
+      { id: 'H21', name: 'H21', short_name: null },
+      { id: 'D21', name: 'D21', short_name: null },
+    ],
+    controls: [{ code: 31 }, { code: 32 }],
+    courses: [
+      {
+        id: 'Bana 1',
+        name: 'Bana 1',
+        class_id_ref: 'D21',
+        class_refs: ['H21', 'D21'],
+        length_m: null,
+        climb_m: null,
+        control_codes: [31, 32],
+      },
+    ],
+  };
+
+  function classCourseIds(): Map<string, string | null> {
+    const rows = ctx.handle.db
+      .select({ name: classes.name, courseId: classes.courseId })
+      .from(classes)
+      .where(eq(classes.competitionId, ctx.competitionId))
+      .all();
+    return new Map(rows.map((r) => [r.name, r.courseId]));
+  }
+
+  test('two classes assigned to one course → both classes have the course', () => {
+    ingestCourseData(ctx.handle, ctx.competitionId, SHARED);
+    const course = ctx.handle.db.select().from(courses).get();
+    assert.ok(course);
+    const ids = classCourseIds();
+    assert.equal(ids.get('H21'), course.id);
+    assert.equal(ids.get('D21'), course.id);
+  });
+
+  test('two classes on one course → both competitors get OK on a clean run', () => {
+    ingestCourseData(ctx.handle, ctx.competitionId, SHARED);
+    ctx.handle.db
+      .update(competitions)
+      .set({ raceStartedAtMs: 0 })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    const ids = ctx.handle.db
+      .select({ id: classes.id, name: classes.name })
+      .from(classes)
+      .where(eq(classes.competitionId, ctx.competitionId))
+      .all();
+    for (const [i, c] of ids.entries()) {
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: `comp-${c.name}`,
+          competitionId: ctx.competitionId,
+          name: c.name,
+          classId: c.id,
+          cardNumber: 1000 + i,
+        })
+        .run();
+    }
+    const clock = (sec: number) => ({ seconds_in_half_day: sec, half_day: 0, weekday: null });
+    const reads = ids.map(
+      (_, i) =>
+        ({
+          nodeId: 'n',
+          localSeq: i + 1,
+          competitionId: ctx.competitionId,
+          eventType: 'card_read',
+          eventTimeMs: Date.parse('2026-05-14T09:00:00Z'),
+          recordedAtMs: 0,
+          payload: {
+            event_type: 'card_read',
+            card_number: 1000 + i,
+            card_type: 'SIAC',
+            start: clock(36000),
+            finish: clock(36600),
+            check: null,
+            clear: null,
+            punch_count: 2,
+            punches: [
+              { code: 31, ...clock(36100) },
+              { code: 32, ...clock(36200) },
+            ],
+            card_holder: null,
+          },
+        }) as Event
+    );
+    // A class without a course would accept any punches, so also prove the
+    // course reaches H21: a runner there who skips 32 is MP.
+    const h21 = ids.find((c) => c.name === 'H21')!;
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'comp-H21-mp',
+        competitionId: ctx.competitionId,
+        name: 'MP',
+        classId: h21.id,
+        cardNumber: 2000,
+      })
+      .run();
+    const mpRead = structuredClone(reads[0]!);
+    const mpPayload = mpRead.payload as { card_number: number; punches: unknown[] };
+    mpPayload.card_number = 2000;
+    mpPayload.punches = mpPayload.punches.slice(0, 1);
+    const state = reduce({
+      ...loadCompetitionInputs(ctx.handle, ctx.competitionId)!,
+      events: [...reads, mpRead],
+    });
+    assert.equal(state.competitors.get('comp-H21')?.status, 'OK');
+    assert.equal(state.competitors.get('comp-D21')?.status, 'OK');
+    assert.equal(state.competitors.get('comp-H21-mp')?.status, 'MP');
+  });
+
+  test('zero <Class> elements: synthesised classes still get their course (course-only)', () => {
+    const courseOnly: ParsedCourseData = {
+      ...SHARED,
+      classes: [],
+      courses: [{ ...SHARED.courses[0]!, class_id_ref: null, class_refs: [] }],
+    };
+    ingestCourseData(ctx.handle, ctx.competitionId, courseOnly);
+    const course = ctx.handle.db.select().from(courses).get();
+    assert.deepEqual([...classCourseIds()], [['Bana 1', course!.id]]);
+  });
+
+  test('re-import does not duplicate classes and re-points them at the new course', () => {
+    ingestCourseData(ctx.handle, ctx.competitionId, SHARED);
+    ingestCourseData(ctx.handle, ctx.competitionId, SHARED);
+    const ids = classCourseIds();
+    assert.equal(ids.size, 2);
+    // Courses still get fresh rows per import (documented in courseImport.ts);
+    // classes follow the newest one.
+    const newest = ctx.handle.sqlite
+      .prepare<unknown[], { id: string }>('SELECT id FROM courses ORDER BY rowid DESC LIMIT 1')
+      .get();
+    assert.equal(ids.get('H21'), newest!.id);
+    assert.equal(ids.get('D21'), newest!.id);
   });
 });

@@ -77,7 +77,11 @@ function doIngest(
       synthesised.push({ id: '', name: cr.name, short_name: null });
     }
     effectiveClasses = synthesised;
-    effectiveCourses = data.courses.map((cr) => ({ ...cr, class_id_ref: cr.name }));
+    effectiveCourses = data.courses.map((cr) => ({
+      ...cr,
+      class_id_ref: cr.name,
+      class_refs: [cr.name],
+    }));
   }
 
   // (1) Classes — reuse existing by name within the same competition.
@@ -144,6 +148,14 @@ function doIngest(
       })
       .run();
     coursesCreated++;
+
+    // 02.1-14 Task 4: classes point at courses (many classes per course).
+    // courses.class_id above stays populated for back-compat only.
+    for (const className of cr.class_refs ?? (cr.class_id_ref ? [cr.class_id_ref] : [])) {
+      const cid = classIdByName.get(className);
+      if (cid === undefined) continue;
+      handle.db.update(classes).set({ courseId: id }).where(eq(classes.id, cid)).run();
+    }
 
     for (let i = 0; i < cr.control_codes.length; i++) {
       const code = cr.control_codes[i];

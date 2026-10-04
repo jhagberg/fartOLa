@@ -67,6 +67,25 @@ describe('parseIofXml', () => {
     assert.equal(bana2.class_id_ref, 'D21');
   });
 
+  test('02.1-14 Task 4: every ClassCourseAssignment is kept (two classes on one course)', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<CourseData xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+  <Event><Name>Shared</Name>
+    <Class><Name>H21</Name></Class><Class><Name>D21</Name></Class>
+  </Event>
+  <RaceCourseData>
+    <Control><Id>31</Id></Control>
+    <Course><Name>Bana 1</Name><CourseControl><Control>31</Control></CourseControl></Course>
+    <ClassCourseAssignment><ClassName>H21</ClassName><CourseName>Bana 1</CourseName></ClassCourseAssignment>
+    <ClassCourseAssignment><ClassName>D21</ClassName><CourseName>Bana 1</CourseName></ClassCourseAssignment>
+  </RaceCourseData>
+</CourseData>`;
+    const parsed = parseIofXml(xml);
+    if (parsed.kind !== 'CourseData') throw new Error('unreachable');
+    const bana1 = parsed.data.courses[0]!;
+    assert.deepEqual(bana1.class_refs, ['H21', 'D21']);
+  });
+
   test('test 2: EntryList sample → 3 competitors; null club + null card_number where source omits them', () => {
     const xml = readFixture('iof30-entrylist-sample.xml');
     const parsed = parseIofXml(xml);

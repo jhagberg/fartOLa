@@ -132,6 +132,15 @@ export default async function registerCourses(app: FastifyInstance): Promise<voi
           climbM: parsed.data.climb_m ?? null,
         })
         .run();
+      // 02.1-14 Task 4: classes point at courses; courses.class_id above is
+      // kept for back-compat only.
+      if (parsed.data.class_id != null) {
+        app.fartolaDb.db
+          .update(classes)
+          .set({ courseId })
+          .where(eq(classes.id, parsed.data.class_id))
+          .run();
+      }
 
       // Bulk-select existing controls for this competition matching any of
       // the codes we need; bulk-insert anything missing.

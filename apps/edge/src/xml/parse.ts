@@ -52,8 +52,12 @@ export interface ParsedCourseData {
     id: string;
     name: string;
     /** Class name that this course is assigned to (via
-     * ClassCourseAssignment.ClassName), or null if no assignment. */
+     * ClassCourseAssignment.ClassName), or null if no assignment. When
+     * several classes share the course this is the last one (legacy). */
     class_id_ref: string | null;
+    /** 02.1-14 Task 4: every class assigned to this course, in document
+     * order. Omitted by hand-built inputs; readers fall back to class_id_ref. */
+    class_refs?: string[];
     length_m: number | null;
     climb_m: number | null;
     /** Control codes in CourseControl-sequence order. We ONLY include
@@ -228,9 +232,10 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
   const controls: ParsedCourseData['controls'] = [];
   const seenCodes = new Set<number>();
   const courses: ParsedCourseData['courses'] = [];
-  // Map <ClassCourseAssignment>: CourseName → ClassName so we can fill
-  // class_id_ref on the course rows.
-  const classByCourseName = new Map<string, string>();
+  // Map <ClassCourseAssignment>: CourseName → ClassNames so we can fill
+  // class_id_ref / class_refs on the course rows. Many classes may share a
+  // course, so every assignment is kept (02.1-14 Task 4).
+  const classesByCourseName = new Map<string, string[]>();
 
   for (const rcd of rcdArr) {
     if (!rcd) continue;
@@ -239,7 +244,10 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
       if (!a) continue;
       const courseName = asString(a.CourseName);
       const className = asString(a.ClassName);
-      if (courseName && className) classByCourseName.set(courseName, className);
+      if (!courseName || !className) continue;
+      const refs = classesByCourseName.get(courseName) ?? [];
+      if (!refs.includes(className)) refs.push(className);
+      classesByCourseName.set(courseName, refs);
     }
 
     for (const ctl of toArray(rcd.Control as RawNode | RawNode[])) {
@@ -279,10 +287,12 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
         const code = asInt(first);
         if (code !== null) control_codes.push(code);
       }
+      const classRefs = classesByCourseName.get(name) ?? [];
       courses.push({
         id,
         name,
-        class_id_ref: classByCourseName.get(name) ?? null,
+        class_id_ref: classRefs[classRefs.length - 1] ?? null,
+        class_refs: classRefs,
         length_m: lengthM,
         climb_m: climbM,
         control_codes,

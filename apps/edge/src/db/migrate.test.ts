@@ -35,14 +35,14 @@ interface CountRow {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EXPECTED_MIGRATION_COUNT = 10;
+const EXPECTED_MIGRATION_COUNT = 11;
 
 describe('migrator: idempotency + cold-start coverage', () => {
   test('test 1: calling runMigrations twice on the same sqlite is a no-op', () => {
     const handle = openDatabase(':memory:');
     try {
       // openDatabase already ran the migrator once. The current journal has
-      // 10 entries: 0000..0007 plus 0009 and 0010 (0008 is intentionally absent).
+      // 11 entries: 0000..0007 plus 0009..0011 (0008 is intentionally absent).
       const initialCount = handle.sqlite
         .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
         .get();
@@ -50,7 +50,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
       assert.equal(
         initialCount.count,
         EXPECTED_MIGRATION_COUNT,
-        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0010, excluding 0008), got ${initialCount.count}`
+        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0011, excluding 0008), got ${initialCount.count}`
       );
 
       // Call again — should be a no-op.
@@ -65,7 +65,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     }
   });
 
-  test('test 2 (C-H1): 0000..0010 applied with distinct hashes; triggers present', () => {
+  test('test 2 (C-H1): 0000..0011 applied with distinct hashes; triggers present', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite

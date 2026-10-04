@@ -198,6 +198,31 @@ describe('courses REST CRUD', () => {
     assert.equal(list.length, 0);
   });
 
+  test('test 7 (02.1-14 Task 4): POST course with class_id points the class at the course', async () => {
+    const compId = await newCompetition(ctx.app);
+    const classRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classId = (classRes.json() as { id: string }).id;
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/courses`,
+      payload: {
+        name: 'Bana 1',
+        class_id: classId,
+        controls: [{ control_code: 31, order_idx: 0 }],
+      },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const courseId = (res.json() as { id: string }).id;
+    const row = ctx.handle.sqlite
+      .prepare<[string], { course_id: string | null }>('SELECT course_id FROM classes WHERE id = ?')
+      .get(classId);
+    assert.equal(row?.course_id, courseId);
+  });
+
   test('test 5: classes nested route — POST then GET roundtrip', async () => {
     const compId = await newCompetition(ctx.app);
     const postRes = await ctx.app.inject({

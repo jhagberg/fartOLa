@@ -60,6 +60,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 
 // ---------------------------------------------------------------------------
@@ -255,6 +256,12 @@ export const classes = sqliteTable(
     /** Phase 2.1 D-08 — class time cap in seconds. NULL = no cap.
      * Reducer promotes OK/MP to MAX when elapsed_time_ms/1000 > maxTimeSec. */
     maxTimeSec: integer('max_time_sec'),
+    /** 02.1-14 Task 4 — the course this class runs. Many classes may share
+     * one course. NULL = not assigned; readers then fall back to the legacy
+     * courses.class_id pointer. */
+    courseId: text('course_id').references((): AnySQLiteColumn => courses.id, {
+      onDelete: 'set null',
+    }),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );

@@ -1233,3 +1233,46 @@ describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
     assert.equal(state.competitors.get('open')!.elapsed_time_ms, 44 * 60 * 1000);
   });
 });
+
+// 02.1-14 Task 4: classes point at courses; many classes per course.
+describe('reduce — course by class.courseId (02.1-14 Task 4)', () => {
+  test('two classes share one course (course.classId unset) → both scored against it', () => {
+    seqCounter = 0;
+    const shared = { ...course('unused', [31, 32]), id: 'course-shared', classId: null };
+    const run = (card: number, punches: NdjsonPunch[]): Event =>
+      cardRead(card, punches, hd(10 * 3600), hd(10 * 3600 + 600));
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(101, [p(31), p(32)]), run(102, [p(31), p(32)]), run(103, [p(31)])],
+      competitors: [
+        comp({ id: 'h', classId: 'cls-H21', cardNumber: 101 }),
+        comp({ id: 'd', classId: 'cls-D21', cardNumber: 102 }),
+        comp({ id: 'd-mp', classId: 'cls-D21', cardNumber: 103 }),
+      ],
+      classes: [
+        { ...cls('cls-H21'), courseId: 'course-shared' },
+        { ...cls('cls-D21'), courseId: 'course-shared' },
+      ],
+      courses: [shared],
+    });
+    assert.equal(state.competitors.get('h')!.status, 'OK');
+    assert.equal(state.competitors.get('d')!.status, 'OK');
+    assert.equal(state.competitors.get('d-mp')!.status, 'MP');
+    assert.deepEqual(state.competitors.get('d-mp')!.missing_codes, [32]);
+  });
+
+  test('class.courseId wins over a legacy course.classId pointer', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [cardRead(101, [p(41)], hd(10 * 3600), hd(10 * 3600 + 600))],
+      competitors: [comp({ id: 'h', classId: 'cls-H21', cardNumber: 101 })],
+      classes: [{ ...cls('cls-H21'), courseId: 'course-new' }],
+      courses: [
+        course('cls-H21', [31]),
+        { ...course('cls-H21', [41]), id: 'course-new', classId: null },
+      ],
+    });
+    assert.equal(state.competitors.get('h')!.status, 'OK');
+  });
+});

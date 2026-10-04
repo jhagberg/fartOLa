@@ -132,6 +132,14 @@ export function reduce(input: ReduceInput): CompetitionState {
   for (const c of input.courses) {
     if (c.classId !== null) courseByClass.set(c.classId, c);
   }
+  // 02.1-14 Task 4: classes point at courses (many classes per course).
+  // class.courseId wins; the legacy course.classId pointer above is the
+  // fallback for classes without one.
+  const courseById = new Map(input.courses.map((c) => [c.id, c]));
+  for (const cls of input.classes) {
+    const assigned = cls.courseId ? courseById.get(cls.courseId) : undefined;
+    if (assigned !== undefined) courseByClass.set(cls.id, assigned);
+  }
 
   // Phase 2.1 (D-08): class max-time lookup by class_id.
   const maxTimeByClass = new Map<string, number>();

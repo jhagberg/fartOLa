@@ -137,6 +137,38 @@ describe('POST /api/competitions/:id/print-receipt (plan 15 Task 1)', () => {
     assert.equal(data.skogisStats, undefined, 'non-kids template must not carry skogisStats');
   });
 
+  test('test 8 (02.1-14 Task 4): course comes from classes.course_id when another class owns courses.class_id', async () => {
+    const { competitionId, classId, competitorId } = await seed(ctx.app);
+    const otherRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/classes`,
+      payload: { name: 'D21' },
+    });
+    const otherClassId = (otherRes.json() as { id: string }).id;
+    const courseRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/courses`,
+      payload: {
+        name: 'Bana 1',
+        class_id: otherClassId,
+        controls: [{ control_code: 31, order_idx: 0 }],
+      },
+    });
+    const courseId = (courseRes.json() as { id: string }).id;
+    ctx.handle.sqlite
+      .prepare('UPDATE classes SET course_id = ? WHERE id = ?')
+      .run(courseId, classId);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/print-receipt`,
+      payload: { competitor_id: competitorId, template: 'classic' },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const data = ctx.printed[0]!.data as { course: { id: string; control_codes: number[] } | null };
+    assert.equal(data.course?.id, courseId);
+    assert.deepEqual(data.course?.control_codes, [31]);
+  });
+
   test('test 2 (W-3): template=kids → envelope.data.skogisStats populated at construction site', async () => {
     const { competitionId, competitorId } = await seed(ctx.app);
     const res = await ctx.app.inject({
