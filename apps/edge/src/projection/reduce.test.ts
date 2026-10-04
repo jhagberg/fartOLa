@@ -454,7 +454,8 @@ describe('reduce — CompetitionState projection', () => {
   //   1. The override flips the status field as expected.
   //   2. view.manual_status carries the asserted code (not just 'DNF').
   //   3. view.manual_dnf_reason carries the operator reason (back-compat).
-  //   4. A subsequent card_read does NOT overwrite the override.
+  //   4. A subsequent card_read does NOT overwrite the override (DQ only
+  //      since 02.1-14 Task 12; the others are re-scored by a later read).
   //   5. clear_manual_status reverts to the auto-detected status.
   // ---------------------------------------------------------------------------
 
@@ -510,6 +511,83 @@ describe('reduce — CompetitionState projection', () => {
       assert.equal(anna.elapsed_time_ms, 600_000);
     });
   }
+
+  // 02.1-14 Task 12: the same for every manual status except DQ (MeOS
+  // evaluateCard, oRunner.cpp:1621-1630: DNS/CANCEL/MP/DNF become the card's
+  // verdict; MAX only within max time). A status set AFTER the read wins.
+  for (const status of ['DNF', 'MP', 'MAX'] as const) {
+    test(`02.1-14 Task 12: ${status} by hand, then an OK read-out → OK`, () => {
+      seqCounter = 0;
+      const events = [
+        evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status, reason: 'x' }),
+        cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+      ];
+      const state = reduce({
+        competition_id: 'comp-1',
+        events,
+        competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+        classes: [clsWithMax('cls-H21', 3600)],
+        courses: [course('cls-H21', [31, 32, 33, 34])],
+      });
+      const anna = state.competitors.get('c-anna')!;
+      assert.equal(anna.status, 'OK');
+      assert.equal(anna.manual_status, null);
+      assert.equal(anna.manual_dnf_reason, null);
+      assert.equal(anna.elapsed_time_ms, 600_000);
+      assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
+    });
+  }
+
+  test('02.1-14 Task 12: legacy manual_dnf, then an OK read-out → OK', () => {
+    seqCounter = 0;
+    const events = [
+      evt({ event_type: 'manual_dnf', competitor_id: 'c-anna', reason: 'x' }),
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.status, 'OK');
+  });
+
+  test('02.1-14 Task 12: MAX by hand, then a read over the max time → MAX', () => {
+    seqCounter = 0;
+    const events = [
+      evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'MAX', reason: 'x' }),
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 300)],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna')!;
+    assert.equal(anna.status, 'MAX');
+    // Re-derived from the class max time, not the hand-set status.
+    assert.equal(anna.manual_status, null);
+  });
+
+  test('02.1-14 Task 12: DNF by hand, then a mispunched read-out → MP', () => {
+    seqCounter = 0;
+    const events = [
+      evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'DNF', reason: 'x' }),
+      cardRead(1, [p(31), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.status, 'MP');
+  });
 
   test('replay-readiness: a read-out after DQ keeps the DQ', () => {
     seqCounter = 0;
@@ -1600,11 +1678,20 @@ describe('reduce — manual MP (02.1-14 Task 10)', () => {
     assert.equal(state.competitors.get('a')!.status, 'MP');
   });
 
-  test('MP on an OK read-out → MP, and a later read does not override it', () => {
+  test('MP on an OK read-out → MP', () => {
     seqCounter = 0;
-    const state = reduce({ ...base, events: [okRun(1, 600), setMp('a'), okRun(1, 600)] });
+    const state = reduce({ ...base, events: [okRun(1, 600), setMp('a')] });
     assert.equal(state.competitors.get('a')!.status, 'MP');
     assert.equal(state.results_by_class.get('cls-H21')![0]!.place, null);
+  });
+
+  // 02.1-14 Task 12 changed this: it said a later read does not override a
+  // hand-set MP. As in MeOS (oRunner.cpp:1621-1630) the later read scores.
+  test('MP by hand, then a later OK read-out → OK', () => {
+    seqCounter = 0;
+    const state = reduce({ ...base, events: [okRun(1, 600), setMp('a'), okRun(1, 600)] });
+    assert.equal(state.competitors.get('a')!.status, 'OK');
+    assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
   });
 
   test('clear → back to the auto-detected status', () => {

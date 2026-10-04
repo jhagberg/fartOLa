@@ -10,11 +10,12 @@
 // structurally identical CompetitionState. Events are sorted by
 // (event_time_ms, local_seq) before the walk so shuffled inputs converge.
 //
-// Manual-override semantics: once a manual_status_set event is observed
-// for a competitor (or the legacy manual_dnf from Phase-1 logs), subsequent
-// card_read events do NOT overwrite the status. `clear_manual_status`
-// (legacy alias: `un_dnf`) clears the override and re-applies
-// dnfMp.detectStatus against the most recent card_read state.
+// Manual-override semantics: a manual_status_set event (or the legacy
+// manual_dnf from Phase-1 logs) wins over the card_reads before it. A
+// card_read during the race AFTER it clears any manual status except DQ and
+// scores the card, as MeOS evaluateCard does (02.1-14 Task 12).
+// `clear_manual_status` (legacy alias: `un_dnf`) clears the override and
+// re-applies dnfMp.detectStatus against the most recent card_read state.
 //
 // Phase 2.0 extension: manual_status_set lets the operator assert any of
 // DNF/DNS/DQ/CANCEL/MAX. The legacy manual_dnf event is equivalent to
@@ -244,15 +245,16 @@ export function reduce(input: ReduceInput): CompetitionState {
         const inRacePhase =
           raceStartedAtMs === undefined ||
           (raceStartedAtMs !== null && e.eventTimeMs >= raceStartedAtMs);
-        // A read-out during the race after DNS/CANCEL proves the runner
-        // started: drop that status and score the run, as MeOS does
-        // (oRunner.cpp evaluateCard). DNF/DQ/MAX/MP set by hand still win.
-        if (inRacePhase && (view.manual_status === 'DNS' || view.manual_status === 'CANCEL')) {
+        // A read-out during the race re-scores every manual status except DQ,
+        // as MeOS evaluateCard does (oRunner.cpp:1621-1630, 02.1-14 Task 12):
+        // DNS/CANCEL/MP/DNF become the card's verdict, and MAX is re-derived
+        // from the class max time below. A status set after the read wins.
+        if (inRacePhase && view.manual_status !== null && view.manual_status !== 'DQ') {
           view.manual_status = null;
           view.manual_dnf_reason = null;
         }
         // Manual override wins: don't overwrite status/elapsed when an
-        // operator-asserted state (DNF/DNS/DQ/CANCEL/MAX) is in force.
+        // operator-asserted state is still in force (DQ, or pre-race).
         if (view.manual_status === null && inRacePhase) {
           const course = courseByClass.get(competitor.classId);
           const expected = course?.control_codes ?? [];
