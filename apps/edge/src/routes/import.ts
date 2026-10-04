@@ -56,6 +56,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute } from 'node:path';
 import multipart from '@fastify/multipart';
+import { z } from 'zod';
 
 import {
   competitions,
@@ -68,6 +69,8 @@ import { importStartList } from '../xml/iofImport.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
+import { StartTimeMs } from './competitors.ts';
+import { issuesToErrors } from './_zod-errors.ts';
 
 // ---------------------------------------------------------------------------
 // StartList matching helpers (plan 02.1-03).
@@ -133,6 +136,13 @@ export interface StartListMatchResult {
   cardUpdates: CardUpdate[];
   skipped: SkippedImportRow[];
 }
+
+/** POST …/import/startlist/confirm body: operator-confirmed fuzzy matches. */
+const ConfirmBody = z.object({
+  matches: z.array(
+    z.object({ competitorId: z.string().min(1), startTimeMs: StartTimeMs.unwrap() })
+  ),
+});
 
 export default async function registerImportRoutes(app: FastifyInstance): Promise<void> {
   // 5 MB body cap, single file per request. T-LARGE-BODY-DOS mitigation.
@@ -477,12 +487,13 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       return reply.code(404).send({ error: 'competition_not_found' });
     }
 
-    const body = req.body as { matches?: unknown };
-    if (!Array.isArray(body?.matches)) {
-      return reply.code(400).send({ error: 'bad_body', message: 'matches must be an array' });
+    // The whole batch is validated before anything is written; start times
+    // must be epoch ms like every other start-time write (StartTimeMs).
+    const parsed = ConfirmBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'bad_body', ...issuesToErrors(parsed.error.issues) });
     }
-
-    const matches = body.matches as Array<{ competitorId: unknown; startTimeMs: unknown }>;
+    const { matches } = parsed.data;
 
     let applied = 0;
     let alreadyApplied = 0;
@@ -490,7 +501,6 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
     // Idempotent: check existing start_time_ms before writing.
     app.fartolaDb.sqlite.transaction(() => {
       for (const m of matches) {
-        if (typeof m.competitorId !== 'string' || typeof m.startTimeMs !== 'number') continue;
         const existing = app.fartolaDb.db
           .select({ id: competitorsTable.id, startTimeMs: competitorsTable.startTimeMs })
           .from(competitorsTable)

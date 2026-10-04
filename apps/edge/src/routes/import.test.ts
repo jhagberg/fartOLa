@@ -695,6 +695,44 @@ describe('POST /api/competitions/:id/import/startlist/confirm', () => {
     assert.equal(body2.alreadyApplied, 1, 'must count already-applied');
   });
 
+  test('confirm rejects a non-epoch start time and writes nothing from the batch', async () => {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries.xml',
+      readFixture('iof30-entrylist-sample.xml')
+    );
+    const [a, b] = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .all();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/import/startlist/confirm`,
+      payload: {
+        matches: [
+          { competitorId: a!.id, startTimeMs: Date.parse('2026-05-19T10:30:00Z') },
+          { competitorId: b!.id, startTimeMs: 36_000_000 }, // 10:00 as ms since midnight
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const rows = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .all();
+    assert.ok(rows.every((r) => r.startTimeMs === null));
+  });
+
   test('confirm test 3: competition not found → 404', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
