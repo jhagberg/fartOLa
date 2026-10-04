@@ -194,6 +194,36 @@ describe('lottning route', () => {
     }
   });
 
+  test('SOFT TR 7.5.1: an entry without a name is not drawn (no start time)', async () => {
+    const unnamed = crypto.randomUUID();
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: unnamed,
+        competitionId: ctx.competitionId,
+        name: '  ',
+        club: 'Alpha',
+        classId: ctx.classId,
+      })
+      .run();
+    for (const mode of ['SOFT', 'Random', 'Simultaneous'] as const) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+        payload: { mode, firstStartMs: localToEpochMs('2026-05-24', 36_000), intervalSec: 60 },
+      });
+      assert.equal(res.statusCode, 201, res.body);
+      assert.equal((res.json() as { drawn: number }).drawn, 5, mode);
+      const rows = ctx.handle.db
+        .select({ id: competitors.id, startTimeMs: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, ctx.classId))
+        .all();
+      assert.equal(rows.find((r) => r.id === unnamed)!.startTimeMs, null, mode);
+      assert.equal(rows.filter((r) => r.startTimeMs !== null).length, 5, mode);
+    }
+  });
+
   test('test 3: vacant slots create gaps in the time sequence', async () => {
     const firstStartMs = 10 * 3600 * 1000;
     const intervalSec = 60;

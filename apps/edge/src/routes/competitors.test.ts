@@ -214,6 +214,19 @@ describe('competitors walk-up registration', () => {
     );
   });
 
+  test('SOFT TR 7.5.1: a walk-up entry without a name is rejected (empty or whitespace → 400)', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    for (const name of ['', '   ', undefined]) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/competitors',
+        payload: { competition_id: competitionId, name, class_id: classId, consent: true },
+      });
+      assert.equal(res.statusCode, 400, JSON.stringify(name));
+    }
+    assert.equal(ctx.handle.db.select().from(competitors).all().length, 0);
+  });
+
   test('test 4: POST with consent: false → 400', async () => {
     const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
     const res = await ctx.app.inject({

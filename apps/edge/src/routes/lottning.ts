@@ -93,17 +93,17 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         return reply.code(404).send({ error: 'class_not_found' });
       }
 
-      // Load competitors for the class.
+      // Load competitors for the class. SOFT TR 7.5.1: an entry without a
+      // name is not drawn (it keeps no start time after the wipe below).
       const competitorRows = app.fartolaDb.db
-        .select({ id: competitors.id, club: competitors.club })
+        .select({ id: competitors.id, name: competitors.name, club: competitors.club })
         .from(competitors)
         .where(eq(competitors.classId, classId))
         .all();
 
-      const runnerList: DrawRunner[] = competitorRows.map((r) => ({
-        id: r.id,
-        club: r.club,
-      }));
+      const runnerList: DrawRunner[] = competitorRows
+        .filter((r) => r.name.trim().length > 0)
+        .map((r) => ({ id: r.id, club: r.club }));
 
       // Run the draw algorithm.
       let drawResult;
