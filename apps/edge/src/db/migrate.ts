@@ -43,15 +43,17 @@ export function runMigrations(sqlite: Database.Database): void {
   migrateStartTimesToEpoch(sqlite);
 }
 
-/** 1970-01-02 in epoch ms. Any start time below it was written by the old
- * lottning flow as local ms since midnight (02.1-14 Task 1). */
-const LOCAL_MS_LIMIT = 86_400_000;
+/** 1970-01-08 in epoch ms. Any start time below it was written by the old
+ * lottning flow as local ms since midnight (02.1-14 Task 1) — past 86 400 000
+ * when a draw ran over midnight, so the limit allows a week of rollover. */
+const LOCAL_MS_LIMIT = 7 * 86_400_000;
 
 /** Data migration: convert legacy local ms-since-midnight start times
  * (competitors.start_time_ms, classes.first_start_ms) to epoch ms using the
- * competition's date in COMPETITION_TZ. Runs in JS rather than a .sql file
- * because SQLite cannot do time-zone/DST conversion, and it is idempotent by
- * construction: converted values are far above LOCAL_MS_LIMIT. */
+ * competition's date in COMPETITION_TZ; a value past midnight lands on the
+ * following day(s). Runs in JS rather than a .sql file because SQLite cannot
+ * do time-zone/DST conversion, and it is idempotent by construction:
+ * converted values are far above LOCAL_MS_LIMIT. */
 function migrateStartTimesToEpoch(sqlite: Database.Database): void {
   const convert = (table: 'competitors' | 'classes', column: string): void => {
     const rows = sqlite

@@ -281,6 +281,44 @@ describe('migrator: idempotency + cold-start coverage', () => {
     }
   });
 
+  test('legacy start times past midnight (23:59 + 2 min) roll over to the next day', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'fartola-starttime-test-'));
+    const dbPath = path.join(dir, `${crypto.randomUUID()}.db`);
+    try {
+      const h1 = openDatabase(dbPath);
+      // A draw from 23:59 with a 2-minute interval: 86 340 000, 86 460 000.
+      h1.sqlite.exec(`
+        INSERT INTO competitions (id, name, date, created_at_ms) VALUES ('comp', 'C', '2026-10-03', 0);
+        INSERT INTO classes (id, competition_id, name, first_start_ms) VALUES ('cls', 'comp', 'H21', 86340000);
+        INSERT INTO competitors (id, competition_id, name, class_id, start_time_ms) VALUES
+          ('a', 'comp', 'A', 'cls', 86340000),
+          ('b', 'comp', 'B', 'cls', 86460000);
+      `);
+      h1.close();
+
+      for (let i = 0; i < 2; i++) {
+        // Twice: still idempotent across restarts.
+        const h = openDatabase(dbPath);
+        try {
+          const rows = h.sqlite
+            .prepare<
+              unknown[],
+              { id: string; start_time_ms: number }
+            >('SELECT id, start_time_ms FROM competitors ORDER BY id')
+            .all();
+          assert.deepEqual(rows, [
+            { id: 'a', start_time_ms: localToEpochMs('2026-10-03', 23 * 3600 + 59 * 60) },
+            { id: 'b', start_time_ms: localToEpochMs('2026-10-04', 60) },
+          ]);
+        } finally {
+          h.close();
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('test 8 (02.1-14): a db stopped at 0009 gets 0010 event_codes on upgrade', () => {
     // 0010 used to carry a journal `when` older than 0009's. drizzle only
     // applies migrations newer than the newest applied created_at, so a db
