@@ -268,10 +268,12 @@ export function reduce(input: ReduceInput): CompetitionState {
           view.out_of_order_codes = detected.out_of_order_codes;
           view.elapsed_time_ms = detected.elapsed_time_ms;
           // Phase 2.1 (D-08): MAX auto-compute — if the competitor finished OK
-          // (or MP, though MP never has elapsed) and their class has a time cap,
-          // promote to MAX when elapsed exceeds the cap.
+          // and their class has a time cap, promote to MAX when elapsed
+          // exceeds the cap. MP/DNF take precedence over MAX (MeOS: only an
+          // OK run becomes over-time; 02.1-14 Task 7).
           const maxTimeSec = maxTimeByClass.get(competitor.classId);
           if (
+            view.status === 'OK' &&
             maxTimeSec !== undefined &&
             view.elapsed_time_ms !== null &&
             view.elapsed_time_ms / 1000 > maxTimeSec
@@ -424,6 +426,7 @@ export function reduce(input: ReduceInput): CompetitionState {
             // Re-apply MAX auto-compute gate after clearing manual override.
             const maxTimeSec = competitor ? maxTimeByClass.get(competitor.classId) : undefined;
             if (
+              view.status === 'OK' &&
               maxTimeSec !== undefined &&
               view.elapsed_time_ms !== null &&
               view.elapsed_time_ms / 1000 > maxTimeSec
@@ -530,7 +533,11 @@ export function reduce(input: ReduceInput): CompetitionState {
     // Re-apply MAX gate after voided adjustment.
     if (view.manual_status === null && competitor !== undefined) {
       const maxTimeSec = maxTimeByClass.get(competitor.classId);
-      if (maxTimeSec !== undefined && adjustedElapsed / 1000 > maxTimeSec) {
+      if (
+        detected.status === 'OK' &&
+        maxTimeSec !== undefined &&
+        adjustedElapsed / 1000 > maxTimeSec
+      ) {
         view.status = 'MAX';
       } else if (view.status === 'MAX') {
         // Was MAX from the gate, now under cap — revert to detected status.
@@ -540,7 +547,8 @@ export function reduce(input: ReduceInput): CompetitionState {
   }
 
   // Build per-class results tables. Sort: OK first (by elapsed asc), then MP,
-  // then DNF, then PEND. Ties broken by competitor name.
+  // then DNF, then PEND. Ties broken by competitor name; equal elapsed shares
+  // the place and the next place skips (1, 1, 3 — 02.1-14 Task 7).
   const resultsByClass = new Map<string, ResultView[]>();
   for (const cls of input.classes) {
     const inClass: CompetitorView[] = [];
@@ -554,13 +562,17 @@ export function reduce(input: ReduceInput): CompetitionState {
           (b.elapsed_time_ms ?? Number.MAX_SAFE_INTEGER) ||
         a.name.localeCompare(b.name)
     );
+    let rank = 0;
     let place = 0;
+    let prevElapsed: number | null = null;
     let leaderTime: number | null = null;
     const rows: ResultView[] = inClass.map((v) => {
       let p: number | null = null;
       let behind: number | null = null;
       if (v.status === 'OK' && v.elapsed_time_ms !== null) {
-        place++;
+        rank++;
+        if (v.elapsed_time_ms !== prevElapsed) place = rank;
+        prevElapsed = v.elapsed_time_ms;
         p = place;
         if (leaderTime === null) leaderTime = v.elapsed_time_ms;
         behind = v.elapsed_time_ms - leaderTime;

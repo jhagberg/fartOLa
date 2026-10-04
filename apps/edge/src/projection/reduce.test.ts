@@ -1330,3 +1330,60 @@ describe('reduce — course-wide voided control (02.1-14 Task 5)', () => {
     assert.deepEqual(pick(after.competitors.get('missed')!), ['OK', [], []]);
   });
 });
+
+// 02.1-14 Task 7: results — shared places; MP/DNF beat max time.
+describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
+  const run = (card: number, punches: NdjsonPunch[], sec: number): Event =>
+    cardRead(card, punches, hd(10 * 3600), hd(10 * 3600 + sec));
+
+  test('two OK runners with equal time → both place 1, next is 3', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(1, [p(31)], 600), run(2, [p(31)], 600), run(3, [p(31)], 700)],
+      competitors: [
+        comp({ id: 'a', name: 'A', cardNumber: 1 }),
+        comp({ id: 'b', name: 'B', cardNumber: 2 }),
+        comp({ id: 'c', name: 'C', cardNumber: 3 }),
+      ],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31])],
+    });
+    const rows = state.results_by_class.get('cls-H21')!;
+    assert.deepEqual(
+      rows.map((r) => [r.competitor_id, r.place, r.behind_leader_ms]),
+      [
+        ['a', 1, 0],
+        ['b', 1, 0],
+        ['c', 3, 100_000],
+      ]
+    );
+  });
+
+  test('MP runner over max time → MP', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(1, [p(31)], 700)],
+      competitors: [comp({ id: 'mp', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    assert.equal(state.competitors.get('mp')!.status, 'MP');
+  });
+
+  test('MP runner over max time stays MP through the voided-leg post-pass', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [
+        run(1, [p(31), p(33)], 700),
+        evt({ event_type: 'leg_voided', competitor_id: 'mp', control_code: 33, max_seconds: 0 }),
+      ],
+      competitors: [comp({ id: 'mp', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32, 33])],
+    });
+    assert.equal(state.competitors.get('mp')!.status, 'MP');
+  });
+});
