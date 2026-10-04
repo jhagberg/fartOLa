@@ -12,6 +12,7 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
+import { epochToLocalSeconds } from '@fartola/shared-types';
 import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -79,6 +80,26 @@ export interface ReadoutResponse {
  * the flashIn animation lookup. */
 export function historyKey(row: ReadoutHistoryRow): string {
   return `${row.event_time_ms}-${row.local_seq}`;
+}
+
+const HALF_DAY_SEC = 43200;
+
+/** Running time for a read: finish − (drawn start ?? start punch), as the
+ * edge projection computes it (02.1-14). No start at all → null; the old
+ * first-punch fallback showed a misleading time. Card clocks are compared
+ * modulo 12 h (runs under 12 h), so SI5 cards without a PM bit work too. */
+export function readElapsedMs(
+  row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
+  drawnStartMs: number | null
+): number | null {
+  if (row.finish_seconds_in_half_day === null) return null;
+  const base =
+    drawnStartMs !== null
+      ? epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC
+      : row.start_seconds_in_half_day;
+  if (base === null) return null;
+  const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
+  return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
 }
 
 /** Format `ms` (UTC epoch millis) as `HH:MM:SS` in the local timezone.

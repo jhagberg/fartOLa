@@ -95,6 +95,7 @@
     formatElapsed,
     formatElapsedTenths,
     toReceiptRead,
+    readElapsedMs,
   } from './readout-types.ts';
 
   interface Props {
@@ -256,12 +257,8 @@
       startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: (() => {
-        if (row.finish_seconds_in_half_day === null) return '—';
-        const base = row.start_seconds_in_half_day ?? row.punches[0]?.seconds_in_half_day ?? null;
-        if (base === null) return '—';
-        let delta = row.finish_seconds_in_half_day - base;
-        if (delta < 0) delta += 43200;
-        const elapsedMs = delta * 1000;
+        const elapsedMs = readElapsedMs(row, competitor?.start_time_ms ?? null);
+        if (elapsedMs === null) return '—';
         return competition?.timing_format === 'tenths'
           ? formatElapsedTenths(elapsedMs)
           : formatElapsed(elapsedMs);
@@ -283,18 +280,8 @@
     if (!row || row.unmatched) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
-    // Elapsed in ms: finish - start (or first-punch fallback) on the
-    // half-day clock; add a half-day's worth of seconds if the delta
-    // wraps negative.
-    let elapsedMs: number | null = null;
-    if (row.finish_seconds_in_half_day !== null) {
-      const base = row.start_seconds_in_half_day ?? row.punches[0]?.seconds_in_half_day ?? null;
-      if (base !== null) {
-        let delta = row.finish_seconds_in_half_day - base;
-        if (delta < 0) delta += 43200;
-        elapsedMs = delta * 1000;
-      }
-    }
+    // Elapsed: finish − (drawn start ?? start punch), like the projection.
+    const elapsedMs = readElapsedMs(row, competitor?.start_time_ms ?? null);
     return toReceiptRead({
       row,
       className: cls?.name ?? '—',

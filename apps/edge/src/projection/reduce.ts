@@ -43,6 +43,7 @@ import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { detectStatus } from './dnfMp.ts';
+import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
@@ -525,8 +526,8 @@ export function reduce(input: ReduceInput): CompetitionState {
     const adjustedElapsed = computeVoidedElapsed(
       detected.elapsed_time_ms,
       view.voided_legs,
-      latestRead.punches,
-      latestRead.start,
+      latestRead,
+      competitor?.startTimeMs ?? null,
       caps
     );
     view.elapsed_time_ms = adjustedElapsed;
@@ -657,7 +658,9 @@ function applyReplacements(
  * For each voided control code, find the leg in the punch sequence:
  *   leg_ms = punch_at_control_ms - punch_at_previous_control_ms
  * where previous control = the punch immediately before in the sequence.
- * If the control is the first punch, leg_ms = punch_ms - start_ms.
+ * If the control is the first punch, the leg runs from the same start the
+ * running time uses: the drawn start when there is one, else the start
+ * punch (02.1-14). Card clocks are made absolute like in detectStatus.
  *
  * Subtract min(leg_ms, max_seconds * 1000) from elapsed.
  * The max_seconds cap comes from the leg_voided event payload.
@@ -665,33 +668,31 @@ function applyReplacements(
 function computeVoidedElapsed(
   elapsedMs: number,
   voidedLegs: readonly number[],
-  punches: readonly NdjsonPunch[],
-  start: HalfDayClock | null,
+  read: {
+    punches: readonly NdjsonPunch[];
+    start: HalfDayClock | null;
+    card_type: string;
+    event_time_ms: number;
+  },
+  drawnStartMs: number | null,
   caps: ReadonlyMap<number, number | null>
 ): number {
+  const { punches, start } = read;
+  const toEpoch = (c: HalfDayClock): number =>
+    cardClockToEpochMs(c, read.card_type, read.event_time_ms);
   let adjusted = elapsedMs;
   for (const controlCode of voidedLegs) {
     const idx = punches.findIndex((p) => p.code === controlCode);
     if (idx === -1) continue;
-    const punch = punches[idx]!;
-    // Compute punch time in seconds within the same half-day as the start.
-    const punchSec = punch.seconds_in_half_day + punch.half_day * 12 * 3600;
-    let prevSec: number | null = null;
-    if (idx === 0) {
-      // First punch — previous reference is the start punch.
-      if (start !== null) {
-        prevSec = start.seconds_in_half_day + start.half_day * 12 * 3600;
-      }
-    } else {
-      const prev = punches[idx - 1]!;
-      prevSec = prev.seconds_in_half_day + prev.half_day * 12 * 3600;
-    }
-    if (prevSec === null) continue;
-    const legSec = punchSec - prevSec;
-    if (legSec <= 0) continue;
+    const prevMs =
+      idx > 0
+        ? toEpoch(punches[idx - 1]!)
+        : (drawnStartMs ?? (start === null ? null : toEpoch(start)));
+    if (prevMs === null) continue;
+    const legMs = toEpoch(punches[idx]!) - prevMs;
+    if (legMs <= 0) continue;
     const maxSec = caps.get(controlCode);
-    const deductSec = maxSec !== null && maxSec !== undefined ? Math.min(legSec, maxSec) : legSec;
-    adjusted -= deductSec * 1000;
+    adjusted -= maxSec !== null && maxSec !== undefined ? Math.min(legMs, maxSec * 1000) : legMs;
   }
   return Math.max(0, adjusted);
 }

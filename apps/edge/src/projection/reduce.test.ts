@@ -1387,3 +1387,39 @@ describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
     assert.equal(state.competitors.get('mp')!.status, 'MP');
   });
 });
+
+// Item F (02.1-14 follow-up): a voided first leg is measured from the same
+// start the running time uses — the drawn start when there is one.
+describe('reduce — voided first leg from the drawn start', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+  const t = (sec: number): NdjsonPunch => ({ code: 31, ...hd(sec) });
+
+  test('drawn 10:00, start punch 10:01, 31 at 10:03, finish 10:10; void 31 → 7 min', () => {
+    seqCounter = 0;
+    const read = (card: number): Event =>
+      cardRead(
+        card,
+        [t(10 * 3600 + 180), { ...p(32), ...hd(10 * 3600 + 300) }],
+        hd(10 * 3600 + 60),
+        hd(10 * 3600 + 600),
+        {
+          eventTimeMs: at(10 * 3600 + 900),
+        }
+      );
+    const voidLeg = (competitor_id: string): Event =>
+      evt({ event_type: 'leg_voided', competitor_id, control_code: 31, max_seconds: null });
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101), read(102), voidLeg('drawn'), voidLeg('open')],
+      competitors: [
+        comp({ id: 'drawn', cardNumber: 101, startTimeMs: at(10 * 3600) }),
+        comp({ id: 'open', cardNumber: 102 }),
+      ],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    // Drawn: 10 min − leg 3 min (10:00 → 10:03). Open start: 9 min − 2 min.
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 7 * 60 * 1000);
+    assert.equal(state.competitors.get('open')!.elapsed_time_ms, 7 * 60 * 1000);
+  });
+});
