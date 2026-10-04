@@ -1626,6 +1626,30 @@ describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
     );
   });
 
+  test('SOFT TR 4.20.9: a runner over the max time gets no place and no behind; the OK runners are 1 and 2', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(1, [p(31)], 700), run(2, [p(31)], 550), run(3, [p(31)], 500)],
+      competitors: [
+        comp({ id: 'max', name: 'A', cardNumber: 1 }),
+        comp({ id: 'ok2', name: 'B', cardNumber: 2 }),
+        comp({ id: 'ok1', name: 'C', cardNumber: 3 }),
+      ],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31])],
+    });
+    const rows = state.results_by_class.get('cls-H21')!;
+    assert.deepEqual(
+      rows.map((r) => [r.competitor_id, r.status, r.place, r.behind_leader_ms]),
+      [
+        ['ok1', 'OK', 1, 0],
+        ['ok2', 'OK', 2, 50_000],
+        ['max', 'MAX', null, null],
+      ]
+    );
+  });
+
   test('MP runner over max time → MP', () => {
     seqCounter = 0;
     const state = reduce({
