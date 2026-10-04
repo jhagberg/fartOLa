@@ -10,8 +10,9 @@
 //   5. W-5 empty competition VALID — zero ClassResult children, validateXml
 //      accepts, @status still emitted.
 //   6. Competitor with null club has no Organisation element.
-//   7. Status mapping for OK/MP/DNF (PEND omitted from a Provisional list;
-//      a Final list reports it as DidNotStart, SOFT TA till TR 7.8.2).
+//   7. Status mapping for OK/MP/DNF (PEND omitted from every list and
+//      counted as pending: unread is not "not started", SOFT TA till TR
+//      7.8.2).
 //   8. Round-trip parse via fast-xml-parser confirms structural fields.
 //
 // Locked by:
@@ -395,27 +396,35 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     assert.ok(xml.includes('<Status>DidNotFinish</Status>'));
   });
 
-  test('SOFT TA till TR 7.8.2: a runner never read out is DidNotStart ("Ej start") in the final ResultList', async () => {
+  test('SOFT TA till TR 7.8.2: unread is not "not started" — the final ResultList leaves an unread runner out and counts them; only an operator DNS is DidNotStart', async () => {
     const state = makeSeededState();
-    const dani = makeCompetitorView({
-      id: 'cmp-dani',
-      name: 'Dani Danielsson',
-      club: 'StorTuna OK',
-      class_id: 'cls-h21',
-      card_number: 8888888,
-      status: 'PEND',
-      elapsed_time_ms: null,
-    });
-    state.competitors.set(dani.id, dani);
-    state.results_by_class.get('cls-h21')!.push(rowFor(dani, null));
+    const unread = (id: string, name: string, status: CompetitorView['status']) => {
+      const v = makeCompetitorView({
+        id,
+        name,
+        club: 'StorTuna OK',
+        class_id: 'cls-h21',
+        card_number: null,
+        status,
+        elapsed_time_ms: null,
+      });
+      state.competitors.set(v.id, v);
+      state.results_by_class.get('cls-h21')!.push(rowFor(v, null));
+    };
+    unread('cmp-dani', 'Dani Danielsson', 'PEND');
+    unread('cmp-eva', 'Eva Eriksson', 'DNS');
 
     const res = await validateAndBuild(makeInput({ state, status: 'Final' }));
     assert.equal(res.valid, true, `XSD-invalid output: ${JSON.stringify(res)}`);
     if (!res.valid) return;
+    assert.ok(!res.build.xml.includes('Danielsson'), 'an unread runner is not published');
+    assert.equal(res.build.summary.pending_count, 1);
     assert.equal(res.build.summary.person_result_count, 4);
-    const daniXml = res.build.xml.slice(res.build.xml.indexOf('Danielsson'));
-    assert.match(daniXml, /<Status>DidNotStart<\/Status>/);
-    assert.ok(!daniXml.slice(0, daniXml.indexOf('</PersonResult>')).includes('<Time>'));
+    const evaXml = res.build.xml.slice(res.build.xml.indexOf('Eriksson'));
+    assert.match(
+      evaXml.slice(0, evaXml.indexOf('</PersonResult>')),
+      /<Status>DidNotStart<\/Status>/
+    );
     // The other IOF statuses are unchanged.
     assert.ok(res.build.xml.includes('<Status>MissingPunch</Status>'));
     assert.ok(res.build.xml.includes('<Status>DidNotFinish</Status>'));

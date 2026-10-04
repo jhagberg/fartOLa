@@ -86,6 +86,9 @@ export interface ExportInput {
 export interface ExportSummary {
   class_count: number;
   person_result_count: number;
+  /** Runners left out because they have no result yet (PEND, never read
+   * out). The UI warns "N löpare saknar resultat" (SOFT TA till TR 7.8.2). */
+  pending_count: number;
   status: ExportStatus;
 }
 
@@ -256,8 +259,10 @@ interface ResultListNode {
 }
 
 // ---------------------------------------------------------------------------
-// Build a single PersonResult subtree. Returns null for PEND in a Provisional
-// list (excluded); a Final list reports PEND as DidNotStart.
+// Build a single PersonResult subtree. Returns null for PEND: a runner never
+// read out is left out of every list, Final too. Unread is not "not started"
+// (SOFT TA till TR 7.8.2); the operator sets them to DNS ("Sätt ej utlästa
+// till Ej start", routes/manual.ts) and the summary counts the rest.
 // ---------------------------------------------------------------------------
 
 /** Start and finish (epoch ms) for the Result element: from the latest
@@ -292,10 +297,9 @@ function buildPersonResult(
   view: CompetitorView,
   place: number | null,
   cls: ClassDTO,
-  final: boolean,
   eventorPersonId: number | undefined
 ): PersonResultNode | null {
-  const xmlStatus = statusForXml(view.status) ?? (final ? 'DidNotStart' : null);
+  const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
   const noTiming = cls.no_timing;
 
@@ -388,6 +392,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
 
   const classResults: ClassResultNode[] = [];
   let personResultCount = 0;
+  let pendingCount = 0;
 
   for (const cls of input.classes) {
     const rows = input.state.results_by_class.get(cls.id) ?? [];
@@ -395,14 +400,11 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     for (const row of rows) {
       const view = input.state.competitors.get(row.competitor_id);
       if (view === undefined) continue;
-      const node = buildPersonResult(
-        view,
-        row.place,
-        cls,
-        status === 'Final',
-        input.eventorPersonIds?.get(view.id)
-      );
-      if (node === null) continue; // PEND in a Provisional list: skipped
+      const node = buildPersonResult(view, row.place, cls, input.eventorPersonIds?.get(view.id));
+      if (node === null) {
+        pendingCount += 1; // PEND: no result yet, left out
+        continue;
+      }
       personResults.push(node);
       personResultCount += 1;
     }
@@ -455,6 +457,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     summary: {
       class_count: classResults.length,
       person_result_count: personResultCount,
+      pending_count: pendingCount,
       status,
     },
   };

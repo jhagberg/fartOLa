@@ -91,11 +91,11 @@ function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether a results push to Eventor is final. A Final list (IOF @status
- * Complete) lists everyone not read out as DidNotStart ("Ej start", SOFT TA
- * till TR 7.8.2), so pushing one while runners are still out would publish
- * them as not started. Final only when the operator asks for it or nobody is
- * left without a read-out or a status; otherwise Provisional (Snapshot).
+ * Whether a results push to Eventor is final. A runner never read out has no
+ * result and is left out of the list (unread is not "not started", SOFT TA
+ * till TR 7.8.2), so a list pushed while runners are still out is not
+ * complete. Final only when the operator asks for it or nobody is left
+ * without a read-out or a status; otherwise Provisional (Snapshot).
  */
 export function pushResultStatus(state: CompetitionState, final?: boolean): ExportStatus {
   if (final === true) return 'Final';

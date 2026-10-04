@@ -19,10 +19,10 @@ describe('softStatus', () => {
     assert.equal(label('CANCEL'), 'Återbud');
   });
 
-  test('SOFT TA till TR 7.8.2: a runner never read out is "Ej utläst" live and "Ej start" once final', () => {
+  test('SOFT TA till TR 7.8.2: a runner never read out is "Ej utläst", never "Ej start" (only an operator DNS is)', () => {
     assert.equal(label('PEND'), 'Ej utläst');
-    assert.equal(label('PEND', { final: false }), 'Ej utläst');
-    assert.equal(label('PEND', { final: true }), 'Ej start');
+    assert.equal(label('PEND', { noTiming: true }), 'Ej utläst');
+    assert.equal(label('DNS'), 'Ej start');
   });
 
   test('SOFT TR 4.21.3: OK in a class without timing → "Deltagit"', () => {

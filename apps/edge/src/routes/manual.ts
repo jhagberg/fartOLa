@@ -57,9 +57,19 @@ import {
   UnvoidLegInput,
   readoutChannel,
 } from '@fartola/shared-types';
-import { competitors as competitorsTable } from '../db/schema.ts';
+import { competitors as competitorsTable, type EventPayload } from '../db/schema.ts';
+import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+
+/** The reason "Sätt ej utlästa till Ej start" writes; undo clears only
+ * DNS with this reason (SOFT TA till TR 7.8.2). */
+export const UNREAD_DNS_REASON = 'Ej utläst: satt till Ej start';
+
+type ManualStatusPayload = Extract<
+  EventPayload,
+  { event_type: 'manual_status_set' | 'clear_manual_status' }
+>;
 
 export default async function registerManualRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string; competitorId: string } }>(
@@ -358,6 +368,81 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
       });
       app.projectionStore.markDirty(competitionId);
       return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // SOFT TA till TR 7.8.2 — "Sätt ej utlästa till Ej start".
+  //
+  //   POST /api/competitions/:id/unread-dns       → { count }
+  //   POST /api/competitions/:id/unread-dns/undo  → { count }
+  //
+  // Unread is not "not started", so nothing infers DNS. The operator sets
+  // every runner with no read-out and no status to DNS, as MeOS "Sätt okända
+  // löpare utan registrering till <Ej Start>" (TabRunner.cpp:974-986). The
+  // fixed reason marks these, so undo clears exactly them (still DNS with
+  // that reason and still no read-out).
+  // ---------------------------------------------------------------------------
+  const bulk = (
+    competitionId: string,
+    pick: (v: CompetitorView) => boolean,
+    payload: (competitorId: string) => ManualStatusPayload
+  ): number | null => {
+    const state = app.projectionStore.recomputeNow(competitionId);
+    if (state === null) return null;
+    const ids = [...state.competitors.values()].filter(pick).map((v) => v.id);
+    const written = app.fartolaDb.sqlite.transaction(() =>
+      ids.map((id) => {
+        const p = payload(id);
+        return {
+          p,
+          r: insertEvent(
+            app.fartolaDb,
+            app.fartolaNodeId,
+            p.event_type,
+            Date.now(),
+            p,
+            competitionId
+          ),
+        };
+      })
+    )();
+    for (const { p, r } of written) {
+      const { event_type: type, ...rest } = p;
+      app.wsBroadcast(readoutChannel(competitionId), { type, payload: rest, seq: r.local_seq });
+    }
+    if (ids.length > 0) app.projectionStore.markDirty(competitionId);
+    return ids.length;
+  };
+
+  app.post<{ Params: { id: string } }>('/api/competitions/:id/unread-dns', async (req, reply) => {
+    const count = bulk(
+      req.params.id,
+      (v) => v.status === 'PEND' && v.manual_status === null && v.card_read_history.length === 0,
+      (competitorId) => ({
+        event_type: 'manual_status_set',
+        competitor_id: competitorId,
+        status: 'DNS',
+        reason: UNREAD_DNS_REASON,
+      })
+    );
+    if (count === null) return reply.code(404).send({ error: 'competition_not_found' });
+    return reply.code(201).send({ count });
+  });
+
+  app.post<{ Params: { id: string } }>(
+    '/api/competitions/:id/unread-dns/undo',
+    async (req, reply) => {
+      const count = bulk(
+        req.params.id,
+        (v) =>
+          v.manual_status === 'DNS' &&
+          v.manual_dnf_reason === UNREAD_DNS_REASON &&
+          v.card_read_history.length === 0,
+        (competitorId) => ({ event_type: 'clear_manual_status', competitor_id: competitorId })
+      );
+      if (count === null) return reply.code(404).send({ error: 'competition_not_found' });
+      return reply.code(201).send({ count });
     }
   );
 }

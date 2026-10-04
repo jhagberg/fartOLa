@@ -29,9 +29,11 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from '$lib/i18n/index.ts';
   import {
     exportPreview,
     exportDownloadUrl,
+    setUnreadDns,
     type ExportStatus,
     type ExportPreviewResult,
     type ExportPreviewError,
@@ -78,6 +80,21 @@
       lastError = err instanceof Error ? err.message : 'Okänt fel';
     } finally {
       loading = false;
+    }
+  }
+
+  // SOFT TA till TR 7.8.2: unread is not "not started". Runners never read
+  // out are left out of the list until the operator sets them to Ej start.
+  let unreadMessage = $state<string | null>(null);
+  async function unreadDns(undo: boolean): Promise<void> {
+    try {
+      const { count } = await setUnreadDns(competitionId, undo);
+      unreadMessage = t(undo ? 'export.unreadDns.undone' : 'export.unreadDns.done', {
+        n: count,
+      });
+      await refresh();
+    } catch (err) {
+      unreadMessage = err instanceof Error ? err.message : 'Okänt fel';
     }
   }
 
@@ -161,6 +178,27 @@
     {/if}
   </section>
 
+  <section class="sec" data-testid="export-section-unread">
+    <h2 class="h1">{t('export.unreadDns.title')}</h2>
+    {#if preview !== null && preview.valid && preview.summary.pending_count > 0}
+      <div class="box err" data-testid="export-pending">
+        <strong>{t('export.pending', { n: preview.summary.pending_count })}</strong>
+        <p>{t('export.pendingHint')}</p>
+      </div>
+    {/if}
+    <div class="row">
+      <button class="btn" data-testid="export-unread-dns" onclick={() => unreadDns(false)}>
+        {t('export.unreadDns.set')}
+      </button>
+      <button class="btn" data-testid="export-unread-dns-undo" onclick={() => unreadDns(true)}>
+        {t('export.unreadDns.undo')}
+      </button>
+    </div>
+    {#if unreadMessage !== null}
+      <p class="muted" data-testid="export-unread-message">{unreadMessage}</p>
+    {/if}
+  </section>
+
   <section class="sec" data-testid="export-section-download">
     <h2 class="h1">Nedladdning</h2>
     <a
@@ -238,6 +276,11 @@
     font-family: var(--font-mono);
     color: var(--fg-muted);
     margin-right: 4px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .btn {
     display: inline-flex;

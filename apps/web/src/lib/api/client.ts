@@ -543,6 +543,8 @@ export type ExportStatus = 'Final' | 'Provisional';
 export interface ExportPreviewSummary {
   class_count: number;
   person_result_count: number;
+  /** Runners left out: no result yet (never read out). SOFT TA till TR 7.8.2. */
+  pending_count: number;
   status: ExportStatus;
 }
 
@@ -566,6 +568,16 @@ export function exportPreview(
   return apiFetch<ExportPreviewResult>(
     `/api/competitions/${encodeURIComponent(competitionId)}/export/preview`,
     { query: { status } }
+  );
+}
+
+/** SOFT TA till TR 7.8.2: "Sätt ej utlästa till Ej start" — DNS for every
+ * runner with no read-out and no status (MeOS "Sätt okända löpare utan
+ * registrering till <Ej Start>"); `undo` clears exactly those. */
+export function setUnreadDns(competitionId: string, undo = false): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/unread-dns${undo ? '/undo' : ''}`,
+    { method: 'POST', body: {} }
   );
 }
 

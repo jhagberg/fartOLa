@@ -10,9 +10,9 @@
 //   DQ           → "Diskad"
 //   DNS          → "Ej start"
 //   OK, no_timing class → "Deltagit"
-//   PEND (never read out) → "Ej utläst" while results are live, "Ej start"
-//                 once final. fartOLa has no results-locked state; "final" is
-//                 the IOF ResultList exported as Final (status="Complete").
+//   PEND (never read out) → "Ej utläst". Unread is not "not started": only
+//                 an operator DNS is "Ej start" (the secretariat's "Sätt ej
+//                 utlästa till Ej start" sets it for every unread runner).
 //   CANCEL       → "Återbud" (SOFT has no name; withdrawn before the race)
 
 export type ResultStatusCode = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -28,7 +28,7 @@ export type SoftStatus =
 
 export function softStatus(
   status: ResultStatusCode,
-  opts: { noTiming?: boolean; final?: boolean } = {}
+  opts: { noTiming?: boolean } = {}
 ): SoftStatus {
   switch (status) {
     case 'OK':
@@ -42,7 +42,7 @@ export function softStatus(
     case 'DNS':
       return 'EJ_START';
     case 'PEND':
-      return opts.final === true ? 'EJ_START' : 'EJ_UTLAST';
+      return 'EJ_UTLAST';
     case 'CANCEL':
       return 'ATERBUD';
   }
