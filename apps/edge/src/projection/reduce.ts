@@ -43,7 +43,13 @@
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
-import { detectStatus, startMs, startPunchWarning, type StartMethod } from './dnfMp.ts';
+import {
+  detectStatus,
+  startMs,
+  startPunchWarning,
+  type ControlAlternatives,
+  type StartMethod,
+} from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
@@ -177,6 +183,12 @@ export function reduce(input: ReduceInput): CompetitionState {
   );
   const startMethodOf = (classId: string | undefined): StartMethod =>
     (classId === undefined ? undefined : startMethodByClass.get(classId)) ?? 'auto';
+  // Phase 2.1 (D-15): the course's replacement controls, matched by
+  // detectStatus at each course position (single level — no chaining).
+  const alternativesOf = (
+    course: CourseWithControlCodes | undefined
+  ): ControlAlternatives | undefined =>
+    course === undefined ? undefined : input.replacementControls?.get(course.id);
 
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
@@ -287,17 +299,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         if (view.manual_status === null && inRacePhase) {
           const course = courseByClass.get(competitor.classId);
           const expected = course?.control_codes ?? [];
-          // Phase 2.1 (D-15): if replacement controls exist for this course,
-          // rewrite the expected list for positions where the punched code is
-          // a valid alternative. Lookup is single-level only — no chaining.
-          const courseReplacements =
-            course && input.replacementControls
-              ? input.replacementControls.get(course.id)
-              : undefined;
-          const afterReplacements = courseReplacements
-            ? applyReplacements(expected, payload.punches, courseReplacements)
-            : expected;
-          const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
+          const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
           const detected = detectStatus(
             {
               start: payload.start,
@@ -308,7 +310,8 @@ export function reduce(input: ReduceInput): CompetitionState {
               drawnStartMs: competitor.startTimeMs,
               startMethod: startMethodOf(competitor.classId),
             },
-            resolvedExpected
+            resolvedExpected,
+            alternativesOf(course)
           );
           view.status = detected.status;
           view.missing_codes = detected.missing_codes;
@@ -447,14 +450,7 @@ export function reduce(input: ReduceInput): CompetitionState {
             view.latest_finish !== null ||
             view.latest_start !== null
           ) {
-            const courseReplacements =
-              course && input.replacementControls
-                ? input.replacementControls.get(course.id)
-                : undefined;
-            const afterReplacements = courseReplacements
-              ? applyReplacements(expected, view.latest_punches, courseReplacements)
-              : expected;
-            const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
+            const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
             const detected = detectStatus(
               {
                 start: view.latest_start,
@@ -465,7 +461,8 @@ export function reduce(input: ReduceInput): CompetitionState {
                 drawnStartMs: competitor?.startTimeMs ?? null,
                 startMethod: startMethodOf(competitor?.classId),
               },
-              resolvedExpected
+              resolvedExpected,
+              alternativesOf(course)
             );
             view.status = detected.status;
             view.missing_codes = detected.missing_codes;
@@ -546,12 +543,7 @@ export function reduce(input: ReduceInput): CompetitionState {
     const competitor = competitorsByCompetition.find((c) => c.id === competitorId);
     const course = competitor ? courseByClass.get(competitor.classId) : undefined;
     const expected = course?.control_codes ?? [];
-    const courseReplacements =
-      course && input.replacementControls ? input.replacementControls.get(course.id) : undefined;
-    const afterReplacements = courseReplacements
-      ? applyReplacements(expected, latestRead.punches, courseReplacements)
-      : expected;
-    const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
+    const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
     const detected = detectStatus(
       {
         start: latestRead.start,
@@ -562,7 +554,8 @@ export function reduce(input: ReduceInput): CompetitionState {
         drawnStartMs: competitor?.startTimeMs ?? null,
         startMethod: startMethodOf(competitor?.classId),
       },
-      resolvedExpected
+      resolvedExpected,
+      alternativesOf(course)
     );
     // Post-pass also updates status to reflect voided legs (MP→OK transition).
     if (view.manual_status === null) {
@@ -736,34 +729,6 @@ export function voidedControlCodes(events: readonly Event[], competitionId: stri
 function filterVoidedLegs(expected: readonly number[], voidedLegs: readonly number[]): number[] {
   if (voidedLegs.length === 0) return [...expected];
   return expected.filter((code) => !voidedLegs.includes(code));
-}
-
-/**
- * Phase 2.1 (D-15): Apply replacement controls to an expected course sequence.
- *
- * For each position i in `expected`, if the punched code at position i
- * matches one of the replacement codes for expected[i], substitute the
- * expected code so detectStatus sees a match. This is single-level only —
- * no chaining (a replacement of a replacement is never followed).
- *
- * The substitution only fires when the actual punched code is in the
- * alternatives list; otherwise the original expected code is kept
- * (detectStatus will then detect it as MP/mismatch naturally).
- */
-function applyReplacements(
-  expected: readonly number[],
-  punches: readonly NdjsonPunch[],
-  replacements: ReadonlyMap<number, number[]>
-): number[] {
-  return expected.map((code, i) => {
-    const alternatives = replacements.get(code);
-    if (alternatives === undefined) return code;
-    const punchedCode = punches[i]?.code;
-    if (punchedCode !== undefined && alternatives.includes(punchedCode)) {
-      return punchedCode; // treat punched alternative as if it were the expected code
-    }
-    return code;
-  });
 }
 
 /**

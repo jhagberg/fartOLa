@@ -1185,6 +1185,45 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(anna.status, 'OK');
   });
 
+  test('replacement control punched after a stray control still matches → OK', () => {
+    seqCounter = 0;
+    // Course [31, 32] with 31 → 131. Anna punches a stray 99 first, then 131
+    // and 32: the replacement must be matched by the same advancing cursor as
+    // ordinary controls, not by array position.
+    const events = [cardRead(1, [p(99), p(131), p(32)], hd(10 * 3600), hd(10 * 3600 + 300))];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+      replacementControls: new Map([['course-cls-H21', new Map([[31, [131]]])]]),
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'OK');
+    assert.deepEqual(anna.missing_codes, []);
+    assert.deepEqual(anna.extra_codes, [99]);
+  });
+
+  test('replacement control punched out of order is missing → MP', () => {
+    seqCounter = 0;
+    // Course [31, 32] with 31 → 131; Anna punches 32 before 131.
+    const events = [cardRead(1, [p(32), p(131)], hd(10 * 3600), hd(10 * 3600 + 300))];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+      replacementControls: new Map([['course-cls-H21', new Map([[31, [131]]])]]),
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'MP');
+    assert.deepEqual(anna.missing_codes, [32]);
+  });
+
   // Test 11: voided leg elapsed recomputation — subtract leg duration
   test('test 11: voided leg — elapsed recalculated by subtracting voided leg duration', () => {
     seqCounter = 0;
