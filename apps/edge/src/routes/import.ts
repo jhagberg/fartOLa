@@ -244,7 +244,6 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       const classNameToId = new Map(localClasses.map((c) => [normalizeName(c.name), c.id]));
 
       // Match imported entries to local competitors.
-      let exactCount = 0;
       const fuzzyMatches: FuzzyMatch[] = [];
       const cardUpdates: CardUpdate[] = [];
       const skipped: SkippedImportRow[] = [];
@@ -272,18 +271,38 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
       // Exact matches that need start_time_ms (and, for a changed card,
       // card_number) written.
-      const exactWrites: Array<{ id: string; startTimeMs: number; cardNumber?: number }> = [];
+      const exactWrites: Array<{
+        id: string;
+        startTimeMs: number;
+        cardNumber?: number;
+        entry: (typeof entries)[number];
+      }> = [];
+
+      const skipRow = (
+        entry: (typeof entries)[number],
+        reason: SkippedImportRow['reason']
+      ): void => {
+        skipped.push({
+          row: entry.row,
+          name: entry.name,
+          class: entry.className,
+          card: entry.siCard,
+          reason,
+        });
+      };
+
+      // Rows that share a card can't all be right, and matching one would let
+      // the next row find that runner by the card and overwrite their start:
+      // none of them is applied.
+      const rowsPerCard = new Map<number, number>();
+      for (const entry of entries) {
+        if (entry.siCard !== null) {
+          rowsPerCard.set(entry.siCard, (rowsPerCard.get(entry.siCard) ?? 0) + 1);
+        }
+      }
 
       for (const entry of entries) {
-        const skip = (reason: SkippedImportRow['reason']): void => {
-          skipped.push({
-            row: entry.row,
-            name: entry.name,
-            class: entry.className,
-            card: entry.siCard,
-            reason,
-          });
-        };
+        const skip = (reason: SkippedImportRow['reason']): void => skipRow(entry, reason);
         const classId = classNameToId.get(normalizeName(entry.className));
         if (classId === undefined) {
           skip('unknown_class');
@@ -294,14 +313,18 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           continue;
         }
 
+        if (entry.siCard !== null && (rowsPerCard.get(entry.siCard) ?? 0) > 1) {
+          skip('duplicate_card');
+          continue;
+        }
+
         // 1. Exact match: SI card.
         if (entry.siCard !== null) {
           const cardMatches = byCard.get(entry.siCard) ?? [];
           // Filter to same class.
           const sameClass = cardMatches.filter((c) => c.classId === classId);
           if (sameClass.length === 1 && sameClass[0] !== undefined) {
-            exactWrites.push({ id: sameClass[0].id, startTimeMs: entry.startTimeMs });
-            exactCount += 1;
+            exactWrites.push({ id: sameClass[0].id, startTimeMs: entry.startTimeMs, entry });
             continue;
           }
 
@@ -330,6 +353,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               id: target.id,
               startTimeMs: entry.startTimeMs,
               cardNumber: entry.siCard,
+              entry,
             });
             cardUpdates.push({
               row: entry.row,
@@ -374,6 +398,21 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         // No match (or ambiguous duplicate name).
         skip('no_match');
       }
+
+      // Two imported rows resolving to the same runner (e.g. one by card, one
+      // by name + club) would silently overwrite each other: apply neither.
+      const rowsPerTarget = new Map<string, number>();
+      for (const w of exactWrites) rowsPerTarget.set(w.id, (rowsPerTarget.get(w.id) ?? 0) + 1);
+      for (let i = exactWrites.length - 1; i >= 0; i--) {
+        const w = exactWrites[i]!;
+        if (rowsPerTarget.get(w.id)! < 2) continue;
+        exactWrites.splice(i, 1);
+        const update = cardUpdates.findIndex((u) => u.row === w.entry.row);
+        if (update !== -1) cardUpdates.splice(update, 1);
+        skipRow(w.entry, 'duplicate_runner');
+      }
+      skipped.sort((a, b) => a.row - b.row);
+      const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
 
       // Write exact matches in a single transaction.
       if (exactWrites.length > 0) {

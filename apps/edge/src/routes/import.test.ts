@@ -32,6 +32,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import { competitors } from '../db/schema.ts';
+import type { Competitor } from '../db/types.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, '..', '..', 'test', 'fixtures');
@@ -494,6 +495,111 @@ describe('POST /api/competitions/:id/import/startlist', () => {
       { row: 5, name: 'Fel Klass', class: 'H99', card: null, reason: 'unknown_class' },
     ]);
     assert.equal(body.unmatched, 4);
+  });
+
+  /** CourseData + EntryList: H21 = Anna Andersson (7501853) and Bo Berg (no
+   * card), both StorTuna OK. Returns a by-name row reader. */
+  async function seedAnnaAndBo(): Promise<{ compId: string; byName: (n: string) => Competitor }> {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+    const byName = (name: string): Competitor =>
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .find((c) => c.name === name)!;
+    return { compId, byName };
+  }
+
+  test("startlist: two rows with the same card don't overwrite each other's start", async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'StorTuna OK',
+            siCard: 555,
+            startTimeIso: '2026-05-19T10:00:00Z',
+          },
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 555,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Anna Andersson', class: 'H21', card: 555, reason: 'duplicate_card' },
+      { row: 2, name: 'Bo Berg', class: 'H21', card: 555, reason: 'duplicate_card' },
+    ]);
+    const anna = byName('Anna Andersson');
+    assert.equal(anna.cardNumber, 7501853);
+    assert.equal(anna.startTimeMs, null);
+    assert.equal(byName('Bo Berg').startTimeMs, null);
+  });
+
+  test('startlist: two imported runners resolving to one competitor are both left unapplied', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    // Bo's row carries Anna's card (exact card match → Anna); Anna's own row
+    // has a new card and matches her by name + club. Neither may win silently.
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 7501853,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'StorTuna OK',
+            siCard: 8000001,
+            startTimeIso: '2026-05-19T10:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Bo Berg', class: 'H21', card: 7501853, reason: 'duplicate_runner' },
+      { row: 2, name: 'Anna Andersson', class: 'H21', card: 8000001, reason: 'duplicate_runner' },
+    ]);
+    const anna = byName('Anna Andersson');
+    assert.equal(anna.cardNumber, 7501853);
+    assert.equal(anna.startTimeMs, null);
   });
 
   test('startlist test 3: competition not found → 404', async () => {
