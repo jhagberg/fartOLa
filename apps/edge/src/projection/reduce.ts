@@ -125,17 +125,29 @@ export function reduce(input: ReduceInput): CompetitionState {
   // identical to the plan-07 linear scan — same fixture, same output.
   const cardIndex = buildCardIndex(competitorsByCompetition);
 
+  // 02.1-14 Task 5: course-wide voided controls are dropped from every
+  // course before scoring. The final void/unvoid state applies to every read
+  // regardless of event order, so it is folded up front.
+  const voidedControls = voidedControlCodes(sortedEvents, input.competition_id);
+  const courses =
+    voidedControls.size === 0
+      ? input.courses
+      : input.courses.map((c) => ({
+          ...c,
+          control_codes: c.control_codes.filter((code) => !voidedControls.has(code)),
+        }));
+
   // Course lookup by class_id for fast per-event MP detection. A course may
   // legitimately have classId=null during XML import; those competitors get
   // an empty expected list and thus MP / OK based purely on punches presence.
   const courseByClass = new Map<string, CourseWithControlCodes>();
-  for (const c of input.courses) {
+  for (const c of courses) {
     if (c.classId !== null) courseByClass.set(c.classId, c);
   }
   // 02.1-14 Task 4: classes point at courses (many classes per course).
   // class.courseId wins; the legacy course.classId pointer above is the
   // fallback for classes without one.
-  const courseById = new Map(input.courses.map((c) => [c.id, c]));
+  const courseById = new Map(courses.map((c) => [c.id, c]));
   for (const cls of input.classes) {
     const assigned = cls.courseId ? courseById.get(cls.courseId) : undefined;
     if (assigned !== undefined) courseByClass.set(cls.id, assigned);
@@ -578,6 +590,21 @@ export function reduce(input: ReduceInput): CompetitionState {
 // ---------------------------------------------------------------------------
 // Phase 2.1 helper functions
 // ---------------------------------------------------------------------------
+
+/** 02.1-14 Task 5: the set of control codes voided course-wide after
+ * replaying control_voided / control_unvoided in order. `events` must be
+ * sorted by (event_time_ms, local_seq). Shared with the voided-controls GET
+ * route so the UI and the projection agree. */
+export function voidedControlCodes(events: readonly Event[], competitionId: string): Set<number> {
+  const voided = new Set<number>();
+  for (const e of events) {
+    if (e.competitionId !== competitionId) continue;
+    const payload = e.payload as EventPayload;
+    if (payload.event_type === 'control_voided') voided.add(payload.control_code);
+    else if (payload.event_type === 'control_unvoided') voided.delete(payload.control_code);
+  }
+  return voided;
+}
 
 function filterVoidedLegs(expected: readonly number[], voidedLegs: readonly number[]): number[] {
   if (voidedLegs.length === 0) return [...expected];

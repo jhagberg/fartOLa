@@ -102,6 +102,19 @@ export type EventPayload =
       control_code: number;
     }
   | {
+      // 02.1-14 Task 5 — control voided for the whole competition (MeOS
+      // "Bad"/trasig control): dropped from every course's expected list,
+      // punching it is still fine, no time is removed. Emitted by
+      // POST /api/competitions/:id/voided-controls/:code.
+      event_type: 'control_voided';
+      control_code: number;
+    }
+  | {
+      // Reverses control_voided. DELETE /api/competitions/:id/voided-controls/:code.
+      event_type: 'control_unvoided';
+      control_code: number;
+    }
+  | {
       event_type: 'card_read';
       card_number: number;
       card_type: string;

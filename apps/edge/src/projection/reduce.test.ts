@@ -20,6 +20,7 @@ import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 import type { Event, Competitor, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { reduce, type CourseWithControlCodes } from './reduce.ts';
+import type { CompetitorView } from './types.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
@@ -1274,5 +1275,58 @@ describe('reduce — course by class.courseId (02.1-14 Task 4)', () => {
       ],
     });
     assert.equal(state.competitors.get('h')!.status, 'OK');
+  });
+});
+
+// 02.1-14 Task 5: a control voided for the whole competition drops out of
+// every course's expected list.
+describe('reduce — course-wide voided control (02.1-14 Task 5)', () => {
+  const run = (card: number, punches: NdjsonPunch[]): Event =>
+    cardRead(card, punches, hd(10 * 3600), hd(10 * 3600 + 600));
+  const voided = (code: number): Event => evt({ event_type: 'control_voided', control_code: code });
+  const unvoided = (code: number): Event =>
+    evt({ event_type: 'control_unvoided', control_code: code });
+  const project = (events: Event[]) =>
+    reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [
+        comp({ id: 'missed', classId: 'cls-H21', cardNumber: 101 }),
+        comp({ id: 'punched', classId: 'cls-H21', cardNumber: 102 }),
+        comp({ id: 'other', classId: 'cls-D21', cardNumber: 103 }),
+      ],
+      classes: [cls('cls-H21'), cls('cls-D21')],
+      courses: [course('cls-H21', [31, 32, 33]), course('cls-D21', [32, 34])],
+    });
+
+  test('runner missing the voided control → OK; runner who punched it → OK', () => {
+    seqCounter = 0;
+    const state = project([
+      run(101, [p(31), p(33)]),
+      run(102, [p(31), p(32), p(33)]),
+      run(103, [p(34)]),
+      voided(32),
+    ]);
+    assert.equal(state.competitors.get('missed')!.status, 'OK');
+    assert.deepEqual(state.competitors.get('missed')!.missing_codes, []);
+    assert.equal(state.competitors.get('punched')!.status, 'OK');
+    assert.equal(state.competitors.get('other')!.status, 'OK', 'voiding is course-wide');
+  });
+
+  test('unvoid → MP again', () => {
+    seqCounter = 0;
+    const state = project([run(101, [p(31), p(33)]), voided(32), unvoided(32)]);
+    assert.equal(state.competitors.get('missed')!.status, 'MP');
+    assert.deepEqual(state.competitors.get('missed')!.missing_codes, [32]);
+  });
+
+  test('replayed from events: void before or after the read projects the same', () => {
+    seqCounter = 0;
+    const before = project([voided(32), run(101, [p(31), p(33)])]);
+    seqCounter = 0;
+    const after = project([run(101, [p(31), p(33)]), voided(32)]);
+    const pick = (v: CompetitorView) => [v.status, v.missing_codes, v.extra_codes];
+    assert.deepEqual(pick(before.competitors.get('missed')!), ['OK', [], []]);
+    assert.deepEqual(pick(after.competitors.get('missed')!), ['OK', [], []]);
   });
 });

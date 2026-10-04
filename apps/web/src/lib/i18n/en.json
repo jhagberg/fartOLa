@@ -34,6 +34,8 @@
   "info.courses.reimport": "Re-import",
   "info.courses.unassigned": "(no class)",
   "info.courses.noControls": "Course has no controls — check the import.",
+  "info.courses.voidControl": "Void control",
+  "info.courses.unvoidControl": "Restore voided control",
   "nav.settings": "Settings",
   "nav.runners": "Entries",
   "nav.registration": "Registration desk",

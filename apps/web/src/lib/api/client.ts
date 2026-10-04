@@ -135,6 +135,23 @@ export function getCompetition(
   return apiFetch(`/api/competitions/${encodeURIComponent(id)}`);
 }
 
+/** 02.1-14 Task 5 — control codes voided course-wide (MeOS "Bad" control). */
+export function listVoidedControls(competitionId: string): Promise<{ control_codes: number[] }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/voided-controls`);
+}
+
+/** POST voids `code` for every course in the competition; DELETE unvoids it. */
+export function setControlVoided(
+  competitionId: string,
+  code: number,
+  voided: boolean
+): Promise<{ local_seq: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/voided-controls/${code}`,
+    { method: voided ? 'POST' : 'DELETE' }
+  );
+}
+
 export function createCompetition(body: CompetitionCreateInput): Promise<CompetitionDTO> {
   return apiFetch<CompetitionDTO>('/api/competitions', { method: 'POST', body });
 }

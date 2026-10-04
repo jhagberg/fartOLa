@@ -19,6 +19,7 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
+import { insertEvent } from '../si/eventInserter.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -242,5 +243,143 @@ describe('courses REST CRUD', () => {
     const list = (listRes.json() as { classes: { id: string }[] }).classes;
     assert.equal(list.length, 1);
     assert.equal(list[0]?.id, created.id);
+  });
+});
+
+// 02.1-14 Task 5: course-wide voided control, operator route + projection.
+describe('voided-controls routes (02.1-14 Task 5)', () => {
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  async function seedRunnerMissing32(): Promise<{ compId: string; runnerId: string }> {
+    const compId = await newCompetition(ctx.app);
+    const classRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classId = (classRes.json() as { id: string }).id;
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/courses`,
+      payload: {
+        name: 'Blå',
+        class_id: classId,
+        controls: [31, 32, 33].map((control_code, order_idx) => ({ control_code, order_idx })),
+      },
+    });
+    const runnerRes = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: compId,
+        name: 'Anna',
+        club: null,
+        class_id: classId,
+        card_number: 101,
+        consent: true,
+      },
+    });
+    assert.equal(runnerRes.statusCode, 201);
+    const runnerId = (runnerRes.json() as { id: string }).id;
+    const nodeId = ensureNodeId(ctx.handle);
+    const t0 = Date.now() - 60_000;
+    insertEvent(
+      ctx.handle,
+      nodeId,
+      'race_started',
+      t0,
+      {
+        event_type: 'race_started',
+        started_at_ms: t0,
+      },
+      compId
+    );
+    const clock = (sec: number) => ({
+      seconds_in_half_day: sec,
+      half_day: 0 as const,
+      weekday: null,
+    });
+    insertEvent(
+      ctx.handle,
+      nodeId,
+      'card_read',
+      t0 + 1000,
+      {
+        event_type: 'card_read',
+        card_number: 101,
+        card_type: 'SI10',
+        start: clock(36000),
+        finish: clock(36600),
+        check: null,
+        clear: null,
+        punch_count: 2,
+        punches: [31, 33].map((code) => ({ code, ...clock(36100) })),
+        card_holder: null,
+      },
+      compId
+    );
+    return { compId, runnerId };
+  }
+
+  const status = (compId: string, runnerId: string): string | undefined =>
+    ctx.app.projectionStore.recomputeNow(compId)?.competitors.get(runnerId)?.status;
+
+  test('POST voids course-wide (MP → OK, listed); DELETE unvoids (→ MP)', async () => {
+    const { compId, runnerId } = await seedRunnerMissing32();
+    assert.equal(status(compId, runnerId), 'MP');
+
+    const post = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/voided-controls/32`,
+    });
+    assert.equal(post.statusCode, 201);
+    assert.equal(status(compId, runnerId), 'OK');
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${compId}/voided-controls`,
+    });
+    assert.deepEqual(list.json(), { control_codes: [32] });
+
+    const del = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/competitions/${compId}/voided-controls/32`,
+    });
+    assert.equal(del.statusCode, 201);
+    assert.equal(status(compId, runnerId), 'MP');
+    const after = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${compId}/voided-controls`,
+    });
+    assert.deepEqual(after.json(), { control_codes: [] });
+  });
+
+  test('bad code → 400; unknown competition → 404', async () => {
+    const compId = await newCompetition(ctx.app);
+    for (const bad of ['abc', '0', '-3', '3.5']) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${compId}/voided-controls/${bad}`,
+      });
+      assert.equal(res.statusCode, 400, `code ${bad}`);
+    }
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions/nope/voided-controls/32',
+    });
+    assert.equal(res.statusCode, 404);
+    const get = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/competitions/nope/voided-controls',
+    });
+    assert.equal(get.statusCode, 404);
   });
 });

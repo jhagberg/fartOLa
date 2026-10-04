@@ -16,7 +16,9 @@
      auto_print)
 
   No course/control mutation surface here — XML re-import via /import is
-  the canonical path for that. We just *show* what's there.
+  the canonical path for that. We just *show* what's there. Exception
+  (02.1-14 Task 5): clicking a control chip voids/unvoids that control
+  for the whole competition (GET/POST/DELETE .../voided-controls).
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -24,7 +26,9 @@
   import {
     getCompetition,
     listCompetitors,
+    listVoidedControls,
     patchCompetition,
+    setControlVoided,
   } from '$lib/api/client.ts';
   import { goto } from '$app/navigation';
   import type {
@@ -44,6 +48,7 @@
   let classes: ClassDTO[] = $state([]);
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
+  let voidedCodes: number[] = $state([]);
   let loading = $state(true);
   let loadError: string | null = $state(null);
 
@@ -101,18 +106,20 @@
     loading = true;
     loadError = null;
     try {
-      const [detail, compsRes] = await Promise.all([
+      const [detail, compsRes, voidedRes] = await Promise.all([
         getCompetition(competitionId) as Promise<{
           competition: CompetitionDTO;
           classes: ClassDTO[];
           courses: CourseDTO[];
         }>,
         listCompetitors(competitionId),
+        listVoidedControls(competitionId),
       ]);
       competition = detail.competition;
       classes = detail.classes;
       courses = detail.courses;
       competitors = compsRes.competitors;
+      voidedCodes = voidedRes.control_codes;
       formName = detail.competition.name;
       formDate = detail.competition.date;
       formTemplate = detail.competition.receipt_template;
@@ -122,6 +129,16 @@
       loadError = (e as Error).message ?? 'load failed';
     } finally {
       loading = false;
+    }
+  }
+
+  async function toggleVoided(code: number): Promise<void> {
+    const voided = !voidedCodes.includes(code);
+    try {
+      await setControlVoided(competitionId, code, voided);
+      voidedCodes = voided ? [...voidedCodes, code] : voidedCodes.filter((c) => c !== code);
+    } catch (e) {
+      loadError = (e as Error).message ?? 'void failed';
     }
   }
 
@@ -295,9 +312,20 @@
               {:else}
                 <ol class="course-controls">
                   {#each crs.controls as ctrl (ctrl.order_idx)}
-                    <li class="ctrl-chip mono">
-                      <span class="ctrl-idx">{ctrl.order_idx + 1}</span>
-                      <span class="ctrl-code">{ctrl.control_code}</span>
+                    {@const voided = voidedCodes.includes(ctrl.control_code)}
+                    <li>
+                      <button
+                        type="button"
+                        class="ctrl-chip mono"
+                        class:voided
+                        aria-pressed={voided}
+                        title={t(voided ? 'info.courses.unvoidControl' : 'info.courses.voidControl')}
+                        onclick={() => toggleVoided(ctrl.control_code)}
+                        data-testid="info-ctrl-chip"
+                      >
+                        <span class="ctrl-idx">{ctrl.order_idx + 1}</span>
+                        <span class="ctrl-code">{ctrl.control_code}</span>
+                      </button>
                     </li>
                   {/each}
                 </ol>
@@ -528,6 +556,12 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 12px;
+    color: inherit;
+    cursor: pointer;
+  }
+  .ctrl-chip.voided {
+    text-decoration: line-through;
+    opacity: 0.6;
   }
   .ctrl-idx {
     color: var(--fg-muted);

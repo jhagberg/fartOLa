@@ -34,6 +34,8 @@
   "info.courses.reimport": "Importera om",
   "info.courses.unassigned": "(ingen klass)",
   "info.courses.noControls": "Banan har inga kontroller — kontrollera importen.",
+  "info.courses.voidControl": "Makulera kontroll",
+  "info.courses.unvoidControl": "Återställ makulerad kontroll",
   "nav.settings": "Inställningar",
   "nav.runners": "Anmälda",
   "nav.registration": "Registrering",

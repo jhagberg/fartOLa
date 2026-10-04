@@ -8,6 +8,9 @@
 // Routes registered here:
 //   - GET    /api/competitions/:id/courses  — list courses with embedded controls
 //   - POST   /api/competitions/:id/courses  — create course + (auto-)controls + course_controls atomically
+//   - GET    /api/competitions/:id/voided-controls        — codes voided course-wide
+//   - POST   /api/competitions/:id/voided-controls/:code  — void a control (02.1-14 Task 5)
+//   - DELETE /api/competitions/:id/voided-controls/:code  — unvoid it
 //
 // The control auto-create behaviour mirrors the XML import path (plan 05):
 // IOF CourseData / Purple Pen rarely names the controls explicitly, so the
@@ -25,7 +28,9 @@ import crypto from 'node:crypto';
 import { asc, eq, and, inArray } from 'drizzle-orm';
 
 import { CourseCreateInput, type CourseDTO, type CourseControlDTO } from '@fartola/shared-types';
-import { competitions, courses, courseControls, controls, classes } from '../db/schema.ts';
+import { competitions, courses, courseControls, controls, classes, events } from '../db/schema.ts';
+import { voidedControlCodes } from '../projection/reduce.ts';
+import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 export default async function registerCourses(app: FastifyInstance): Promise<void> {
@@ -201,4 +206,66 @@ export default async function registerCourses(app: FastifyInstance): Promise<voi
     };
     return reply.code(201).send(dto);
   });
+
+  // 02.1-14 Task 5 — course-wide voided controls. The state lives in the
+  // event log (control_voided / control_unvoided) so the reducer replays it;
+  // the operator write gate in server.ts covers POST/DELETE here.
+  const competitionExists = (id: string): boolean =>
+    app.fartolaDb.db
+      .select({ id: competitions.id })
+      .from(competitions)
+      .where(eq(competitions.id, id))
+      .get() !== undefined;
+
+  app.get<{ Params: { id: string } }>(
+    '/api/competitions/:id/voided-controls',
+    async (req, reply) => {
+      const { id } = req.params;
+      if (!competitionExists(id)) return reply.code(404).send({ error: 'competition not found' });
+      const rows = app.fartolaDb.db
+        .select()
+        .from(events)
+        .where(
+          and(
+            eq(events.competitionId, id),
+            inArray(events.eventType, ['control_voided', 'control_unvoided'])
+          )
+        )
+        .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
+        .all();
+      return { control_codes: [...voidedControlCodes(rows, id)].sort((a, b) => a - b) };
+    }
+  );
+
+  for (const [method, eventType] of [
+    ['POST', 'control_voided'],
+    ['DELETE', 'control_unvoided'],
+  ] as const) {
+    app.route<{ Params: { id: string; code: string } }>({
+      method,
+      url: '/api/competitions/:id/voided-controls/:code',
+      handler: async (req, reply) => {
+        const { id: competitionId, code: rawCode } = req.params;
+        const code = Number(rawCode);
+        if (!/^\d+$/.test(rawCode) || !Number.isSafeInteger(code) || code <= 0) {
+          return reply.code(400).send({
+            errors: [{ path: 'code', code: 'invalid', message: 'code must be a positive integer' }],
+          });
+        }
+        if (!competitionExists(competitionId)) {
+          return reply.code(404).send({ error: 'competition not found' });
+        }
+        const r = insertEvent(
+          app.fartolaDb,
+          app.fartolaNodeId,
+          eventType,
+          Date.now(),
+          { event_type: eventType, control_code: code },
+          competitionId
+        );
+        app.projectionStore.markDirty(competitionId);
+        return reply.code(201).send({ local_seq: r.local_seq });
+      },
+    });
+  }
 }
