@@ -295,10 +295,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
         const h = openDatabase(dbPath);
         try {
           const rows = h.sqlite
-            .prepare<
-              unknown[],
-              { id: string; start_time_ms: number }
-            >('SELECT id, start_time_ms FROM competitors ORDER BY id')
+            .prepare<unknown[], { id: string; start_time_ms: number }>(
+              'SELECT id, start_time_ms FROM competitors ORDER BY id'
+            )
             .all();
           assert.deepEqual(rows, [
             { id: 'a', start_time_ms: localToEpochMs('2026-10-03', 23 * 3600 + 59 * 60) },
