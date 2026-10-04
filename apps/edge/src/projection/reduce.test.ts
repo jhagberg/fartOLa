@@ -749,6 +749,56 @@ describe('reduce — CompetitionState projection', () => {
     assert.equal(anna.card_read_history.length, 1);
   });
 
+  test('Phase-2.1 race-phase gate: clearing a manual status before the race leaves the identity scan PEND', () => {
+    seqCounter = 0;
+    const events = [
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+      evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'DNF', reason: 'x' }),
+      evt({ event_type: 'clear_manual_status', competitor_id: 'c-anna' }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      race_started_at_ms: null,
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    const anna = state.competitors.get('c-anna');
+    assert.ok(anna);
+    assert.equal(anna.status, 'PEND');
+    assert.equal(anna.elapsed_time_ms, null);
+    assert.deepEqual(state.results_by_class.get('cls-H21')?.[0]?.place, null);
+  });
+
+  test('Phase-2.1 race-phase gate: clearing a manual status after the start re-scores only an in-race read', () => {
+    seqCounter = 0;
+    const raceStartMs = 1_700_000_000_000;
+    const events = [
+      // Desk scan before the start, then DNF set and cleared during the race.
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600), {
+        eventTimeMs: raceStartMs - 60_000,
+      }),
+      evt(
+        { event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'DNF', reason: 'x' },
+        { eventTimeMs: raceStartMs + 60_000 }
+      ),
+      evt(
+        { event_type: 'clear_manual_status', competitor_id: 'c-anna' },
+        { eventTimeMs: raceStartMs + 120_000 }
+      ),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      race_started_at_ms: raceStartMs,
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.status, 'PEND');
+  });
+
   test('Phase-2.1 race-phase gate: race-started, card_read AFTER stamp scores normally', () => {
     seqCounter = 0;
     const raceStartMs = 1_700_000_000_000;

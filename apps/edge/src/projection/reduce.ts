@@ -239,6 +239,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   //   - number:    race started at this ms-epoch → card_reads at/after
   //                this stamp score; earlier ones stay PEND.
   let raceStartedAtMs: number | null | undefined = input.race_started_at_ms;
+  /** True when a card_read at `atMs` scores under the current race phase. */
+  const inRacePhaseAt = (atMs: number): boolean =>
+    raceStartedAtMs === undefined || (raceStartedAtMs !== null && atMs >= raceStartedAtMs);
 
   for (const e of sortedEvents) {
     if (e.competitionId !== input.competition_id) continue;
@@ -272,9 +275,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // run detectStatus — the runner stays PEND. Manual overrides
         // applied later still win in the same way. `undefined` here
         // means the caller (Phase-1 tests) opted out of the gate.
-        const inRacePhase =
-          raceStartedAtMs === undefined ||
-          (raceStartedAtMs !== null && e.eventTimeMs >= raceStartedAtMs);
+        const inRacePhase = inRacePhaseAt(e.eventTimeMs);
         const checkMs = payload.check
           ? cardClockToEpochMs(payload.check, payload.card_type, e.eventTimeMs)
           : null;
@@ -446,10 +447,14 @@ export function reduce(input: ReduceInput): CompetitionState {
           const competitor = competitorsByCompetition.find((c) => c.id === payload.competitor_id);
           const course = competitor ? courseByClass.get(competitor.classId) : undefined;
           const expected = course?.control_codes ?? [];
+          // Re-detect only a read the race-phase gate lets score; a pre-race
+          // identity scan goes back to PEND, as it was before the override.
           if (
-            view.latest_punches.length > 0 ||
-            view.latest_finish !== null ||
-            view.latest_start !== null
+            latestRead !== undefined &&
+            inRacePhaseAt(latestRead.event_time_ms) &&
+            (view.latest_punches.length > 0 ||
+              view.latest_finish !== null ||
+              view.latest_start !== null)
           ) {
             const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
             const detected = detectStatus(
