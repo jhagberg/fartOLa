@@ -23,6 +23,9 @@ import type { FastifyInstance } from 'fastify';
 import { competitions, classes, competitors } from '../db/schema.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
+/** Epoch ms at h:m local on the test competition's date (2026-05-24). */
+const at = (h: number, m = 0): number => localToEpochMs('2026-05-24', h * 3600 + m * 60);
+
 interface Ctx {
   app: FastifyInstance;
   handle: DbHandle;
@@ -145,7 +148,7 @@ describe('lottning route', () => {
   });
 
   test('test 1: POST SOFT → 201 with { drawn: 5 }, all competitors have start_time_ms', async () => {
-    const firstStartMs = 10 * 3600 * 1000;
+    const firstStartMs = at(10);
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
@@ -225,7 +228,7 @@ describe('lottning route', () => {
   });
 
   test('test 3: vacant slots create gaps in the time sequence', async () => {
-    const firstStartMs = 10 * 3600 * 1000;
+    const firstStartMs = at(10);
     const intervalSec = 60;
     const res = await ctx.app.inject({
       method: 'POST',
@@ -252,7 +255,7 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Random', firstStartMs: 9 * 3600 * 1000, intervalSec: 120 },
+      payload: { mode: 'Random', firstStartMs: at(9), intervalSec: 120 },
     });
     assert.equal(res.statusCode, 201, res.body);
     const body = res.json() as { drawn: number };
@@ -268,7 +271,7 @@ describe('lottning route', () => {
   });
 
   test('test 5: POST mode=Simultaneous → all competitors have same start_time_ms', async () => {
-    const firstStartMs = 11 * 3600 * 1000;
+    const firstStartMs = at(11);
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
@@ -288,7 +291,7 @@ describe('lottning route', () => {
 
   test('test 6: re-lotta clears old times, other class untouched', async () => {
     // First draw on H21
-    const firstStartMs = 10 * 3600 * 1000;
+    const firstStartMs = at(10);
     await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
@@ -296,7 +299,7 @@ describe('lottning route', () => {
     });
 
     // Draw D21
-    const d21FirstStart = 10 * 3600 * 1000 + 300_000;
+    const d21FirstStart = at(10, 5);
     await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.otherClassId}`,
@@ -304,7 +307,7 @@ describe('lottning route', () => {
     });
 
     // Re-lotta H21 with different time
-    const newFirstStartMs = 11 * 3600 * 1000;
+    const newFirstStartMs = at(11);
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
@@ -338,7 +341,7 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${crypto.randomUUID()}`,
-      payload: { mode: 'SOFT', firstStartMs: 36000000, intervalSec: 60 },
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 },
     });
     assert.equal(res.statusCode, 404);
   });
@@ -360,13 +363,13 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${otherId}/lottning/${ctx.classId}`,
-      payload: { mode: 'SOFT', firstStartMs: 36000000, intervalSec: 60 },
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 },
     });
     assert.equal(res.statusCode, 404);
   });
 
   test('test 9: classes.firstStartMs and startIntervalSec updated on class row after draw', async () => {
-    const firstStartMs = 10 * 3600 * 1000;
+    const firstStartMs = at(10);
     const intervalSec = 90;
     await ctx.app.inject({
       method: 'POST',
@@ -387,7 +390,7 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'SOFT', firstStartMs: 36000000, intervalSec: 0 },
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 0 },
     });
     assert.equal(res.statusCode, 400);
   });
@@ -396,7 +399,7 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Random', firstStartMs: 36000000, intervalSec: 0 },
+      payload: { mode: 'Random', firstStartMs: at(10), intervalSec: 0 },
     });
     assert.equal(res.statusCode, 400);
   });
@@ -405,9 +408,24 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Simultaneous', firstStartMs: 36000000, intervalSec: 0 },
+      payload: { mode: 'Simultaneous', firstStartMs: at(10), intervalSec: 0 },
     });
     assert.equal(res.statusCode, 201);
+  });
+
+  test('a firstStartMs that is not epoch ms (old ms-since-midnight base) → 400, nothing drawn', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'SOFT', firstStartMs: 10 * 3600 * 1000, intervalSec: 60 },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const rows = ctx.handle.db
+      .select({ startTimeMs: competitors.startTimeMs })
+      .from(competitors)
+      .where(eq(competitors.classId, ctx.classId))
+      .all();
+    assert.ok(rows.every((r) => r.startTimeMs === null));
   });
 
   test('test 12 (02.1-14 Task 1): epoch firstStartMs is stored as epoch', async () => {
@@ -430,7 +448,7 @@ describe('lottning route', () => {
   });
 
   test('GET lottning returns sorted start list', async () => {
-    const firstStartMs = 10 * 3600 * 1000;
+    const firstStartMs = at(10);
     await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,

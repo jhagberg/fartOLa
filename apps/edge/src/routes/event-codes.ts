@@ -9,7 +9,7 @@
 //     Generates a fresh code via generateCode(), persists to event_codes table.
 //     Returns the PLAINTEXT code exactly once — it is not re-retrievable.
 //     Auto-generates and persists event_code_signing_secret on first call.
-//     Expiry = competition.date as ms + 24h.
+//     Expiry = the local midnight (COMPETITION_TZ) ending competition.date.
 //
 //   GET  /api/competitions/:id/event-codes
 //     → 200 { codes: [{ id, masked_code, expires_at_ms, revoked_at_ms }, ...] }
@@ -40,6 +40,7 @@ import { and, desc, eq } from 'drizzle-orm';
 
 import { competitions, config as configTable, eventCodes } from '../db/schema.ts';
 import { generateCode } from '../auth/event-code.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** True iff the TCP peer is a loopback address (operator desk laptop).
  * Uses socket.remoteAddress ONLY — never X-Forwarded-For (T-02.1-27). */
@@ -103,10 +104,9 @@ export default async function registerEventCodesRoutes(app: FastifyInstance): Pr
     // Ensure signing secret is persisted (first boot auto-generates it).
     getOrCreateSigningSecret(app);
 
-    // Compute expiry: competition date + 24h.
-    const [year, month, day] = comp.date.split('-').map(Number) as [number, number, number];
-    const competitionDateMs = new Date(year, month - 1, day).getTime();
-    const expiresAtMs = competitionDateMs + 24 * 60 * 60 * 1000;
+    // Expiry: the local midnight in COMPETITION_TZ that ends the competition
+    // date (not the host's zone, and a 23/25 h DST day keeps its length).
+    const expiresAtMs = localToEpochMs(comp.date, 24 * 3600);
 
     const code = generateCode();
     const id = crypto.randomUUID();

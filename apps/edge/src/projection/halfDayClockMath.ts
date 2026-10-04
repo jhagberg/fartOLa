@@ -22,7 +22,11 @@
 //   this file mirrors its 24h-ring semantics for the inverse direction)
 
 import type { HalfDayClock } from '@fartola/sportident';
-import { COMPETITION_TZ, epochToLocalSeconds } from '../time/competitionClock.ts';
+import {
+  COMPETITION_TZ,
+  epochToWallClockMs,
+  wallClockToEpochMs,
+} from '../time/competitionClock.ts';
 
 const HALF_DAY_MS = 12 * 3600 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
@@ -64,9 +68,14 @@ const CLOCK_SKEW_TOLERANCE_MS = 3600 * 1000;
 /** Absolute epoch ms for a card clock. The card time is placed in the 12 h
  * before `readAtMs` when the card cannot say AM/PM (SI5); otherwise
  * half_day is trusted and the date is the one that puts it in the 24 h
- * before readAtMs. Both windows end CLOCK_SKEW_TOLERANCE_MS after readAtMs.
- * Wall-clock arithmetic: a DST switch inside the window shifts the result by
- * the DST hour (only possible for runs across 02:00–03:00 at night). */
+ * before readAtMs. Both windows end CLOCK_SKEW_TOLERANCE_MS after readAtMs
+ * and are measured on the local wall clock.
+ *
+ * Card clocks are local wall time, so the chosen wall time is converted with
+ * the UTC offset in force at it: a run across a DST switch keeps its real
+ * length. A card time in the hour repeated as DST ends (2026-10-25
+ * 02:00–03:00) is two instants; the one closest before the read wins (a
+ * runner reads out soon after finishing), else the earlier (clock skew). */
 export function cardClockToEpochMs(
   clock: HalfDayClock,
   cardType: string,
@@ -76,8 +85,9 @@ export function cardClockToEpochMs(
   const noPmBit = cardType === 'SI5';
   const period = noPmBit ? HALF_DAY_MS : DAY_MS;
   const cardMs = noPmBit ? clock.seconds_in_half_day * 1000 : halfDayClockToMs(clock);
-  const anchor = readAtMs + CLOCK_SKEW_TOLERANCE_MS;
-  const anchorLocalMs = Math.round(epochToLocalSeconds(anchor, tz) * 1000);
-  const back = (((anchorLocalMs - cardMs) % period) + period) % period;
-  return anchor - back;
+  const anchorWall = epochToWallClockMs(readAtMs + CLOCK_SKEW_TOLERANCE_MS, tz);
+  const back = (((anchorWall - cardMs) % period) + period) % period;
+  const candidates = wallClockToEpochMs(anchorWall - back, tz);
+  const beforeRead = candidates.filter((c) => c <= readAtMs);
+  return beforeRead.length > 0 ? Math.max(...beforeRead) : candidates[0]!;
 }

@@ -41,6 +41,7 @@ import { drawRandom } from '../draw/random.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import type { DrawRunner } from '../draw/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+import { StartTimeMs } from './competitors.ts';
 
 // ---------------------------------------------------------------------------
 // Input validation schema
@@ -49,7 +50,8 @@ import { issuesToErrors } from './_zod-errors.ts';
 const LottningInput = z
   .object({
     mode: z.enum(['SOFT', 'Random', 'Simultaneous']),
-    firstStartMs: z.number().int().nonnegative(),
+    // Epoch ms, like every other start-time write (not ms since midnight).
+    firstStartMs: StartTimeMs.unwrap(),
     intervalSec: z.number().int().min(0),
     vacantSlots: z.number().int().nonnegative().optional(),
   })

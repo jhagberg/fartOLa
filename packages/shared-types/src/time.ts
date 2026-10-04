@@ -84,6 +84,31 @@ export function localToEpochMs(
   return naive - cachedOffsetMs(guess, tz);
 }
 
+/** Epoch ms → the local wall clock, as ms since 1970-01-01 00:00 local. */
+export function epochToWallClockMs(epochMs: number, tz: string = COMPETITION_TZ): number {
+  return epochMs + cachedOffsetMs(epochMs, tz);
+}
+
+/**
+ * Every epoch ms whose local wall clock reads `wallMs` (epochToWallClockMs's
+ * scale), ascending: two in the hour repeated when DST ends, otherwise one.
+ * A wall time skipped when DST starts gets the instant localToEpochMs gives
+ * (read with the offset before the switch).
+ */
+export function wallClockToEpochMs(wallMs: number, tz: string = COMPETITION_TZ): number[] {
+  // The offsets in force half a day either side cover any switch near wallMs.
+  const offsets = new Set([
+    cachedOffsetMs(wallMs - DAY_MS / 2, tz),
+    cachedOffsetMs(wallMs + DAY_MS / 2, tz),
+  ]);
+  const out: number[] = [];
+  for (const offset of offsets) {
+    if (cachedOffsetMs(wallMs - offset, tz) === offset) out.push(wallMs - offset);
+  }
+  if (out.length === 0) out.push(wallMs - cachedOffsetMs(wallMs - cachedOffsetMs(wallMs, tz), tz));
+  return out.sort((a, b) => a - b);
+}
+
 /** Epoch ms → seconds after local midnight on that local day (fractional
  * when the input has sub-second ms). */
 export function epochToLocalSeconds(epochMs: number, tz: string = COMPETITION_TZ): number {

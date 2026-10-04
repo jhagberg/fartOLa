@@ -55,7 +55,8 @@ export interface SkippedImportRow {
   name: string;
   class: string;
   card: number | null;
-  reason: 'unknown_class' | 'duplicate_card' | 'no_match' | 'no_start_time';
+  /** duplicate_runner: StartList only — two imported rows matched one runner. */
+  reason: 'unknown_class' | 'duplicate_card' | 'duplicate_runner' | 'no_match' | 'no_start_time';
 }
 
 export interface EntryImportResult {

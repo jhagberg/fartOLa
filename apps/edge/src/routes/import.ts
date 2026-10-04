@@ -56,6 +56,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute } from 'node:path';
 import multipart from '@fastify/multipart';
+import { z } from 'zod';
 
 import {
   competitions,
@@ -68,6 +69,8 @@ import { importStartList } from '../xml/iofImport.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
+import { StartTimeMs } from './competitors.ts';
+import { issuesToErrors } from './_zod-errors.ts';
 
 // ---------------------------------------------------------------------------
 // StartList matching helpers (plan 02.1-03).
@@ -133,6 +136,13 @@ export interface StartListMatchResult {
   cardUpdates: CardUpdate[];
   skipped: SkippedImportRow[];
 }
+
+/** POST …/import/startlist/confirm body: operator-confirmed fuzzy matches. */
+const ConfirmBody = z.object({
+  matches: z.array(
+    z.object({ competitorId: z.string().min(1), startTimeMs: StartTimeMs.unwrap() })
+  ),
+});
 
 export default async function registerImportRoutes(app: FastifyInstance): Promise<void> {
   // 5 MB body cap, single file per request. T-LARGE-BODY-DOS mitigation.
@@ -244,7 +254,6 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       const classNameToId = new Map(localClasses.map((c) => [normalizeName(c.name), c.id]));
 
       // Match imported entries to local competitors.
-      let exactCount = 0;
       const fuzzyMatches: FuzzyMatch[] = [];
       const cardUpdates: CardUpdate[] = [];
       const skipped: SkippedImportRow[] = [];
@@ -272,18 +281,38 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
       // Exact matches that need start_time_ms (and, for a changed card,
       // card_number) written.
-      const exactWrites: Array<{ id: string; startTimeMs: number; cardNumber?: number }> = [];
+      const exactWrites: Array<{
+        id: string;
+        startTimeMs: number;
+        cardNumber?: number;
+        entry: (typeof entries)[number];
+      }> = [];
+
+      const skipRow = (
+        entry: (typeof entries)[number],
+        reason: SkippedImportRow['reason']
+      ): void => {
+        skipped.push({
+          row: entry.row,
+          name: entry.name,
+          class: entry.className,
+          card: entry.siCard,
+          reason,
+        });
+      };
+
+      // Rows that share a card can't all be right, and matching one would let
+      // the next row find that runner by the card and overwrite their start:
+      // none of them is applied.
+      const rowsPerCard = new Map<number, number>();
+      for (const entry of entries) {
+        if (entry.siCard !== null) {
+          rowsPerCard.set(entry.siCard, (rowsPerCard.get(entry.siCard) ?? 0) + 1);
+        }
+      }
 
       for (const entry of entries) {
-        const skip = (reason: SkippedImportRow['reason']): void => {
-          skipped.push({
-            row: entry.row,
-            name: entry.name,
-            class: entry.className,
-            card: entry.siCard,
-            reason,
-          });
-        };
+        const skip = (reason: SkippedImportRow['reason']): void => skipRow(entry, reason);
         const classId = classNameToId.get(normalizeName(entry.className));
         if (classId === undefined) {
           skip('unknown_class');
@@ -294,14 +323,18 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           continue;
         }
 
+        if (entry.siCard !== null && (rowsPerCard.get(entry.siCard) ?? 0) > 1) {
+          skip('duplicate_card');
+          continue;
+        }
+
         // 1. Exact match: SI card.
         if (entry.siCard !== null) {
           const cardMatches = byCard.get(entry.siCard) ?? [];
           // Filter to same class.
           const sameClass = cardMatches.filter((c) => c.classId === classId);
           if (sameClass.length === 1 && sameClass[0] !== undefined) {
-            exactWrites.push({ id: sameClass[0].id, startTimeMs: entry.startTimeMs });
-            exactCount += 1;
+            exactWrites.push({ id: sameClass[0].id, startTimeMs: entry.startTimeMs, entry });
             continue;
           }
 
@@ -330,6 +363,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               id: target.id,
               startTimeMs: entry.startTimeMs,
               cardNumber: entry.siCard,
+              entry,
             });
             cardUpdates.push({
               row: entry.row,
@@ -375,6 +409,21 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         skip('no_match');
       }
 
+      // Two imported rows resolving to the same runner (e.g. one by card, one
+      // by name + club) would silently overwrite each other: apply neither.
+      const rowsPerTarget = new Map<string, number>();
+      for (const w of exactWrites) rowsPerTarget.set(w.id, (rowsPerTarget.get(w.id) ?? 0) + 1);
+      for (let i = exactWrites.length - 1; i >= 0; i--) {
+        const w = exactWrites[i]!;
+        if (rowsPerTarget.get(w.id)! < 2) continue;
+        exactWrites.splice(i, 1);
+        const update = cardUpdates.findIndex((u) => u.row === w.entry.row);
+        if (update !== -1) cardUpdates.splice(update, 1);
+        skipRow(w.entry, 'duplicate_runner');
+      }
+      skipped.sort((a, b) => a.row - b.row);
+      const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
+
       // Write exact matches in a single transaction.
       if (exactWrites.length > 0) {
         app.fartolaDb.sqlite.transaction(() => {
@@ -394,8 +443,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               .run();
           }
         })();
-        app.projectionStore.markDirty(competitionId);
       }
+      app.projectionStore.markDirty(competitionId);
 
       const result: StartListMatchResult = {
         exact: exactCount,
@@ -438,12 +487,13 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       return reply.code(404).send({ error: 'competition_not_found' });
     }
 
-    const body = req.body as { matches?: unknown };
-    if (!Array.isArray(body?.matches)) {
-      return reply.code(400).send({ error: 'bad_body', message: 'matches must be an array' });
+    // The whole batch is validated before anything is written; start times
+    // must be epoch ms like every other start-time write (StartTimeMs).
+    const parsed = ConfirmBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'bad_body', ...issuesToErrors(parsed.error.issues) });
     }
-
-    const matches = body.matches as Array<{ competitorId: unknown; startTimeMs: unknown }>;
+    const { matches } = parsed.data;
 
     let applied = 0;
     let alreadyApplied = 0;
@@ -451,7 +501,6 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
     // Idempotent: check existing start_time_ms before writing.
     app.fartolaDb.sqlite.transaction(() => {
       for (const m of matches) {
-        if (typeof m.competitorId !== 'string' || typeof m.startTimeMs !== 'number') continue;
         const existing = app.fartolaDb.db
           .select({ id: competitorsTable.id, startTimeMs: competitorsTable.startTimeMs })
           .from(competitorsTable)
@@ -556,6 +605,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
     try {
       if (parsed.kind === 'CourseData') {
         const result = ingestCourseData(app.fartolaDb, competitionId, parsed.data);
+        // Courses/classes changed: cached results must be re-scored.
+        app.projectionStore.markDirty(competitionId);
         return reply.code(201).send({ kind: 'CourseData', ...result });
       } else {
         const result = ingestEntryList(app.fartolaDb, competitionId, parsed.data, Date.now());
@@ -565,9 +616,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         // synthetic card_bound per match so the next reduce() drops the
         // card from pending_unknown_cards AND attaches the prior read.
         const autoBind = autoBindNewCompetitors(app.fartolaDb, competitionId, app.fartolaNodeId);
-        if (autoBind.bound.length > 0) {
-          app.projectionStore.markDirty(competitionId);
-        }
+        // New runners (and any new bindings) change the cached results.
+        app.projectionStore.markDirty(competitionId);
         return reply.code(201).send({ kind: 'EntryList', ...result, auto_bound: autoBind.bound });
       }
     } catch (e) {

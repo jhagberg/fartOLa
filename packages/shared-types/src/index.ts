@@ -106,4 +106,11 @@ export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
 export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
 
 // --- Competition clock (epoch ms ↔ local wall clock) ----------------------
-export { COMPETITION_TZ, localToEpochMs, epochToLocalSeconds, formatLocalTime } from './time.ts';
+export {
+  COMPETITION_TZ,
+  localToEpochMs,
+  epochToLocalSeconds,
+  epochToWallClockMs,
+  wallClockToEpochMs,
+  formatLocalTime,
+} from './time.ts';
