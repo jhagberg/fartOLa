@@ -442,6 +442,8 @@ describe('ingestCourseData', () => {
     assert.equal(state.competitors.get('comp-H21-mp')?.status, 'MP');
   });
 
+  // No <Class> elements AND no ClassCourseAssignment: course-only training,
+  // classes are synthesised from course names (unchanged by item E below).
   test('zero <Class> elements: synthesised classes still get their course (course-only)', () => {
     const courseOnly: ParsedCourseData = {
       ...SHARED,
@@ -451,6 +453,29 @@ describe('ingestCourseData', () => {
     ingestCourseData(ctx.handle, ctx.competitionId, courseOnly);
     const course = ctx.handle.db.select().from(courses).get();
     assert.deepEqual([...classCourseIds()], [['Bana 1', course!.id]]);
+  });
+
+  // Zero <Class> elements but ClassCourseAssignment present (MeOS/OCAD
+  // exports): the assigned classes are created by name and point at their
+  // course, as MeOS does; no class is synthesised from the course name.
+  test('zero <Class> elements with assignments: assigned classes are created', () => {
+    const assignedOnly: ParsedCourseData = {
+      ...SHARED,
+      classes: [],
+      courses: [
+        SHARED.courses[0]!,
+        { ...SHARED.courses[0]!, id: 'Bana 2', name: 'Bana 2', class_id_ref: null, class_refs: [] },
+      ],
+    };
+    const r = ingestCourseData(ctx.handle, ctx.competitionId, assignedOnly);
+    assert.equal(r.classes_created, 2);
+    const bana1 = ctx.handle.db.select().from(courses).where(eq(courses.name, 'Bana 1')).get();
+    assert.deepEqual([...classCourseIds()].sort(), [
+      ['D21', bana1!.id],
+      ['H21', bana1!.id],
+    ]);
+    const bana2 = ctx.handle.db.select().from(courses).where(eq(courses.name, 'Bana 2')).get();
+    assert.equal(bana2!.classId, null, 'an unassigned course gets no class');
   });
 
   test('re-import does not duplicate classes and re-points them at the new course', () => {

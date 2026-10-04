@@ -59,9 +59,18 @@ function doIngest(
   // synthesised class takes the course's own name (e.g. "Vit", "Grön").
   // The course's class_id_ref is rewritten to point at the synthesised
   // class so step (3) below wires it up correctly.
+  //
+  // 02.1-14: with zero <Class> elements but ClassCourseAssignment entries,
+  // the assigned classes are created by name instead (as MeOS does); the
+  // course-name fallback only fires when there are no assignments at all.
+  const refsOf = (cr: ParsedCourseData['courses'][number]): string[] =>
+    cr.class_refs ?? (cr.class_id_ref ? [cr.class_id_ref] : []);
   let effectiveClasses = data.classes;
   let effectiveCourses = data.courses;
-  if (data.classes.length === 0 && data.courses.length > 0) {
+  const assignedClassNames = [...new Set(data.courses.flatMap(refsOf))];
+  if (data.classes.length === 0 && assignedClassNames.length > 0) {
+    effectiveClasses = assignedClassNames.map((name) => ({ id: '', name, short_name: null }));
+  } else if (data.classes.length === 0 && data.courses.length > 0) {
     const seenNames = new Set<string>();
     const synthesised: ParsedCourseData['classes'] = [];
     for (const cr of data.courses) {
@@ -151,7 +160,7 @@ function doIngest(
 
     // 02.1-14 Task 4: classes point at courses (many classes per course).
     // courses.class_id above stays populated for back-compat only.
-    for (const className of cr.class_refs ?? (cr.class_id_ref ? [cr.class_id_ref] : [])) {
+    for (const className of refsOf(cr)) {
       const cid = classIdByName.get(className);
       if (cid === undefined) continue;
       handle.db.update(classes).set({ courseId: id }).where(eq(classes.id, cid)).run();
