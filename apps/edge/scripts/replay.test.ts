@@ -89,7 +89,7 @@ function fixture(dir: string): void {
       read(8100002, [31, 99, 32], 10, 25, at + 1000), // extra punch: still OK, 25:00
       read(8100003, [32], 10, 15, at + 2000), // missed 31: MP
       // Start time 10:00:00, start punch 10:00:06: MeOS times from the
-      // punch (19:54), fartOLa from the start time (20:00, SOFT TR 4.18.9).
+      // punch (19:54), fartOLa from the start time (20:00, SOFT TR 4.18.9 (2026-07-01)).
       read(8100004, [31, 32], 10, 20, at + 3000, 6),
     ]
       .map((r) => JSON.stringify(r))

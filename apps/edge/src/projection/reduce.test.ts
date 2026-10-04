@@ -1374,7 +1374,7 @@ describe('reduce — start method per class (02.1-14 Task 14)', () => {
   const drawn = at(START);
   const withMethod = (startMethod: StartMethod): Class => ({ ...cls('cls-H21'), startMethod });
 
-  test('auto: start time 10:22:00 + punch 10:22:06 → timed from 10:22:00 (SOFT TR 4.18.9)', () => {
+  test('auto: start time 10:22:00 + punch 10:22:06 → timed from 10:22:00 (SOFT TR 4.18.9 (2026-07-01))', () => {
     seqCounter = 0;
     const state = reduce({
       competition_id: 'comp-1',
