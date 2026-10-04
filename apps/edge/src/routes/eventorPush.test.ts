@@ -12,6 +12,8 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import { pushResultStatus } from './eventorPush.ts';
+import type { CompetitionState } from '../projection/types.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -139,5 +141,25 @@ describe('eventorPush routes', () => {
       assert.ok(res.statusCode >= 200, `unexpected status ${res.statusCode}`);
     }
     await app.close();
+  });
+});
+
+describe('pushResultStatus', () => {
+  const state = (statuses: string[]) =>
+    ({
+      competitors: new Map(statuses.map((s, i) => [`c${i}`, { status: s }])),
+    }) as unknown as CompetitionState;
+
+  it('SOFT TA till TR 7.8.2: a push while runners are still out is provisional, so they are not published as "Ej start"', () => {
+    assert.equal(pushResultStatus(state(['OK', 'PEND', 'MP'])), 'Provisional');
+  });
+
+  it('SOFT TA till TR 7.8.2: a push when everyone is read out or has a status is final', () => {
+    assert.equal(pushResultStatus(state(['OK', 'DNS', 'MP', 'DQ'])), 'Final');
+  });
+
+  it('the operator can ask for a final or provisional push explicitly', () => {
+    assert.equal(pushResultStatus(state(['OK', 'PEND']), true), 'Final');
+    assert.equal(pushResultStatus(state(['OK']), false), 'Provisional');
   });
 });

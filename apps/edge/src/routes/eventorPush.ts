@@ -38,7 +38,13 @@ import {
 } from '../db/schema.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { pushToEventor } from '../eventor/push.ts';
-import { buildStartListXml, validateAndBuild, type StartListCompetitor } from '../xml/iofExport.ts';
+import {
+  buildStartListXml,
+  validateAndBuild,
+  type ExportStatus,
+  type StartListCompetitor,
+} from '../xml/iofExport.ts';
+import type { CompetitionState } from '../projection/types.ts';
 import { resultListInputs } from './_resultListInputs.ts';
 import type { CompetitionDTO, StartMethod } from '@fartola/shared-types';
 
@@ -84,14 +90,32 @@ function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
 // Route registration
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a results push to Eventor is final. A Final list (IOF @status
+ * Complete) lists everyone not read out as DidNotStart ("Ej start", SOFT TA
+ * till TR 7.8.2), so pushing one while runners are still out would publish
+ * them as not started. Final only when the operator asks for it or nobody is
+ * left without a read-out or a status; otherwise Provisional (Snapshot).
+ */
+export function pushResultStatus(state: CompetitionState, final?: boolean): ExportStatus {
+  if (final === true) return 'Final';
+  if (final === false) return 'Provisional';
+  for (const c of state.competitors.values()) if (c.status === 'PEND') return 'Provisional';
+  return 'Final';
+}
+
 export default async function registerEventorPushRoutes(app: FastifyInstance): Promise<void> {
   // -------------------------------------------------------------------------
   // POST /api/competitions/:id/eventor/push-results
   // -------------------------------------------------------------------------
-  app.post<{ Params: { id: string } }>(
+  app.post<{ Params: { id: string }; Body: { final?: unknown } | undefined }>(
     '/api/competitions/:id/eventor/push-results',
     async (req, reply) => {
       const { id } = req.params;
+      const finalRaw = req.body?.final;
+      if (finalRaw !== undefined && typeof finalRaw !== 'boolean') {
+        return reply.code(400).send({ error: 'final_must_be_boolean' });
+      }
 
       // Resolve API key.
       const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
@@ -116,11 +140,12 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
         .where(eq(classesTable.competitionId, id))
         .all() as ClassRow[];
 
-      // Build the final ResultList from the projection, validated.
+      // Build the ResultList from the projection, validated.
       const state = app.projectionStore.recomputeNow(id);
       if (state === null) {
         return reply.code(404).send({ error: 'competition_not_found' });
       }
+      const resultStatus = pushResultStatus(state, finalRaw as boolean | undefined);
 
       const built = await validateAndBuild({
         competition: competitionRowToDTO(compRow),
@@ -135,6 +160,7 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
         })),
         ...resultListInputs(app.fartolaDb, id),
         state,
+        status: resultStatus,
       });
       if (!built.valid) {
         return reply.code(400).send({ error: 'xsd_invalid', errors: built.errors });
@@ -148,7 +174,7 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
           xmlBody: xml,
           endpoint: 'import/resultlist',
         });
-        return reply.code(200).send({ url: result.url });
+        return reply.code(200).send({ url: result.url, status: resultStatus });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return reply.code(500).send({ error: 'push_failed', message });
