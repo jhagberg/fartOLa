@@ -67,6 +67,10 @@ export interface PushQueueConfig {
   liveresultatPwd: string;
   /** Liveresultat push endpoint URL. Default production URL. */
   liveresultatUrl?: string;
+  /** Competition name for MOP XML metadata. */
+  competitionName: string;
+  /** Competition date (YYYY-MM-DD) for MOP XML metadata. */
+  competitionDate: string;
 }
 
 export interface PushQueueOpts {
@@ -151,7 +155,11 @@ export function createPushQueue(opts: PushQueueOpts): PushQueueHandle {
 
     const mopXml = buildMopXml({
       state,
-      competition: { id: config.liveresultatId, name: '', date: '' },
+      competition: {
+        id: config.liveresultatId,
+        name: config.competitionName,
+        date: config.competitionDate,
+      },
       classes: meta.classes,
       clubs: meta.clubs,
     });
