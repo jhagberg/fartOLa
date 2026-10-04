@@ -165,25 +165,32 @@ describe('lottning route', () => {
   });
 
   test('test 2: start_time_ms values spaced by intervalSec', async () => {
-    const firstStartMs = 10 * 3600 * 1000;
-    const intervalSec = 60;
-    await ctx.app.inject({
-      method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'SOFT', firstStartMs, intervalSec },
-    });
-
-    const rows = ctx.handle.db
-      .select({ startTimeMs: competitors.startTimeMs })
-      .from(competitors)
-      .where(eq(competitors.classId, ctx.classId))
-      .orderBy(asc(competitors.startTimeMs))
-      .all();
-
-    const times = rows.map((r) => r.startTimeMs as number);
-    assert.equal(times[0], firstStartMs);
-    for (let i = 1; i < times.length; i++) {
-      assert.equal(times[i]! - times[i - 1]!, intervalSec * 1000);
+    // Every runner in the class gets a time, and the times are exactly
+    // first, first + interval, … — in both interval modes (SOFT TR 7.4.1,
+    // 7.4.4: the same interval through the class).
+    const firstStartMs = localToEpochMs('2026-05-24', 10 * 3600);
+    for (const [mode, intervalSec] of [
+      ['SOFT', 60],
+      ['Random', 120],
+    ] as const) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+        payload: { mode, firstStartMs, intervalSec },
+      });
+      assert.equal(res.statusCode, 201, res.body);
+      const times = ctx.handle.db
+        .select({ startTimeMs: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, ctx.classId))
+        .all()
+        .map((r) => r.startTimeMs)
+        .sort((a, b) => (a ?? 0) - (b ?? 0));
+      assert.deepEqual(
+        times,
+        [0, 1, 2, 3, 4].map((k) => firstStartMs + k * intervalSec * 1000),
+        mode
+      );
     }
   });
 
@@ -245,10 +252,8 @@ describe('lottning route', () => {
       .where(eq(competitors.classId, ctx.classId))
       .all();
     const times = rows.map((r) => r.startTimeMs);
-    assert.ok(
-      times.every((t) => t === firstStartMs),
-      `Not all same: ${times.join(',')}`
-    );
+    // The whole class (5 runners), all at the same time (SOFT TR 7.4.1).
+    assert.deepEqual(times, [firstStartMs, firstStartMs, firstStartMs, firstStartMs, firstStartMs]);
   });
 
   test('test 6: re-lotta clears old times, other class untouched', async () => {
