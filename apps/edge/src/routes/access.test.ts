@@ -9,7 +9,7 @@
 // Test 5: rate limit — 11th POST from same IP within 60s → 429 + Retry-After
 // Test 6: XFF-bypass — non-localhost socket with X-Forwarded-For: 127.0.0.1 → not localhost-bypassed
 // Test 7: signed cookie roundtrips through verifyCookie correctly
-// Test 8: preHandler blocks non-localhost POST to /api/competitions/:id/** without cookie → 403
+// Test 8: preHandler blocks non-localhost walk-up POST /api/competitors without cookie → 403
 // Test 9: preHandler passes localhost (127.0.0.1) POST without cookie → does not 403
 // Test 10: preHandler rejects valid cookie with mismatched competitionId → 403
 // Test 11: blanket gate — POST /api/competitions/:id/import/startlist/confirm non-localhost no cookie → 403
@@ -233,7 +233,7 @@ describe('POST /access — X-Forwarded-For spoofing', () => {
     // We hit a protected write route without a cookie but with spoofed XFF.
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: '192.168.1.50', // non-localhost socket
       headers: { 'x-forwarded-for': '127.0.0.1' }, // spoofed header
       payload: {
@@ -262,10 +262,10 @@ describe('preHandler gate on write routes', () => {
     await teardown(ctx);
   });
 
-  test('Test 8: non-localhost POST to /api/competitions/:id/competitors without cookie → 403', async () => {
+  test('Test 8: non-localhost POST /api/competitors (walk-up) without cookie → 403', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: '192.168.1.50',
       payload: {
         competition_id: ctx.competitionId,
@@ -285,7 +285,7 @@ describe('preHandler gate on write routes', () => {
     // (it may still fail with 404/422 due to missing class — that's fine)
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: '127.0.0.1',
       payload: {
         competition_id: ctx.competitionId,
@@ -316,7 +316,7 @@ describe('preHandler gate on write routes', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: '192.168.1.50',
       headers: { cookie: `fartola_event_code=${cookie}` },
       payload: {
@@ -407,7 +407,7 @@ describe('preHandler gate — operator-self bypass (allowLan)', () => {
     if (ip === undefined) return; // headless box with no LAN interface — nothing to assert
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: ip,
       payload: {
         competition_id: ctx.competitionId,
@@ -426,7 +426,7 @@ describe('preHandler gate — operator-self bypass (allowLan)', () => {
     // 203.0.113.0/24 (TEST-NET-3) is reserved and never a real interface address.
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/api/competitions/${ctx.competitionId}/competitors`,
+      url: '/api/competitors',
       remoteAddress: '203.0.113.9',
       payload: {
         competition_id: ctx.competitionId,
@@ -438,5 +438,159 @@ describe('preHandler gate — operator-self bypass (allowLan)', () => {
     });
     assert.equal(res.statusCode, 403);
     assert.equal(res.json<{ error: string }>().error, 'event_code_required');
+  });
+});
+
+describe('write gate — routes without a competition id in the URL', () => {
+  let ctx: Ctx;
+  let competitorId: string;
+  beforeEach(async () => {
+    ctx = await boot();
+    const classId = crypto.randomUUID();
+    competitorId = crypto.randomUUID();
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO classes (id, competition_id, name) VALUES (?, ?, ?)`)
+      .run(classId, ctx.competitionId, 'H21');
+    ctx.handle.sqlite
+      .prepare(
+        `INSERT INTO competitors (id, competition_id, name, class_id, card_number, consent_status)
+         VALUES (?, ?, ?, ?, ?, 'pending_first_read')`
+      )
+      .run(competitorId, ctx.competitionId, 'Alice Andersson', classId, 1234);
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  /** A real helper cookie for `competitionId`, obtained through POST /access. */
+  async function helperCookie(competitionId: string): Promise<string> {
+    const gen = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/event-codes`,
+      remoteAddress: '127.0.0.1',
+      payload: {},
+    });
+    assert.equal(gen.statusCode, 201);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/access',
+      remoteAddress: '10.0.0.5',
+      payload: { competition_id: competitionId, code: gen.json<{ code: string }>().code },
+    });
+    assert.equal(res.statusCode, 200);
+    const setCookie = res.headers['set-cookie'];
+    const first = Array.isArray(setCookie) ? setCookie[0] : String(setCookie);
+    return (first ?? '').split(';')[0] ?? '';
+  }
+
+  const lanWrites = (competitorIdOf: () => string, competitionIdOf: () => string) => [
+    {
+      name: 'PATCH /api/competitors/:id/profile',
+      method: 'PATCH' as const,
+      url: () => `/api/competitors/${competitorIdOf()}/profile`,
+      payload: () => ({ name: 'Mallory', card_number: 9999 }),
+    },
+    {
+      name: 'PATCH /api/competitors/:id (consent)',
+      method: 'PATCH' as const,
+      url: () => `/api/competitors/${competitorIdOf()}`,
+      payload: () => ({ consent_status: 'confirmed_on_read', consent_at_ms: Date.now() }),
+    },
+    {
+      name: 'POST /api/competitors',
+      method: 'POST' as const,
+      url: () => '/api/competitors',
+      payload: () => ({
+        competition_id: competitionIdOf(),
+        name: 'Mallory',
+        class_id: crypto.randomUUID(),
+        consent: true,
+      }),
+    },
+    {
+      name: 'PATCH /api/competitions/:id',
+      method: 'PATCH' as const,
+      url: () => `/api/competitions/${competitionIdOf()}`,
+      payload: () => ({ name: 'Hijacked' }),
+    },
+    {
+      name: 'PATCH /api/competitions/:id?x=1 (query string)',
+      method: 'PATCH' as const,
+      url: () => `/api/competitions/${competitionIdOf()}?x=1`,
+      payload: () => ({ name: 'Hijacked' }),
+    },
+  ];
+
+  for (const w of lanWrites(
+    () => competitorId,
+    () => ctx.competitionId
+  )) {
+    test(`LAN write without cookie is refused: ${w.name}`, async () => {
+      const res = await ctx.app.inject({
+        method: w.method,
+        url: w.url(),
+        remoteAddress: '192.168.1.50',
+        payload: w.payload(),
+      });
+      assert.equal(res.statusCode, 403, `${w.name}: ${res.statusCode} ${res.body}`);
+      assert.equal(res.json<{ error: string }>().error, 'event_code_required');
+    });
+  }
+
+  test('LAN profile edit without cookie leaves the runner unchanged', async () => {
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitors/${competitorId}/profile`,
+      remoteAddress: '192.168.1.50',
+      payload: { name: 'Mallory', card_number: 9999 },
+    });
+    const row = ctx.handle.sqlite
+      .prepare(`SELECT name, card_number FROM competitors WHERE id = ?`)
+      .get(competitorId) as { name: string; card_number: number };
+    assert.deepEqual(row, { name: 'Alice Andersson', card_number: 1234 });
+  });
+
+  test("a cookie for the runner's competition authorises a competitor-path write", async () => {
+    const cookie = await helperCookie(ctx.competitionId);
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitors/${competitorId}/profile`,
+      remoteAddress: '192.168.1.50',
+      headers: { cookie },
+      payload: { name: 'Alice Berg' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+  });
+
+  test("a cookie for another competition can't write that competition's runner", async () => {
+    const otherId = 'comp-access-2';
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES (?, ?, ?, ?)`)
+      .run(otherId, 'Other', '2026-12-31', Date.now());
+    const cookie = await helperCookie(otherId);
+    for (const w of lanWrites(
+      () => competitorId,
+      () => ctx.competitionId
+    )) {
+      const res = await ctx.app.inject({
+        method: w.method,
+        url: w.url(),
+        remoteAddress: '192.168.1.50',
+        headers: { cookie },
+        payload: w.payload(),
+      });
+      assert.equal(res.statusCode, 403, `${w.name}: ${res.statusCode} ${res.body}`);
+      assert.equal(res.json<{ error: string }>().error, 'cookie_competition_mismatch');
+    }
+  });
+
+  test('localhost still writes competitor paths without a cookie', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitors/${competitorId}/profile`,
+      remoteAddress: '127.0.0.1',
+      payload: { name: 'Alice Berg' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
   });
 });

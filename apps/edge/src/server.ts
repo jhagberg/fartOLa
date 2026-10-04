@@ -41,6 +41,7 @@ import { existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 
 import { registerHealthRoute } from './routes/health.ts';
 import registerDevRoutes from './routes/dev.ts';
@@ -76,6 +77,7 @@ import { verifyCookie } from './auth/event-code.ts';
 import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
+import { competitors } from './db/schema.ts';
 import type { PrinterSink } from './print/sink.ts';
 import { createStdoutPrinterSink } from './print/stdout-sink.ts';
 import type { ChannelName } from '@fartola/shared-types';
@@ -350,9 +352,10 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       }
     }
 
-    // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on all write routes
-    // under /api/competitions/:id/**  (POST/PATCH/DELETE) for non-localhost
-    // requests without a valid signed cookie (T-02.1-27 / T-02.1-27b).
+    // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on every write
+    // (POST/PATCH/PUT/DELETE) that changes a competition's data, for
+    // non-localhost requests without a valid signed cookie (T-02.1-27 /
+    // T-02.1-27b).
     //
     // Localhost bypass: uses socket.remoteAddress ONLY. X-Forwarded-For is
     // EXPLICITLY IGNORED to prevent header spoofing (T-02.1-27 mitigation).
@@ -360,31 +363,52 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // bypass (operator opening the UI via the laptop's LAN IP) — see the gate.
     //
     // Cookie competitionId scope: the cookie payload's cid field must match
-    // the route's :id param. Mismatch → 403 cookie_competition_mismatch
-    // (T-02.1-25b mitigation — helper authenticated for comp A cannot write
-    // to comp B).
+    // the competition the write targets. Mismatch → 403
+    // cookie_competition_mismatch (T-02.1-25b mitigation — helper
+    // authenticated for comp A cannot write to comp B).
     //
-    // Blanket approach: gates all POST/PATCH/DELETE under /api/competitions/:id/**
-    // automatically — new write routes added in future plans are protected
-    // without an explicit inventory update.
-    app.addHook('onRequest', async (request, reply) => {
-      const method = request.method.toUpperCase();
-      const url = request.url;
+    // The target competition comes from the matched route (gatedCompetitionId):
+    // the :id of /api/competitions/:id[/**], the competitor row's competition
+    // for /api/competitors/:id[/**], and the validated body's competition_id
+    // for POST /api/competitors. New routes under those prefixes are protected
+    // without an inventory update. It runs as a preHandler (not onRequest) so
+    // the body is parsed for the POST /api/competitors case.
+    const gatedCompetitionId = (
+      routeUrl: string | undefined,
+      params: Record<string, string | undefined>,
+      body: unknown
+    ): string | undefined => {
+      if (routeUrl === undefined) return undefined; // unmatched → 404, nothing to protect
+      if (routeUrl === '/api/competitions/:id' || routeUrl.startsWith('/api/competitions/:id/')) {
+        // /api/competitions/:id/event-codes routes are admin-only
+        // (localhost-gated) routes with their own localhost check.
+        if (routeUrl.startsWith('/api/competitions/:id/event-codes')) return undefined;
+        return params['id'];
+      }
+      if (routeUrl === '/api/competitors/:id' || routeUrl.startsWith('/api/competitors/:id/')) {
+        // Unknown competitor → the route itself answers 404 without writing.
+        return app.fartolaDb.db
+          .select({ competitionId: competitors.competitionId })
+          .from(competitors)
+          .where(eq(competitors.id, params['id'] ?? ''))
+          .get()?.competitionId;
+      }
+      if (routeUrl === '/api/competitors') {
+        const cid = (body as { competition_id?: unknown } | null | undefined)?.competition_id;
+        // Missing/invalid competition_id → the route answers 400 without writing.
+        return typeof cid === 'string' ? cid : undefined;
+      }
+      return undefined;
+    };
 
-      // Only gate write methods under /api/competitions/:id/...
-      if (!['POST', 'PATCH', 'DELETE'].includes(method)) return;
-      if (!url.startsWith('/api/competitions/')) return;
-
-      // Extract the :id segment from the URL path.
-      // Pattern: /api/competitions/<id>/...  (must have a suffix after the id)
-      const urlParts = url.split('/');
-      // urlParts: ['', 'api', 'competitions', '<id>', ...rest]
-      if (urlParts.length < 5) return; // no suffix — let the route handle 404
-      const routeCompetitionId = urlParts[3];
-
-      // Exclude /api/competitions/:id/event-codes routes — they are admin-only
-      // (localhost-gated) routes with their own localhost check.
-      if (urlParts[4] === 'event-codes') return;
+    app.addHook('preHandler', async (request, reply) => {
+      if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method.toUpperCase())) return;
+      const routeCompetitionId = gatedCompetitionId(
+        request.routeOptions.url,
+        request.params as Record<string, string | undefined>,
+        request.body
+      );
+      if (routeCompetitionId === undefined) return;
 
       // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
       const remoteAddr = request.socket.remoteAddress;
@@ -420,7 +444,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
         return reply.code(403).send({ error: 'event_code_required' });
       }
 
-      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', eventCodeSigningSecret);
+      const payload = verifyCookie(cookieValue, routeCompetitionId, eventCodeSigningSecret);
 
       if (!payload) {
         // Either signature invalid, expired, or competitionId mismatch.
