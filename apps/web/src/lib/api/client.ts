@@ -1042,6 +1042,45 @@ export function revokeEventCode(competitionId: string, codeId: string): Promise<
   );
 }
 
+// ---------------------------------------------------------------------------
+// Liveresultat credentials (SOFT TR 7.7.1). The password is write-only: the
+// API answers with has_password, never the password.
+// ---------------------------------------------------------------------------
+
+export interface LiveresultatCredentials {
+  liveresultat_id: string | null;
+  has_password: boolean;
+}
+
+function liveresultatUrl(competitionId: string): string {
+  return `/api/competitions/${encodeURIComponent(competitionId)}/liveresultat/credentials`;
+}
+
+export function getLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId));
+}
+
+/** Set the id and password; the server then starts pushing. */
+export function setLiveresultatCredentials(
+  competitionId: string,
+  liveresultatId: string,
+  password: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), {
+    method: 'PATCH',
+    body: { liveresultat_id: liveresultatId, liveresultat_pwd: password },
+  });
+}
+
+/** Clear both; pushing stops. */
+export function clearLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), { method: 'DELETE' });
+}
+
 /** POST /access — authenticate with an event code; sets a signed HttpOnly cookie. */
 export function postAccess(competitionId: string, code: string): Promise<{ ok: true }> {
   return apiFetch<{ ok: true }>('/access', {

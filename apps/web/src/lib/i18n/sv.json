@@ -566,5 +566,16 @@
   "settings.helperCodes.expires": "Går ut",
   "settings.helperCodes.revoked": "Återkallad",
   "settings.helperCodes.reveal": "Visa",
-  "settings.helperCodes.revealed": "Kod (synlig i 30 s):"
+  "settings.helperCodes.revealed": "Kod (synlig i 30 s):",
+  "settings.liveresultat.title": "Liveresultat",
+  "settings.liveresultat.description": "TR 7.7.1: liveresultat ska erbjudas på nivå 1 och bör erbjudas på nivå 2. Ange tävlingens id och lösenord från liveresultat.orientering.se, så skickas resultaten dit löpande.",
+  "settings.liveresultat.id": "Tävlings-id",
+  "settings.liveresultat.password": "Lösenord",
+  "settings.liveresultat.passwordSet": "Lösenord sparat — skriv ett nytt för att byta",
+  "settings.liveresultat.save": "Spara och starta",
+  "settings.liveresultat.clear": "Sluta skicka",
+  "settings.liveresultat.active": "Skickar till liveresultat",
+  "settings.liveresultat.inactive": "Inte konfigurerad",
+  "settings.liveresultat.invalid": "Tävlings-id ska vara ett nummer och lösenordet får inte vara tomt.",
+  "settings.liveresultat.saveError": "Kunde inte spara."
 }

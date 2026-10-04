@@ -57,6 +57,7 @@ import { scheduleDailyRetention } from '../privacy/retention.ts';
 import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { createPushQueue } from '../integrations/liveresultat/queue.ts';
+import { liveresultatConfig } from '../routes/liveresultat.ts';
 
 /** A single serial reader entry as parsed from --serial or --serial-path. */
 export interface SerialPathEntry {
@@ -713,25 +714,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const liveresultatQueue = createPushQueue({
     log: app.log,
     getProjection: (competitionId) => app.projectionStore.get(competitionId),
-    getConfig: (competitionId) => {
-      const row = handle.db
-        .select({
-          liveresultatId: competitions.liveresultatId,
-          liveresultatPwd: competitions.liveresultatPwd,
-          name: competitions.name,
-          date: competitions.date,
-        })
-        .from(competitions)
-        .where(eq(competitions.id, competitionId))
-        .get();
-      if (!row?.liveresultatId || !row.liveresultatPwd) return null;
-      return {
-        liveresultatId: row.liveresultatId,
-        liveresultatPwd: row.liveresultatPwd,
-        competitionName: row.name,
-        competitionDate: row.date,
-      };
-    },
+    getConfig: (competitionId) => liveresultatConfig(handle, competitionId),
     getMopMeta: (competitionId) => {
       const classRows = handle.db
         .select({ id: classes.id, name: classes.name })

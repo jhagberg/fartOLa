@@ -69,6 +69,10 @@ export const LOGGER_REDACT_PATHS: readonly string[] = [
   // liveresultat_pwd — T-02.1-13 mitigate (plan 02.1-07 task 2)
   'liveresultat_pwd',
   '*.liveresultat_pwd',
+  // The PATCH …/liveresultat/credentials body (SOFT TR 7.7.1) under a request
+  // envelope.
+  'req.body.liveresultat_pwd',
+  'request.body.liveresultat_pwd',
   'liveresultatPwd',
   '*.liveresultatPwd',
   // event admin code — T-02.1-26 mitigate (plan 02.1-12)
