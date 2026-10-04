@@ -51,6 +51,26 @@ function offsetMs(epochMs: number, tz: string): number {
 }
 
 /** 'YYYY-MM-DD' + seconds after local midnight → epoch ms. */
+const DAY_MS = 86_400_000;
+const BUCKET_MS = 15 * 60_000;
+const offsetCache = new Map<string, number>();
+
+/**
+ * The zone's UTC offset, cached per 15 minutes of UTC time: offsets only
+ * change at DST transitions, which fall on whole quarter hours, and
+ * `formatToParts` is far too slow to call for every punch in a reduce.
+ */
+function cachedOffsetMs(epochMs: number, tz: string): number {
+  const key = `${tz}|${Math.floor(epochMs / BUCKET_MS)}`;
+  let offset = offsetCache.get(key);
+  if (offset === undefined) {
+    if (offsetCache.size > 10_000) offsetCache.clear();
+    offset = offsetMs(epochMs, tz);
+    offsetCache.set(key, offset);
+  }
+  return offset;
+}
+
 export function localToEpochMs(
   date: string,
   secondsSinceMidnight: number,
@@ -60,21 +80,20 @@ export function localToEpochMs(
   const naive = Date.UTC(y!, m! - 1, d!) + secondsSinceMidnight * 1000;
   // Guess with the offset at the naive instant, then correct once with the
   // offset at the guess (handles the DST switch between the two).
-  const guess = naive - offsetMs(naive, tz);
-  return naive - offsetMs(guess, tz);
+  const guess = naive - cachedOffsetMs(naive, tz);
+  return naive - cachedOffsetMs(guess, tz);
 }
 
 /** Epoch ms → seconds after local midnight on that local day (fractional
  * when the input has sub-second ms). */
 export function epochToLocalSeconds(epochMs: number, tz: string = COMPETITION_TZ): number {
-  const p = localParts(epochMs, tz);
-  const ms = ((epochMs % 1000) + 1000) % 1000;
-  return p.hour! * 3600 + p.minute! * 60 + p.second! + ms / 1000;
+  const local = epochMs + cachedOffsetMs(epochMs, tz);
+  return (((local % DAY_MS) + DAY_MS) % DAY_MS) / 1000;
 }
 
 /** Epoch ms → 'HH:MM:SS' local. */
 export function formatLocalTime(epochMs: number, tz: string = COMPETITION_TZ): string {
-  const p = localParts(epochMs, tz);
+  const secs = Math.floor(epochToLocalSeconds(epochMs, tz));
   const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${pad(p.hour!)}:${pad(p.minute!)}:${pad(p.second!)}`;
+  return `${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)}`;
 }
