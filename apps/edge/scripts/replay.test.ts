@@ -14,12 +14,19 @@ const person = (id: string, family: string) =>
   `<Person><Id>${id}</Id><Name><Family>${family}</Family><Given>Test</Given></Name></Person><Organisation><Name>OK Prov</Name></Organisation>`;
 
 /** SI clock fields for a local time on the competition day (CEST). */
-const clock = (h: number, m: number) => {
-  const s = h * 3600 + m * 60;
+const clock = (h: number, m: number, sec = 0) => {
+  const s = h * 3600 + m * 60 + sec;
   return { seconds_in_half_day: s % 43200, half_day: s >= 43200 ? 1 : 0, weekday: null };
 };
 
-function read(card: number, codes: number[], startH: number, finishM: number, atMs: number) {
+function read(
+  card: number,
+  codes: number[],
+  startH: number,
+  finishM: number,
+  atMs: number,
+  startSec = 0
+) {
   return {
     schema_version: 1,
     event: 'card_read',
@@ -27,7 +34,7 @@ function read(card: number, codes: number[], startH: number, finishM: number, at
     device_path: 'replay',
     card_type: 'SIAC',
     card_number: card,
-    start: clock(startH, 0),
+    start: clock(startH, 0, startSec),
     finish: clock(startH, finishM),
     check: null,
     clear: null,
@@ -50,6 +57,7 @@ function fixture(dir: string): void {
     ['R1', 'Ett', 8100001, 'H12'],
     ['R2', 'Tva', 8100002, 'D12'],
     ['R3', 'Tre', 8100003, 'H12'],
+    ['R4', 'Fyra', 8100004, 'D12'],
   ] as const;
   writeFileSync(
     path.join(dir, 'EntryList.xml'),
@@ -80,6 +88,9 @@ function fixture(dir: string): void {
       read(8100001, [31, 32], 10, 20, at), // OK 20:00
       read(8100002, [31, 99, 32], 10, 25, at + 1000), // extra punch: still OK, 25:00
       read(8100003, [32], 10, 15, at + 2000), // missed 31: MP
+      // Start time 10:00:00, start punch 10:00:06: MeOS times from the
+      // punch (19:54), fartOLa from the start time (20:00, SOFT TR 4.18.9).
+      read(8100004, [31, 32], 10, 20, at + 3000, 6),
     ]
       .map((r) => JSON.stringify(r))
       .join('\n') + '\n'
@@ -90,6 +101,7 @@ function fixture(dir: string): void {
       { runner: 'R1', card: 8100001, className: 'H12', status: 'OK', time: 1200 },
       { runner: 'R2', card: 8100002, className: 'D12', status: 'OK', time: 1500 },
       { runner: 'R3', card: 8100003, className: 'H12', status: 'MissingPunch', time: null },
+      { runner: 'R4', card: 8100004, className: 'D12', status: 'OK', time: 1194 },
     ])
   );
   writeFileSync(
@@ -99,14 +111,36 @@ function fixture(dir: string): void {
 }
 
 describe('replay script', () => {
-  test('imports, replays the reads and matches the official result 3/3', async () => {
+  test('imports, replays the reads; the start-punch runner is a SOFT difference, not a mismatch', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'fartola-replay-'));
     try {
       fixture(dir);
       const report = await replay(dir);
       assert.deepEqual(report.mismatches, []);
       assert.equal(report.equal, 3);
-      assert.match(formatReport(report), /^3\/3 lika/);
+      assert.equal(report.total, 4);
+      assert.deepEqual(
+        report.meosDifferences.map((d) => [d.card, d.expectedTime, d.gotTime, d.meosTime]),
+        [[8100004, 1194, 1200, 1194]]
+      );
+      const text = formatReport(report);
+      assert.match(text, /^3\/4 lika som officiella resultatet, 1 skillnad mot MeOS/);
+      assert.match(text, /Skillnad mot MeOS \(SOFT TR 4\.18\.9 \(2026-07-01\)\)/);
+      assert.match(text, /bricka 8100004: MeOS 19:54, fartOLa 20:00/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('--meos-start (start punch everywhere) matches the official result 4/4', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'fartola-replay-'));
+    try {
+      fixture(dir);
+      const report = await replay(dir, { meosStart: true });
+      assert.deepEqual(report.mismatches, []);
+      assert.deepEqual(report.meosDifferences, []);
+      assert.equal(report.equal, 4);
+      assert.match(formatReport(report), /^4\/4 lika som officiella resultatet$/m);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

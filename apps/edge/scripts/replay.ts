@@ -13,6 +13,12 @@
 // HTTP routes, a race start one hour before the first read-out, each read-out through
 // insertEvent with its original time, then the same loader + reducer the
 // server uses. The script only reports; it always exits 0.
+//
+// Start (02.1-14 Task 14): fartOLa times a runner with a start time from it
+// (SOFT TR 4.18.9 (2026-07-01)); MeOS from the start punch. A runner who
+// matches the official result only when timed from the punch is listed
+// under "Skillnad mot MeOS", not as a mismatch. `--meos-start` replays with
+// start_method 'start_punch' in every class, as MeOS does.
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,7 +29,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { openDatabase } from '../src/db/index.ts';
 import { competitions, competitors } from '../src/db/schema.ts';
-import type { ManualStatus } from '../src/projection/types.ts';
+import type { CompetitionState, ManualStatus } from '../src/projection/types.ts';
 import { ensureNodeId } from '../src/db/node-id.ts';
 import { formatLocalTime } from '../src/time/competitionClock.ts';
 import { loadCompetitionInputs } from '../src/projection/loader.ts';
@@ -57,10 +63,23 @@ export interface Mismatch {
   missingStart?: { suggestedStartMs: number | null };
 }
 
+/** A runner who differs from the official (MeOS) result only because
+ * fartOLa times from the start time and MeOS from the start punch. */
+export interface MeosDifference {
+  card: number | null;
+  className: string;
+  expectedTime: number | null;
+  /** fartOLa's time (s), from the start time. */
+  gotTime: number | null;
+  /** The time (s) with start_method 'start_punch', as MeOS. */
+  meosTime: number | null;
+}
+
 export interface ReplayReport {
   total: number;
   equal: number;
   mismatches: Mismatch[];
+  meosDifferences: MeosDifference[];
   imports: Record<string, unknown>;
   unknownCards: number[];
 }
@@ -93,7 +112,10 @@ async function upload(app: FastifyInstance, url: string, file: string): Promise<
   return res.json();
 }
 
-export async function replay(dir: string): Promise<ReplayReport> {
+export async function replay(
+  dir: string,
+  opts: { meosStart?: boolean } = {}
+): Promise<ReplayReport> {
   const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf-8')) as {
     source: { event: string; date: string };
   };
@@ -196,32 +218,53 @@ export async function replay(dir: string): Promise<ReplayReport> {
 
     const input = loadCompetitionInputs(handle, competitionId);
     if (!input) throw new Error('competition vanished');
-    const state = reduce(input);
-    const byCard = new Map(
-      [...state.competitors.values()].filter((c) => c.card_number).map((c) => [c.card_number!, c])
-    );
-    // What the public result shows (an untimed class shows no time).
-    const shown = new Map(
-      [...state.results_by_class.values()].flat().map((r) => [r.competitor_id, r.elapsed_time_ms])
-    );
-
-    const mismatches: Mismatch[] = [];
-    let equal = 0;
-    for (const e of expected) {
-      const view = e.card ? byCard.get(e.card) : undefined;
+    // MeOS times from the start punch: the same input with start_method
+    // 'start_punch' in every class.
+    const meosState = reduce({
+      ...input,
+      classes: input.classes.map((c) => ({ ...c, startMethod: 'start_punch' as const })),
+    });
+    const state = opts.meosStart ? meosState : reduce(input);
+    const seconds = (ms: number | null | undefined): number | null =>
+      ms == null ? null : Math.round(ms / 1000);
+    /** One runner's verdict in a projection: equal to the official result? */
+    const verdict = (s: CompetitionState, e: Expected) => {
+      const view = e.card
+        ? [...s.competitors.values()].find((c) => c.card_number === e.card)
+        : undefined;
       const got = view?.status ?? 'NOT_IMPORTED';
-      const gotTime =
-        view?.elapsed_time_ms == null ? null : Math.round(view.elapsed_time_ms / 1000);
+      const gotTime = seconds(view?.elapsed_time_ms);
       const statusOk = (SAME[e.status] ?? [e.status]).includes(got);
-      // Untimed class: the published result must show no time. Otherwise a
-      // missing official time means status only (e.g. OK set by hand).
-      const shownMs = view ? (shown.get(view.id) ?? null) : null;
+      // Untimed class: the published result must show no time (what the
+      // result list shows). Otherwise a missing official time means status
+      // only (e.g. OK set by hand).
+      const shownMs = view
+        ? ([...s.results_by_class.values()].flat().find((r) => r.competitor_id === view.id)
+            ?.elapsed_time_ms ?? null)
+        : null;
       const timeOk = view?.no_timing
         ? shownMs === null
         : e.status !== 'OK' ||
           e.time === null ||
           (gotTime !== null && Math.abs(gotTime - e.time) <= 1);
-      if (statusOk && timeOk) equal++;
+      return { view, got, gotTime, ok: statusOk && timeOk };
+    };
+
+    const mismatches: Mismatch[] = [];
+    const meosDifferences: MeosDifference[] = [];
+    let equal = 0;
+    for (const e of expected) {
+      const { view, got, gotTime, ok } = verdict(state, e);
+      const meos = opts.meosStart ? null : verdict(meosState, e);
+      if (ok) equal++;
+      else if (meos?.ok)
+        meosDifferences.push({
+          card: e.card,
+          className: e.className,
+          expectedTime: e.time,
+          gotTime,
+          meosTime: meos.gotTime,
+        });
       else
         mismatches.push({
           card: e.card,
@@ -239,6 +282,7 @@ export async function replay(dir: string): Promise<ReplayReport> {
       total: expected.length,
       equal,
       mismatches,
+      meosDifferences,
       imports,
       unknownCards: state.pending_unknown_cards,
     };
@@ -252,7 +296,11 @@ const mmss = (s: number | null): string =>
   s === null ? '–' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
 export function formatReport(r: ReplayReport): string {
-  const out = [`${r.equal}/${r.total} lika som officiella resultatet`];
+  const diffs = r.meosDifferences.length;
+  const out = [
+    `${r.equal}/${r.total} lika som officiella resultatet` +
+      (diffs ? `, ${diffs} skillnad mot MeOS (start, se nedan)` : ''),
+  ];
   const kinds = new Map<string, number>();
   for (const m of r.mismatches) {
     const k = `${m.expected} → ${m.got}${m.expected === 'OK' && m.got === 'OK' ? ' (tid)' : ''}`;
@@ -273,6 +321,15 @@ export function formatReport(r: ReplayReport): string {
             : '')
       );
   }
+  if (diffs) {
+    out.push(
+      `\nSkillnad mot MeOS (SOFT TR 4.18.9 (2026-07-01)): tid från starttiden, inte startstämplingen`
+    );
+    for (const d of r.meosDifferences)
+      out.push(
+        `  ${d.className} bricka ${d.card ?? '–'}: MeOS ${mmss(d.meosTime)}, fartOLa ${mmss(d.gotTime)}`
+      );
+  }
   return out.join('\n');
 }
 
@@ -282,7 +339,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.error('Sätt FARTOLA_REPLAY_DIR till en replay-mapp (fartOLa-tools/replay).');
     process.exit(2);
   }
-  const report = await replay(dir);
+  const report = await replay(dir, { meosStart: process.argv.includes('--meos-start') });
   console.log(
     JSON.stringify(
       report.imports,
