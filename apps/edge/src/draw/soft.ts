@@ -3,9 +3,9 @@
 // SOFT club-blocking draw algorithm re-authored from the algorithm described
 // in oEventDraw.cpp:130-209 (NOT ported — re-authored against the algorithm).
 //
-// D-04: drawSOFT produces a permutation that minimises adjacent same-club
-// runners (zero adjacency when mathematically possible; best-effort when a
-// single club exceeds half the class).
+// D-04: drawSOFT produces a random permutation with the fewest adjacent
+// same-club runners possible: zero when no club exceeds half the class,
+// else 2·M − n − 1 (SOFT TR 7.5.1).
 //
 // D-06: Vakanta startplatser are distributed as null-competitor gaps in the
 // draw order (evenly spread via interleaving).
@@ -31,16 +31,20 @@ export interface DrawSOFTOptions {
 }
 
 /**
- * SOFT club-blocking draw.
+ * SOFT club-blocking draw (SOFT TR 7.5.1 (2026-07-01): runners from the same
+ * club "ska om möjligt inte starta direkt efter varandra").
  *
- * Algorithm:
- * 1. Group runners by club. Treat null-club runners each as their own
- *    singleton group (they don't create adjacency with anyone).
- * 2. Sort groups descending by size (largest club first).
- * 3. Shuffle within each group.
- * 4. Iterative round-robin interleave: on each pass, take one runner from
- *    each non-empty group (largest-remaining first), repeating until all
- *    groups are drained. This minimises adjacent same-club occurrences.
+ * The fewest same-club neighbours possible is max(0, 2·M − n − 1), M the
+ * largest club, n the class. Algorithm:
+ * 1. Group runners by club; a runner without a club is a group of one.
+ * 2. Shuffle within each group; order the groups by size, ties at random.
+ * 3. An optimal start order: when M ≤ ⌈n/2⌉, deal the groups, largest
+ *    first, into slots 0, 2, 4, … then 1, 3, 5, … (no neighbours). When M
+ *    is larger, the other runners take slots 1, 3, …, 2(n−M)−1 and the
+ *    largest club the rest (2M − n − 1 neighbours).
+ * 4. Randomise: swap two random runners whenever that adds no same-club
+ *    neighbour. The swaps are symmetric, so the draw wanders over the
+ *    optimal orders at random and repeated draws differ (TR 7.5.2).
  * 5. Insert vacant null slots evenly across the result.
  * 6. Count adjacencies and return.
  */
@@ -66,29 +70,49 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
     }
   }
 
-  // --- Step 2: Sort groups descending by size ---
-  const groups: DrawRunner[][] = Array.from(groupMap.values()).sort((a, b) => b.length - a.length);
+  // --- Step 2: Shuffle within groups; groups by size, ties at random ---
+  const groups: DrawRunner[][] = Array.from(groupMap.values());
+  for (const g of groups) fisherYatesShuffle(g, rng);
+  fisherYatesShuffle(groups, rng);
+  groups.sort((a, b) => b.length - a.length); // stable: equal sizes stay shuffled
 
-  // --- Step 3: Shuffle within each group ---
-  for (const g of groups) {
-    fisherYatesShuffle(g, rng);
+  // --- Step 3: An optimal order ---
+  const n = runners.length;
+  const largest = groups[0]!;
+  const others = groups.slice(1).flat();
+  const order: DrawRunner[] = new Array<DrawRunner>(n);
+  if (largest.length <= Math.ceil(n / 2)) {
+    const all = [largest, ...groups.slice(1)].flat();
+    let slot = 0;
+    for (const r of all) {
+      order[slot] = r;
+      slot += 2;
+      if (slot >= n) slot = 1;
+    }
+  } else {
+    let li = 0;
+    for (let slot = 0; slot < n; slot++) {
+      const odd = slot % 2 === 1 && (slot - 1) / 2 < others.length;
+      order[slot] = odd ? others[(slot - 1) / 2]! : largest[li++]!;
+    }
   }
 
-  // --- Step 4: Iterative round-robin interleave ---
-  // Strategy: create a mutable queue per group, then on each iteration pick
-  // one runner from each non-empty queue sorted by remaining size descending.
-  // This ensures the largest club stays maximally spread.
-  const order: DrawRunner[] = [];
-  // Working copy of each group as a queue (we shift from front)
-  const queues: DrawRunner[][] = groups.map((g) => [...g]);
-
-  while (queues.some((q) => q.length > 0)) {
-    // Sort non-empty queues by remaining size descending on each pass
-    const nonEmpty = queues.filter((q) => q.length > 0).sort((a, b) => b.length - a.length);
-    for (const q of nonEmpty) {
-      const runner = q.shift();
-      if (runner !== undefined) order.push(runner);
+  // --- Step 4: Randomise without adding neighbours ---
+  const same = (a: DrawRunner, b: DrawRunner): boolean => a.club !== null && a.club === b.club;
+  const around = (i: number, j: number): number => {
+    let c = 0;
+    for (const p of new Set([i - 1, i, j - 1, j])) {
+      if (p >= 0 && p + 1 < n && same(order[p]!, order[p + 1]!)) c++;
     }
+    return c;
+  };
+  for (let k = 0; k < 50 * n && n > 1; k++) {
+    const i = rng(0, n);
+    const j = rng(0, n);
+    if (i === j || same(order[i]!, order[j]!)) continue;
+    const before = around(i, j);
+    [order[i], order[j]] = [order[j]!, order[i]!];
+    if (around(i, j) > before) [order[i], order[j]] = [order[j]!, order[i]!];
   }
 
   // --- Step 5: Insert vacant slots evenly ---
