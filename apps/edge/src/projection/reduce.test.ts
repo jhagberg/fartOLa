@@ -995,6 +995,29 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(anna.status, 'OK');
   });
 
+  test('SOFT TR 4.21.1: the competition max time applies to every class; a class value overrides it', () => {
+    seqCounter = 0;
+    // 700 s runs in two classes. Competition max time 600 s; H21 has no own
+    // value, D21 overrides with 900 s (non-sanctioned use).
+    const events = [
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
+      cardRead(2, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      max_time_sec: 600,
+      events,
+      competitors: [
+        comp({ id: 'c-anna', cardNumber: 1 }),
+        comp({ id: 'c-bea', cardNumber: 2, classId: 'cls-D21' }),
+      ],
+      classes: [cls('cls-H21'), clsWithMax('cls-D21', 900)],
+      courses: [course('cls-H21', [31, 32, 33, 34]), course('cls-D21', [31, 32, 33, 34])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.status, 'MAX');
+    assert.equal(state.competitors.get('c-bea')?.status, 'OK');
+  });
+
   // Test 3: No cap → no MAX promotion
   test('test 3: MAX auto-compute — class.maxTimeSec is null → no MAX promotion', () => {
     seqCounter = 0;

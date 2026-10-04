@@ -26,6 +26,8 @@ import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
+import { competitors } from '../db/schema.ts';
+import { loadCompetitionInputs } from '../projection/loader.ts';
 import type { FastifyInstance } from 'fastify';
 
 interface Ctx {
@@ -421,5 +423,99 @@ describe('competitions REST CRUD', () => {
     assert.equal(patchRes.statusCode, 200);
     const unlinked = patchRes.json() as { eventor_event_id: number | null };
     assert.equal(unlinked.eventor_event_id, null);
+  });
+  // SOFT TR 4.21.1 / 4.21.2 — one max time for the whole competition.
+  async function createComp(): Promise<string> {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Maxtid', date: '2026-10-04' },
+    });
+    return (res.json() as { id: string }).id;
+  }
+
+  test('SOFT TR 4.21.1: PATCH max-time sets one max time for the competition, used for every class', async () => {
+    const id = await createComp();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: 150 * 60 },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal((res.json() as { max_time_sec: number }).max_time_sec, 9000);
+    const got = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` });
+    assert.equal(
+      (got.json() as { competition: { max_time_sec: number } }).competition.max_time_sec,
+      9000
+    );
+    // The projection reads it for every class (the reducer test covers the
+    // MAX status itself).
+    assert.equal(loadCompetitionInputs(ctx.handle, id)?.max_time_sec, 9000);
+    const cleared = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: null },
+    });
+    assert.equal((cleared.json() as { max_time_sec: number | null }).max_time_sec, null);
+    const bad = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: -5 },
+    });
+    assert.equal(bad.statusCode, 400);
+  });
+
+  test('SOFT TR 4.21.2: the max time cannot be changed after the first start (409)', async () => {
+    const id = await createComp();
+    const set = (url: string, payload: object) => ctx.app.inject({ method: 'PATCH', url, payload });
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 5400 })).statusCode,
+      200
+    );
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classUrl = `/api/competitions/${id}/classes/${(cls.json() as { id: string }).id}`;
+
+    await ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/start-race` });
+
+    const locked = await set(`/api/competitions/${id}/max-time`, { max_time_sec: 7200 });
+    assert.equal(locked.statusCode, 409);
+    assert.deepEqual(locked.json(), { error: 'max_time_locked' });
+    // The class override is locked too; other class settings are not.
+    assert.equal((await set(classUrl, { maxTimeSec: 7200 })).statusCode, 409);
+    assert.equal((await set(classUrl, { no_timing: true })).statusCode, 200);
+    // Re-sending the stated value is not a change.
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 5400 })).statusCode,
+      200
+    );
+  });
+
+  test('SOFT TR 4.21.2: a drawn start time that has passed counts as the first start', async () => {
+    const id = await createComp();
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/classes`,
+      payload: { name: 'H21' },
+    });
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'cmp-1',
+        competitionId: id,
+        name: 'Anna',
+        classId: (cls.json() as { id: string }).id,
+        startTimeMs: Date.now() - 60_000,
+      })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: 5400 },
+    });
+    assert.equal(res.statusCode, 409);
   });
 });

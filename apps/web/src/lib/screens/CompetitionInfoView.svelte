@@ -27,8 +27,11 @@
     getCompetition,
     listCompetitors,
     listVoidedControls,
+    maxTimeMinutesToSec,
     patchCompetition,
+    setCompetitionMaxTime,
     setControlVoided,
+    ApiError,
   } from '$lib/api/client.ts';
   import { goto } from '$app/navigation';
   import type {
@@ -64,6 +67,9 @@
   let saveErr: string | null = $state(null);
   let savedToast: string | null = $state(null);
   let savedTimer: ReturnType<typeof setTimeout> | null = null;
+  // SOFT TR 4.21.1: one max time for the competition, in whole minutes.
+  let formMaxTimeMin = $state('');
+  let maxTimeErr: string | null = $state(null);
 
   const dirty = $derived.by(() => {
     const c = competition;
@@ -125,6 +131,7 @@
       formTemplate = detail.competition.receipt_template;
       formAutoPrint = detail.competition.auto_print;
       formTimingFormat = detail.competition.timing_format;
+      formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
     } finally {
@@ -160,6 +167,28 @@
       saveErr = (e as Error).message ?? 'save failed';
     } finally {
       saving = false;
+    }
+  }
+
+  function maxTimeToMinutes(sec: number | null | undefined): string {
+    return sec === null || sec === undefined ? '' : String(Math.round(sec / 60));
+  }
+
+  async function saveMaxTime(): Promise<void> {
+    maxTimeErr = null;
+    const sec = maxTimeMinutesToSec(formMaxTimeMin);
+    if (sec === undefined) {
+      maxTimeErr = t('info.maxTime.invalid');
+      return;
+    }
+    try {
+      competition = await setCompetitionMaxTime(competitionId, sec);
+      flashSaved();
+    } catch (e) {
+      maxTimeErr =
+        e instanceof ApiError && e.status === 409
+          ? t('info.maxTime.locked')
+          : ((e as Error).message ?? 'save failed');
     }
   }
 
@@ -246,6 +275,40 @@
           data-testid="info-save"
         >
           {saving ? t('info.saving') : t('info.save')}
+        </button>
+      </div>
+    </section>
+
+    <!-- Max time (SOFT TR 4.21.1–4.21.2) -->
+    <section class="card">
+      <header class="card-head">
+        <h2>{t('info.maxTime.heading')}</h2>
+      </header>
+      <div class="card-body">
+        <label class="field">
+          <span>{t('info.maxTime.label')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            placeholder="150"
+            bind:value={formMaxTimeMin}
+            data-testid="info-max-time"
+          />
+        </label>
+        <p class="hint">{t('info.maxTime.hint')}</p>
+      </div>
+      <div class="card-foot">
+        {#if maxTimeErr}
+          <p class="err" role="alert">{maxTimeErr}</p>
+        {/if}
+        <button
+          type="button"
+          class="btn primary"
+          onclick={() => void saveMaxTime()}
+          disabled={formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
+          data-testid="info-max-time-save"
+        >
+          {t('info.save')}
         </button>
       </div>
     </section>

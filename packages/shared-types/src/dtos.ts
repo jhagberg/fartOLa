@@ -101,6 +101,9 @@ export const CompetitionDTO = z.object({
    * any Eventor event. Set by the wizard Eventor quickstart or by
    * PATCH /api/competitions/:id with eventor_event_id. */
   eventor_event_id: z.number().int().positive().nullable().optional(),
+  /** SOFT TR 4.21.1 — the competition's max time in seconds, the same for
+   * all classes. NULL = none. Set via PUT /api/competitions/:id/max-time. */
+  max_time_sec: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 

@@ -244,6 +244,9 @@ export const competitions = sqliteTable('competitions', {
   /** Phase 2.1 D-17 — display format for elapsed times: 'seconds' or 'tenths'.
    * Sprint events typically use 'tenths'; road/forest use 'seconds'. */
   timingFormat: text('timing_format').default('seconds'),
+  /** SOFT TR 4.21.1 — one max time for every class, in seconds. NULL = none.
+   * classes.max_time_sec overrides it per class (non-sanctioned use). */
+  maxTimeSec: integer('max_time_sec'),
 });
 
 // ---------------------------------------------------------------------------

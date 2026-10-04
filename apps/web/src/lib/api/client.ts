@@ -164,6 +164,28 @@ export function patchCompetition(id: string, body: CompetitionPatchInput): Promi
   });
 }
 
+/** SOFT TR 4.21.1 — set (seconds) or clear (null) the competition's max
+ * time, the same for all classes. 409 max_time_locked after the first start
+ * (TR 4.21.2). */
+export function setCompetitionMaxTime(
+  id: string,
+  maxTimeSec: number | null
+): Promise<CompetitionDTO> {
+  return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/max-time`, {
+    method: 'PATCH',
+    body: { max_time_sec: maxTimeSec },
+  });
+}
+
+/** Whole minutes from the max-time field → seconds. '' → null (no max
+ * time); anything but a positive whole number → undefined (invalid). */
+export function maxTimeMinutesToSec(raw: string): number | null | undefined {
+  const s = raw.trim();
+  if (s === '') return null;
+  if (!/^\d+$/.test(s) || Number(s) === 0) return undefined;
+  return Number(s) * 60;
+}
+
 /** Phase 2.1 — flip the race-phase gate. Idempotent: returns the existing
  * competition row (with race_started_at_ms already set) on a duplicate
  * call instead of resetting the start time. */
