@@ -334,6 +334,21 @@ export function softStatusLabel(key: SoftStatus): string {
   return t(`soft.status.${key}`);
 }
 
+/** What a results-table row shows (TA till TR 7.8.2): place and time only
+ * for an approved timed run; every status row carries SOFT's name instead. */
+export function resultRowCells(r: {
+  soft_status: SoftStatus;
+  place: number | null;
+  elapsed_time_ms: number | null;
+}): { place: string; time: string; label: string } {
+  const timed = r.soft_status === 'OK';
+  return {
+    place: timed && r.place !== null ? String(r.place) : '—',
+    time: timed ? formatElapsed(r.elapsed_time_ms) : '—',
+    label: softStatusLabel(r.soft_status),
+  };
+}
+
 export function toReceiptRead(input: {
   row: ReadoutHistoryRow;
   className: string;

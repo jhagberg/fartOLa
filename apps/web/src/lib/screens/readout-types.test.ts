@@ -11,6 +11,7 @@ import {
   readElapsedMs,
   toReceiptRead,
   softStatusLabel,
+  resultRowCells,
   missingStartHint,
   startWarning,
   parseStartTimeInput,
@@ -115,6 +116,22 @@ describe('SOFT status names on published surfaces', () => {
     expect(label('DQ')).toBe('Diskad');
     expect(label('DNS')).toBe('Ej start');
     expect(label('PEND')).toBe('Ej utläst');
+  });
+
+  it("SOFT TA till TR 7.8.2: results-table rows — a status row shows SOFT's name and no time or place", () => {
+    const cells = (status: Parameters<typeof softStatus>[0], noTiming = false) =>
+      resultRowCells({
+        soft_status: softStatus(status, { noTiming }),
+        place: status === 'OK' && !noTiming ? 1 : null,
+        elapsed_time_ms: noTiming ? null : 900_000,
+      });
+    expect(cells('OK')).toEqual({ place: '1', time: '15:00', label: 'Godkänd' });
+    for (const s of ['MP', 'DNF', 'MAX'] as const)
+      expect(cells(s)).toEqual({ place: '—', time: '—', label: 'Ej godkänd' });
+    expect(cells('DQ')).toEqual({ place: '—', time: '—', label: 'Diskad' });
+    expect(cells('DNS')).toEqual({ place: '—', time: '—', label: 'Ej start' });
+    expect(cells('PEND')).toEqual({ place: '—', time: '—', label: 'Ej utläst' });
+    expect(cells('OK', true)).toEqual({ place: '—', time: '—', label: 'Deltagit' });
   });
 
   it('SOFT TA till TR 7.8.2: the receipt preview prints the SOFT name, "Deltagit" when untimed (TR 4.21.3)', () => {

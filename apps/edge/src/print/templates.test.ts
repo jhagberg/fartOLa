@@ -136,6 +136,8 @@ test('SOFT TA till TR 7.8.2: receipts print "Ej godkänd", "Diskad" and "Ej star
       const text = await printed(name, receiptData({ status, no_timing: false }));
       assert.match(text, new RegExp(label), `${name} ${status}:\n${text}`);
       assert.doesNotMatch(text, /Felstämpling|missing punch|\bDNF\b|\bMP\b/, `${name} ${status}`);
+      // The supplied running time (15:00) is not printed.
+      assert.doesNotMatch(text, /15:00/, `${name} ${status}: no time:\n${text}`);
     }
   }
   // An approved timed run still prints its time.
