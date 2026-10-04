@@ -441,6 +441,29 @@ describe('preHandler gate — operator-self bypass (allowLan)', () => {
   });
 });
 
+/** A real helper cookie for `competitionId`, obtained through POST /access. */
+let helperIp = 0;
+async function helperCookie(ctx: Ctx, competitionId: string): Promise<string> {
+  const gen = await ctx.app.inject({
+    method: 'POST',
+    url: `/api/competitions/${competitionId}/event-codes`,
+    remoteAddress: '127.0.0.1',
+    payload: {},
+  });
+  assert.equal(gen.statusCode, 201);
+  const res = await ctx.app.inject({
+    method: 'POST',
+    url: '/access',
+    // A fresh source IP per login — /access rate-limits per IP across tests.
+    remoteAddress: `10.0.9.${++helperIp}`,
+    payload: { competition_id: competitionId, code: gen.json<{ code: string }>().code },
+  });
+  assert.equal(res.statusCode, 200);
+  const setCookie = res.headers['set-cookie'];
+  const first = Array.isArray(setCookie) ? setCookie[0] : String(setCookie);
+  return (first ?? '').split(';')[0] ?? '';
+}
+
 describe('write gate — routes without a competition id in the URL', () => {
   let ctx: Ctx;
   let competitorId: string;
@@ -461,27 +484,6 @@ describe('write gate — routes without a competition id in the URL', () => {
   afterEach(async () => {
     await teardown(ctx);
   });
-
-  /** A real helper cookie for `competitionId`, obtained through POST /access. */
-  async function helperCookie(competitionId: string): Promise<string> {
-    const gen = await ctx.app.inject({
-      method: 'POST',
-      url: `/api/competitions/${competitionId}/event-codes`,
-      remoteAddress: '127.0.0.1',
-      payload: {},
-    });
-    assert.equal(gen.statusCode, 201);
-    const res = await ctx.app.inject({
-      method: 'POST',
-      url: '/access',
-      remoteAddress: '10.0.0.5',
-      payload: { competition_id: competitionId, code: gen.json<{ code: string }>().code },
-    });
-    assert.equal(res.statusCode, 200);
-    const setCookie = res.headers['set-cookie'];
-    const first = Array.isArray(setCookie) ? setCookie[0] : String(setCookie);
-    return (first ?? '').split(';')[0] ?? '';
-  }
 
   const lanWrites = (competitorIdOf: () => string, competitionIdOf: () => string) => [
     {
@@ -551,7 +553,7 @@ describe('write gate — routes without a competition id in the URL', () => {
   });
 
   test("a cookie for the runner's competition authorises a competitor-path write", async () => {
-    const cookie = await helperCookie(ctx.competitionId);
+    const cookie = await helperCookie(ctx, ctx.competitionId);
     const res = await ctx.app.inject({
       method: 'PATCH',
       url: `/api/competitors/${competitorId}/profile`,
@@ -567,7 +569,7 @@ describe('write gate — routes without a competition id in the URL', () => {
     ctx.handle.sqlite
       .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES (?, ?, ?, ?)`)
       .run(otherId, 'Other', '2026-12-31', Date.now());
-    const cookie = await helperCookie(otherId);
+    const cookie = await helperCookie(ctx, otherId);
     for (const w of lanWrites(
       () => competitorId,
       () => ctx.competitionId
@@ -592,5 +594,79 @@ describe('write gate — routes without a competition id in the URL', () => {
       payload: { name: 'Alice Berg' },
     });
     assert.equal(res.statusCode, 200, res.body);
+  });
+});
+
+describe('write gate — cookie whose code is no longer active', () => {
+  let ctx: Ctx;
+  let competitorId: string;
+  beforeEach(async () => {
+    ctx = await boot();
+    const classId = crypto.randomUUID();
+    competitorId = crypto.randomUUID();
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO classes (id, competition_id, name) VALUES (?, ?, ?)`)
+      .run(classId, ctx.competitionId, 'H21');
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO competitors (id, competition_id, name, class_id) VALUES (?, ?, ?, ?)`)
+      .run(competitorId, ctx.competitionId, 'Alice Andersson', classId);
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  const startTimeWrite = (cookie: string) =>
+    ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${competitorId}/start-time`,
+      remoteAddress: '192.168.1.50',
+      headers: { cookie },
+      payload: { start_time_ms: Date.UTC(2026, 11, 31, 9, 0) },
+    });
+  const storedStart = () =>
+    (
+      ctx.handle.sqlite
+        .prepare(`SELECT start_time_ms FROM competitors WHERE id = ?`)
+        .get(competitorId) as { start_time_ms: number | null }
+    ).start_time_ms;
+
+  test('active code: its cookie authorises writes', async () => {
+    const cookie = await helperCookie(ctx, ctx.competitionId);
+    const res = await startTimeWrite(cookie);
+    assert.equal(res.statusCode, 200, res.body);
+  });
+
+  test('revoked code: its cookie no longer authorises writes', async () => {
+    const cookie = await helperCookie(ctx, ctx.competitionId);
+    const { id: codeId } = ctx.handle.sqlite
+      .prepare(`SELECT id FROM event_codes WHERE competition_id = ?`)
+      .get(ctx.competitionId) as { id: string };
+    const revoke = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/event-codes/${codeId}/revoke`,
+      remoteAddress: '127.0.0.1',
+    });
+    assert.equal(revoke.statusCode, 200);
+
+    const res = await startTimeWrite(cookie);
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(res.json<{ error: string }>().error, 'event_code_required');
+    assert.equal(storedStart(), null, 'the start time must not be written');
+  });
+
+  test('deleted code: its cookie no longer authorises writes', async () => {
+    const cookie = await helperCookie(ctx, ctx.competitionId);
+    ctx.handle.sqlite.prepare(`DELETE FROM event_codes`).run();
+    const res = await startTimeWrite(cookie);
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(storedStart(), null);
+  });
+
+  test('expired code: its cookie no longer authorises writes', async () => {
+    const cookie = await helperCookie(ctx, ctx.competitionId);
+    ctx.handle.sqlite.prepare(`UPDATE event_codes SET expires_at_ms = ?`).run(Date.now() - 1000);
+    const res = await startTimeWrite(cookie);
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(storedStart(), null);
   });
 });

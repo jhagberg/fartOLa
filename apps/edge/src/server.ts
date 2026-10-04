@@ -41,7 +41,7 @@ import { existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 
 import { registerHealthRoute } from './routes/health.ts';
 import registerDevRoutes from './routes/dev.ts';
@@ -77,7 +77,7 @@ import { verifyCookie } from './auth/event-code.ts';
 import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
-import { competitors } from './db/schema.ts';
+import { competitors, eventCodes } from './db/schema.ts';
 import type { PrinterSink } from './print/sink.ts';
 import { createStdoutPrinterSink } from './print/stdout-sink.ts';
 import type { ChannelName } from '@fartola/shared-types';
@@ -468,7 +468,22 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       }
 
       // Verified. payload.competitionId already matches routeCompetitionId
-      // (verifyCookie enforces this). No additional check needed.
+      // (verifyCookie enforces this). The code the cookie was issued for must
+      // still be active: revoking (or deleting/expiring) a code cuts off its
+      // cookies immediately, not at the cookie's own expiry.
+      const code = app.fartolaDb.db
+        .select({ id: eventCodes.id })
+        .from(eventCodes)
+        .where(
+          and(
+            eq(eventCodes.id, payload.codeId),
+            eq(eventCodes.competitionId, routeCompetitionId),
+            isNull(eventCodes.revokedAtMs),
+            gt(eventCodes.expiresAtMs, Date.now())
+          )
+        )
+        .get();
+      if (!code) return reply.code(403).send({ error: 'event_code_required' });
     });
 
     await app.register(registerDevRoutes);
