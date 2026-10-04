@@ -1336,6 +1336,66 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.deepEqual(anna.missing_codes, []);
   });
 
+  test('voided leg runs from the previous course control, not a stray punch before it', () => {
+    seqCounter = 0;
+    // 10:00–11:00, course [31, 32]: 31 at 10:10, stray 99 at 10:19, 32 at
+    // 10:20. The leg into 32 is 31 → 32 = 10 min, so voiding it leaves 50.
+    const t = 10 * 3600;
+    const at = (code: number, sec: number): NdjsonPunch => ({
+      code,
+      seconds_in_half_day: sec,
+      half_day: 0,
+      weekday: null,
+    });
+    const events = [
+      cardRead(1, [at(31, t + 600), at(99, t + 1140), at(32, t + 1200)], hd(t), hd(t + 3600)),
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: null,
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.elapsed_time_ms, 50 * 60 * 1000);
+  });
+
+  test('voided leg into a control visited twice: both legs into it are taken out', () => {
+    seqCounter = 0;
+    // Course [31, 32, 33, 32] (butterfly), 30 min run: 31 at +5, 32 at +10,
+    // 33 at +15, 32 at +20. Voiding 32 removes 31→32 and 33→32 (5 + 5 min).
+    const t = 10 * 3600;
+    const at = (code: number, min: number): NdjsonPunch => ({
+      code,
+      seconds_in_half_day: t + min * 60,
+      half_day: 0,
+      weekday: null,
+    });
+    const events = [
+      cardRead(1, [at(31, 5), at(32, 10), at(33, 15), at(32, 20)], hd(t), hd(t + 1800)),
+      evt({
+        event_type: 'leg_voided',
+        competitor_id: 'c-anna',
+        control_code: 32,
+        max_seconds: null,
+      }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 32])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.elapsed_time_ms, 20 * 60 * 1000);
+  });
+
   // Test 14: clear_manual_status with voided leg — re-derive should filter voided
   test('test 14: clear_manual_status with voided leg re-derives correctly', () => {
     seqCounter = 0;

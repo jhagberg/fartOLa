@@ -45,6 +45,7 @@ import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import {
   detectStatus,
+  matchCourse,
   startMs,
   startPunchWarning,
   type ControlAlternatives,
@@ -567,6 +568,8 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (detected.elapsed_time_ms === null) continue;
     const adjustedElapsed = computeVoidedElapsed(
       detected.elapsed_time_ms,
+      expected,
+      alternativesOf(course),
       view.voided_legs,
       latestRead,
       startMs({
@@ -734,18 +737,29 @@ function filterVoidedLegs(expected: readonly number[], voidedLegs: readonly numb
 /**
  * Phase 2.1 (D-16): Compute elapsed_time_ms after subtracting voided leg durations.
  *
- * For each voided control code, find the leg in the punch sequence:
- *   leg_ms = punch_at_control_ms - punch_at_previous_control_ms
- * where previous control = the punch immediately before in the sequence.
- * If the control is the first punch, the leg runs from `runStartMs`, the
- * same start the running time uses (dnfMp.startMs, 02.1-14 Task 11). Card
- * clocks are made absolute like in detectStatus.
+ * Legs come from the course, not from adjacent punches: the course is matched
+ * against the punches with the same advancing cursor as detectStatus
+ * (dnfMp.matchCourse, replacements included), and every course position whose
+ * control is voided is a leg:
+ *   leg_ms = matched punch at that position − matched punch at the nearest
+ *            earlier course position the runner punched
+ * so stray punches in between don't shorten the leg, and a control visited
+ * twice (butterfly) voids both legs into it. With no earlier matched control
+ * the leg runs from `runStartMs`, the same start the running time uses
+ * (dnfMp.startMs, 02.1-14 Task 11). An unpunched voided control has no
+ * measurable leg. Card clocks are made absolute like in detectStatus.
  *
- * Subtract min(leg_ms, max_seconds * 1000) from elapsed.
- * The max_seconds cap comes from the leg_voided event payload.
+ * Subtract min(leg_ms, max_seconds * 1000) per leg; the max_seconds cap comes
+ * from the leg_voided event payload.
+ *
+ * SOFT TR 4.20.10 (2026) forbids building results from split times; this
+ * per-runner subtraction is flagged DELVIS in
+ * .planning/compliance/soft-regelverk-2026.md and kept as is.
  */
 function computeVoidedElapsed(
   elapsedMs: number,
+  courseCodes: readonly number[],
+  alternatives: ControlAlternatives | undefined,
   voidedLegs: readonly number[],
   read: {
     punches: readonly NdjsonPunch[];
@@ -758,16 +772,23 @@ function computeVoidedElapsed(
   const { punches } = read;
   const toEpoch = (c: HalfDayClock): number =>
     cardClockToEpochMs(c, read.card_type, read.event_time_ms);
+  const { matched } = matchCourse(
+    punches.map((p) => p.code),
+    courseCodes,
+    alternatives
+  );
   let adjusted = elapsedMs;
-  for (const controlCode of voidedLegs) {
-    const idx = punches.findIndex((p) => p.code === controlCode);
-    if (idx === -1) continue;
-    const prevMs = idx > 0 ? toEpoch(punches[idx - 1]!) : runStartMs;
-    if (prevMs === null) continue;
-    const legMs = toEpoch(punches[idx]!) - prevMs;
-    if (legMs <= 0) continue;
-    const maxSec = caps.get(controlCode);
-    adjusted -= maxSec !== null && maxSec !== undefined ? Math.min(legMs, maxSec * 1000) : legMs;
-  }
+  let prevMs = runStartMs; // time at the nearest earlier matched course control
+  courseCodes.forEach((controlCode, i) => {
+    const idx = matched[i]!;
+    if (idx === -1) return;
+    const atMs = toEpoch(punches[idx]!);
+    if (voidedLegs.includes(controlCode) && prevMs !== null && atMs > prevMs) {
+      const legMs = atMs - prevMs;
+      const maxSec = caps.get(controlCode);
+      adjusted -= maxSec !== null && maxSec !== undefined ? Math.min(legMs, maxSec * 1000) : legMs;
+    }
+    prevMs = atMs;
+  });
   return Math.max(0, adjusted);
 }
