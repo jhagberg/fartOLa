@@ -401,14 +401,27 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       return undefined;
     };
 
+    // Install- and session-level writes with no competition of their own:
+    // API keys, which competition SI reads go to, creating competitions. Only
+    // the operator machine may make them; a helper's event code is scoped to
+    // one competition and never reaches these.
+    const OPERATOR_ONLY_WRITES = new Set([
+      '/api/settings/integrations',
+      '/api/sessions/active-competition',
+      '/api/sessions/reconnect-bridge',
+      '/api/competitions',
+      '/api/competitions/from-wizard',
+    ]);
+
     app.addHook('preHandler', async (request, reply) => {
       if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method.toUpperCase())) return;
+      const operatorOnly = OPERATOR_ONLY_WRITES.has(request.routeOptions.url ?? '');
       const routeCompetitionId = gatedCompetitionId(
         request.routeOptions.url,
         request.params as Record<string, string | undefined>,
         request.body
       );
-      if (routeCompetitionId === undefined) return;
+      if (routeCompetitionId === undefined && !operatorOnly) return;
 
       // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
       const remoteAddr = request.socket.remoteAddress;
@@ -429,6 +442,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
           : remoteAddr;
         if (localInterfaceAddresses.has(normalizedAddr)) return;
       }
+
+      if (operatorOnly) return reply.code(403).send({ error: 'operator_only' });
+      if (routeCompetitionId === undefined) return; // operator-only handled above
 
       // Non-localhost: require a valid signed cookie.
       const rawCookie = request.headers.cookie;

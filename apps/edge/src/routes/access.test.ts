@@ -670,3 +670,57 @@ describe('write gate — cookie whose code is no longer active', () => {
     assert.equal(storedStart(), null);
   });
 });
+
+describe('write gate — operator-only routes (no competition of their own)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  // Install- and session-level writes: API keys, which competition SI reads
+  // go to, creating competitions. A helper's event code is scoped to one
+  // competition and must not reach these.
+  const operatorWrites = [
+    {
+      method: 'PUT' as const,
+      url: '/api/settings/integrations',
+      payload: { eventor_api_key: 'x' },
+    },
+    { method: 'POST' as const, url: '/api/sessions/active-competition', payload: {} },
+    { method: 'DELETE' as const, url: '/api/sessions/active-competition', payload: undefined },
+    { method: 'POST' as const, url: '/api/sessions/reconnect-bridge', payload: {} },
+    {
+      method: 'POST' as const,
+      url: '/api/competitions',
+      payload: { name: 'X', date: '2026-10-05' },
+    },
+    { method: 'POST' as const, url: '/api/competitions/from-wizard', payload: {} },
+  ];
+
+  for (const w of operatorWrites) {
+    test(`LAN helper with a valid cookie is refused: ${w.method} ${w.url}`, async () => {
+      const cookie = await helperCookie(ctx, ctx.competitionId);
+      const res = await ctx.app.inject({
+        method: w.method,
+        url: w.url,
+        remoteAddress: '192.168.1.50',
+        headers: { cookie },
+        ...(w.payload === undefined ? {} : { payload: w.payload }),
+      });
+      assert.equal(res.statusCode, 403, `${w.method} ${w.url}: ${res.statusCode} ${res.body}`);
+      assert.equal(res.json<{ error: string }>().error, 'operator_only');
+    });
+  }
+
+  test('localhost still reaches operator-only routes', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Lokalt', date: '2026-10-05' },
+    });
+    assert.ok(res.statusCode < 300, `${res.statusCode} ${res.body}`);
+  });
+});
