@@ -724,3 +724,96 @@ describe('write gate — operator-only routes (no competition of their own)', ()
     assert.ok(res.statusCode < 300, `${res.statusCode} ${res.body}`);
   });
 });
+
+describe('write gate — dev and admin routes (FARTOLA_DEV=1)', () => {
+  // run-local.sh sets FARTOLA_DEV=1 by default while binding to the LAN, so
+  // /api/__dev/* and /api/__admin/* exist on a race-day laptop. They are
+  // operator tools: no LAN machine may call them, cookie or not.
+  const SAVED = process.env['FARTOLA_DEV'];
+  let ctx: Ctx;
+  beforeEach(async () => {
+    process.env['FARTOLA_DEV'] = '1';
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'fartola-access-test-'));
+    const handle = openDatabase(path.join(tmpDir, 'fartola.db'));
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      printerSink: { isPrinterConnected: async () => true, print: async () => {} },
+    });
+    const competitionId = 'comp-access-1';
+    handle.sqlite
+      .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES (?, ?, ?, ?)`)
+      .run(competitionId, 'Access Test', '2026-12-31', Date.now());
+    ctx = { app, handle, tmpDir, competitionId };
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+    if (SAVED === undefined) delete process.env['FARTOLA_DEV'];
+    else process.env['FARTOLA_DEV'] = SAVED;
+  });
+
+  const simulateRead = {
+    competition_id: 'comp-lan-dev',
+    card_number: 7501853,
+    card_type: 'SI10',
+    punches: [{ control_code: 31, time_ms: 1234500 }],
+  };
+  const count = (table: string): number =>
+    (ctx.handle.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+
+  test('LAN simulate-read without a cookie → 403, no event and no competition written', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__dev/simulate-read',
+      remoteAddress: '192.168.1.50',
+      payload: simulateRead,
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(res.json<{ error: string }>().error, 'operator_only');
+    assert.equal(count('events'), 0);
+    assert.equal(count('competitions'), 1);
+  });
+
+  test('LAN simulate-read with a valid helper cookie → still 403', async () => {
+    const cookie = await helperCookie(ctx, ctx.competitionId);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__dev/simulate-read',
+      remoteAddress: '192.168.1.50',
+      headers: { cookie },
+      payload: { ...simulateRead, competition_id: ctx.competitionId },
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(res.json<{ error: string }>().error, 'operator_only');
+    assert.equal(count('events'), 0);
+  });
+
+  test('LAN admin run-retention-now → 403', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__admin/run-retention-now',
+      remoteAddress: '192.168.1.50',
+    });
+    assert.equal(res.statusCode, 403, res.body);
+    assert.equal(res.json<{ error: string }>().error, 'operator_only');
+  });
+
+  test('localhost still reaches dev and admin routes', async () => {
+    const read = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__dev/simulate-read',
+      remoteAddress: '127.0.0.1',
+      payload: simulateRead,
+    });
+    assert.equal(read.statusCode, 201, read.body);
+    assert.equal(count('events'), 1);
+    const retention = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__admin/run-retention-now',
+      remoteAddress: '127.0.0.1',
+    });
+    assert.equal(retention.statusCode, 200, retention.body);
+  });
+});
