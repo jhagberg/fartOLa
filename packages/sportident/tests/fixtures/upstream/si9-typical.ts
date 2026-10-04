@@ -1,6 +1,8 @@
 // Ported from allestuetsmerweh/sportident.js — packages/sportident/src/SiCard/types/siCard9Examples.ts
 // Upstream: https://github.com/allestuetsmerweh/sportident.js (MIT License)
 // Specifically: the `getCardWith16Punches` SI9 export. cardData + storageData copied byte-for-byte.
+// fartOLa: times whose punch record has PTD bit 0 (PM) set are +43200 vs upstream,
+// because fartOLa decodes the PM flag and upstream does not.
 // SI9 layout differs from generic ModernSiCard: punch offset 0x38 + i*4, max 50 punches across
 // pages 0+1, shorter (24-byte) cardholder.
 // See packages/sportident/NOTICE.md for cumulative attribution.
@@ -29,26 +31,26 @@ export const fixture: SiCardSample & { name: string } = {
     // See codex review #4 for the rationale (range > series for Phase 0).
     cardSeries: 'SiCard10',
     cardNumber: 1234567,
-    startTime: 8721,
+    startTime: 51921,
     finishTime: null,
-    checkTime: 8735,
+    checkTime: 51935,
     punchCount: 16,
     punches: [
-      { code: 31, time: 7967 },
+      { code: 31, time: 51167 },
       { code: 32, time: 8224 },
-      { code: 33, time: 8481 },
+      { code: 33, time: 51681 },
       { code: 34, time: 8738 },
-      { code: 35, time: 8995 },
+      { code: 35, time: 52195 },
       { code: 36, time: 9252 },
-      { code: 37, time: 9509 },
+      { code: 37, time: 52709 },
       { code: 38, time: 9766 },
-      { code: 39, time: 10023 },
+      { code: 39, time: 53223 },
       { code: 40, time: 10280 },
-      { code: 41, time: 10537 },
+      { code: 41, time: 53737 },
       { code: 42, time: 10794 },
-      { code: 43, time: 11051 },
+      { code: 43, time: 54251 },
       { code: 44, time: 11308 },
-      { code: 45, time: 11565 },
+      { code: 45, time: 54765 },
       { code: 46, time: 11822 },
     ],
     cardHolder: {

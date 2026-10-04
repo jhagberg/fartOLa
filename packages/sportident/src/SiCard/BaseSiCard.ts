@@ -43,10 +43,12 @@ export abstract class BaseSiCard {
   // Two non-overlapping registries dispatched by detection command:
   private static si5DetectionRegistry: RangeEntry[] = [];
   private static si8DetectionRegistry: RangeEntry[] = [];
+  private static si6DetectionRegistry: RangeEntry[] = [];
 
   static resetRegistries(): void {
     BaseSiCard.si5DetectionRegistry = [];
     BaseSiCard.si8DetectionRegistry = [];
+    BaseSiCard.si6DetectionRegistry = [];
   }
 
   /** Register a card class to be instantiated when an SI5_DET (0xE5) message
@@ -63,8 +65,14 @@ export abstract class BaseSiCard {
     BaseSiCard.si8DetectionRegistry.push({ min, max, cardClass });
   }
 
+  /** Register a card class for SI6_DET (0xE6) messages with a cardNumber in
+   * `[min, max)`. Only SI6_DET consults this registry. */
+  static registerSi6Range(min: number, max: number, cardClass: SiCardType<BaseSiCard>): void {
+    BaseSiCard.si6DetectionRegistry.push({ min, max, cardClass });
+  }
+
   /** Inspect a card-insertion message and instantiate the appropriate card
-   * subclass. Returns `undefined` when the message is not an SI5_DET/SI8_DET
+   * subclass. Returns `undefined` when the message is not an SI5_DET/SI6_DET/SI8_DET
    * or its cardNumber falls outside every registered range. */
   static detectFromMessage(message: SiMessage): BaseSiCard | undefined {
     if (message.mode !== undefined) return undefined;
@@ -83,6 +91,12 @@ export abstract class BaseSiCard {
       if (!entry) return undefined;
       // Single-arg constructor; subclasses extend BaseSiCard which takes cardNumber.
       return new entry.cardClass(cardNumber);
+    }
+    if (message.command === proto.cmd.SI6_DET) {
+      const entry = BaseSiCard.si6DetectionRegistry.find(
+        (e) => cardNumber >= e.min && cardNumber < e.max
+      );
+      return entry ? new entry.cardClass(cardNumber) : undefined;
     }
     if (message.command === proto.cmd.SI8_DET) {
       const seriesByte = message.parameters[2];

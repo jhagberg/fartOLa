@@ -1,13 +1,17 @@
-// Ported from allestuetsmerweh/sportident.js — packages/sportident/src/SiCard/types/SiCard9.ts
+// Ported from allestuetsmerweh/sportident.js — packages/sportident/src/SiCard/types/SiCard8.ts
 // Upstream: https://github.com/allestuetsmerweh/sportident.js (MIT License)
+// Upstream SiCard8 is SiCard9 with punches at 0x88 (max 30) and a 0x60-byte
+// card holder; this file is our SiCard9 port with exactly those changes.
 // Local modifications:
 //   - Storage backed by `(number|undefined)[]` (plain array), not Immutable.List.
 //   - Registers on the SI8_DET-only registry via `BaseSiCard.registerSi8Range` —
-//     codex review #4 enforces that SiCard9 NEVER captures SI5_DET messages.
+//     codex review #4 enforces that SiCard8 NEVER captures SI5_DET messages.
 //   - Stripped lodash; no enums.
 //   - Upstream stdout-warning on storage mismatch removed (decoders are pure).
-//   - Test-only `_decodeFromStorage(bytes)` helper that splices a multi-page
-//     storage blob (pages 0+1 expected for SI9 since max 50 punches in 2 pages).
+//   - Test-only `_decodeFromStorage(bytes)` helper that splices pages 0+1.
+//   - Registered on 2,000,000–2,999,999 in full. Upstream skips 2,003,000–
+//     2,003,999 because SI6* cards share that range in its single registry;
+//     here SI6 detection (0xE6) has its own registry, so there's no clash.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { SiTime, arr2cardNumber } from '../../siProtocol.ts';
@@ -32,11 +36,11 @@ import {
 class ReadFinishedException {}
 const punchesPerPage = 32;
 const bytesPerPage = 128;
-const MAX_NUM_PUNCHES = 50;
+const MAX_NUM_PUNCHES = 30;
 
-export const getPunchOffset = (i: number): number => 0x38 + i * 4;
+export const getPunchOffset = (i: number): number => 0x88 + i * 4;
 
-const parseSiCard9CardHolderString = (
+const parseSiCard8CardHolderString = (
   semicolonSeparatedString: string
 ): { [property: string]: unknown } => {
   const informationComponents = semicolonSeparatedString.split(';');
@@ -47,19 +51,19 @@ const parseSiCard9CardHolderString = (
   };
 };
 
-const parseSiCard9CardHolder = (
+const parseSiCard8CardHolder = (
   maybeCharCodes: (number | undefined)[]
 ): { [property: string]: unknown } => {
   const semicolonSeparatedString = getCroppedString(maybeCharCodes);
-  return parseSiCard9CardHolderString(semicolonSeparatedString || '');
+  return parseSiCard8CardHolderString(semicolonSeparatedString || '');
 };
 
-export interface ISiCard9StorageFields extends IBaseSiCardStorageFields {
+export interface ISiCard8StorageFields extends IBaseSiCardStorageFields {
   uid: number;
   cardSeries: ModernSiCardSeriesKey;
 }
 
-export const siCard9StorageLocations: SiStorageLocations<ISiCard9StorageFields> = {
+export const siCard8StorageLocations: SiStorageLocations<ISiCard8StorageFields> = {
   uid: new SiInt([[0x03], [0x02], [0x01], [0x00]]),
   // Same cast pattern as ModernSiCard: widened SiEnum -> narrower keyof-typed location.
   cardSeries: new SiEnum(
@@ -85,20 +89,19 @@ export const siCard9StorageLocations: SiStorageLocations<ISiCard9StorageFields> 
     ),
     (allPunches) => cropPunches(allPunches as (PotentialModernSiCardPunch | undefined)[])
   ),
-  // SI9 cardholder is shorter (24 bytes) and uses only firstName;lastName.
-  cardHolder: new SiModified(new SiArray(0x18, (i) => new SiInt([[0x20 + i]])), (charCodes) =>
-    parseSiCard9CardHolder(charCodes)
+  cardHolder: new SiModified(new SiArray(0x60, (i) => new SiInt([[0x20 + i]])), (charCodes) =>
+    parseSiCard8CardHolder(charCodes)
   ),
 };
-export const siCard9StorageDefinition = defineStorage(0x100, siCard9StorageLocations);
+export const siCard8StorageDefinition = defineStorage(0x100, siCard8StorageLocations);
 
-export class SiCard9 extends ModernSiCard {
+export class SiCard8 extends ModernSiCard {
   static maxNumPunches = MAX_NUM_PUNCHES;
-  public storage: SiStorage<ISiCard9StorageFields>;
+  public storage: SiStorage<ISiCard8StorageFields>;
 
   constructor(cardNumber: number) {
     super(cardNumber);
-    this.storage = siCard9StorageDefinition();
+    this.storage = siCard8StorageDefinition();
   }
 
   typeSpecificRead(): Promise<void> {
@@ -116,7 +119,7 @@ export class SiCard9 extends ModernSiCard {
       })
       .catch((exc: unknown) => {
         if (exc instanceof ReadFinishedException) {
-          this.populateSi9RaceResult();
+          this.populateSi8RaceResult();
           return;
         }
         throw exc;
@@ -128,13 +131,13 @@ export class SiCard9 extends ModernSiCard {
     for (let i = 0; i < limit; i++) {
       this.storage.splice(i, 1, storageBytes[i] as number);
     }
-    this.populateSi9RaceResult();
+    this.populateSi8RaceResult();
   }
 
-  // SI9 cardholder shape diverges from ModernSiCard's; populate the SI9-specific
+  // SI8 cardholder shape diverges from ModernSiCard's; populate the SI8-specific
   // result here. punchCount / cardSeries / uid still come from the inherited
   // shape (same byte offsets).
-  protected populateSi9RaceResult(): void {
+  protected populateSi8RaceResult(): void {
     const cn = this.storage.get('cardNumber')?.value;
     if (cn !== undefined) this.raceResult.cardNumber = cn;
     const startTime = this.storage.get('startTime')?.value;
@@ -158,4 +161,4 @@ export class SiCard9 extends ModernSiCard {
   }
 }
 
-BaseSiCard.registerSi8Range(1_000_000, 2_000_000, SiCard9);
+BaseSiCard.registerSi8Range(2_000_000, 3_000_000, SiCard8);

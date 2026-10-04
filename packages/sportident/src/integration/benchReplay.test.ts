@@ -49,11 +49,14 @@ const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, '..', '..', 'tests', 'fixtures', 'jonas');
 
 interface CardTypeMeta {
-  readonly card_type: 'SI5' | 'SI8' | 'SI9' | 'SI10' | 'SI11' | 'SIAC';
+  readonly card_type: 'SI5' | 'SI6' | 'SI8' | 'SI9' | 'SI10' | 'SI11' | 'SIAC';
 }
 
 const CARDS: ReadonlyArray<{ slug: string; expectedType: CardTypeMeta['card_type'] }> = [
   { slug: 'si5', expectedType: 'SI5' },
+  // SI6 + SI8: captured 2026-10-03 on a serial BSM through a PL2303 adapter.
+  { slug: 'si6', expectedType: 'SI6' },
+  { slug: 'si8', expectedType: 'SI8' },
   { slug: 'si9', expectedType: 'SI9' },
   { slug: 'si10', expectedType: 'SI10' },
   { slug: 'siac', expectedType: 'SIAC' },
@@ -187,6 +190,7 @@ const captureBenchReplay = async (basename: string): Promise<string[]> => {
     const typeName = card.constructor.name;
     const TYPE_MAP: Record<string, CardTypeMeta['card_type']> = {
       SiCard5: 'SI5',
+      SiCard6: 'SI6',
       SiCard8: 'SI8',
       SiCard9: 'SI9',
       SiCard10: 'SI10',
@@ -219,7 +223,7 @@ const captureBenchReplay = async (basename: string): Promise<string[]> => {
 const wireEvents = (lines: string[]): string[] =>
   lines.map(normaliseTs).filter((l) => !/"event":"connection_changed"/.test(l));
 
-describe('bench-fixture replay (Jonas 2026-05-13 BSM7-USB)', () => {
+describe('bench-fixture replay (Jonas: BSM7-USB 2026-05-13, serial BSM 2026-10-03)', () => {
   for (const { slug, expectedType } of CARDS) {
     test(`${slug}-jonas-001 wire-event NDJSON matches bench truth`, async () => {
       const basename = path.join(FIXTURE_DIR, `${slug}-jonas-001`);
