@@ -5,7 +5,8 @@
 // Tests cover:
 //   1. Valid StartList → structured array of ImportedStartEntry.
 //   2. StartTime parsed to epoch ms (UTC ISO with Z suffix round-trips).
-//   3. Entry without StartTime is excluded.
+//   3. Entry without StartTime is kept with startTimeMs=null (02.1-14 Task 6;
+//      it used to be excluded silently).
 //   4. SI card extracted from ControlCard element.
 //   5. Eventor person ID extracted from Person.Id[@type='Eventor'].
 //   6. Multi-class StartList → entries grouped and tagged by className.
@@ -125,7 +126,9 @@ describe('importStartList', () => {
     assert.equal(entries[0]!.startTimeMs, expected);
   });
 
-  test('test 3: entry without StartTime is excluded', () => {
+  // 02.1-14 Task 6 changed this: the entry used to be dropped silently; it is
+  // now kept with startTimeMs=null so the import route reports it as skipped.
+  test('test 3: entry without StartTime is kept with startTimeMs null', () => {
     const xml = buildStartListXml({
       classes: [
         {
@@ -138,9 +141,13 @@ describe('importStartList', () => {
       ],
     });
     const entries = importStartList(xml);
-    // Only Anna has a start time
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0]!.name, 'Anna Andersson');
+    assert.deepEqual(
+      entries.map((e) => [e.row, e.name, e.startTimeMs]),
+      [
+        [1, 'Anna Andersson', Date.parse('2026-05-19T10:00:00Z')],
+        [2, 'Bo Berg', null],
+      ]
+    );
   });
 
   test('test 4: SI card extracted from ControlCard element', () => {

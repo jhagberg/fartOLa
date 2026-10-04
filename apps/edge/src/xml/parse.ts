@@ -72,6 +72,9 @@ export interface ParsedEntryList {
   kind: 'EntryList';
   event_name: string;
   competitors: Array<{
+    /** 1-based PersonEntry position in the file, for skip reports
+     * (02.1-14 Task 6). Absent when the list was not parsed from a file. */
+    row?: number;
     /** "Given Family" — the wire shape the schema's competitors.name expects. */
     name: string;
     /** <Organisation><Name>, or null if absent. */
@@ -317,7 +320,7 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
   const entries = toArray(node.PersonEntry as RawNode | RawNode[]);
   const competitors: ParsedEntryList['competitors'] = [];
 
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
     if (!e) continue;
     const person = (e.Person ?? {}) as RawNode;
     const personName = (person?.Name ?? {}) as RawNode;
@@ -334,8 +337,9 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
     // assigns to the first preference.
     const classArr = toArray(e.Class as RawNode | RawNode[]);
     const klass = classArr[0] ?? {};
+    // An entry without a class is kept; the ingester reports it as
+    // unknown_class instead of dropping it silently (02.1-14 Task 6).
     const class_name = asString((klass as RawNode)?.Name) ?? '';
-    if (class_name.length === 0) continue;
 
     // ControlCard — keep only SI cards. The element is mixed content:
     // simpleContent extension of xsd:string with @punchingSystem attribute.
@@ -362,7 +366,7 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
       }
     }
 
-    competitors.push({ name, club, class_name, card_number });
+    competitors.push({ row: i + 1, name, club, class_name, card_number });
   }
 
   return { kind: 'EntryList', event_name: eventName, competitors };

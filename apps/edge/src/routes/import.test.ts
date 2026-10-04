@@ -226,6 +226,29 @@ describe('POST /api/competitions/:id/import', () => {
     }
   });
 
+  test('test 8 (02.1-14 Task 6): EntryList response lists skipped rows', async () => {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    const entries = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entries);
+    // Re-import: the two carded entries are duplicates, Bo (no card) is new again.
+    const res = await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'e.xml', entries);
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { skipped: { row: number; reason: string }[] };
+    assert.deepEqual(
+      body.skipped.map((r) => [r.row, r.reason]),
+      [
+        [1, 'duplicate_card'],
+        [3, 'duplicate_card'],
+      ]
+    );
+  });
+
   test('test 7: unknown XML root → 400 parse_failed with Purple-Pen-aware message', async () => {
     const compId = await newCompetition(ctx.app);
     const bytes = Buffer.from('<?xml version="1.0"?><UnknownRoot/>', 'utf8');
@@ -244,18 +267,25 @@ describe('POST /api/competitions/:id/import', () => {
 function buildStartListXmlBuffer(
   classes: Array<{
     className: string;
-    persons: Array<{ given: string; family: string; startTimeIso: string; siCard?: number }>;
+    persons: Array<{
+      given: string;
+      family: string;
+      startTimeIso: string | null;
+      siCard?: number;
+      club?: string;
+    }>;
   }>
 ): Buffer {
   const classParts = classes
     .map(({ className, persons }) => {
       const personParts = persons
         .map(
-          ({ given, family, startTimeIso, siCard }) => `
+          ({ given, family, startTimeIso, siCard, club }) => `
       <PersonStart>
         <Person><Name><Family>${family}</Family><Given>${given}</Given></Name></Person>
+        ${club != null ? `<Organisation><Name>${club}</Name></Organisation>` : ''}
         <Start>
-          <StartTime>${startTimeIso}</StartTime>
+          ${startTimeIso != null ? `<StartTime>${startTimeIso}</StartTime>` : ''}
           ${siCard != null ? `<ControlCard punchingSystem="SI">${siCard}</ControlCard>` : ''}
         </Start>
       </PersonStart>`
@@ -391,6 +421,79 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     // start_time_ms must NOT be written (fuzzy is pending_confirmation).
     const still = ctx.handle.db.select().from(competitors).where(eq(competitors.id, row.id)).get();
     assert.equal(still?.startTimeMs, null, 'fuzzy match must not auto-write start_time_ms');
+  });
+
+  test('startlist test 4 (02.1-14 Task 6): changed card matched by name + club; skips reported', async () => {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+    const byName = (name: string) =>
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .find((c) => c.name === name)!;
+
+    const startTimeIso = '2026-05-19T10:00:00Z';
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          // Anna entered with 7501853, runs on a rented card: name + club match.
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'stortuna ok',
+            siCard: 8000001,
+            startTimeIso,
+          },
+          // Bo's new card already belongs to Cia (D21): cannot take it.
+          { given: 'Bo', family: 'Berg', club: 'StorTuna OK', siCard: 1428824, startTimeIso },
+          { given: 'Okänd', family: 'Löpare', club: 'X', siCard: 8000002, startTimeIso },
+          { given: 'Utan', family: 'Tid', siCard: 8000003, startTimeIso: null },
+        ],
+      },
+      { className: 'H99', persons: [{ given: 'Fel', family: 'Klass', startTimeIso }] },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as {
+      exact: number;
+      card_updated: number;
+      unmatched: number;
+      cardUpdates: unknown[];
+      skipped: unknown[];
+    };
+    const anna = byName('Anna Andersson');
+    assert.equal(body.card_updated, 1);
+    assert.deepEqual(body.cardUpdates, [
+      {
+        row: 1,
+        competitor_id: anna.id,
+        name: 'Anna Andersson',
+        class: 'H21',
+        previous_card: 7501853,
+        card: 8000001,
+      },
+    ]);
+    assert.equal(anna.cardNumber, 8000001);
+    assert.equal(anna.startTimeMs, Date.parse(startTimeIso));
+    assert.equal(byName('Bo Berg').cardNumber, null, 'conflicting card not taken');
+    assert.deepEqual(body.skipped, [
+      { row: 2, name: 'Bo Berg', class: 'H21', card: 1428824, reason: 'duplicate_card' },
+      { row: 3, name: 'Okänd Löpare', class: 'H21', card: 8000002, reason: 'no_match' },
+      { row: 4, name: 'Utan Tid', class: 'H21', card: 8000003, reason: 'no_start_time' },
+      { row: 5, name: 'Fel Klass', class: 'H99', card: null, reason: 'unknown_class' },
+    ]);
+    assert.equal(body.unmatched, 4);
   });
 
   test('startlist test 3: competition not found → 404', async () => {

@@ -10,6 +10,9 @@
 //     matches entries to local competitors by SI card or name+class, then
 //     writes start_time_ms for exact matches in a transaction. Fuzzy name-
 //     only matches are returned as pending_confirmation for operator review.
+//     02.1-14 Task 6: a card that does not match but name + club does is a
+//     changed/rented card — matched, card_number updated, reported in
+//     cardUpdates; every other unapplied row is listed in `skipped`.
 //
 //   POST /api/competitions/:id/import/startlist/confirm — Idempotent endpoint
 //     that applies operator-confirmed fuzzy matches. Re-confirming an already-
@@ -63,7 +66,7 @@ import { parseIofXml } from '../xml/parse.ts';
 import { validateXml } from '../xml/validate.ts';
 import { importStartList } from '../xml/iofImport.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
-import { ingestEntryList } from '../ingest/entryImport.ts';
+import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +77,7 @@ import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
 interface CompetitorRow {
   id: string;
   name: string;
+  club: string | null;
   classId: string;
   cardNumber: number | null;
   startTimeMs: number | null;
@@ -109,11 +113,25 @@ export interface FuzzyMatch {
   confidence: 'name_class';
 }
 
+/** 02.1-14 Task 6: a runner matched by name + club whose card changed. */
+export interface CardUpdate {
+  row: number;
+  competitor_id: string;
+  name: string;
+  class: string;
+  previous_card: number | null;
+  card: number;
+}
+
 export interface StartListMatchResult {
   exact: number;
   fuzzy: number;
+  /** Rows not applied; equals skipped.length. */
   unmatched: number;
+  card_updated: number;
   fuzzyMatches: FuzzyMatch[];
+  cardUpdates: CardUpdate[];
+  skipped: SkippedImportRow[];
 }
 
 export default async function registerImportRoutes(app: FastifyInstance): Promise<void> {
@@ -208,6 +226,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         .select({
           id: competitorsTable.id,
           name: competitorsTable.name,
+          club: competitorsTable.club,
           classId: competitorsTable.classId,
           cardNumber: competitorsTable.cardNumber,
           startTimeMs: competitorsTable.startTimeMs,
@@ -226,8 +245,9 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
       // Match imported entries to local competitors.
       let exactCount = 0;
-      let unmatchedCount = 0;
       const fuzzyMatches: FuzzyMatch[] = [];
+      const cardUpdates: CardUpdate[] = [];
+      const skipped: SkippedImportRow[] = [];
 
       // Track names within each class for duplicate detection (GPT+Gemini HIGH fix).
       // If two local competitors in the same class have the same normalized name,
@@ -250,14 +270,27 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         }
       }
 
-      // Exact matches that need start_time_ms written.
-      const exactWrites: Array<{ id: string; startTimeMs: number }> = [];
+      // Exact matches that need start_time_ms (and, for a changed card,
+      // card_number) written.
+      const exactWrites: Array<{ id: string; startTimeMs: number; cardNumber?: number }> = [];
 
       for (const entry of entries) {
+        const skip = (reason: SkippedImportRow['reason']): void => {
+          skipped.push({
+            row: entry.row,
+            name: entry.name,
+            class: entry.className,
+            card: entry.siCard,
+            reason,
+          });
+        };
         const classId = classNameToId.get(normalizeName(entry.className));
         if (classId === undefined) {
-          // Class not found in this competition — unmatched.
-          unmatchedCount += 1;
+          skip('unknown_class');
+          continue;
+        }
+        if (entry.startTimeMs === null) {
+          skip('no_start_time');
           continue;
         }
 
@@ -269,6 +302,46 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           if (sameClass.length === 1 && sameClass[0] !== undefined) {
             exactWrites.push({ id: sameClass[0].id, startTimeMs: entry.startTimeMs });
             exactCount += 1;
+            continue;
+          }
+
+          // Card did not match: same name + club (exact, case-insensitive)
+          // in the same class means the runner changed or rented a card.
+          // MeOS matches the same way and takes the start list's card.
+          const club = entry.club === null ? null : normalizeName(entry.club);
+          const byNameClub =
+            club === null
+              ? []
+              : localCompetitors.filter(
+                  (c) =>
+                    c.classId === classId &&
+                    normalizeName(c.name) === normalizeName(entry.name) &&
+                    c.club !== null &&
+                    normalizeName(c.club) === club
+                );
+          if (byNameClub.length === 1 && byNameClub[0] !== undefined) {
+            const target = byNameClub[0];
+            // D-11: a card already held by someone else cannot be taken.
+            if (cardMatches.some((c) => c.id !== target.id)) {
+              skip('duplicate_card');
+              continue;
+            }
+            exactWrites.push({
+              id: target.id,
+              startTimeMs: entry.startTimeMs,
+              cardNumber: entry.siCard,
+            });
+            cardUpdates.push({
+              row: entry.row,
+              competitor_id: target.id,
+              name: target.name,
+              class: entry.className,
+              previous_card: target.cardNumber,
+              card: entry.siCard,
+            });
+            // Later rows must see the new card as taken and the old one free.
+            if (target.cardNumber !== null) byCard.delete(target.cardNumber);
+            byCard.set(entry.siCard, [target]);
             continue;
           }
         }
@@ -299,7 +372,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         }
 
         // No match (or ambiguous duplicate name).
-        unmatchedCount += 1;
+        skip('no_match');
       }
 
       // Write exact matches in a single transaction.
@@ -308,7 +381,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           for (const w of exactWrites) {
             app.fartolaDb.db
               .update(competitorsTable)
-              .set({ startTimeMs: w.startTimeMs })
+              .set({
+                startTimeMs: w.startTimeMs,
+                ...(w.cardNumber !== undefined ? { cardNumber: w.cardNumber } : {}),
+              })
               .where(
                 and(
                   eq(competitorsTable.id, w.id),
@@ -324,8 +400,11 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       const result: StartListMatchResult = {
         exact: exactCount,
         fuzzy: fuzzyMatches.length,
-        unmatched: unmatchedCount,
+        unmatched: skipped.length,
+        card_updated: cardUpdates.length,
         fuzzyMatches,
+        cardUpdates,
+        skipped,
       };
       return reply.code(201).send(result);
     }

@@ -55,7 +55,7 @@ function asInt(x: unknown): number | null {
 }
 
 /** Parse an ISO 8601 dateTime string (with or without Z/offset) to epoch ms.
- * Returns null when parsing fails so the caller can exclude the entry rather
+ * Returns null when parsing fails so the caller can report the entry rather
  * than crash. */
 function parseDateTimeMs(raw: unknown): number | null {
   const s = asString(raw);
@@ -69,13 +69,18 @@ function parseDateTimeMs(raw: unknown): number | null {
 // ---------------------------------------------------------------------------
 
 export interface ImportedStartEntry {
+  /** 1-based PersonStart position in the file (across all ClassStarts). */
+  row: number;
   /** IOF-standard "Given Family" display name. */
   name: string;
   givenName: string;
   familyName: string;
   className: string;
-  /** Epoch ms parsed from the StartList's StartTime element (UTC). */
-  startTimeMs: number;
+  /** <Organisation><Name>, or null if absent. */
+  club: string | null;
+  /** Epoch ms parsed from the StartList's StartTime element (UTC); null when
+   * missing or unparseable (the route reports the row as skipped). */
+  startTimeMs: number | null;
   /** SI card number from PersonRaceStart > ControlCard, if present. */
   siCard: number | null;
   /** Eventor person ID from Person > Id[@type='Eventor'], if present. */
@@ -88,7 +93,8 @@ export interface ImportedStartEntry {
 // ---------------------------------------------------------------------------
 
 /** Parse an IOF XML 3.0 StartList document and return an array of structured
- * start entries. Entries without a parseable StartTime are excluded.
+ * start entries, one per named PersonStart (02.1-14 Task 6: nothing is
+ * dropped silently; entries without a StartTime have startTimeMs=null).
  *
  * This function is pure: no IO. The caller is responsible for the DOCTYPE
  * pre-flight and body size cap (import route). */
@@ -106,17 +112,19 @@ export function importStartList(xmlSource: string): ImportedStartEntry[] {
   }
 
   const entries: ImportedStartEntry[] = [];
+  let row = 0;
 
   const classStarts = toArray(startList['ClassStart'] as RawNode | RawNode[]);
   for (const cs of classStarts) {
     if (!cs) continue;
     const classNode = (cs['Class'] ?? {}) as RawNode;
+    // A nameless class is kept; the route reports its runners as unknown_class.
     const className = asString(classNode?.['Name']) ?? '';
-    if (className.length === 0) continue;
 
     const personStarts = toArray(cs['PersonStart'] as RawNode | RawNode[]);
     for (const ps of personStarts) {
       if (!ps) continue;
+      row += 1;
 
       const personNode = (ps['Person'] ?? {}) as RawNode;
       const nameNode = (personNode?.['Name'] ?? {}) as RawNode;
@@ -153,8 +161,7 @@ export function importStartList(xmlSource: string): ImportedStartEntry[] {
       const startNode = (startNodes[0] ?? {}) as RawNode;
 
       const startTimeMs = parseDateTimeMs(startNode?.['StartTime']);
-      // Exclude entries without a parseable start time.
-      if (startTimeMs === null) continue;
+      const club = asString(((ps['Organisation'] ?? {}) as RawNode)?.['Name']);
 
       // BibNumber
       const bibNumber = asString(startNode?.['BibNumber']);
@@ -182,10 +189,12 @@ export function importStartList(xmlSource: string): ImportedStartEntry[] {
       }
 
       entries.push({
+        row,
         name,
         givenName,
         familyName,
         className,
+        club,
         startTimeMs,
         siCard,
         eventorPersonId,

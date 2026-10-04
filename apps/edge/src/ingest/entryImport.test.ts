@@ -203,4 +203,30 @@ describe('ingestEntryList', () => {
       ctx.handle.close();
     }
   });
+
+  test('test 6 (02.1-14 Task 6): skipped rows are reported with row + reason', () => {
+    const ctx = bootCtx();
+    try {
+      const data: ParsedEntryList = {
+        kind: 'EntryList',
+        event_name: 'skips',
+        competitors: [
+          { name: 'Anna Andersson', club: 'X', class_name: 'H21', card_number: 7501853 },
+          { name: 'Dag Ek', club: 'X', class_name: 'H99', card_number: 1 },
+          { name: 'Eva Ek', club: 'X', class_name: 'H21', card_number: 7501853 },
+          { name: 'Fia Fors', club: null, class_name: 'D21', card_number: null },
+        ],
+      };
+      const result = ingestEntryList(ctx.handle, ctx.competitionId, data, Date.now());
+      assert.equal(result.competitors_created, 2);
+      assert.deepEqual(result.skipped, [
+        { row: 2, name: 'Dag Ek', class: 'H99', card: 1, reason: 'unknown_class' },
+        { row: 3, name: 'Eva Ek', class: 'H21', card: 7501853, reason: 'duplicate_card' },
+      ]);
+      assert.equal(result.competitors_skipped_duplicate, 1);
+      assert.equal(result.competitors_skipped_unknown_class, 1);
+    } finally {
+      ctx.handle.close();
+    }
+  });
 });
