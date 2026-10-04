@@ -21,6 +21,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import { competitions, classes, competitors } from '../db/schema.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -372,6 +373,25 @@ describe('lottning route', () => {
       payload: { mode: 'Simultaneous', firstStartMs: 36000000, intervalSec: 0 },
     });
     assert.equal(res.statusCode, 201);
+  });
+
+  test('test 12 (02.1-14 Task 1): epoch firstStartMs is stored as epoch', async () => {
+    const firstStartMs = localToEpochMs('2026-05-24', 10 * 3600);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'SOFT', firstStartMs, intervalSec: 60 },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+
+    const rows = ctx.handle.db
+      .select({ startTimeMs: competitors.startTimeMs })
+      .from(competitors)
+      .where(eq(competitors.classId, ctx.classId))
+      .orderBy(asc(competitors.startTimeMs))
+      .all();
+    assert.equal(rows[0]?.startTimeMs, firstStartMs);
+    for (const r of rows) assert.ok((r.startTimeMs ?? 0) > 1e12, `not epoch: ${r.startTimeMs}`);
   });
 
   test('GET lottning returns sorted start list', async () => {

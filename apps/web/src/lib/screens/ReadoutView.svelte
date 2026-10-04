@@ -50,7 +50,7 @@
   import { t } from '$lib/i18n/index.ts';
   import { tweaks } from '$lib/stores/tweaks.svelte.ts';
   import { bridgeStatus } from '$lib/stores/bridgeStatus.svelte.ts';
-  import { resultsChannel } from '@fartola/shared-types';
+  import { resultsChannel, formatLocalTime } from '@fartola/shared-types';
   import { createCardSubscription } from '$lib/services/cardSubscription.ts';
   import type {
     CompetitionDTO,
@@ -236,14 +236,10 @@
     return history[0] ?? null;
   });
 
-  /** Format a start_time_ms value (ms since midnight) as HH:MM:SS. */
+  /** Format a start_time_ms value (epoch ms) as HH:MM:SS competition local time. */
   function formatStartTimeMs(ms: number | null | undefined): string {
     if (ms == null) return '—';
-    const totalSec = Math.floor((ms % 86_400_000) / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return formatLocalTime(ms);
   }
 
   /** Build the LatestReadCard input. */

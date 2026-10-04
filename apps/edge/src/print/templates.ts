@@ -16,6 +16,7 @@
 import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
+import { formatLocalTime } from '../time/competitionClock.ts';
 
 import classic from './templates/classic.ts';
 import standing from './templates/standing.ts';
@@ -129,16 +130,10 @@ export interface StartListEntry {
   bibNumber?: string | null;
 }
 
-/** Format epoch ms as HH:MM:SS (local wall clock from the competition date).
- * We use UTC here because start times are stored as epoch ms (UTC) and the
- * competition date is already a local date string — converting both to UTC
- * keeps the formatting deterministic across time zones in tests. */
+/** Format epoch ms as HH:MM:SS on the competition's local wall clock
+ * (COMPETITION_TZ), independent of the server's own time zone. */
 export function formatStartTime(epochMs: number): string {
-  const d = new Date(epochMs);
-  const h = d.getUTCHours().toString().padStart(2, '0');
-  const m = d.getUTCMinutes().toString().padStart(2, '0');
-  const s = d.getUTCSeconds().toString().padStart(2, '0');
-  return `${h}:${m}:${s}`;
+  return formatLocalTime(epochMs);
 }
 
 /** Render a class start list to the thermal printer. Pure: no I/O. */

@@ -25,6 +25,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import * as schema from './schema.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,4 +40,32 @@ export const MIGRATIONS_FOLDER = path.resolve(__dirname, '../../drizzle');
  * Idempotent — subsequent calls on the same db are a no-op. */
 export function runMigrations(sqlite: Database.Database): void {
   migrate(drizzle(sqlite, { schema }), { migrationsFolder: MIGRATIONS_FOLDER });
+  migrateStartTimesToEpoch(sqlite);
+}
+
+/** 1970-01-02 in epoch ms. Any start time below it was written by the old
+ * lottning flow as local ms since midnight (02.1-14 Task 1). */
+const LOCAL_MS_LIMIT = 86_400_000;
+
+/** Data migration: convert legacy local ms-since-midnight start times
+ * (competitors.start_time_ms, classes.first_start_ms) to epoch ms using the
+ * competition's date in COMPETITION_TZ. Runs in JS rather than a .sql file
+ * because SQLite cannot do time-zone/DST conversion, and it is idempotent by
+ * construction: converted values are far above LOCAL_MS_LIMIT. */
+function migrateStartTimesToEpoch(sqlite: Database.Database): void {
+  const convert = (table: 'competitors' | 'classes', column: string): void => {
+    const rows = sqlite
+      .prepare<[number], { id: string; ms: number; date: string }>(
+        `SELECT t.id AS id, t.${column} AS ms, c.date AS date FROM ${table} t
+         JOIN competitions c ON c.id = t.competition_id
+         WHERE t.${column} IS NOT NULL AND t.${column} < ?`
+      )
+      .all(LOCAL_MS_LIMIT);
+    const update = sqlite.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
+    for (const r of rows) update.run(localToEpochMs(r.date, r.ms / 1000), r.id);
+  };
+  sqlite.transaction(() => {
+    convert('competitors', 'start_time_ms');
+    convert('classes', 'first_start_ms');
+  })();
 }

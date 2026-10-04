@@ -21,6 +21,7 @@
     getLottning,
     patchClass,
     patchCompetitorStartTime,
+    getCompetition,
     type LottningBody,
   } from '$lib/api/client.ts';
   import Field from '$lib/ui/Field.svelte';
@@ -28,6 +29,7 @@
   import Input from '$lib/ui/Input.svelte';
   import Button from '$lib/ui/Button.svelte';
   import type { ClassDTO } from '@fartola/shared-types';
+  import { localToEpochMs, formatLocalTime } from '@fartola/shared-types';
 
   interface Props {
     competitionId: string;
@@ -41,9 +43,8 @@
   let selectedClassId: string = $state('');
   let drawMode: 'SOFT' | 'Random' | 'Simultaneous' = $state('SOFT');
 
-  /** HH:MM string for the first-start time input. Converted to epoch ms
-   * relative to midnight (today's date doesn't matter for the half-day
-   * clock; the backend stores the epoch ms of first start). */
+  /** HH:MM string for the first-start time input. Converted to epoch ms on
+   * the competition's date (02.1-14 Task 1: start times are epoch ms). */
   let firstStartHHMM: string = $state('10:00');
 
   /** Start interval in seconds. Default 120 for sprints per D-07. */
@@ -108,23 +109,23 @@
 
   // --- helpers --------------------------------------------------------------
 
-  /** Convert HH:MM to ms since midnight. Uses simple arithmetic — the
-   * backend stores epoch ms, but for the half-day display the value
-   * relative to midnight is what matters. We use today's UTC midnight
-   * as the base anchor so the draw produces a consistent wall-clock time. */
-  function hhmmToMs(hhmm: string): number {
-    const [hh, mm] = hhmm.split(':').map(Number);
-    return ((hh ?? 0) * 3600 + (mm ?? 0) * 60) * 1000;
+  /** Competition date ('YYYY-MM-DD'), fetched once; anchors HH:MM inputs. */
+  let competitionDate: string | null = null;
+  async function getCompetitionDate(): Promise<string> {
+    competitionDate ??= (await getCompetition(competitionId)).competition.date;
+    return competitionDate;
   }
 
-  /** Format epoch ms as HH:MM:SS (local clock). */
+  /** Convert HH:MM on the competition date to epoch ms. */
+  async function hhmmToMs(hhmm: string): Promise<number> {
+    const [hh, mm] = hhmm.split(':').map(Number);
+    return localToEpochMs(await getCompetitionDate(), (hh ?? 0) * 3600 + (mm ?? 0) * 60);
+  }
+
+  /** Format epoch ms as HH:MM:SS (competition local clock). */
   function msToHHMMSS(ms: number | null): string {
     if (ms === null) return '—';
-    const totalSec = Math.floor((ms % 86_400_000) / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return formatLocalTime(ms);
   }
 
   /** Parse mm:ss maxTime input to seconds. Returns null on empty/invalid. */
@@ -156,7 +157,7 @@
     try {
       const body: LottningBody = {
         mode: drawMode,
-        firstStartMs: hhmmToMs(firstStartHHMM),
+        firstStartMs: await hhmmToMs(firstStartHHMM),
         intervalSec,
         ...(vacantSlots > 0 ? { vacantSlots } : {}),
       };
@@ -194,7 +195,7 @@
   async function saveEditTime(id: string): Promise<void> {
     const raw = editingStartTime[id] ?? '';
     const parts = raw.split(':').map(Number);
-    let newMs: number | null = null;
+    let newSec: number | null = null;
     if (parts.length >= 2) {
       const h = parts[0] ?? 0;
       const m = parts[1] ?? 0;
@@ -203,12 +204,13 @@
         error = t('lottning.invalidTime');
         return;
       }
-      newMs = (h * 3600 + m * 60 + s) * 1000;
+      newSec = h * 3600 + m * 60 + s;
     }
-    if (newMs === null) { cancelEditTime(id); return; }
+    if (newSec === null) { cancelEditTime(id); return; }
     savingStartTime = { ...savingStartTime, [id]: true };
     try {
-      await patchCompetitorStartTime(competitionId, id, newMs!);
+      const newMs = localToEpochMs(await getCompetitionDate(), newSec);
+      await patchCompetitorStartTime(competitionId, id, newMs);
       // Refresh the start list
       await loadStartList();
       cancelEditTime(id);

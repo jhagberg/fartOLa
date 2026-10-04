@@ -99,3 +99,6 @@ export type {
   SkogisGeometry,
   SkogisStats,
 } from './skogis.ts';
+
+// --- Competition clock (epoch ms ↔ local wall clock) ----------------------
+export { COMPETITION_TZ, localToEpochMs, epochToLocalSeconds, formatLocalTime } from './time.ts';

@@ -141,7 +141,10 @@ describe('buildMopXml', () => {
     assert.equal(cmp.length, 6, 'Expected 6 cmp elements');
   });
 
-  it('Test 2: start_time_ms=360000 produces start="3600" (tenths of a second)', () => {
+  // 02.1-14 Task 1: start_time_ms is epoch ms; MOP `st` is tenths since local
+  // midnight. The old expectation (360000 ms → st=3600) encoded the
+  // ms-since-midnight base this plan removes.
+  it('Test 2: start 10:00 CEST on 2026-10-03 produces st="360000" (tenths since local midnight)', () => {
     const competitors = new Map<string, CompetitorView>();
     competitors.set(
       'c1',
@@ -149,7 +152,7 @@ describe('buildMopXml', () => {
         id: 'c1',
         name: 'Runner',
         class_id: 'cls-1',
-        start_time_ms: 360000,
+        start_time_ms: Date.parse('2026-10-03T08:00:00Z'),
         status: 'PEND',
       })
     );
@@ -168,8 +171,8 @@ describe('buildMopXml', () => {
     const cmp = (Array.isArray(cmpRaw) ? cmpRaw : [cmpRaw]) as Array<Record<string, unknown>>;
     assert.equal(cmp.length, 1);
     const base = cmp[0]!['base'] as Record<string, unknown>;
-    // 360000 ms / 100 = 3600 tenths
-    assert.equal(base['@_st'], 3600, `Expected st=3600, got ${base['@_st']}`);
+    // 10:00:00 local = 36000 s = 360000 tenths
+    assert.equal(base['@_st'], 360000, `Expected st=360000, got ${base['@_st']}`);
   });
 
   it('Test 3: elapsed_time_ms=1234567 produces rt="12346" (Math.round(1234567/100))', () => {

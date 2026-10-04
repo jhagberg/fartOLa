@@ -18,6 +18,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { importStartList } from './iofImport.ts';
+import { buildStartListXml as exportStartListXml } from './iofExport.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture XML builders.
@@ -234,5 +236,25 @@ describe('importStartList', () => {
     });
     const entries = importStartList(xml);
     assert.equal(entries[0]!.bibNumber, '42');
+  });
+
+  test('02.1-14 Task 1: export → import round trip keeps the same epoch start time', () => {
+    const startTimeMs = localToEpochMs('2026-10-03', 10 * 3600 + 30);
+    const { xml } = exportStartListXml({
+      competition: {
+        id: 'c1',
+        name: 'Round Trip',
+        date: '2026-10-03',
+        receipt_template: 'classic',
+        auto_print: false,
+        created_at_ms: 0,
+        race_started_at_ms: null,
+        timing_format: 'seconds',
+      },
+      classes: [{ name: 'H21', competitors: [{ name: 'Anna Andersson', startTimeMs }] }],
+    });
+    const entries = importStartList(xml);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.startTimeMs, startTimeMs);
   });
 });

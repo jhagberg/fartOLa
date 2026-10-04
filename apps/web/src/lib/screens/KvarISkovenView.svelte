@@ -27,6 +27,7 @@
   import { t } from '$lib/i18n/index.ts';
   import { postCheckunitSnapshot, listCompetitors, listClasses } from '$lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
+  import { formatLocalTime } from '@fartola/shared-types';
 
   interface Props {
     competitionId: string;
@@ -120,13 +121,10 @@
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
-  /** Elapsed since start_time_ms (ms since midnight local). Handles midnight wrap. */
+  /** Elapsed since start_time_ms (epoch ms); 0 before the start. */
   function elapsed(startMs: number | null | undefined): string {
     if (startMs == null) return '—';
-    const d = new Date();
-    const localNowMs = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1000 + d.getMilliseconds();
-    const diffMs = ((localNowMs - startMs) % 86400000 + 86400000) % 86400000;
-    return formatTime(diffMs);
+    return formatTime(Math.max(0, Date.now() - startMs));
   }
 
   // ---------------------------------------------------------------------------
@@ -293,7 +291,7 @@
                 <td class="name">{competitor.name}</td>
                 <td>{competitor.club ?? '—'}</td>
                 <td>{className(competitor.class_id)}</td>
-                <td>{formatTime(competitor.start_time_ms)}</td>
+                <td>{competitor.start_time_ms == null ? '—' : formatLocalTime(competitor.start_time_ms)}</td>
                 <td>{elapsed(competitor.start_time_ms)}</td>
                 <td>
                   <button

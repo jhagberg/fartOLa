@@ -28,6 +28,7 @@
     listHiredCards,
   } from '$lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
+  import { formatLocalTime } from '@fartola/shared-types';
   import Button from '$lib/ui/Button.svelte';
   import Input from '$lib/ui/Input.svelte';
   import Icon from '$lib/ui/Icon.svelte';
@@ -155,13 +156,9 @@
     competitors = competitors.map((c) => (c.id === updated.id ? updated : c));
   }
 
-  /** Format epoch ms as HH:MM:SS for start-time display. */
+  /** Format epoch ms as HH:MM:SS (competition local time) for start-time display. */
   function formatStartTime(ms: number): string {
-    const totalSec = Math.floor((ms % 86_400_000) / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return formatLocalTime(ms);
   }
 
   function openAdd(): void {

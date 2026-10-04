@@ -29,6 +29,7 @@
 
 import { XMLBuilder } from 'fast-xml-parser';
 import type { CompetitionState, PunchStatus } from '../../projection/types.ts';
+import { epochToLocalSeconds } from '../../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -159,9 +160,10 @@ export function buildMopXml(input: MopBuildInput): string {
     if (orgId !== null) {
       baseAttrs['@_org'] = orgId;
     }
-    // Start time in tenths (epoch ms / 100)
+    // Start time in tenths of a second since local midnight (MOP `st`);
+    // start_time_ms is epoch ms.
     if (cv.start_time_ms !== null) {
-      baseAttrs['@_st'] = Math.round(cv.start_time_ms / 100);
+      baseAttrs['@_st'] = Math.round(epochToLocalSeconds(cv.start_time_ms) * 10);
     }
     // Running time in tenths
     if (cv.elapsed_time_ms !== null) {

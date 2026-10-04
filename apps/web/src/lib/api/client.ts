@@ -764,6 +764,7 @@ export function returnHiredCard(
 
 export interface LottningBody {
   mode: 'SOFT' | 'Random' | 'Simultaneous';
+  /** Epoch ms of the first start (all start times are epoch ms). */
   firstStartMs: number;
   intervalSec: number;
   vacantSlots?: number;
@@ -774,6 +775,7 @@ export interface StartListEntry {
   name: string;
   club: string | null;
   card_number: number | null;
+  /** Epoch ms; null = not drawn. */
   start_time_ms: number | null;
 }
 
@@ -781,6 +783,7 @@ export interface LottningResponse {
   class: {
     id: string;
     name: string;
+    /** Epoch ms. */
     first_start_ms: number | null;
     start_interval_sec: number | null;
     max_time_sec: number | null;
@@ -823,7 +826,7 @@ export function patchClass(
 }
 
 /** PATCH /api/competitions/:id/competitors/:competitorId/start-time —
- * update a competitor's individual start_time_ms (D-07 per-runner edit).
+ * update a competitor's individual start_time_ms (epoch ms; D-07 per-runner edit).
  * Owned by Plan 02.1-02; this plan only consumes it. */
 export function patchCompetitorStartTime(
   competitionId: string,
