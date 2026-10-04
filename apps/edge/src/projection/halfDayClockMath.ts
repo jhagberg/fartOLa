@@ -82,12 +82,69 @@ export function cardClockToEpochMs(
   readAtMs: number,
   tz: string = COMPETITION_TZ
 ): number {
+  return latestNotAfter(cardClockCandidates(clock, cardType, readAtMs, tz), readAtMs);
+}
+
+/** How far a card time may lie after the next one on the same card and still
+ * read as before it when choosing between the two instants of the repeated
+ * autumn hour: stations are synchronised, but not to the second. Well under
+ * the hour between the two candidates. */
+const STATION_SKEW_TOLERANCE_MS = 60 * 1000;
+
+/** The clocks of one card read in card order (check, start, punches,
+ * finish), each as epoch ms (null where the card has none).
+ *
+ * Each date is chosen like cardClockToEpochMs. A clock in the hour repeated
+ * as DST ends has two instants, and the read alone can't tell which: start
+ * 02:50 CEST and finish 02:10 CET is a 20-minute run, but both readings of
+ * 02:50 lie before the read. So the finish is resolved against the read, and
+ * each earlier clock takes the latest instant not after the next resolved
+ * clock (allowing STATION_SKEW_TOLERANCE_MS), else the earlier one. */
+export function cardClocksToEpochMs(
+  read: {
+    check?: HalfDayClock | null;
+    start: HalfDayClock | null;
+    punches: readonly HalfDayClock[];
+    finish: HalfDayClock | null;
+  },
+  cardType: string,
+  readAtMs: number,
+  tz: string = COMPETITION_TZ
+): { check: number | null; start: number | null; punches: number[]; finish: number | null } {
+  const clocks = [read.check ?? null, read.start, ...read.punches, read.finish];
+  const out: (number | null)[] = clocks.map(() => null);
+  let limit = readAtMs;
+  for (let i = clocks.length - 1; i >= 0; i--) {
+    const clock = clocks[i];
+    if (clock === null || clock === undefined) continue;
+    const ms = latestNotAfter(cardClockCandidates(clock, cardType, readAtMs, tz), limit);
+    out[i] = ms;
+    limit = ms + STATION_SKEW_TOLERANCE_MS;
+  }
+  return {
+    check: out[0]!,
+    start: out[1]!,
+    punches: out.slice(2, -1) as number[],
+    finish: out[out.length - 1]!,
+  };
+}
+
+/** Every instant (ascending) the card clock can be within the read window. */
+function cardClockCandidates(
+  clock: HalfDayClock,
+  cardType: string,
+  readAtMs: number,
+  tz: string
+): number[] {
   const noPmBit = cardType === 'SI5';
   const period = noPmBit ? HALF_DAY_MS : DAY_MS;
   const cardMs = noPmBit ? clock.seconds_in_half_day * 1000 : halfDayClockToMs(clock);
   const anchorWall = epochToWallClockMs(readAtMs + CLOCK_SKEW_TOLERANCE_MS, tz);
   const back = (((anchorWall - cardMs) % period) + period) % period;
-  const candidates = wallClockToEpochMs(anchorWall - back, tz);
-  const beforeRead = candidates.filter((c) => c <= readAtMs);
-  return beforeRead.length > 0 ? Math.max(...beforeRead) : candidates[0]!;
+  return wallClockToEpochMs(anchorWall - back, tz);
+}
+
+function latestNotAfter(candidates: number[], limitMs: number): number {
+  const notAfter = candidates.filter((c) => c <= limitMs);
+  return notAfter.length > 0 ? Math.max(...notAfter) : candidates[0]!;
 }

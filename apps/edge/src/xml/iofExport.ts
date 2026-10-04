@@ -53,7 +53,7 @@ import { XMLBuilder } from 'fast-xml-parser';
 import { validateXml, type XsdError } from './validate.ts';
 import type { CompetitionState, CompetitorView } from '../projection/types.ts';
 import { startMs } from '../projection/dnfMp.ts';
-import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { cardClocksToEpochMs } from '../projection/halfDayClockMath.ts';
 import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -278,18 +278,19 @@ function raceTimes(
   }
   const read = view.card_read_history[view.card_read_history.length - 1];
   if (read === undefined) return { start: view.start_time_ms, finish: null };
+  // Resolve the card's clocks together, as the running time does, so start
+  // and finish agree across a DST change (halfDayClockMath).
   return {
     start: startMs({
       start: read.start,
+      punches: read.punches,
+      finish: read.finish,
       cardType: read.card_type,
       readAtMs: read.event_time_ms,
       drawnStartMs: view.start_time_ms,
       startMethod: cls.start_method,
     }),
-    finish:
-      read.finish === null
-        ? null
-        : cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms),
+    finish: cardClocksToEpochMs(read, read.card_type, read.event_time_ms).finish,
   };
 }
 

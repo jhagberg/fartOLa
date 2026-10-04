@@ -602,6 +602,51 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     assert.equal(anna.startTimeMs, null);
   });
 
+  test('startlist: a discarded card change does not free its card for a later row', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    ctx.handle.sqlite
+      .prepare(`UPDATE competitors SET card_number = 2222 WHERE competition_id = ? AND name = ?`)
+      .run(compId, 'Bo Berg');
+    // Anna's two card changes conflict and are both dropped, so she keeps
+    // 7501853 — Bo's row may not take it.
+    const anna = { given: 'Anna', family: 'Andersson', club: 'StorTuna OK' };
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          { ...anna, siCard: 5555, startTimeIso: '2026-05-19T10:00:00Z' },
+          { ...anna, siCard: 6666, startTimeIso: '2026-05-19T10:05:00Z' },
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 7501853,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Anna Andersson', class: 'H21', card: 5555, reason: 'duplicate_runner' },
+      { row: 2, name: 'Anna Andersson', class: 'H21', card: 6666, reason: 'duplicate_runner' },
+      { row: 3, name: 'Bo Berg', class: 'H21', card: 7501853, reason: 'duplicate_card' },
+    ]);
+    assert.equal(byName('Anna Andersson').cardNumber, 7501853);
+    assert.equal(byName('Anna Andersson').startTimeMs, null);
+    assert.equal(byName('Bo Berg').cardNumber, 2222);
+    assert.equal(byName('Bo Berg').startTimeMs, null);
+  });
+
   test('startlist test 3: competition not found → 404', async () => {
     const bytes = buildStartListXmlBuffer([{ className: 'H21', persons: [] }]);
     const res = await uploadFile(

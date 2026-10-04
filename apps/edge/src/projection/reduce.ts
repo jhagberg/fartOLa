@@ -54,7 +54,7 @@ import {
   type ControlAlternatives,
   type StartMethod,
 } from './dnfMp.ts';
-import { cardClockToEpochMs } from './halfDayClockMath.ts';
+import { cardClocksToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
@@ -285,15 +285,11 @@ export function reduce(input: ReduceInput): CompetitionState {
         // applied later still win in the same way. `undefined` here
         // means the caller (Phase-1 tests) opted out of the gate.
         const inRacePhase = inRacePhaseAt(e.eventTimeMs);
-        const checkMs = payload.check
-          ? cardClockToEpochMs(payload.check, payload.card_type, e.eventTimeMs)
-          : null;
+        const cardMs = cardClocksToEpochMs(payload, payload.card_type, e.eventTimeMs);
+        const checkMs = cardMs.check;
         checkMsByCompetitor.set(competitor.id, checkMs);
-        if (inRacePhase && checkMs !== null && payload.start) {
-          checkToStartMsByCompetitor.set(
-            competitor.id,
-            cardClockToEpochMs(payload.start, payload.card_type, e.eventTimeMs) - checkMs
-          );
+        if (inRacePhase && checkMs !== null && cardMs.start !== null) {
+          checkToStartMsByCompetitor.set(competitor.id, cardMs.start - checkMs);
         } else {
           checkToStartMsByCompetitor.delete(competitor.id);
         }
@@ -634,6 +630,8 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (latest === undefined || v.status === 'PEND') continue;
     const startInput = {
       start: latest.start,
+      punches: latest.punches,
+      finish: latest.finish,
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
@@ -777,7 +775,9 @@ function computeVoidedElapsed(
   alternatives: ControlAlternatives | undefined,
   voidedLegs: readonly number[],
   read: {
+    start: HalfDayClock | null;
     punches: readonly NdjsonPunch[];
+    finish: HalfDayClock | null;
     card_type: string;
     event_time_ms: number;
   },
@@ -785,8 +785,7 @@ function computeVoidedElapsed(
   caps: ReadonlyMap<number, number | null>
 ): number {
   const { punches } = read;
-  const toEpoch = (c: HalfDayClock): number =>
-    cardClockToEpochMs(c, read.card_type, read.event_time_ms);
+  const punchMs = cardClocksToEpochMs(read, read.card_type, read.event_time_ms).punches;
   const { matched } = matchCourse(
     punches.map((p) => p.code),
     courseCodes,
@@ -797,7 +796,7 @@ function computeVoidedElapsed(
   courseCodes.forEach((controlCode, i) => {
     const idx = matched[i]!;
     if (idx === -1) return;
-    const atMs = toEpoch(punches[idx]!);
+    const atMs = punchMs[idx]!;
     if (voidedLegs.includes(controlCode) && prevMs !== null && atMs > prevMs) {
       const legMs = atMs - prevMs;
       const maxSec = caps.get(controlCode);

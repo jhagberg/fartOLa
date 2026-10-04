@@ -97,6 +97,9 @@ if [[ -n "$LAN_IP" && ${#LAN_FLAG[@]} -gt 0 ]]; then
 fi
 echo ""
 
+# FARTOLA_DEV=1 mounts /api/__dev/* and /api/__admin/* (the UI's simulated
+# read and Eventor refresh, manual backup/retention runs). The edge server
+# only accepts writes to them from this laptop, never from the LAN.
 exec env FARTOLA_DEV="${FARTOLA_DEV:-1}" node "$BIN" \
   --port "$PORT" \
   --bind-host "$BIND_HOST" \
