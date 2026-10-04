@@ -14,6 +14,8 @@
 //     number | null` (raw seconds-in-half-day, matching upstream's fixture shape —
 //     full wall-clock reconstruction needs the event date and is Phase 1's job).
 //   - SiCard11/PCard cardNumber path retained from upstream (4-byte arr2cardNumber).
+//   - siPunchCode(): punch control code including the PTD's code bits 8-9 (upstream
+//     reads the CN byte only, so controls above 255 came out modulo 256).
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from './constants.ts';
@@ -398,3 +400,14 @@ export class SiTime extends SiDataType<SiTimestamp> {
     return ptd !== undefined && (ptd & 0x01) === 1 ? timeInt + SI_TIME_CUTOFF : timeInt;
   }
 }
+
+// --- Punch control code -------------------------------------------------------
+// A PTD punch record (SI6, SI8, SI9, SI10, SI11, SIAC) is
+// [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bits 6-7
+// hold bits 8-9, so code = cn + ((ptd & 0xc0) << 2) — up to 1023 (cf. SIReader's
+// sireader2.py). Upstream sportident.js reads the CN byte only.
+
+/** Storage field for the control code of the PTD punch record at `punchOffset`. */
+export const siPunchCode = (punchOffset: number): SiInt =>
+  // SiInt concatenates parts little-endian: CN → bits 0-7, PTD bits 6-7 → bits 8-9.
+  new SiInt([[punchOffset + 1], [punchOffset, 6, 8]]);
