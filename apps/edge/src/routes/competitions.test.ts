@@ -562,6 +562,25 @@ describe('competitions REST CRUD', () => {
     );
   });
 
+  test('SOFT TR 4.21.2: the lock survives reset-race (started once = first start has happened)', async () => {
+    const id = await createComp();
+    const maxTime = (sec: number) =>
+      ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/competitions/${id}/max-time`,
+        payload: { max_time_sec: sec },
+      });
+    const post = (action: string) =>
+      ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/${action}` });
+    assert.equal((await maxTime(5400)).statusCode, 200);
+    assert.equal((await post('start-race')).statusCode, 201);
+    assert.equal((await maxTime(7200)).statusCode, 409);
+    assert.equal((await post('reset-race')).statusCode, 201);
+    const after = await maxTime(7200);
+    assert.equal(after.statusCode, 409);
+    assert.deepEqual(after.json(), { error: 'max_time_locked' });
+  });
+
   test('SOFT TR 4.21.2: a drawn start time that has passed counts as the first start', async () => {
     const id = await createComp();
     const cls = await ctx.app.inject({
