@@ -71,6 +71,7 @@ function makeState(
     competitors: opts.competitors ?? new Map(),
     results_by_class: new Map(),
     pending_unknown_cards: [],
+    check_to_start: { n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000 },
     last_event_seq: 0,
   };
 }

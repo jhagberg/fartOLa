@@ -135,6 +135,16 @@ export interface CompetitionState {
    * Drives the walk-up modal (UI-SPEC §"Walk-up modal"). Sorted ascending
    * for deterministic snapshots. */
   pending_unknown_cards: number[];
+  /** 02.1-14 Task 15: the check → start punch gaps of the runners read so
+   * far with both (latest in-race read each): n, median and mean (null
+   * when n = 0), and the offset the missing-start suggestions use (the
+   * median, or 1:54 when n < 10). */
+  check_to_start: {
+    n: number;
+    median_ms: number | null;
+    mean_ms: number | null;
+    offset_ms: number;
+  };
   /** Highest local_seq of any event consumed by this projection — plan 08
    * uses this to skip already-applied events on incremental rebuilds. */
   last_event_seq: number;

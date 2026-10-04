@@ -857,6 +857,45 @@ export function patchCompetitorStartTime(
   );
 }
 
+/** 02.1-14 Task 15 — one runner without a start (GET …/missing-starts). */
+export interface MissingStartItem {
+  competitor_id: string;
+  name: string;
+  club: string | null;
+  class_id: string;
+  class_name: string;
+  card_number: number | null;
+  status: string;
+  check_ms: number | null;
+  suggested_start_ms: number | null;
+  finish_ms: number;
+}
+
+/** The day's check → start numbers + the runners without a start. */
+export interface MissingStartsResponse {
+  n: number;
+  median_ms: number | null;
+  mean_ms: number | null;
+  offset_ms: number;
+  items: MissingStartItem[];
+}
+
+/** GET /api/competitions/:id/missing-starts (02.1-14 Task 15). */
+export function listMissingStarts(competitionId: string): Promise<MissingStartsResponse> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/missing-starts`);
+}
+
+/** POST /api/competitions/:id/missing-starts/apply — all or nothing. */
+export function applyMissingStarts(
+  competitionId: string,
+  items: Array<{ competitor_id: string; start_time_ms: number }>
+): Promise<{ updated: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/missing-starts/apply`, {
+    method: 'POST',
+    body: { items },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Eventor push (Phase 2.1 Plan 02.1-08)
 // ---------------------------------------------------------------------------

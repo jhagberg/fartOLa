@@ -34,6 +34,7 @@
   import { getCompetition, getResults } from '$lib/api/client.ts';
   import ClassTabs from '$lib/components/ClassTabs.svelte';
   import ResultsTable from '$lib/components/ResultsTable.svelte';
+  import MissingStartsPanel from '$lib/components/MissingStartsPanel.svelte';
 
   interface ResultRow {
     competitor_id: string;
@@ -286,6 +287,11 @@
   <div class="table-wrap">
     <ResultsTable rows={activeRows} {flashIds} />
   </div>
+
+  <!-- 02.1-14 Task 15: secretariat sets missing start times (not on the projector) -->
+  {#if !fullscreen}
+    <MissingStartsPanel {competitionId} refreshKey={updatedAtMs} />
+  {/if}
 
   {#if competition}
     <p class="comp-meta">{competition.name} · {competition.date}</p>

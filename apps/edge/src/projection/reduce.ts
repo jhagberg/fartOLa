@@ -609,12 +609,16 @@ export function reduce(input: ReduceInput): CompetitionState {
   // punch where the time runs from the start time.
   const gaps = [...checkToStartMsByCompetitor.values()].sort((a, b) => a - b);
   const mid = gaps.length >> 1;
-  const checkToStartMs =
-    gaps.length < MIN_CHECK_TO_START_SAMPLES
-      ? DEFAULT_CHECK_TO_START_MS
+  const medianMs =
+    gaps.length === 0
+      ? null
       : gaps.length % 2 === 1
         ? gaps[mid]!
         : Math.round((gaps[mid - 1]! + gaps[mid]!) / 2);
+  const checkToStartMs =
+    gaps.length < MIN_CHECK_TO_START_SAMPLES || medianMs === null
+      ? DEFAULT_CHECK_TO_START_MS
+      : medianMs;
   for (const v of competitorViews.values()) {
     const latest = v.card_read_history[v.card_read_history.length - 1];
     if (latest === undefined || v.status === 'PEND') continue;
@@ -700,6 +704,12 @@ export function reduce(input: ReduceInput): CompetitionState {
     competitors: competitorViews,
     results_by_class: resultsByClass,
     pending_unknown_cards: [...pendingUnknownCards].sort((a, b) => a - b),
+    check_to_start: {
+      n: gaps.length,
+      median_ms: medianMs,
+      mean_ms: gaps.length === 0 ? null : Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length),
+      offset_ms: checkToStartMs,
+    },
     last_event_seq: lastEventSeq,
   };
 }

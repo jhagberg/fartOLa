@@ -1836,6 +1836,30 @@ describe('reduce — missing start (02.1-14 Task 13)', () => {
     assert.equal(state.competitors.get('r0')!.suggested_start_ms, null);
   });
 
+  // 02.1-14 Task 15: the day's check → start numbers for "Fastställ
+  // saknade starttider" (median, mean, n, and the offset actually used).
+  test('check → start stats: median, mean, n, offset used', () => {
+    assert.deepEqual(run(10).check_to_start, {
+      n: 10,
+      median_ms: 105_000,
+      mean_ms: 105_000,
+      offset_ms: 105_000,
+    });
+    // Fewer than 10: the numbers are shown, but 1:54 is used.
+    assert.deepEqual(run(9).check_to_start, {
+      n: 9,
+      median_ms: 100_000,
+      mean_ms: 100_000,
+      offset_ms: 114_000,
+    });
+    assert.deepEqual(run(0).check_to_start, {
+      n: 0,
+      median_ms: null,
+      mean_ms: null,
+      offset_ms: 114_000,
+    });
+  });
+
   test('< 10 reference runners → check + 1:54', () => {
     const x = run(9).competitors.get('x')!;
     assert.equal(x.missing_start, true);

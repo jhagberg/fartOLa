@@ -180,6 +180,7 @@ function makeSeededState(): CompetitionState {
     competitors,
     results_by_class,
     pending_unknown_cards: [],
+    check_to_start: { n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000 },
     last_event_seq: 0,
   };
 }
@@ -289,6 +290,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
       competitors: new Map(),
       results_by_class: new Map(),
       pending_unknown_cards: [],
+      check_to_start: { n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000 },
       last_event_seq: 0,
     };
     const { xml, summary } = buildResultListXml(makeInput({ state: emptyState }));

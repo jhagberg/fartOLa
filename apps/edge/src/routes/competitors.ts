@@ -72,6 +72,7 @@ import { z } from 'zod';
 
 import { CompetitorCreateInput, type CompetitorDTO, readoutChannel } from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
+import type { DrizzleDb } from '../db/index.ts';
 import type { Competitor } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -100,10 +101,26 @@ const PatchProfileSchema = z
 
 // PATCH /api/competitions/:id/competitors/:competitorId/start-time body
 // (02.1-14): one runner's drawn start as epoch ms, or null to clear it. The
-// > 1e12 floor rejects the old local ms-since-midnight base.
-const PatchStartTimeSchema = z
-  .object({ start_time_ms: z.number().int().gt(1e12).nullable() })
-  .strict();
+// > 1e12 floor rejects the old local ms-since-midnight base. Shared with
+// the missing-starts batch (Task 15, routes/missingStarts.ts).
+export const StartTimeMs = z.number().int().gt(1e12).nullable();
+const PatchStartTimeSchema = z.object({ start_time_ms: StartTimeMs }).strict();
+
+/** Set one runner's start time; undefined when the competitor is not in
+ * this competition. The caller marks the projection dirty. */
+export function setCompetitorStartTime(
+  db: DrizzleDb,
+  competitionId: string,
+  competitorId: string,
+  startTimeMs: number | null
+): Competitor | undefined {
+  return db
+    .update(competitors)
+    .set({ startTimeMs })
+    .where(and(eq(competitors.competitionId, competitionId), eq(competitors.id, competitorId)))
+    .returning()
+    .get();
+}
 
 /** True when err is a SQLite UNIQUE-constraint violation on
  * competitors.card_number — i.e. the D-11 partial unique index
@@ -736,12 +753,12 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       if (!parsed.success) {
         return reply.code(400).send(issuesToErrors(parsed.error.issues));
       }
-      const row = app.fartolaDb.db
-        .update(competitors)
-        .set({ startTimeMs: parsed.data.start_time_ms })
-        .where(and(eq(competitors.competitionId, id), eq(competitors.id, competitorId)))
-        .returning()
-        .get();
+      const row = setCompetitorStartTime(
+        app.fartolaDb.db,
+        id,
+        competitorId,
+        parsed.data.start_time_ms
+      );
       if (!row) return reply.code(404).send({ error: 'competitor_not_found' });
       app.projectionStore.markDirty(id);
       return competitorRowToDTO(row);
