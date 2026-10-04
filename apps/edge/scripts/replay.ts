@@ -7,13 +7,14 @@
 //
 // The directory is a fixture from fartOLa-tools/replay: CourseData.xml,
 // EntryList.xml, StartList.xml, readouts.ndjson (card_read events with the
-// time MeOS got each card in ts_ms), expected.json and manifest.json.
+// time MeOS got each card in ts_ms), manual.ndjson (statuses set by hand),
+// expected.json and manifest.json.
 // Everything goes through the normal paths: the three imports through the
 // HTTP routes, a race start one hour before the first read-out, each read-out through
 // insertEvent with its original time, then the same loader + reducer the
 // server uses. The script only reports; it always exits 0.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { CardReadEvent } from '@fartola/sportident';
@@ -21,7 +22,8 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
 import { openDatabase } from '../src/db/index.ts';
-import { competitions } from '../src/db/schema.ts';
+import { competitions, competitors } from '../src/db/schema.ts';
+import type { ManualStatus } from '../src/projection/types.ts';
 import { ensureNodeId } from '../src/db/node-id.ts';
 import { loadCompetitionInputs } from '../src/projection/loader.ts';
 import { reduce } from '../src/projection/reduce.ts';
@@ -137,11 +139,51 @@ export async function replay(dir: string): Promise<ReplayReport> {
       insertEvent(handle, nodeId, 'card_read', read.ts_ms, payload, competitionId);
     }
 
+    // Statuses the MeOS secretariat set by hand (manual.ndjson), replayed as
+    // the same operator action in fartOLa at the time it was made.
+    const manualPath = path.join(dir, 'manual.ndjson');
+    const manual = existsSync(manualPath)
+      ? readFileSync(manualPath, 'utf-8')
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as { ts_ms: number; card: number | null; status: ManualStatus })
+      : [];
+    const idByCard = new Map(
+      handle.db
+        .select({ id: competitors.id, card: competitors.cardNumber })
+        .from(competitors)
+        .where(eq(competitors.competitionId, competitionId))
+        .all()
+        .filter((c) => c.card !== null)
+        .map((c) => [c.card!, c.id])
+    );
+    for (const m of manual) {
+      const competitorId = m.card === null ? undefined : idByCard.get(m.card);
+      if (!competitorId) continue;
+      insertEvent(
+        handle,
+        nodeId,
+        'manual_status_set',
+        m.ts_ms,
+        {
+          event_type: 'manual_status_set',
+          competitor_id: competitorId,
+          status: m.status,
+          reason: 'Satt för hand i MeOS (replay)',
+        },
+        competitionId
+      );
+    }
+
     const input = loadCompetitionInputs(handle, competitionId);
     if (!input) throw new Error('competition vanished');
     const state = reduce(input);
     const byCard = new Map(
       [...state.competitors.values()].filter((c) => c.card_number).map((c) => [c.card_number!, c])
+    );
+    // What the public result shows (an untimed class shows no time).
+    const shown = new Map(
+      [...state.results_by_class.values()].flat().map((r) => [r.competitor_id, r.elapsed_time_ms])
     );
 
     const mismatches: Mismatch[] = [];
@@ -152,11 +194,14 @@ export async function replay(dir: string): Promise<ReplayReport> {
       const gotTime =
         view?.elapsed_time_ms == null ? null : Math.round(view.elapsed_time_ms / 1000);
       const statusOk = (SAME[e.status] ?? [e.status]).includes(got);
-      // No official time (untimed classes, e.g. MeOS NoTiming): status only.
-      const timeOk =
-        e.status !== 'OK' ||
-        e.time === null ||
-        (gotTime !== null && Math.abs(gotTime - e.time) <= 1);
+      // Untimed class: the published result must show no time. Otherwise a
+      // missing official time means status only (e.g. OK set by hand).
+      const shownMs = view ? (shown.get(view.id) ?? null) : null;
+      const timeOk = view?.no_timing
+        ? shownMs === null
+        : e.status !== 'OK' ||
+          e.time === null ||
+          (gotTime !== null && Math.abs(gotTime - e.time) <= 1);
       if (statusOk && timeOk) equal++;
       else
         mismatches.push({
