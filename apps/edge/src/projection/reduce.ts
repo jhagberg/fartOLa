@@ -240,6 +240,13 @@ export function reduce(input: ReduceInput): CompetitionState {
         const inRacePhase =
           raceStartedAtMs === undefined ||
           (raceStartedAtMs !== null && e.eventTimeMs >= raceStartedAtMs);
+        // A read-out during the race after DNS/CANCEL proves the runner
+        // started: drop that status and score the run, as MeOS does
+        // (oRunner.cpp evaluateCard). DNF/DQ/MAX/MP set by hand still win.
+        if (inRacePhase && (view.manual_status === 'DNS' || view.manual_status === 'CANCEL')) {
+          view.manual_status = null;
+          view.manual_dnf_reason = null;
+        }
         // Manual override wins: don't overwrite status/elapsed when an
         // operator-asserted state (DNF/DNS/DQ/CANCEL/MAX) is in force.
         if (view.manual_status === null && inRacePhase) {

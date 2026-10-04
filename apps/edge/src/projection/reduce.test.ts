@@ -485,6 +485,48 @@ describe('reduce — CompetitionState projection', () => {
     });
   }
 
+  // A read-out after DNS/CANCEL proves the runner started, so it is scored
+  // (MeOS oRunner.cpp evaluateCard: a stored DNS/CANCEL becomes the computed
+  // status). Seen on Tuna Ting dag 2: marked DNS at the start check, read
+  // out 35 minutes later, OK in the official result.
+  for (const status of ['DNS', 'CANCEL'] as const) {
+    test(`replay-readiness: a read-out after ${status} scores the run`, () => {
+      seqCounter = 0;
+      const events = [
+        evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status, reason: 'start' }),
+        cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+      ];
+      const state = reduce({
+        competition_id: 'comp-1',
+        events,
+        competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+        classes: [cls('cls-H21')],
+        courses: [course('cls-H21', [31, 32, 33, 34])],
+      });
+      const anna = state.competitors.get('c-anna');
+      assert.ok(anna);
+      assert.equal(anna.status, 'OK');
+      assert.equal(anna.manual_status, null);
+      assert.equal(anna.elapsed_time_ms, 600_000);
+    });
+  }
+
+  test('replay-readiness: a read-out after DQ keeps the DQ', () => {
+    seqCounter = 0;
+    const events = [
+      evt({ event_type: 'manual_status_set', competitor_id: 'c-anna', status: 'DQ', reason: 'x' }),
+      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32, 33, 34])],
+    });
+    assert.equal(state.competitors.get('c-anna')?.status, 'DQ');
+  });
+
   test('Phase-2.0 manual_status_set: DNS clears split fields (operator-asserted absence)', () => {
     seqCounter = 0;
     const events = [
