@@ -159,8 +159,14 @@ describe('eventor push', () => {
   });
 
   it('Test 5: throws on timeout', async () => {
-    // A fetch that never resolves — the timeout fires first.
-    const neverFetch: typeof fetch = () => new Promise(() => undefined);
+    // A fetch that never resolves on its own — it only settles when the
+    // timeout aborts it, rejecting like real fetch does on abort.
+    const neverFetch: typeof fetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason ?? new Error('aborted'));
+        });
+      });
     await assert.rejects(
       () =>
         pushToEventor({
@@ -170,6 +176,7 @@ describe('eventor push', () => {
           fetchImpl: neverFetch,
           baseUrl: 'https://eventor.orientering.se/api/',
           timeoutMs: 50, // Very short timeout for the test.
+          retryDelaysMs: [10, 10, 10],
         }),
       /timeout|aborted/i
     );
