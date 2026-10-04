@@ -20,8 +20,8 @@ import {
   type PushQueueHandle,
   type PushQueueStatus,
 } from '../integrations/liveresultat/queue.ts';
-import { competitions } from '../db/schema.ts';
-import { liveresultatConfig } from './liveresultat.ts';
+import { competitions, events } from '../db/schema.ts';
+import { liveresultatConfig, liveresultatMopMeta } from './liveresultat.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
@@ -239,33 +239,104 @@ describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
     assert.equal(liveresultatConfig(ctx.handle, id), null);
   });
 
-  it('SOFT TR 7.7.1: once the credentials are set the push queue posts to liveresultat', async () => {
+  it("SOFT TR 7.7.1: once the credentials are set the push queue posts the runners' results to liveresultat", async () => {
     const id = await createComp(ctx.app);
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classId = (cls.json() as { id: string }).id;
+    for (const [name, card] of [
+      ['Anna Andersson', 101],
+      ['Bo Berg', 102],
+    ] as const) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/competitors',
+        payload: {
+          competition_id: id,
+          name,
+          club: 'OK Täby',
+          class_id: classId,
+          card_number: card,
+          consent: true,
+        },
+      });
+      assert.equal(res.statusCode, 201);
+    }
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET race_started_at_ms = 1 WHERE id = ?')
+      .run(id);
+    const clock = (sec: number) => ({
+      half_day: 0 as const,
+      seconds_in_half_day: sec,
+      weekday: null,
+    });
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'test-node',
+        localSeq: 1,
+        competitionId: id,
+        eventType: 'card_read',
+        eventTimeMs: Date.now(),
+        recordedAtMs: Date.now(),
+        payload: {
+          event_type: 'card_read',
+          card_number: 101,
+          card_type: 'SI10',
+          start: clock(36_000),
+          finish: clock(36_000 + 1800),
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
     await ctx.app.inject({
       method: 'PATCH',
       url: `/api/competitions/${id}/liveresultat/credentials`,
       payload: { liveresultat_id: '1234', liveresultat_pwd: PWD },
     });
-    const posted: Array<{ competition: unknown; pwd: unknown }> = [];
+    const posted: Array<{ competition: unknown; pwd: unknown; mop: string }> = [];
     const fetchImpl = (async (_url: string, init: RequestInit) => {
       const form = init.body as FormData;
-      posted.push({ competition: form.get('competition'), pwd: form.get('pwd') });
+      posted.push({
+        competition: form.get('competition'),
+        pwd: form.get('pwd'),
+        mop: await (form.get('mop') as Blob).text(),
+      });
       return new Response('<MOPStatus status="OK"/>', { status: 200 });
     }) as unknown as typeof fetch;
     const silent = { info() {}, warn() {} } as unknown as FastifyInstance['log'];
+    // As bin/fartola.ts wires it, with the same class/club lookup.
     const queue = createPushQueue({
       log: silent,
       getProjection: (cid) => ctx.app.projectionStore.recomputeNow(cid),
       getConfig: (cid) => liveresultatConfig(ctx.handle, cid),
-      getMopMeta: () => ({ classes: [], clubs: [] }),
+      getMopMeta: (cid) => liveresultatMopMeta(ctx.handle, cid),
       debounceMs: 0,
       fetchImpl,
     });
     queue.enqueue(id);
     await new Promise((r) => setTimeout(r, 50));
     queue.stop();
-    assert.deepEqual(posted, [{ competition: '1234', pwd: PWD }]);
     assert.equal(queue.status().lastError, null);
+    assert.equal(posted.length, 1);
+    assert.equal(posted[0]!.competition, '1234');
+    assert.equal(posted[0]!.pwd, PWD);
+    const mop = posted[0]!.mop;
+    assert.match(mop, new RegExp(`<cls id="${classId}">H21</cls>`));
+    assert.match(mop, /<org id="OK Täby">OK Täby<\/org>/);
+    // Anna read out OK in 30:00 (rt in tenths); Bo still out (stat 0, no rt).
+    assert.match(
+      mop,
+      new RegExp(`<base cls="${classId}" stat="1" org="OK Täby" rt="18000">Anna Andersson</base>`)
+    );
+    assert.match(mop, new RegExp(`<base cls="${classId}" stat="0" org="OK Täby">Bo Berg</base>`));
   });
 
   it('SOFT TR 7.7.1: the liveresultat password never reaches the log', async () => {

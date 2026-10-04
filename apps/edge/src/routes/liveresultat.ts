@@ -35,7 +35,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { DbHandle } from '../db/index.ts';
-import { competitions } from '../db/schema.ts';
+import { classes, clubs, competitions } from '../db/schema.ts';
 import type { PushQueueConfig, PushQueueHandle } from '../integrations/liveresultat/queue.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -70,6 +70,20 @@ export function liveresultatConfig(
     competitionName: row.name,
     competitionDate: row.date,
   };
+}
+
+/** Class and club names for the MOP push (bin/fartola.ts's queue). */
+export function liveresultatMopMeta(
+  handle: DbHandle,
+  competitionId: string
+): { classes: Array<{ id: string; name: string }>; clubs: Array<{ id: string; name: string }> } {
+  const classRows = handle.db
+    .select({ id: classes.id, name: classes.name })
+    .from(classes)
+    .where(eq(classes.competitionId, competitionId))
+    .all();
+  const clubRows = handle.db.select({ id: clubs.name, name: clubs.name }).from(clubs).all();
+  return { classes: classRows, clubs: clubRows };
 }
 
 export default async function registerLiveresultatRoutes(app: FastifyInstance): Promise<void> {

@@ -46,7 +46,7 @@ import type { DbHandle } from '../db/index.ts';
 import { SerialTransport, SiMainStation } from '@fartola/sportident';
 import { attachBridge } from '../si/bridge.ts';
 import type { AttachedBridge } from '../si/bridge.ts';
-import { config, competitions, classes, clubs } from '../db/schema.ts';
+import { config, competitions } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 import type { PrinterSink } from '../print/sink.ts';
 import { createStdoutPrinterSink } from '../print/stdout-sink.ts';
@@ -57,7 +57,7 @@ import { scheduleDailyRetention } from '../privacy/retention.ts';
 import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { createPushQueue } from '../integrations/liveresultat/queue.ts';
-import { liveresultatConfig } from '../routes/liveresultat.ts';
+import { liveresultatConfig, liveresultatMopMeta } from '../routes/liveresultat.ts';
 
 /** A single serial reader entry as parsed from --serial or --serial-path. */
 export interface SerialPathEntry {
@@ -715,15 +715,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     log: app.log,
     getProjection: (competitionId) => app.projectionStore.get(competitionId),
     getConfig: (competitionId) => liveresultatConfig(handle, competitionId),
-    getMopMeta: (competitionId) => {
-      const classRows = handle.db
-        .select({ id: classes.id, name: classes.name })
-        .from(classes)
-        .where(eq(classes.competitionId, competitionId))
-        .all();
-      const clubRows = handle.db.select({ id: clubs.name, name: clubs.name }).from(clubs).all();
-      return { classes: classRows, clubs: clubRows };
-    },
+    getMopMeta: (competitionId) => liveresultatMopMeta(handle, competitionId),
   });
   app.liveresultatQueue = liveresultatQueue;
 
