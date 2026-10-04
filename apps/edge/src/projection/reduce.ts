@@ -44,7 +44,14 @@ import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import { softStatus } from '@fartola/shared-types';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
-import { detectStatus, startMs, startPunchWarning, type StartMethod } from './dnfMp.ts';
+import {
+  detectStatus,
+  officialMs,
+  rawElapsedMs,
+  startMs,
+  startPunchWarning,
+  type StartMethod,
+} from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
@@ -556,18 +563,16 @@ export function reduce(input: ReduceInput): CompetitionState {
       ? applyReplacements(expected, latestRead.punches, courseReplacements)
       : expected;
     const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
-    const detected = detectStatus(
-      {
-        start: latestRead.start,
-        finish: latestRead.finish,
-        punches: latestRead.punches,
-        cardType: latestRead.card_type,
-        readAtMs: latestRead.event_time_ms,
-        drawnStartMs: competitor?.startTimeMs ?? null,
-        startMethod: startMethodOf(competitor?.classId),
-      },
-      resolvedExpected
-    );
+    const detectInput = {
+      start: latestRead.start,
+      finish: latestRead.finish,
+      punches: latestRead.punches,
+      cardType: latestRead.card_type,
+      readAtMs: latestRead.event_time_ms,
+      drawnStartMs: competitor?.startTimeMs ?? null,
+      startMethod: startMethodOf(competitor?.classId),
+    };
+    const detected = detectStatus(detectInput, resolvedExpected);
     // Post-pass also updates status to reflect voided legs (MP→OK transition).
     if (view.manual_status === null) {
       view.status = detected.status;
@@ -575,19 +580,11 @@ export function reduce(input: ReduceInput): CompetitionState {
       view.extra_codes = detected.extra_codes;
       view.out_of_order_codes = detected.out_of_order_codes;
     }
-    if (detected.elapsed_time_ms === null) continue;
-    const adjustedElapsed = computeVoidedElapsed(
-      detected.elapsed_time_ms,
-      view.voided_legs,
-      latestRead,
-      startMs({
-        start: latestRead.start,
-        cardType: latestRead.card_type,
-        readAtMs: latestRead.event_time_ms,
-        drawnStartMs: competitor?.startTimeMs ?? null,
-        startMethod: startMethodOf(competitor?.classId),
-      }),
-      caps
+    const rawElapsed = rawElapsedMs(detectInput);
+    if (rawElapsed === null) continue;
+    // Subtract from the unrounded time, then round once (SOFT TR 4.20.7).
+    const adjustedElapsed = officialMs(
+      computeVoidedElapsed(rawElapsed, view.voided_legs, latestRead, startMs(detectInput), caps)
     );
     view.elapsed_time_ms = adjustedElapsed;
     // Re-apply MAX gate after voided adjustment.

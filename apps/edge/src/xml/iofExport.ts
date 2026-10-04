@@ -326,10 +326,9 @@ function buildPersonResult(
   // 02.1-14 Task 9: an untimed class exports no Time / Position (as MeOS
   // iof30interface.cpp writePersonResult with hasTiming=false, and Eventor).
   if (view.elapsed_time_ms !== null && !noTiming) {
-    // Time is xsd:double in the IOF XSD — emit decimal seconds. We carry
-    // millisecond precision in the projection; round down to whole seconds
-    // because the receipt and the on-screen results table both round.
-    result.Time = Math.floor(view.elapsed_time_ms / 1000);
+    // Time is xsd:double in the IOF XSD. The projection's time is already
+    // the official one in whole seconds (SOFT TR 4.20.7, dnfMp.officialMs).
+    result.Time = Math.round(view.elapsed_time_ms / 1000);
   }
   if (xmlStatus === 'OK' && place !== null && !noTiming) {
     // Position must only be present when Status='OK' (per the XSD's
