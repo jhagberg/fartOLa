@@ -90,6 +90,12 @@ export interface ReduceInput {
 // runners with no read yet (PEND). DQ-before-MAX matches Eventor + the IOF
 // v3 convention where Disqualified outranks OverTime; broad shape (finished
 // > unfinished > absent) is universal across orienteering software.
+/** 02.1-14 Task 13: check → start gap used for a missing start when fewer
+ * than MIN_CHECK_TO_START_SAMPLES runners have both punches: 1:54, the median
+ * of DM 2026 dag 1–2 (424 open starts, 02.1-AUDIT). */
+const DEFAULT_CHECK_TO_START_MS = 114_000;
+const MIN_CHECK_TO_START_SAMPLES = 10;
+
 const STATUS_ORDER: Record<CompetitorView['status'], number> = {
   OK: 0,
   MP: 1,
@@ -193,6 +199,9 @@ export function reduce(input: ReduceInput): CompetitionState {
       voided_legs: [],
       start_time_ms: c.startTimeMs,
       no_timing: noTimingClasses.has(c.classId),
+      missing_start: false,
+      suggested_start_ms: null,
+      suggested_start_offset_ms: null,
     });
   }
   const pendingUnknownCards = new Set<number>();
@@ -200,6 +209,10 @@ export function reduce(input: ReduceInput): CompetitionState {
   // Phase 2.1 (D-16): track leg_voided max_seconds caps per competitor.
   // Maps competitorId → (controlCode → maxSeconds | null).
   const voidedLegCapsByCompetitor = new Map<string, Map<number, number | null>>();
+  // 02.1-14 Task 13: per competitor, the latest read's check punch (epoch ms)
+  // and, for in-race reads with a check and a start punch, check → start.
+  const checkMsByCompetitor = new Map<string, number | null>();
+  const checkToStartMsByCompetitor = new Map<string, number>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
   // race_started_at_ms), but a replayed `race_started` event below can
   // re-seed this mid-walk if the column got out of sync. Three states:
@@ -245,6 +258,18 @@ export function reduce(input: ReduceInput): CompetitionState {
         const inRacePhase =
           raceStartedAtMs === undefined ||
           (raceStartedAtMs !== null && e.eventTimeMs >= raceStartedAtMs);
+        const checkMs = payload.check
+          ? cardClockToEpochMs(payload.check, payload.card_type, e.eventTimeMs)
+          : null;
+        checkMsByCompetitor.set(competitor.id, checkMs);
+        if (inRacePhase && checkMs !== null && payload.start) {
+          checkToStartMsByCompetitor.set(
+            competitor.id,
+            cardClockToEpochMs(payload.start, payload.card_type, e.eventTimeMs) - checkMs
+          );
+        } else {
+          checkToStartMsByCompetitor.delete(competitor.id);
+        }
         // A read-out during the race re-scores every manual status except DQ,
         // as MeOS evaluateCard does (oRunner.cpp:1621-1630, 02.1-14 Task 12):
         // DNS/CANCEL/MP/DNF become the card's verdict, and MAX is re-derived
@@ -573,6 +598,37 @@ export function reduce(input: ReduceInput): CompetitionState {
         // Was MAX from the gate, now under cap — revert to detected status.
         view.status = detected.status;
       }
+    }
+  }
+
+  // 02.1-14 Task 13: flag a finished read with no start of either kind and
+  // suggest one. "Read so far" = every read in the log at this reduce(), so
+  // the suggestion firms up as more runners read out (deterministic).
+  const gaps = [...checkToStartMsByCompetitor.values()].sort((a, b) => a - b);
+  const mid = gaps.length >> 1;
+  const checkToStartMs =
+    gaps.length < MIN_CHECK_TO_START_SAMPLES
+      ? DEFAULT_CHECK_TO_START_MS
+      : gaps.length % 2 === 1
+        ? gaps[mid]!
+        : Math.round((gaps[mid - 1]! + gaps[mid]!) / 2);
+  for (const v of competitorViews.values()) {
+    const latest = v.card_read_history[v.card_read_history.length - 1];
+    if (
+      latest === undefined ||
+      v.manual_status !== null ||
+      (v.status !== 'OK' && v.status !== 'MP') ||
+      latest.finish === null ||
+      latest.start !== null ||
+      v.start_time_ms !== null
+    ) {
+      continue;
+    }
+    v.missing_start = true;
+    const checkMs = checkMsByCompetitor.get(v.id) ?? null;
+    if (checkMs !== null) {
+      v.suggested_start_ms = checkMs + checkToStartMs;
+      v.suggested_start_offset_ms = checkToStartMs;
     }
   }
 

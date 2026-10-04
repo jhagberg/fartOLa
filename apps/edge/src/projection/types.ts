@@ -90,6 +90,17 @@ export interface CompetitorView {
    * elapsed_time_ms is still computed, but public surfaces (results, MOP,
    * export, receipts) must not show it. */
   no_timing: boolean;
+  /** 02.1-14 Task 13: the latest read has a finish but neither a start punch
+   * nor a drawn start, so there is no running time or place (MeOS would
+   * silently time from ZeroTime). Status is still detected (OK/MP). */
+  missing_start: boolean;
+  /** 02.1-14 Task 13: suggested start (epoch ms) for a missing start = the
+   * card's check punch + suggested_start_offset_ms. Null without a check
+   * punch or when the start is not missing. */
+  suggested_start_ms: number | null;
+  /** The check → start punch gap used: the median over the competition's
+   * runners with both, or 1:54 when fewer than 10. Null with no suggestion. */
+  suggested_start_offset_ms: number | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection

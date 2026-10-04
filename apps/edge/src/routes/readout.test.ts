@@ -38,6 +38,7 @@ import {
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
+import type { HalfDayClock } from '@fartola/sportident';
 
 interface Ctx {
   app: FastifyInstance;
@@ -102,7 +103,13 @@ function insertCardRead(
   cardNumber: number,
   eventTimeMs: number,
   localSeq: number,
-  punches: number[] = [31]
+  punches: number[] = [31],
+  start: HalfDayClock | null = {
+    half_day: 0,
+    seconds_in_half_day: 9 * 3600,
+    weekday: null,
+  },
+  check: HalfDayClock | null = null
 ): void {
   handle.db
     .insert(events)
@@ -117,9 +124,9 @@ function insertCardRead(
         event_type: 'card_read',
         card_number: cardNumber,
         card_type: 'SI10',
-        start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+        start,
         finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null },
-        check: null,
+        check,
         clear: null,
         punch_count: punches.length,
         punches: punches.map((code) => ({
@@ -197,6 +204,30 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.ok(body.current_read);
     assert.equal(body.current_read.competitor_id, competitorId);
     assert.equal(body.current_read.status, 'OK');
+  });
+
+  // 02.1-14 Task 13: the row carries the missing-start flag and suggestion.
+  test('test 2b: no start of either kind → missing_start + check + 1:54', async () => {
+    seedCompetition(ctx.handle, 'comp-2b');
+    const check: HalfDayClock = {
+      half_day: 0,
+      seconds_in_half_day: 8 * 3600 + 58 * 60,
+      weekday: null,
+    };
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-2b', 7501853, 100, 1, [31], null, check);
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2b/readout' });
+    const row = (
+      res.json() as {
+        history: Array<{
+          missing_start: boolean;
+          suggested_start_ms: number | null;
+          suggested_start_offset_ms: number | null;
+        }>;
+      }
+    ).history[0]!;
+    assert.equal(row.missing_start, true);
+    assert.equal(row.suggested_start_offset_ms, 114_000);
+    assert.equal(typeof row.suggested_start_ms, 'number');
   });
 
   test('test 3: 15 card_read events → history.length === 12 (cap)', async () => {

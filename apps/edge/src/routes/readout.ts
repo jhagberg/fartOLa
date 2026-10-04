@@ -112,6 +112,12 @@ interface HistoryRow {
    * The UI uses this to distinguish auto-DNF (no clear button) from
    * manual-DNF (clear button visible). */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** 02.1-14 Task 13 — mirrors CompetitorView.missing_start /
+   * suggested_start_ms / suggested_start_offset_ms: the competitor's latest
+   * read has no start of either kind; the suggestion is check + offset. */
+  missing_start: boolean;
+  suggested_start_ms: number | null;
+  suggested_start_offset_ms: number | null;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side
@@ -285,6 +291,9 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           // distinguish auto-DNF (manual_status=null) from operator-set DNF
           // (manual_status='DNF'). Null for unmatched / pre-read cards.
           manual_status: view?.manual_status ?? null,
+          missing_start: view?.missing_start ?? false,
+          suggested_start_ms: view?.suggested_start_ms ?? null,
+          suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
         };
       });
 

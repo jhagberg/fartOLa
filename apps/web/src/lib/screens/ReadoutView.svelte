@@ -96,6 +96,8 @@
     formatElapsedTenths,
     toReceiptRead,
     readElapsedMs,
+    missingStartHint,
+    setStartFromInput,
   } from './readout-types.ts';
 
   interface Props {
@@ -275,6 +277,9 @@
       place: null,
       unknown: row.unmatched,
       competitorId: row.competitor_id,
+      // 02.1-14 Task 13: "Saknar starttid" + suggestion.
+      missingStart: row.missing_start,
+      missingStartHint: missingStartHint(row),
     };
   });
 
@@ -649,6 +654,28 @@
     }
   }
 
+  // 02.1-14 Task 13: "Sätt starttid" on a read without a start. The time is
+  // placed on the day of the suggestion (or of the read).
+  async function onSetStartTimeHandler(competitorId: string, text: string): Promise<void> {
+    const row = currentRow;
+    if (!row) return;
+    try {
+      const sent = await setStartFromInput(
+        competitionId,
+        competitorId,
+        text,
+        row.suggested_start_ms ?? row.event_time_ms
+      );
+      if (!sent) {
+        toast(t('lottning.invalidTime'));
+        return;
+      }
+      await Promise.all([refetchReadout(), refetchCompetitors()]);
+    } catch (err) {
+      toast(`${t('err.network')} (${(err as Error).message})`);
+    }
+  }
+
   async function onToggleAutoPrint(): Promise<void> {
     const next = !autoPrint;
     autoPrint = next;
@@ -756,6 +783,7 @@
       onManualStatus={(id, status, reason) => void onManualStatusHandler(id, status, reason)}
       onClearManualStatus={(id) => void onClearManualStatusHandler(id)}
       onEdit={(id) => { editingCompetitorId = id; }}
+      onSetStartTime={(id, text) => void onSetStartTimeHandler(id, text)}
     >
       {#snippet controls()}
         {#if latestReadProp && !latestReadProp.unknown && receiptRead && receiptRead.punches.length > 0}

@@ -1718,3 +1718,100 @@ describe('reduce — manual MP (02.1-14 Task 10)', () => {
     assert.equal(state.competitors.get('a')!.status, 'MP');
   });
 });
+
+// 02.1-14 Task 13: a read with a finish but neither a start punch nor a drawn
+// start is flagged, gets no time or place, and a suggested start = the card's
+// check punch + the median (check → start punch) of the runners read so far
+// (1:54 when fewer than 10 such runners; null without a check punch).
+describe('reduce — missing start (02.1-14 Task 13)', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+  const CHECK = 10 * 3600 + 19 * 60 + 37; // 10:19:37
+  const read = (
+    card: number,
+    check: number | null,
+    start: number | null,
+    finish: number | null = 11 * 3600
+  ): Event =>
+    evt(
+      {
+        event_type: 'card_read',
+        card_number: card,
+        card_type: 'SI10',
+        start: start === null ? null : hd(start),
+        finish: finish === null ? null : hd(finish),
+        check: check === null ? null : hd(check),
+        clear: null,
+        punch_count: 1,
+        punches: [p(31)],
+        card_holder: null,
+      },
+      { eventTimeMs: at(11 * 3600 + 5 * 60) }
+    );
+  /** `n` reference runners with check 10:00 and start punches 60, 70, …
+   * seconds later, plus the runner without a start (card 1). */
+  const run = (n: number, target: Event = read(1, CHECK, null)) => {
+    seqCounter = 0;
+    const refs = Array.from({ length: n }, (_, i) =>
+      read(100 + i, 10 * 3600, 10 * 3600 + 60 + 10 * i)
+    );
+    return reduce({
+      competition_id: 'comp-1',
+      events: [...refs, target],
+      competitors: [
+        comp({ id: 'x', cardNumber: 1 }),
+        ...refs.map((_, i) => comp({ id: `r${i}`, name: `R${i}`, cardNumber: 100 + i })),
+      ],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31])],
+    });
+  };
+
+  test('≥ 10 reference runners → check + their median, no time, no place', () => {
+    const state = run(10);
+    const x = state.competitors.get('x')!;
+    assert.equal(x.missing_start, true);
+    assert.equal(x.status, 'OK');
+    assert.equal(x.elapsed_time_ms, null);
+    // Offsets 60..150 s → median (100 + 110) / 2 = 105 s.
+    assert.equal(x.suggested_start_offset_ms, 105_000);
+    assert.equal(x.suggested_start_ms, at(CHECK) + 105_000);
+    const row = state.results_by_class.get('cls-H21')!.find((r) => r.competitor_id === 'x')!;
+    assert.equal(row.place, null);
+    assert.equal(row.elapsed_time_ms, null);
+    // Runners with a start punch are not flagged.
+    assert.equal(state.competitors.get('r0')!.missing_start, false);
+    assert.equal(state.competitors.get('r0')!.suggested_start_ms, null);
+  });
+
+  test('< 10 reference runners → check + 1:54', () => {
+    const x = run(9).competitors.get('x')!;
+    assert.equal(x.missing_start, true);
+    assert.equal(x.suggested_start_offset_ms, 114_000);
+    assert.equal(x.suggested_start_ms, at(CHECK) + 114_000);
+  });
+
+  test('no check punch → flagged, no suggestion', () => {
+    const x = run(10, read(1, null, null)).competitors.get('x')!;
+    assert.equal(x.missing_start, true);
+    assert.equal(x.suggested_start_ms, null);
+    assert.equal(x.suggested_start_offset_ms, null);
+  });
+
+  test('a drawn start, or no finish, is not a missing start', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(1, CHECK, null), read(2, CHECK, null, null)],
+      competitors: [
+        comp({ id: 'drawn', cardNumber: 1, startTimeMs: at(10 * 3600 + 20 * 60) }),
+        comp({ id: 'dnf', cardNumber: 2 }),
+      ],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31])],
+    });
+    assert.equal(state.competitors.get('drawn')!.missing_start, false);
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 40 * 60 * 1000);
+    assert.equal(state.competitors.get('dnf')!.status, 'DNF');
+    assert.equal(state.competitors.get('dnf')!.missing_start, false);
+  });
+});

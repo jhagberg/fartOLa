@@ -18,6 +18,11 @@
     - The parent re-fetches /readout on either action and the
       StatusPill flips in-place via the WS results_update broadcast.
 
+  Missing start (02.1-14 Task 13): a finished read with neither a start
+  punch nor a drawn start shows "Saknar starttid", the suggestion (check +
+  median → start), a time field prefilled with it, and "Sätt starttid"
+  (fires onSetStartTime with the edited text).
+
   Locked by:
   - 01-13-PLAN.md task 2
   - 01-UI-SPEC.md §"Manual DNF override" (reversible; reason 1..500)
@@ -47,6 +52,10 @@
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
     competitorId: string | null;
+    /** 02.1-14 Task 13: no start punch and no drawn start. */
+    missingStart: boolean;
+    /** Suggested start (check + median); null without a check punch. */
+    missingStartHint: { check: string; offset: string; suggested: string } | null;
   }
 
   type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
@@ -70,6 +79,8 @@
     /** Phase 2.0 clear-override — preferred over onUnDnf when supplied. */
     onClearManualStatus?: (competitorId: string) => void;
     onEdit?: (competitorId: string) => void;
+    /** 02.1-14 Task 13: "Sätt starttid" with the edited HH:MM[:SS] text. */
+    onSetStartTime?: (competitorId: string, text: string) => void;
     /** Snippet that renders either PunchGrid or SplitsTable (parent
      * owns the density toggle). */
     controls?: Snippet;
@@ -87,8 +98,17 @@
     onManualStatus,
     onClearManualStatus,
     onEdit,
+    onSetStartTime,
     controls,
   }: Props = $props();
+
+  // 02.1-14 Task 13: the start-time field is prefilled with the suggestion
+  // and reset only when the suggestion changes (not on every re-render).
+  const suggestedStart = $derived(read?.missingStartHint?.suggested ?? '');
+  let startInput = $state('');
+  $effect(() => {
+    startInput = suggestedStart;
+  });
 
   // Manual-status popover state. Defaults to DNF so the existing test path
   // (manual-dnf-btn → dnf-reason-input → dnf-confirm) keeps producing a DNF.
@@ -232,6 +252,34 @@
           </div>
         </div>
       </div>
+
+      {#if read.missingStart && read.competitorId}
+        <div class="missing-start" role="alert" data-testid="missing-start">
+          <b>⚠ {t('ro.missingStart')}</b>
+          {#if read.missingStartHint}
+            <span class="mono" data-testid="missing-start-hint">
+              {t('ro.missingStart.hint', read.missingStartHint)}
+            </span>
+          {/if}
+          <input
+            type="text"
+            class="dnf-input mono start-input"
+            placeholder="HH:MM:SS"
+            aria-label={t('ro.missingStart.set')}
+            bind:value={startInput}
+            data-testid="missing-start-input"
+          />
+          <button
+            type="button"
+            class="btn primary sm"
+            disabled={startInput.trim().length === 0}
+            data-testid="missing-start-save"
+            onclick={() => read.competitorId && onSetStartTime?.(read.competitorId, startInput)}
+          >
+            {t('ro.missingStart.set')}
+          </button>
+        </div>
+      {/if}
 
       {@render controls?.()}
     </div>
@@ -545,6 +593,21 @@
     border-radius: var(--radius);
     padding: 0 10px;
     font-family: var(--font-ui);
+  }
+  .missing-start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    color: var(--dnf);
+    font-size: 14px;
+  }
+  .start-input {
+    width: 9ch;
   }
   .dnf-actions {
     display: flex;

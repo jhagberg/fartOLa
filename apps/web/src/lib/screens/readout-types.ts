@@ -12,7 +12,8 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
-import { epochToLocalSeconds } from '@fartola/shared-types';
+import { epochToLocalSeconds, formatLocalTime } from '@fartola/shared-types';
+import { patchCompetitorStartTime } from '$lib/api/client.ts';
 import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -66,6 +67,12 @@ export interface ReadoutHistoryRow {
    * the status is auto-detected from card_read + course. The UI uses this
    * to show the clear button only for manual overrides, not for auto-DNF. */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** 02.1-14 Task 13 — the competitor's latest read has a finish but no
+   * start punch and no drawn start; suggested start = check + offset (both
+   * null without a check punch). */
+  missing_start: boolean;
+  suggested_start_ms: number | null;
+  suggested_start_offset_ms: number | null;
 }
 
 export interface ReadoutResponse {
@@ -104,6 +111,46 @@ export function readElapsedMs(
   if (base === null) return null;
   const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
   return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
+}
+
+/** 02.1-14 Task 13: the parts of "Check 10:19:37 + 1:54 → 10:21:31" for a
+ * missing start, or null when the start is not missing or there is no
+ * suggestion (no check punch). */
+export function missingStartHint(
+  row: Pick<ReadoutHistoryRow, 'missing_start' | 'suggested_start_ms' | 'suggested_start_offset_ms'>
+): { check: string; offset: string; suggested: string } | null {
+  const { suggested_start_ms: suggested, suggested_start_offset_ms: offset } = row;
+  if (!row.missing_start || suggested === null || offset === null) return null;
+  return {
+    check: formatLocalTime(suggested - offset),
+    offset: formatElapsed(offset),
+    suggested: formatLocalTime(suggested),
+  };
+}
+
+/** 'HH:MM' or 'HH:MM:SS' → epoch ms on the same competition-local day as
+ * `refMs` (the suggestion or the read time). Null when not a valid time. */
+export function parseStartTimeInput(text: string, refMs: number): number | null {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text.trim());
+  if (!m) return null;
+  const [h, min, sec] = [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)];
+  if (h > 23 || min > 59 || sec > 59) return null;
+  const localMidnightMs = refMs - epochToLocalSeconds(refMs) * 1000;
+  return localMidnightMs + (h * 3600 + min * 60 + sec) * 1000;
+}
+
+/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time. Returns
+ * false (and sends nothing) when the text is not a valid time. */
+export async function setStartFromInput(
+  competitionId: string,
+  competitorId: string,
+  text: string,
+  refMs: number
+): Promise<boolean> {
+  const startMs = parseStartTimeInput(text, refMs);
+  if (startMs === null) return false;
+  await patchCompetitorStartTime(competitionId, competitorId, startMs);
+  return true;
 }
 
 /** Format `ms` (UTC epoch millis) as `HH:MM:SS` in the local timezone.
