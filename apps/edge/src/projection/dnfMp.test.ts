@@ -102,7 +102,10 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.equal(result.elapsed_time_ms, 600 * 1000);
   });
 
-  test('test 4 MP extra: punches include a stray code 99', () => {
+  // 02.1-14 Task 2: rewritten. The old expectation (stray punch → MP) encoded
+  // the exact-sequence rule this plan replaces with the orienteering rule:
+  // course controls in order as a subsequence, extra punches allowed.
+  test('test 4 OK extra: a stray code 99 is listed in extra_codes but is not MP', () => {
     const result = detectStatus(
       {
         start: hd(10 * 3600),
@@ -111,12 +114,15 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
       },
       COURSE
     );
-    assert.equal(result.status, 'MP');
+    assert.equal(result.status, 'OK');
     assert.deepEqual(result.extra_codes, [99]);
     assert.deepEqual(result.missing_codes, []);
     assert.deepEqual(result.out_of_order_codes, []);
   });
 
+  // 02.1-14 Task 2: expectations updated. Under the subsequence rule 32 is
+  // matched after 31, so 33 (punched only before 32) is missing; it is also
+  // reported as out-of-order and its unused punch as extra.
   test('test 5 MP out-of-order: punches [31,33,32,34] flag 33 as out-of-order', () => {
     const result = detectStatus(
       {
@@ -128,8 +134,8 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     );
     assert.equal(result.status, 'MP');
     assert.deepEqual(result.out_of_order_codes, [33]);
-    assert.deepEqual(result.missing_codes, []);
-    assert.deepEqual(result.extra_codes, []);
+    assert.deepEqual(result.missing_codes, [33]);
+    assert.deepEqual(result.extra_codes, [33]);
   });
 
   test('test 6: elapsed=null when no start', () => {
@@ -190,5 +196,48 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     const result = detectStatus({ start, finish, punches: [p(31), p(32), p(33), p(34)] }, COURSE);
     assert.equal(result.status, 'OK');
     assert.equal(result.elapsed_time_ms, 20 * 60 * 1000);
+  });
+
+  // 02.1-14 Task 2: course controls in order as a subsequence of the punches.
+  const FIN = { start: hd(10 * 3600), finish: hd(10 * 3600 + 600) };
+
+  test('subsequence: extras anywhere (before, between, after) → OK', () => {
+    const result = detectStatus(
+      { ...FIN, punches: [p(99), p(31), p(32), p(98), p(33), p(34), p(97)] },
+      COURSE
+    );
+    assert.equal(result.status, 'OK');
+    assert.deepEqual(result.missing_codes, []);
+    assert.deepEqual(result.extra_codes, [99, 98, 97]);
+  });
+
+  test('subsequence: double punch at a control → OK', () => {
+    const result = detectStatus({ ...FIN, punches: [p(31), p(32), p(32), p(33), p(34)] }, COURSE);
+    assert.equal(result.status, 'OK');
+    assert.deepEqual(result.extra_codes, [32]);
+  });
+
+  test('subsequence: butterfly [31,32,31,33] punched 31,32,31,33 → OK', () => {
+    const result = detectStatus(
+      { ...FIN, punches: [p(31), p(32), p(31), p(33)] },
+      [31, 32, 31, 33]
+    );
+    assert.equal(result.status, 'OK');
+    assert.deepEqual(result.missing_codes, []);
+    assert.deepEqual(result.extra_codes, []);
+  });
+
+  test('subsequence: butterfly [31,32,31,33] punched 31,32,33 → MP missing [31]', () => {
+    const result = detectStatus({ ...FIN, punches: [p(31), p(32), p(33)] }, [31, 32, 31, 33]);
+    assert.equal(result.status, 'MP');
+    assert.deepEqual(result.missing_codes, [31]);
+  });
+
+  test('subsequence: wrong order [32,31] for course [31,32] → MP, 32 missing/out-of-order/extra', () => {
+    const result = detectStatus({ ...FIN, punches: [p(32), p(31)] }, [31, 32]);
+    assert.equal(result.status, 'MP');
+    assert.deepEqual(result.missing_codes, [32]);
+    assert.deepEqual(result.out_of_order_codes, [32]);
+    assert.deepEqual(result.extra_codes, [32]);
   });
 });

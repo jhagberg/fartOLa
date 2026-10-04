@@ -57,10 +57,10 @@ export interface StatusResult {
  * controls but no finish stamp is genuinely DNF (operator killed the
  * read before the finish punch, or the cable was yanked mid-read).
  *
- * Gate 2 (OK/MP): `input.finish !== null` → compare `input.punches`
- * (control-station punches only — Phase 0 decoder separates start/finish/
- * check at the storage→raceResult boundary) against `expectedControlCodes`
- * in order. OK = exact match; MP = any divergence with diff arrays.
+ * Gate 2 (OK/MP): `input.finish !== null` → `expectedControlCodes` must
+ * appear in order as a subsequence of `input.punches` (control-station
+ * punches only — Phase 0 decoder separates start/finish/check at the
+ * storage→raceResult boundary). Extra punches never cause MP.
  */
 export function detectStatus(
   input: DetectInput,
@@ -79,74 +79,35 @@ export function detectStatus(
     };
   }
 
-  // Gate 2: order-match expected vs actual control punches.
-  //
-  // Phase 1 invariant: each control code appears at most once in a course
-  // and at most once on a clean card_read (a competitor doesn't re-punch
-  // the same control). Under this invariant the diff splits cleanly:
-  //   - missing: expected codes NOT present in actual at all
-  //   - extra:   actual codes NOT present in expected (strays)
-  //   - out_of_order: a code present in BOTH but punched too early (it
-  //     "jumped ahead" of the next-expected code, which then catches up
-  //     after the swap). Only the LEADING punch of each swap is reported
-  //     so a single 32/33 transposition surfaces as one out-of-order
-  //     entry, not two.
-  //
-  // Walk both sequences. When they mismatch:
-  //   (a) if expected[ei] appears later in actual[ai..], the leading
-  //       actual[ai] is out-of-order (or extra if not in expected).
-  //   (b) otherwise expected[ei] is missing.
-  // Codes already attributed to out-of-order do NOT then surface as
-  // missing later in the walk (the C-H2 review's "single transposition"
-  // shape).
-  const expected = [...expectedControlCodes];
+  // Gate 2 (02.1-14 Task 2): the course controls must appear in order as a
+  // subsequence of the punches — the orienteering rule MeOS applies. Walk
+  // the expected codes; each is matched greedily at the first punch after
+  // the previous match. Repeated controls (butterflies) simply match again
+  // later in the punch list.
+  //   - missing:      expected codes with no punch after the previous match
+  //   - out_of_order: missing codes that were punched, but only before the
+  //                   previous match (informational; also in missing)
+  //   - extra:        punches not used by the match (informational — stray
+  //                   controls, double punches, out-of-order punches)
+  // Only missing codes cause MP.
   const actual = input.punches.map((p) => p.code);
-  const expectedSet = new Set(expected);
+  const used = new Array<boolean>(actual.length).fill(false);
   const missing: number[] = [];
-  const extra: number[] = [];
   const outOfOrder: number[] = [];
-  const outOfOrderSet = new Set<number>();
-  let ei = 0;
-  let ai = 0;
-  while (ei < expected.length || ai < actual.length) {
-    if (ei < expected.length && ai < actual.length && expected[ei] === actual[ai]) {
-      ei++;
-      ai++;
+  let next = 0;
+  for (const code of expectedControlCodes) {
+    const idx = actual.indexOf(code, next);
+    if (idx === -1) {
+      missing.push(code);
+      if (actual.includes(code)) outOfOrder.push(code);
       continue;
     }
-    if (ei < expected.length && ai < actual.length) {
-      if (actual.slice(ai).includes(expected[ei]!)) {
-        const code = actual[ai]!;
-        if (expectedSet.has(code)) {
-          outOfOrder.push(code);
-          outOfOrderSet.add(code);
-        } else {
-          extra.push(code);
-        }
-        ai++;
-        continue;
-      }
-      // expected[ei] is missing unless we already reported it as out-of-order.
-      if (!outOfOrderSet.has(expected[ei]!)) missing.push(expected[ei]!);
-      ei++;
-      continue;
-    }
-    if (ei < expected.length) {
-      if (!outOfOrderSet.has(expected[ei]!)) missing.push(expected[ei]!);
-      ei++;
-      continue;
-    }
-    if (ai < actual.length) {
-      const code = actual[ai]!;
-      if (expectedSet.has(code)) outOfOrder.push(code);
-      else extra.push(code);
-      ai++;
-      continue;
-    }
+    used[idx] = true;
+    next = idx + 1;
   }
+  const extra = actual.filter((_, i) => !used[i]);
 
-  const status: 'OK' | 'MP' =
-    missing.length === 0 && extra.length === 0 && outOfOrder.length === 0 ? 'OK' : 'MP';
+  const status: 'OK' | 'MP' = missing.length === 0 ? 'OK' : 'MP';
   return {
     status,
     missing_codes: missing,
