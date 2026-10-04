@@ -71,8 +71,20 @@ function makeCompetition(): CompetitionDTO {
 
 function makeClasses(): ClassDTO[] {
   return [
-    { id: 'cls-h21', competition_id: 'comp-stortuna-tisdag', name: 'H21', short_name: null },
-    { id: 'cls-d21', competition_id: 'comp-stortuna-tisdag', name: 'D21', short_name: null },
+    {
+      id: 'cls-h21',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'H21',
+      short_name: null,
+      no_timing: false,
+    },
+    {
+      id: 'cls-d21',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'D21',
+      short_name: null,
+      no_timing: false,
+    },
   ];
 }
 
@@ -104,6 +116,7 @@ function makeCompetitorView(
     manual_status: null,
     voided_legs: [],
     start_time_ms: null,
+    no_timing: false,
   };
 }
 
@@ -655,5 +668,56 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
       assert.equal(res.build.summary.class_count, 2);
       assert.equal(res.build.summary.person_start_count, 6);
     }
+  });
+});
+
+// 02.1-14 Task 9: an untimed class mirrors Eventor's ResultList —
+// <Class resultListMode="UnorderedNoTimes">, no Time / Position per runner.
+describe('buildResultListXml — class without timing (02.1-14 Task 9)', () => {
+  function noTimingInput(): ExportInput {
+    const state = makeSeededState();
+    const cia = makeCompetitorView({
+      id: 'cmp-cia',
+      name: 'Cia Carlsson',
+      class_id: 'cls-d21',
+      status: 'OK',
+      elapsed_time_ms: 900_000,
+    });
+    state.competitors.set(cia.id, cia);
+    // Place 1 on purpose: the export itself must drop it for this class.
+    state.results_by_class.set('cls-d21', [rowFor(cia, 1)]);
+    const classes = makeClasses().map((c) => (c.id === 'cls-d21' ? { ...c, no_timing: true } : c));
+    return makeInput({ state, classes });
+  }
+
+  test('untimed class gets resultListMode and no Time/Position; timed class keeps them', async () => {
+    const input = noTimingInput();
+    const result = await validateAndBuild(input);
+    if (!result.valid) assert.fail(result.errors.map((e) => e.message).join('\n'));
+    const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(
+      result.build.xml
+    ) as {
+      ResultList: {
+        ClassResult: Array<{
+          Class: { Name: string; '@_resultListMode'?: string };
+          PersonResult:
+            | { Result: Record<string, unknown> }
+            | Array<{ Result: Record<string, unknown> }>;
+        }>;
+      };
+    };
+    const byName = new Map(parsed.ResultList.ClassResult.map((c) => [c.Class.Name, c]));
+    const d21 = byName.get('D21')!;
+    assert.equal(d21.Class['@_resultListMode'], 'UnorderedNoTimes');
+    const ciaResult = (d21.PersonResult as { Result: Record<string, unknown> }).Result;
+    assert.equal(ciaResult.Time, undefined);
+    assert.equal(ciaResult.Position, undefined);
+    assert.equal(ciaResult.Status, 'OK');
+
+    const h21 = byName.get('H21')!;
+    assert.equal(h21.Class['@_resultListMode'], undefined);
+    const anna = (h21.PersonResult as Array<{ Result: Record<string, unknown> }>)[0]!.Result;
+    assert.equal(anna.Time, 720);
+    assert.equal(anna.Position, 1);
   });
 });

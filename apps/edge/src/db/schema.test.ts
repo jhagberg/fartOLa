@@ -493,6 +493,21 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
     }
   });
 
+  test('classes has no_timing column (NOT NULL, default 0, 02.1-14 Task 9)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const col = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all()
+        .find((c) => c.name === 'no_timing');
+      assert.ok(col, 'classes.no_timing column missing');
+      assert.equal(col.notnull, 1, 'classes.no_timing must be NOT NULL');
+      assert.equal(col.dflt_value, 'false');
+    } finally {
+      handle.close();
+    }
+  });
+
   test('competitors has start_time_ms column (nullable)', () => {
     const handle = openDatabase(':memory:');
     try {

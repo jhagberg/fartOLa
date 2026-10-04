@@ -258,7 +258,8 @@
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: (() => {
         const elapsedMs = readElapsedMs(row, competitor?.start_time_ms ?? null);
-        if (elapsedMs === null) return '—';
+        // 02.1-14 Task 9: no running time for a class without timing.
+        if (elapsedMs === null || cls?.no_timing) return '—';
         return competition?.timing_format === 'tenths'
           ? formatElapsedTenths(elapsedMs)
           : formatElapsed(elapsedMs);
@@ -291,6 +292,7 @@
       competitionDate: competition?.date ?? '',
       elapsedMs,
       place: null,
+      noTiming: cls?.no_timing ?? false,
     });
   });
 

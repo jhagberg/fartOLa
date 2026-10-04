@@ -40,7 +40,7 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-M4
 //   (EntryList consent semantics — pending_first_read + null)
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
 import type { DbHandle } from '../db/index.ts';
@@ -115,6 +115,9 @@ function doIngest(
   // — small data-retention drift between the accepted competitor set and
   // the autocomplete table.
   const distinctClubs = new Set<string>();
+  // 02.1-14 Task 9: classes the EntryList marks resultListMode=
+  // "UnorderedNoTimes". Only turned on, never off (as MeOS readClass).
+  const noTimingClassIds = new Set<string>();
 
   for (const [i, e] of data.competitors.entries()) {
     const skip = (reason: SkippedImportRow['reason']): void => {
@@ -132,6 +135,7 @@ function doIngest(
       skip('unknown_class');
       continue;
     }
+    if (e.class_no_timing === true) noTimingClassIds.add(classId);
     // D-11 pre-flight duplicate-card check (reported skip on duplicate).
     if (e.card_number !== null) {
       const dup = handle.db
@@ -165,6 +169,9 @@ function doIngest(
       .run();
     competitorsCreated++;
     if (e.club !== null && e.club.length > 0) distinctClubs.add(e.club);
+  }
+  for (const id of noTimingClassIds) {
+    handle.db.update(classes).set({ noTiming: true }).where(eq(classes.id, id)).run();
   }
   for (const clubName of distinctClubs) {
     handle.db

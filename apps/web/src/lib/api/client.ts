@@ -830,11 +830,11 @@ export function getLottning(competitionId: string, classId: string): Promise<Lot
 }
 
 /** PATCH /api/competitions/:id/classes/:classId — update class settings
- * (max_time_sec, etc.). Owned by Plan 02.1-02; this plan only consumes it. */
+ * (max_time_sec, no_timing). Owned by Plan 02.1-02; this plan only consumes it. */
 export function patchClass(
   competitionId: string,
   classId: string,
-  body: { maxTimeSec?: number | null }
+  body: { maxTimeSec?: number | null; no_timing?: boolean }
 ): Promise<{ ok: true }> {
   return apiFetch(
     `/api/competitions/${encodeURIComponent(competitionId)}/classes/${encodeURIComponent(classId)}`,

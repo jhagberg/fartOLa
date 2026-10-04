@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { localToEpochMs } from '@fartola/shared-types';
-import { readElapsedMs, type ReadoutHistoryRow } from './readout-types.ts';
+import { readElapsedMs, toReceiptRead, type ReadoutHistoryRow } from './readout-types.ts';
 
 const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
   ({
@@ -42,5 +42,32 @@ describe('readElapsedMs', () => {
     const drawn = localToEpochMs('2026-10-03', 11 * 3600 + 50 * 60);
     const r = row({ finish_seconds_in_half_day: 20 * 60, finish_half_day: 1 });
     expect(readElapsedMs(r, drawn)).toBe(30 * 60 * 1000);
+  });
+});
+
+// 02.1-14 Task 9: a class without timing shows no running or split time on
+// the readout receipt (MeOS readout shows "Godkänd" instead of a time).
+describe('toReceiptRead — class without timing', () => {
+  const input = {
+    row: row({ card_number: 1, competitor_name: 'Anna', status: 'OK', event_time_ms: 0 }),
+    className: 'Inskolning',
+    classId: 'ins',
+    club: null,
+    competitionName: 'X',
+    competitionDate: '2026-10-04',
+    elapsedMs: 45 * 60 * 1000,
+  };
+
+  it('timed class keeps the times', () => {
+    const read = toReceiptRead(input);
+    expect(read.elapsed).toBe('45:00');
+    expect(read.punches[0]!.time).not.toBe('—');
+  });
+
+  it('untimed class → no elapsed, no split or cumulative times', () => {
+    const read = toReceiptRead({ ...input, noTiming: true });
+    expect(read.elapsed).toBe('—');
+    expect(read.punches.length).toBeGreaterThan(0);
+    for (const p of read.punches) expect([p.split, p.time]).toEqual(['—', '—']);
   });
 });

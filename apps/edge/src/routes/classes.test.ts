@@ -156,4 +156,34 @@ describe('classes route (PATCH maxTimeSec)', () => {
     });
     assert.equal(res.statusCode, 400);
   });
+
+  // 02.1-14 Task 9: classes without timing.
+  test('PATCH no_timing toggles the flag, keeps maxTimeSec, shows in the DTO', async () => {
+    const url = `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`;
+    await ctx.app.inject({ method: 'PATCH', url, payload: { maxTimeSec: 3600 } });
+
+    const on = await ctx.app.inject({ method: 'PATCH', url, payload: { no_timing: true } });
+    assert.equal(on.statusCode, 200);
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/classes`,
+    });
+    const dto = (list.json() as { classes: Array<{ id: string; no_timing: boolean }> }).classes;
+    assert.equal(dto.find((c) => c.id === ctx.classId)?.no_timing, true);
+    const row = ctx.handle.db.select().from(classes).get();
+    assert.equal(row?.maxTimeSec, 3600, 'maxTimeSec untouched by a no_timing PATCH');
+
+    const off = await ctx.app.inject({ method: 'PATCH', url, payload: { no_timing: false } });
+    assert.equal(off.statusCode, 200);
+    assert.equal(ctx.handle.db.select().from(classes).get()?.noTiming, false);
+  });
+
+  test('PATCH with an empty body → 400', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`,
+      payload: {},
+    });
+    assert.equal(res.statusCode, 400);
+  });
 });

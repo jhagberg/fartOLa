@@ -85,6 +85,10 @@ export interface CompetitorView {
   /** Phase 2.1 (D-05): assigned start time for the competitor (epoch ms),
    * NULL when no start time has been drawn. Loaded from competitors.start_time_ms. */
   start_time_ms: number | null;
+  /** 02.1-14 Task 9: the competitor's class has no timing (MeOS NoTiming).
+   * elapsed_time_ms is still computed, but public surfaces (results, MOP,
+   * export, receipts) must not show it. */
+  no_timing: boolean;
 }
 
 /** One row in the per-class results table. ResultView is the projection
@@ -95,7 +99,9 @@ export interface ResultView {
   club: string | null;
   status: PunchStatus;
   elapsed_time_ms: number | null;
-  /** 1-based place among OK competitors; null for MP/DNF/PEND. */
+  /** 1-based place among OK competitors; null for MP/DNF/PEND and for every
+   * row of a class without timing (02.1-14 Task 9, which also nulls
+   * elapsed_time_ms and behind_leader_ms here). */
   place: number | null;
   /** ms behind the leader for OK rows; null otherwise. */
   behind_leader_ms: number | null;

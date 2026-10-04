@@ -25,7 +25,7 @@ import { openDatabase } from '../db/index.ts';
 import type { DbHandle } from '../db/index.ts';
 import { classes, competitions, competitors, clubs } from '../db/schema.ts';
 import { ingestEntryList } from './entryImport.ts';
-import type { ParsedEntryList } from '../xml/parse.ts';
+import { parseIofXml, type ParsedEntryList } from '../xml/parse.ts';
 
 interface Ctx {
   handle: DbHandle;
@@ -225,6 +225,44 @@ describe('ingestEntryList', () => {
       ]);
       assert.equal(result.competitors_skipped_duplicate, 1);
       assert.equal(result.competitors_skipped_unknown_class, 1);
+    } finally {
+      ctx.handle.close();
+    }
+  });
+
+  // 02.1-14 Task 9: Eventor marks untimed classes on the entry's <Class>.
+  test('EntryList Class resultListMode="UnorderedNoTimes" marks the class no_timing', () => {
+    const ctx = bootCtx();
+    try {
+      const xml = `<?xml version="1.0"?>
+<EntryList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+  <Event><Name>NoTiming</Name></Event>
+  <PersonEntry>
+    <Person><Name><Family>Ek</Family><Given>Dag</Given></Name></Person>
+    <ControlCard punchingSystem="SI">123456</ControlCard>
+    <Class resultListMode="UnorderedNoTimes"><Name>D21</Name></Class>
+  </PersonEntry>
+  <PersonEntry>
+    <Person><Name><Family>Berg</Family><Given>Bo</Given></Name></Person>
+    <Class><Name>H21</Name></Class>
+  </PersonEntry>
+</EntryList>`;
+      const parsed = parseIofXml(xml);
+      assert.equal(parsed.kind, 'EntryList');
+      if (parsed.kind !== 'EntryList') return;
+      ingestEntryList(ctx.handle, ctx.competitionId, parsed.data, Date.now());
+      const rows = ctx.handle.db
+        .select({ name: classes.name, noTiming: classes.noTiming })
+        .from(classes)
+        .where(eq(classes.competitionId, ctx.competitionId))
+        .all();
+      assert.deepEqual(
+        new Map(rows.map((r) => [r.name, r.noTiming])),
+        new Map([
+          ['H21', false],
+          ['D21', true],
+        ])
+      );
     } finally {
       ctx.handle.close();
     }

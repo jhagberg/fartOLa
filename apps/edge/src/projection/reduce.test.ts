@@ -1423,3 +1423,52 @@ describe('reduce — voided first leg from the drawn start', () => {
     assert.equal(state.competitors.get('open')!.elapsed_time_ms, 7 * 60 * 1000);
   });
 });
+
+// 02.1-14 Task 9: classes without timing (MeOS NoTiming, IOF
+// resultListMode="UnorderedNoTimes") — status still computed, no place, no
+// time in the result view, rows sorted by name.
+describe('reduce — class without timing (02.1-14 Task 9)', () => {
+  const run = (card: number, sec: number): Event =>
+    cardRead(card, [p(31)], hd(10 * 3600), hd(10 * 3600 + sec));
+
+  test('two OK runners → place null, no time, no behind, sorted by name', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      // Örjan is faster but sorts after Anna by name.
+      events: [run(1, 500), run(2, 900)],
+      competitors: [
+        comp({ id: 'o', name: 'Örjan', cardNumber: 1 }),
+        comp({ id: 'a', name: 'Anna', cardNumber: 2 }),
+      ],
+      classes: [{ ...cls('cls-H21'), noTiming: true }],
+      courses: [course('cls-H21', [31])],
+    });
+    const rows = state.results_by_class.get('cls-H21')!;
+    assert.deepEqual(
+      rows.map((r) => [r.competitor_id, r.status, r.place, r.elapsed_time_ms, r.behind_leader_ms]),
+      [
+        ['a', 'OK', null, null, null],
+        ['o', 'OK', null, null, null],
+      ]
+    );
+    // The projection keeps the running time internally.
+    assert.equal(state.competitors.get('o')!.elapsed_time_ms, 500_000);
+    assert.equal(state.competitors.get('o')!.no_timing, true);
+  });
+
+  test('a timed class next to it keeps places and times', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(1, 500)],
+      competitors: [comp({ id: 'h', cardNumber: 1 })],
+      classes: [cls('cls-H21'), { ...cls('cls-INS'), noTiming: true }],
+      courses: [course('cls-H21', [31])],
+    });
+    const [row] = state.results_by_class.get('cls-H21')!;
+    assert.equal(row!.place, 1);
+    assert.equal(row!.elapsed_time_ms, 500_000);
+    assert.equal(state.competitors.get('h')!.no_timing, false);
+  });
+});

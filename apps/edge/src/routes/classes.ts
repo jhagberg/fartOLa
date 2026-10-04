@@ -26,11 +26,17 @@ import { issuesToErrors } from './_zod-errors.ts';
 
 // Phase 2.1 D-08: PATCH class route for maxTimeSec editing.
 // Backend ownership here (consumed by Plan 05 UI).
+// 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field). Each
+// field is optional; only the fields sent are updated.
 const PatchClassInput = z
   .object({
-    maxTimeSec: z.number().int().positive().nullable(),
+    maxTimeSec: z.number().int().positive().nullable().optional(),
+    no_timing: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => b.maxTimeSec !== undefined || b.no_timing !== undefined, {
+    message: 'maxTimeSec or no_timing required',
+  });
 
 function classRowToDTO(row: Class): ClassDTO {
   return {
@@ -38,6 +44,7 @@ function classRowToDTO(row: Class): ClassDTO {
     competition_id: row.competitionId,
     name: row.name,
     short_name: row.shortName,
+    no_timing: row.noTiming,
   };
 }
 
@@ -86,9 +93,13 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
         return reply.code(404).send({ error: 'class_not_found' });
       }
 
+      const { maxTimeSec, no_timing } = parsed.data;
       app.fartolaDb.db
         .update(classes)
-        .set({ maxTimeSec: parsed.data.maxTimeSec })
+        .set({
+          ...(maxTimeSec !== undefined ? { maxTimeSec } : {}),
+          ...(no_timing !== undefined ? { noTiming: no_timing } : {}),
+        })
         .where(eq(classes.id, classId))
         .run();
 
@@ -123,6 +134,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       maxTimeSec: null,
       // 02.1-14 Task 4: assigned by course import / course creation.
       courseId: null,
+      noTiming: false,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

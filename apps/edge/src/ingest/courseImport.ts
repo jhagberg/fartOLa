@@ -107,7 +107,15 @@ function doIngest(
     classIdByName.set(row.name, row.id);
   }
   for (const c of effectiveClasses) {
-    if (classIdByName.has(c.name)) continue;
+    const existingId = classIdByName.get(c.name);
+    if (existingId !== undefined) {
+      // 02.1-14 Task 9: the import only ever turns no-timing on, as MeOS
+      // (iof30interface.cpp readClass); clearing it is an operator PATCH.
+      if (c.no_timing === true) {
+        handle.db.update(classes).set({ noTiming: true }).where(eq(classes.id, existingId)).run();
+      }
+      continue;
+    }
     const id = crypto.randomUUID();
     handle.db
       .insert(classes)
@@ -116,6 +124,7 @@ function doIngest(
         competitionId,
         name: c.name,
         shortName: c.short_name,
+        noTiming: c.no_timing === true,
       })
       .run();
     classIdByName.set(c.name, id);

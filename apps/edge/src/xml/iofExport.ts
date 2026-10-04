@@ -218,7 +218,7 @@ interface PersonResultNode {
 }
 
 interface ClassResultNode {
-  Class: { Name: string };
+  Class: { '@_resultListMode'?: 'UnorderedNoTimes'; Name: string };
   PersonResult: PersonResultNode[];
 }
 
@@ -237,7 +237,11 @@ interface ResultListNode {
 // the export entirely).
 // ---------------------------------------------------------------------------
 
-function buildPersonResult(view: CompetitorView, place: number | null): PersonResultNode | null {
+function buildPersonResult(
+  view: CompetitorView,
+  place: number | null,
+  noTiming: boolean
+): PersonResultNode | null {
   const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
 
@@ -257,13 +261,15 @@ function buildPersonResult(view: CompetitorView, place: number | null): PersonRe
   // plan can add proper TZ-aware reconstruction when the operator-set
   // event start time lands.
   const result: Partial<ResultNode> = {};
-  if (view.elapsed_time_ms !== null) {
+  // 02.1-14 Task 9: an untimed class exports no Time / Position (as MeOS
+  // iof30interface.cpp writePersonResult with hasTiming=false, and Eventor).
+  if (view.elapsed_time_ms !== null && !noTiming) {
     // Time is xsd:double in the IOF XSD — emit decimal seconds. We carry
     // millisecond precision in the projection; round down to whole seconds
     // because the receipt and the on-screen results table both round.
     result.Time = Math.floor(view.elapsed_time_ms / 1000);
   }
-  if (xmlStatus === 'OK' && place !== null) {
+  if (xmlStatus === 'OK' && place !== null && !noTiming) {
     // Position must only be present when Status='OK' (per the XSD's
     // PersonRaceResult documentation).
     result.Position = place;
@@ -308,7 +314,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     for (const row of rows) {
       const view = input.state.competitors.get(row.competitor_id);
       if (view === undefined) continue;
-      const node = buildPersonResult(view, row.place);
+      const node = buildPersonResult(view, row.place, cls.no_timing);
       if (node === null) continue; // PEND: skipped
       personResults.push(node);
       personResultCount += 1;
@@ -318,7 +324,10 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     // children when this loop produces no entries at all.
     if (personResults.length === 0) continue;
     classResults.push({
-      Class: { Name: cls.name },
+      // 02.1-14 Task 9: mirror Eventor's ResultList for untimed classes.
+      Class: cls.no_timing
+        ? { '@_resultListMode': 'UnorderedNoTimes', Name: cls.name }
+        : { Name: cls.name },
       PersonResult: personResults,
     });
   }

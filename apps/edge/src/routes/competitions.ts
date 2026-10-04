@@ -157,6 +157,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       competition_id: c.competitionId,
       name: c.name,
       short_name: c.shortName,
+      no_timing: c.noTiming,
     }));
 
     // Courses + embedded controls. Two SELECTs: courses for the competition,

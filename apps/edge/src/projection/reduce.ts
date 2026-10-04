@@ -162,6 +162,9 @@ export function reduce(input: ReduceInput): CompetitionState {
     }
   }
 
+  // 02.1-14 Task 9: classes without timing.
+  const noTimingClasses = new Set(input.classes.filter((c) => c.noTiming).map((c) => c.id));
+
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
   for (const c of competitorsByCompetition) {
@@ -184,6 +187,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       manual_status: null,
       voided_legs: [],
       start_time_ms: c.startTimeMs,
+      no_timing: noTimingClasses.has(c.classId),
     });
   }
   const pendingUnknownCards = new Set<number>();
@@ -550,17 +554,24 @@ export function reduce(input: ReduceInput): CompetitionState {
   // Build per-class results tables. Sort: OK first (by elapsed asc), then MP,
   // then DNF, then PEND. Ties broken by competitor name; equal elapsed shares
   // the place and the next place skips (1, 1, 3 — 02.1-14 Task 7).
+  //
+  // 02.1-14 Task 9: a class without timing gets no place, time or behind,
+  // and sorts by status then name (IOF "UnorderedNoTimes": unordered with
+  // respect to times, e.g. by name; status grouping kept as elsewhere).
   const resultsByClass = new Map<string, ResultView[]>();
   for (const cls of input.classes) {
     const inClass: CompetitorView[] = [];
     for (const v of competitorViews.values()) {
       if (v.class_id === cls.id) inClass.push(v);
     }
+    const timed = !noTimingClasses.has(cls.id);
     inClass.sort(
       (a, b) =>
         STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-        (a.elapsed_time_ms ?? Number.MAX_SAFE_INTEGER) -
-          (b.elapsed_time_ms ?? Number.MAX_SAFE_INTEGER) ||
+        (timed
+          ? (a.elapsed_time_ms ?? Number.MAX_SAFE_INTEGER) -
+            (b.elapsed_time_ms ?? Number.MAX_SAFE_INTEGER)
+          : 0) ||
         a.name.localeCompare(b.name)
     );
     let rank = 0;
@@ -570,7 +581,7 @@ export function reduce(input: ReduceInput): CompetitionState {
     const rows: ResultView[] = inClass.map((v) => {
       let p: number | null = null;
       let behind: number | null = null;
-      if (v.status === 'OK' && v.elapsed_time_ms !== null) {
+      if (timed && v.status === 'OK' && v.elapsed_time_ms !== null) {
         rank++;
         if (v.elapsed_time_ms !== prevElapsed) place = rank;
         prevElapsed = v.elapsed_time_ms;
@@ -583,7 +594,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         name: v.name,
         club: v.club,
         status: v.status,
-        elapsed_time_ms: v.elapsed_time_ms,
+        elapsed_time_ms: timed ? v.elapsed_time_ms : null,
         place: p,
         behind_leader_ms: behind,
       };

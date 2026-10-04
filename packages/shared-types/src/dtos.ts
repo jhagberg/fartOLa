@@ -137,6 +137,9 @@ export const ClassDTO = z.object({
   competition_id: UUID,
   name: z.string().min(1),
   short_name: z.string().nullable(),
+  /** 02.1-14 Task 9: class without timing (IOF resultListMode=
+   * "UnorderedNoTimes") — no running time or place is shown. */
+  no_timing: z.boolean(),
 });
 export type ClassDTO = z.infer<typeof ClassDTO>;
 

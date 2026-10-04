@@ -275,6 +275,10 @@ export const classes = sqliteTable(
     courseId: text('course_id').references((): AnySQLiteColumn => courses.id, {
       onDelete: 'set null',
     }),
+    /** 02.1-14 Task 9 — class without timing (MeOS NoTiming, IOF
+     * resultListMode="UnorderedNoTimes"). Status is still computed; results,
+     * exports and receipts show no running time or place. */
+    noTiming: integer('no_timing', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );

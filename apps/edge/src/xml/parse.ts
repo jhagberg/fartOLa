@@ -44,8 +44,10 @@ import { XMLParser } from 'fast-xml-parser';
 export interface ParsedCourseData {
   kind: 'CourseData';
   event_name: string;
-  /** Classes typically live under <Event><Class> in IOF 3.0 CourseData. */
-  classes: Array<{ id: string; name: string; short_name: string | null }>;
+  /** Classes typically live under <Event><Class> in IOF 3.0 CourseData.
+   * `no_timing` is set when the class has resultListMode="UnorderedNoTimes"
+   * (02.1-14 Task 9). */
+  classes: Array<{ id: string; name: string; short_name: string | null; no_timing?: boolean }>;
   /** Controls live under <RaceCourseData><Control>. */
   controls: Array<{ code: number }>;
   courses: Array<{
@@ -82,6 +84,8 @@ export interface ParsedEntryList {
     /** <Class><Name> — name only; IDs vary between systems. The ingester
      * matches by class name against the competition's classes table. */
     class_name: string;
+    /** 02.1-14 Task 9: the entry's <Class resultListMode="UnorderedNoTimes">. */
+    class_no_timing?: boolean;
     /** Numeric SI card number from <ControlCard punchingSystem="SI">.
      * Non-SI cards or empty card values become null. */
     card_number: number | null;
@@ -206,6 +210,12 @@ function asInt(x: unknown): number | null {
   return Math.trunc(n);
 }
 
+/** 02.1-14 Task 9: <Class resultListMode="UnorderedNoTimes"> is a class
+ * without timing (MeOS iof30interface.cpp readClass → setNoTiming). */
+function isNoTiming(klass: RawNode): boolean {
+  return klass?.['@_resultListMode'] === 'UnorderedNoTimes';
+}
+
 function normalizeCourseData(raw: RawNode): ParsedCourseData {
   const node = raw ?? {};
   const event = (node.Event ?? {}) as RawNode;
@@ -225,7 +235,12 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
     if (!name || seenClassNames.has(name)) continue;
     seenClassNames.add(name);
     const id = asString(c.Id) ?? name;
-    classes.push({ id, name, short_name: asString(c.ShortName) });
+    classes.push({
+      id,
+      name,
+      short_name: asString(c.ShortName),
+      ...(isNoTiming(c) ? { no_timing: true } : {}),
+    });
   }
 
   // RaceCourseData (1..n). We flatten controls + courses across races; for
@@ -366,7 +381,14 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
       }
     }
 
-    competitors.push({ row: i + 1, name, club, class_name, card_number });
+    competitors.push({
+      row: i + 1,
+      name,
+      club,
+      class_name,
+      ...(isNoTiming(klass as RawNode) ? { class_no_timing: true } : {}),
+      card_number,
+    });
   }
 
   return { kind: 'EntryList', event_name: eventName, competitors };

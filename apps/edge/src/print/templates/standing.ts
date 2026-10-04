@@ -8,7 +8,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed, formatGap } from '../templates.ts';
+import { formatGap, receiptTime } from '../templates.ts';
 
 export default async function standing(
   printer: ThermalPrinterLike,
@@ -29,7 +29,7 @@ export default async function standing(
 
   printer.setTextDoubleHeight();
   printer.bold(true);
-  printer.println(formatElapsed(data.competitor.elapsed_time_ms));
+  printer.println(receiptTime(data.competitor));
   printer.bold(false);
   printer.setTextNormal();
 

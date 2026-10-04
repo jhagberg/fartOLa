@@ -180,6 +180,22 @@
     }
   }
 
+  /** 02.1-14 Task 9: the selected class has no timing (no times/places shown). */
+  const selectedNoTiming = $derived(
+    classes.find((c) => c.id === selectedClassId)?.no_timing ?? false
+  );
+
+  async function saveNoTiming(noTiming: boolean): Promise<void> {
+    if (!selectedClassId) return;
+    const id = selectedClassId;
+    try {
+      await patchClass(competitionId, id, { no_timing: noTiming });
+      classes = classes.map((c) => (c.id === id ? { ...c, no_timing: noTiming } : c));
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
   // --- per-runner start-time inline edit -----------------------------------
 
   function startEditTime(id: string, currentMs: number | null): void {
@@ -304,6 +320,18 @@
         </Button>
       </div>
     </Field>
+
+    <!-- Class without timing (02.1-14 Task 9) -->
+    <label class="check-row">
+      <input
+        type="checkbox"
+        checked={selectedNoTiming}
+        disabled={!selectedClassId}
+        onchange={(e) => void saveNoTiming(e.currentTarget.checked)}
+        data-testid="lottning-no-timing"
+      />
+      <span>{t('lottning.noTiming')}</span>
+    </label>
 
     {#if error}
       <p class="err" role="alert">{error}</p>
@@ -443,6 +471,11 @@
   .max-time-row :global(.select),
   .max-time-row :global(input) {
     flex: 1;
+  }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
   }
   .draw-btn-row {
     display: flex;

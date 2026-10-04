@@ -16,6 +16,7 @@
 import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
+import type { CompetitorView } from '../projection/types.ts';
 import { formatLocalTime } from '../time/competitionClock.ts';
 
 import classic from './templates/classic.ts';
@@ -86,6 +87,15 @@ export function formatElapsed(ms: number | null): string {
   const pad = (n: number): string => n.toString().padStart(2, '0');
   if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
   return `${m}:${pad(s)}`;
+}
+
+/** 02.1-14 Task 9: what a receipt prints for the running time. An untimed
+ * class prints no time — "Godkänd" when OK, as MeOS's readout does. */
+export function receiptTime(
+  c: Pick<CompetitorView, 'no_timing' | 'status' | 'elapsed_time_ms'>
+): string {
+  if (!c.no_timing) return formatElapsed(c.elapsed_time_ms);
+  return c.status === 'OK' ? 'Godkänd' : '—';
 }
 
 /** Format the +M:SS leader-gap suffix used by every template's place line. */

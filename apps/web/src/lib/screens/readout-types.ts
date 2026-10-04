@@ -258,8 +258,10 @@ export function toReceiptRead(input: {
   punches?: ReceiptPunch[];
   elapsedMs?: number | null;
   place?: number | null;
+  /** 02.1-14 Task 9: class without timing — no running or split times. */
+  noTiming?: boolean;
 }): ReceiptRead {
-  const punches: ReceiptPunch[] =
+  const allPunches: ReceiptPunch[] =
     input.punches ??
     rawPunchesToReceipt(
       input.row.punches,
@@ -267,6 +269,9 @@ export function toReceiptRead(input: {
       input.row.finish_seconds_in_half_day,
       input.row.expected_codes
     );
+  const punches = input.noTiming
+    ? allPunches.map((p) => ({ ...p, split: '—', time: '—' }))
+    : allPunches;
   return {
     cardNumber: input.row.card_number,
     name: input.row.competitor_name ?? 'Okänd',
@@ -275,7 +280,7 @@ export function toReceiptRead(input: {
     club: input.club,
     startTime: '—',
     readTime: formatTimeOfDay(input.row.event_time_ms),
-    elapsed: formatElapsed(input.elapsedMs ?? null),
+    elapsed: formatElapsed(input.noTiming ? null : (input.elapsedMs ?? null)),
     status: input.row.status,
     place: input.place ?? null,
     punches,

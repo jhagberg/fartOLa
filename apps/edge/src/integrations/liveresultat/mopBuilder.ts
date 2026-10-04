@@ -165,8 +165,9 @@ export function buildMopXml(input: MopBuildInput): string {
     if (cv.start_time_ms !== null) {
       baseAttrs['@_st'] = Math.round(epochToLocalSeconds(cv.start_time_ms) * 10);
     }
-    // Running time in tenths
-    if (cv.elapsed_time_ms !== null) {
+    // Running time in tenths. 02.1-14 Task 9: none for an untimed class
+    // (MeOS infoserver.cpp sends rt=0 for StatusNoTiming).
+    if (cv.elapsed_time_ms !== null && !cv.no_timing) {
       baseAttrs['@_rt'] = Math.round(cv.elapsed_time_ms / 100);
     }
     baseAttrs['#text'] = cv.name;

@@ -30,7 +30,7 @@ import {
   courseControls,
 } from '../db/schema.ts';
 import { ingestCourseData } from './courseImport.ts';
-import type { ParsedCourseData } from '../xml/parse.ts';
+import { parseIofXml, type ParsedCourseData } from '../xml/parse.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import { reduce } from '../projection/reduce.ts';
 import type { Event } from '../db/types.ts';
@@ -490,5 +490,38 @@ describe('ingestCourseData', () => {
       .get();
     assert.equal(ids.get('H21'), newest!.id);
     assert.equal(ids.get('D21'), newest!.id);
+  });
+
+  // 02.1-14 Task 9: <Class resultListMode="UnorderedNoTimes"> → untimed class
+  // (MeOS iof30interface.cpp readClass sets oClass.NoTiming).
+  test('CourseData resultListMode="UnorderedNoTimes" marks the class no_timing', () => {
+    const xml = `<?xml version="1.0"?>
+<CourseData xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+  <Event>
+    <Name>NoTiming</Name>
+    <Class resultListMode="UnorderedNoTimes"><Name>Inskolning</Name></Class>
+    <Class><Name>H21</Name></Class>
+  </Event>
+  <RaceCourseData>
+    <Control><Id>31</Id></Control>
+    <Course><Name>Bana 1</Name><CourseControl><Control>31</Control></CourseControl></Course>
+  </RaceCourseData>
+</CourseData>`;
+    const parsed = parseIofXml(xml);
+    assert.equal(parsed.kind, 'CourseData');
+    if (parsed.kind !== 'CourseData') return;
+    ingestCourseData(ctx.handle, ctx.competitionId, parsed.data);
+    const rows = ctx.handle.db
+      .select({ name: classes.name, noTiming: classes.noTiming })
+      .from(classes)
+      .where(eq(classes.competitionId, ctx.competitionId))
+      .all();
+    assert.deepEqual(
+      new Map(rows.map((r) => [r.name, r.noTiming])),
+      new Map([
+        ['Inskolning', true],
+        ['H21', false],
+      ])
+    );
   });
 });

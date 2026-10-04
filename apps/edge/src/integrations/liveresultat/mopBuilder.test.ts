@@ -50,6 +50,7 @@ function makeCompetitorView(overrides: Partial<CompetitorView> = {}): Competitor
     manual_status: null,
     voided_legs: [],
     start_time_ms: null,
+    no_timing: false,
     ...overrides,
   };
 }
@@ -241,5 +242,32 @@ describe('buildMopXml', () => {
     // PEND → stat=0 (unknown/not started yet)
     // The spec uses 0 for unknown; PEND has no completed status
     assert.equal(pendBase['@_stat'], 0, `PEND should map to stat=0, got ${pendBase['@_stat']}`);
+  });
+
+  // 02.1-14 Task 9: untimed class — MeOS infoserver.cpp sends rt=0 for
+  // StatusNoTiming, i.e. no running time reaches liveresultat.
+  it('Test 5 (02.1-14 Task 9): runner in an untimed class has no rt', () => {
+    const competitors = new Map<string, CompetitorView>();
+    competitors.set(
+      'c1',
+      makeCompetitorView({
+        id: 'c1',
+        class_id: 'cls-1',
+        status: 'OK',
+        elapsed_time_ms: 1234567,
+        no_timing: true,
+      })
+    );
+    const xml = buildMopXml({
+      state: makeState({ competitors }),
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      classes: [{ id: 'cls-1', name: 'Inskolning' }],
+      clubs: [],
+    });
+    const root = parseXml(xml)['MOPComplete'] as Record<string, unknown>;
+    const cmp = root['cmp'] as Record<string, unknown>;
+    const base = cmp['base'] as Record<string, unknown>;
+    assert.equal(base['@_rt'], undefined);
+    assert.equal(base['@_stat'], 1);
   });
 });

@@ -62,6 +62,7 @@ interface ClassRow {
   competitionId: string;
   name: string;
   shortName: string | null;
+  noTiming: boolean;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -126,6 +127,7 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
           competition_id: r.competitionId,
           name: r.name,
           short_name: r.shortName,
+          no_timing: r.noTiming,
         })),
         courses: [],
         state,

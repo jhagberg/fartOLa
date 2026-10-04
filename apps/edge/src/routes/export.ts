@@ -90,6 +90,7 @@ interface ClassRow {
   competitionId: string;
   name: string;
   shortName: string | null;
+  noTiming: boolean;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -114,6 +115,7 @@ function classRowToDTO(row: ClassRow): ClassDTO {
     competition_id: row.competitionId,
     name: row.name,
     short_name: row.shortName,
+    no_timing: row.noTiming,
   };
 }
 
