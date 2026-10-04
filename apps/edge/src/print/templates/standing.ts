@@ -41,7 +41,8 @@ export default async function standing(
     printer.println('DNF');
   } else if (data.competitor.status === 'MP') {
     printer.println('MP — missing punch');
-  } else {
+  } else if (!data.competitor.no_timing) {
+    // An untimed class has no place (02.1-14 Task 9); not "waiting".
     printer.println('Väntar på data');
   }
   const gap = formatGap(data.placeContext.behind_leader_ms);

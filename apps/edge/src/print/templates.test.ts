@@ -101,5 +101,6 @@ test('receipts for an untimed class carry no time or place (02.1-14 Task 9)', as
     const text = lines.join('\n');
     assert.doesNotMatch(text, /\d:\d\d/, `${name}: no time on an untimed receipt:\n${text}`);
     assert.doesNotMatch(text, /Plats|PLATS|Leder/, `${name}: no place on an untimed receipt`);
+    assert.doesNotMatch(text, /Väntar/, `${name}: an OK untimed run is not pending`);
   }
 });
