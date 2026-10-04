@@ -123,10 +123,9 @@ describe('events: append-only invariant', () => {
     const handle = openDatabase(':memory:');
     try {
       const triggers = handle.sqlite
-        .prepare<
-          unknown[],
-          TriggerRow
-        >("SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('events_no_update', 'events_no_delete') ORDER BY name")
+        .prepare<unknown[], TriggerRow>(
+          "SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('events_no_update', 'events_no_delete') ORDER BY name"
+        )
         .all();
       assert.equal(
         triggers.length,

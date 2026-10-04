@@ -25,12 +25,7 @@
 import { getEventorStatus as fetchEventorStatus } from '$lib/api/client.ts';
 
 export type EventorStatusVisible =
-  | 'unknown'
-  | 'ready'
-  | 'stale'
-  | 'offline'
-  | 'no_key'
-  | 'refreshing';
+  'unknown' | 'ready' | 'stale' | 'offline' | 'no_key' | 'refreshing';
 
 export interface EventorStatusState {
   state: EventorStatusVisible;

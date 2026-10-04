@@ -451,12 +451,7 @@ class BridgeLifecycle {
             name: row.name,
             date: row.date,
             receipt_template: row.receiptTemplate as
-              | 'classic'
-              | 'standing'
-              | 'detailed'
-              | 'top4'
-              | 'minimal'
-              | 'kids',
+              'classic' | 'standing' | 'detailed' | 'top4' | 'minimal' | 'kids',
             auto_print: row.autoPrint,
           };
         },

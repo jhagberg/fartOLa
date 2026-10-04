@@ -41,16 +41,7 @@ export interface NdjsonBase {
 }
 
 export type CardType =
-  | 'SI5'
-  | 'SI6'
-  | 'SI8'
-  | 'SI9'
-  | 'SI10'
-  | 'SI11'
-  | 'SIAC'
-  | 'PCARD'
-  | 'TCARD'
-  | 'FCARD';
+  'SI5' | 'SI6' | 'SI8' | 'SI9' | 'SI10' | 'SI11' | 'SIAC' | 'PCARD' | 'TCARD' | 'FCARD';
 
 export type ConnectionState = 'opening' | 'open' | 'closed' | 'error';
 
@@ -113,11 +104,7 @@ export interface FrameErrorEvent extends NdjsonBase {
 }
 
 export type NdjsonEvent =
-  | ConnectionChangedEvent
-  | CardInsertedEvent
-  | CardReadEvent
-  | CardRemovedEvent
-  | FrameErrorEvent;
+  ConnectionChangedEvent | CardInsertedEvent | CardReadEvent | CardRemovedEvent | FrameErrorEvent;
 
 // ---------------------------------------------------------------------------
 // Internal helpers

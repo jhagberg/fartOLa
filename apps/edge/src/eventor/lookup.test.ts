@@ -109,10 +109,9 @@ describe('eventor lookup module', () => {
       // Jonas fixture has modifyDateMs from "2024-12-12T09:46:45Z" — use
       // the same value for Anna to create a tie.
       const jonasMsRow = handle.sqlite
-        .prepare<
-          [],
-          { v: number }
-        >(`SELECT modify_date_ms AS v FROM eventor_competitors WHERE person_id = 1001`)
+        .prepare<[], { v: number }>(
+          `SELECT modify_date_ms AS v FROM eventor_competitors WHERE person_id = 1001`
+        )
         .get();
       const jonasMs = jonasMsRow?.v ?? 0;
       handle.db

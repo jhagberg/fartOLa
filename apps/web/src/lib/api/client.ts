@@ -531,8 +531,7 @@ export interface ExportPreviewError {
 }
 
 export type ExportPreviewResult =
-  | { valid: true; summary: ExportPreviewSummary }
-  | { valid: false; errors: ExportPreviewError[] };
+  { valid: true; summary: ExportPreviewSummary } | { valid: false; errors: ExportPreviewError[] };
 
 /** Preview the IOF XML 3.0 export for a competition. Returns valid=true
  * with summary counts on XSD pass, or valid=false with line-numbered
