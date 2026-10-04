@@ -49,6 +49,8 @@ export interface EventCodeRow {
 
 export interface CookiePayload {
   competitionId: string;
+  /** event_codes.id this cookie was issued for — lets the gate check revocation. */
+  codeId: string;
   expiresAt: number;
   issuedAt: number;
   v: 1;
@@ -60,7 +62,7 @@ export interface CookiePayload {
 
 /** Pre-check regex — rejects inputs that can't possibly match a valid code.
  * Must match: <Swedish-lowercase>-<NNN> where NNN is 100-999 (first digit 1-9). */
-const CODE_REGEX = /^[a-zåäö]+-[1-9][0-9]{2}$/;
+export const CODE_REGEX = /^[a-zåäö]+-[1-9][0-9]{2}$/;
 
 /**
  * Generate a fresh event admin code of the form `<word>-<NNN>` where
@@ -147,15 +149,24 @@ function b64urlDecode(s: string): Buffer {
  * Format: `<base64url(payload)>.<base64url(HMAC-SHA256(payloadBase64url, secret))>`
  *
  * The payload includes the competitionId so verifyCookie can enforce that the
- * cookie was issued for the same competition the request targets (T-02.1-25b).
+ * cookie was issued for the same competition the request targets (T-02.1-25b),
+ * and the codeId so the write-gate can reject cookies whose underlying code was
+ * revoked or deleted before its natural expiry.
  *
  * @param competitionId  The competition this cookie grants access to.
+ * @param codeId         The event_codes.id this cookie was issued for.
  * @param secret         The per-install HMAC signing secret.
  * @param expiresAt      Expiry timestamp in ms since epoch.
  */
-export function signCookie(competitionId: string, secret: string, expiresAt: number): string {
+export function signCookie(
+  competitionId: string,
+  codeId: string,
+  secret: string,
+  expiresAt: number
+): string {
   const payload: CookiePayload = {
     competitionId,
+    codeId,
     expiresAt,
     issuedAt: Date.now(),
     v: 1,
@@ -173,8 +184,13 @@ export function signCookie(competitionId: string, secret: string, expiresAt: num
  *   1. Cookie has exactly two dot-separated parts.
  *   2. HMAC-SHA256 signature matches (constant-time comparison via timingSafeEqual).
  *   3. Payload JSON is parseable and has v:1.
- *   4. Payload competitionId matches the provided competitionId (T-02.1-25b).
- *   5. Cookie is not expired (expiresAt > Date.now()).
+ *   4. Payload carries a non-empty codeId (required for revocation checks).
+ *   5. Payload competitionId matches the provided competitionId (T-02.1-25b).
+ *   6. Cookie is not expired (expiresAt > Date.now()).
+ *
+ * NOTE: revocation is NOT checked here (this function is pure / DB-free). The
+ * write-gate re-checks payload.codeId against event_codes on each request so a
+ * revoked code's cookie stops working immediately.
  *
  * Returns the parsed CookiePayload on success, null on any failure.
  *
@@ -203,6 +219,11 @@ export function verifyCookie(
     const payloadJson = b64urlDecode(payloadB64).toString('utf8');
     const payload = JSON.parse(payloadJson) as CookiePayload;
     if (payload.v !== 1) return null;
+
+    // Revocation guard — a cookie without a codeId can't be checked against the
+    // event_codes table, so it can never be revoked. Reject it outright; the
+    // gate relies on payload.codeId to enforce revocation (forces re-login).
+    if (typeof payload.codeId !== 'string' || payload.codeId.length === 0) return null;
 
     // Scope guard — competitionId in cookie must match the requested route
     // (T-02.1-25b — prevents a helper authenticated for comp A from writing to comp B).

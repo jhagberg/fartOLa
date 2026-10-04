@@ -20,6 +20,8 @@
 // Error responses:
 //   404  { error: 'competition_not_found' }
 //   503  { error: 'no_reader', message: string }      — no bridge connected
+//   503  { error: 'station_asleep', message: string } — coupled unit asleep;
+//        operator must dip a card into the check unit to wake it, then retry
 //   500  { error: 'snapshot_failed', message: string } — serial error
 //
 // Reader selection: optional `?reader=<position>` query param picks which
@@ -45,18 +47,31 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc } from 'drizzle-orm';
 
 import { competitions, events } from '../db/schema.ts';
-import { readBackupMemory } from '@fartola/sportident';
+import {
+  readBackupMemory,
+  readCoupledBackupMemory,
+  CoupledStationAsleepError,
+} from '@fartola/sportident';
 import type { EventPayload } from '../db/schema.ts';
 
 export default async function registerCheckunitRoutes(app: FastifyInstance): Promise<void> {
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/checkunit/snapshot
   // ---------------------------------------------------------------------------
-  app.post<{ Params: { id: string }; Querystring: { reader?: string } }>(
+  // `mode` selects how the check unit is reached:
+  //   - 'coupled' (DEFAULT): the BSFx check unit is inductively coupled on top
+  //     of the BSMx master ("mini reader"). The master is switched to
+  //     transparent mode (SET_MS 0x53) and commands are forwarded to the
+  //     coupled station, then direct mode is restored. This is the normal
+  //     field setup — a BSF8 has no USB port (pcprog5 §2.5).
+  //   - 'direct': the station is itself plugged into USB and we read its own
+  //     backup memory. Escape hatch for benches / debugging.
+  app.post<{ Params: { id: string }; Querystring: { reader?: string; mode?: string } }>(
     '/api/competitions/:id/checkunit/snapshot',
     async (req, reply) => {
       const { id } = req.params;
       const readerPosition = req.query.reader ?? null;
+      const mode = req.query.mode === 'direct' ? 'direct' : 'coupled';
 
       // Verify competition exists.
       const compRow = app.fartolaDb.db
@@ -96,15 +111,33 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
         });
       }
 
-      // Read backup memory from the check unit.
+      // Read backup memory from the check unit. Coupled (default) wraps the
+      // read in the SET_MS transparent-mode relay + §2.5 retry loop; direct
+      // reads the USB-attached station's own memory.
       let readResult: { cardNumbers: number[]; overflow: boolean; readCount: number };
       try {
-        const { records, overflow } = await readBackupMemory(station);
+        const { records, overflow } =
+          mode === 'direct'
+            ? await readBackupMemory(station)
+            : await readCoupledBackupMemory(station);
         const cardNumbers = [...new Set(records.map((r) => r.cardNumber))];
         readResult = { cardNumbers, overflow, readCount: cardNumbers.length };
+        // Log SUCCESS so the operator gets confirmation in the edge window
+        // (previously only failures were logged → a good read looked silent).
+        app.log.info(
+          { competitionId: id, mode, cardCount: cardNumbers.length, overflow },
+          'checkunit snapshot ok'
+        );
       } catch (err) {
+        // Sleeping check unit → friendly 503 so the UI can prompt "dip a card to
+        // wake it" instead of showing a 7.5s raw timeout. (pcprog §2.5: the
+        // slaved station must be in active mode for the inductive link to sync.)
+        if (err instanceof CoupledStationAsleepError) {
+          app.log.warn({ competitionId: id }, 'checkunit asleep — operator must wake it');
+          return reply.code(503).send({ error: 'station_asleep', message: err.message });
+        }
         const message = err instanceof Error ? err.message : String(err);
-        app.log.error({ err, competitionId: id }, 'checkunit snapshot failed');
+        app.log.error({ err, competitionId: id, mode }, 'checkunit snapshot failed');
         return reply.code(500).send({ error: 'snapshot_failed', message });
       }
 
@@ -116,12 +149,10 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
       // deduplicate by card_number keeping only the most recent, then filter
       // for non-null finish.
       interface CardReadRow {
-        cardNumber: number;
         payload: EventPayload;
       }
       const cardReadRows = app.fartolaDb.db
         .select({
-          cardNumber: events.payload,
           payload: events.payload,
         })
         .from(events)

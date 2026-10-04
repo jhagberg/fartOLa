@@ -38,6 +38,7 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -332,12 +333,29 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // Rate-limited; sets signed HttpOnly cookie scoped to competitionId.
     await app.register(registerAccessRoute);
 
+    // Cache the signing secret once at startup — avoids a DB hit on every
+    // authenticated write request.
+    const eventCodeSigningSecret = getOrCreateSigningSecret(app);
+
+    // Snapshot this host's own interface addresses at boot (operator-self
+    // bypass — see the onRequest gate below). Only consulted when allowLan is
+    // set; loopback-only binds never see a non-loopback source. A mid-session
+    // IP change (DHCP/Wi-Fi switch) needs a restart to refresh this set.
+    const localInterfaceAddresses = new Set<string>();
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        localInterfaceAddresses.add(addr.address);
+      }
+    }
+
     // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on all write routes
     // under /api/competitions/:id/**  (POST/PATCH/DELETE) for non-localhost
     // requests without a valid signed cookie (T-02.1-27 / T-02.1-27b).
     //
     // Localhost bypass: uses socket.remoteAddress ONLY. X-Forwarded-For is
     // EXPLICITLY IGNORED to prevent header spoofing (T-02.1-27 mitigation).
+    // When allowLan is set, requests from THIS host's own interface IPs also
+    // bypass (operator opening the UI via the laptop's LAN IP) — see the gate.
     //
     // Cookie competitionId scope: the cookie payload's cid field must match
     // the route's :id param. Mismatch → 403 cookie_competition_mismatch
@@ -363,17 +381,28 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       const routeCompetitionId = urlParts[3];
 
       // Exclude /api/competitions/:id/event-codes routes — they are admin-only
-      // (localhost-gated) routes with their own localhost check. The blanket
-      // gate is for helper-facing write routes, not operator-only admin surfaces.
-      // Exclude both the generate (POST /event-codes) and revoke
-      // (POST /event-codes/:codeId/revoke) paths.
-      if (url.includes('/event-codes')) return;
+      // (localhost-gated) routes with their own localhost check.
+      if (urlParts[4] === 'event-codes') return;
 
       // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
       const remoteAddr = request.socket.remoteAddress;
-      const isLocalhost =
+      const isLoopback =
         remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
-      if (isLocalhost) return;
+      if (isLoopback) return;
+
+      // Operator-self bypass (allowLan only): the operator may open the UI via
+      // THIS laptop's own LAN IP — the URL run-local.sh prints — in which case
+      // the socket source is one of this host's interface addresses, not
+      // loopback, even though the request still originates on the trusted
+      // operator machine. A real helper machine always has a *different* source
+      // IP (covered by the cookie path below), so trusting our own addresses
+      // doesn't widen LAN access. Still socket.remoteAddress only — XFF ignored.
+      if (opts.allowLan === true && remoteAddr !== undefined) {
+        const normalizedAddr = remoteAddr.startsWith('::ffff:')
+          ? remoteAddr.slice('::ffff:'.length)
+          : remoteAddr;
+        if (localInterfaceAddresses.has(normalizedAddr)) return;
+      }
 
       // Non-localhost: require a valid signed cookie.
       const rawCookie = request.headers.cookie;
@@ -389,8 +418,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
         return reply.code(403).send({ error: 'event_code_required' });
       }
 
-      const secret = getOrCreateSigningSecret(app);
-      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', secret);
+      const payload = verifyCookie(cookieValue, routeCompetitionId ?? '', eventCodeSigningSecret);
 
       if (!payload) {
         // Either signature invalid, expired, or competitionId mismatch.

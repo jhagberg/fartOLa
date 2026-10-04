@@ -23,7 +23,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import { competitions, events } from '../db/schema.ts';
-import { proto, BLOCK_SIZE } from '@fartola/sportident';
+import { proto, BLOCK_SIZE, cardNumber2arr } from '@fartola/sportident';
 import type { SiMainStation } from '@fartola/sportident';
 import type { SiMessageWithoutMode } from '@fartola/sportident';
 import type { HalfDayClock } from '@fartola/sportident';
@@ -40,46 +40,67 @@ interface MockStation {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build a 128-byte backup block with two card numbers. */
-function makeTwoCardBlock(cn1: number, cn2: number): number[] {
-  const block = new Array<number>(128).fill(0);
-  const recLen = proto.REC_LEN; // 8
-  // Record 0: cn1
-  const off0 = 0;
-  block[off0 + proto.BC_CN] = (cn1 >>> 24) & 0xff;
-  block[off0 + proto.BC_CN + 1] = (cn1 >>> 16) & 0xff;
-  block[off0 + proto.BC_CN + 2] = (cn1 >>> 8) & 0xff;
-  block[off0 + proto.BC_CN + 3] = cn1 & 0xff;
-  // Record 1: cn2
-  const off1 = recLen;
-  block[off1 + proto.BC_CN] = (cn2 >>> 24) & 0xff;
-  block[off1 + proto.BC_CN + 1] = (cn2 >>> 16) & 0xff;
-  block[off1 + proto.BC_CN + 2] = (cn2 >>> 8) & 0xff;
-  block[off1 + proto.BC_CN + 3] = cn2 & 0xff;
-  return block;
+/** Encode a card number to its 3 wire bytes (big-endian), via cardNumber2arr. */
+function cardBytes(cn: number): [number, number, number] {
+  const [b0, b1, b2] = cardNumber2arr(cn);
+  return [b2 as number, b1 as number, b0 as number];
 }
 
-/** Build a GET_SYS_VAL response params array with the given memory pointer. */
-function makeSysValParams(memPointer: number): number[] {
-  const params = new Array<number>(128).fill(0);
-  params[0x1c] = (memPointer >>> 24) & 0xff;
-  params[0x1d] = (memPointer >>> 16) & 0xff;
-  params[0x1e] = (memPointer >>> 8) & 0xff;
-  params[0x1f] = memPointer & 0xff;
-  return params;
+/** GET_BACKUP response FRAME: [cmd, len, CN1, CN0, ADR2, ADR1, ADR0, ...data].
+ * Each record: card bytes 0..2, 0x69 0x69 marker, 3-byte time. */
+function makeTwoCardFrame(cn1: number, cn2: number): number[] {
+  const data: number[] = [];
+  for (const cn of [cn1, cn2]) {
+    const [a, b, c] = cardBytes(cn);
+    data.push(a, b, c, 0x69, 0x69, 0x00, 0x00, 0x00);
+  }
+  while (data.length < 128) data.push(0x00);
+  const payload = [0x00, 0x02, 0x00, 0x01, 0x00, ...data];
+  return [proto.cmd.GET_BACKUP, payload.length & 0xff, ...payload];
 }
 
-/** Build a mock station that returns one block with two card numbers. */
+/** GET_SYS_VAL pointer response FRAME for an absolute pointer. */
+function makePointerFrame(pointer: number): number[] {
+  const ep3 = (pointer >>> 24) & 0xff;
+  const ep2 = (pointer >>> 16) & 0xff;
+  const ep1 = (pointer >>> 8) & 0xff;
+  const ep0 = pointer & 0xff;
+  const payload = [0x00, 0x02, 0x1c, ep3, ep2, 0x00, 0x00, 0x00, ep1, ep0];
+  return [proto.cmd.GET_SYS_VAL, payload.length & 0xff, ...payload];
+}
+
+/** Build a mock station that returns one block with two card numbers.
+ * Answers any SET_MS (coupled-mode relay) with a benign echo. */
 function makeStationWithCards(cn1: number, cn2: number): MockStation {
   return {
     sendMessage(message: SiMessageWithoutMode) {
+      if (message.command === proto.cmd.SET_MS) {
+        return Promise.resolve([[proto.cmd.SET_MS, 0x01, 0x4d]]);
+      }
       if (message.command === proto.cmd.GET_SYS_VAL) {
-        return Promise.resolve([makeSysValParams(BLOCK_SIZE)]);
+        // pointer one block beyond base → exactly one GET_BACKUP read.
+        return Promise.resolve([makePointerFrame(0x100 + BLOCK_SIZE)]);
       }
       if (message.command === proto.cmd.GET_BACKUP) {
-        return Promise.resolve([makeTwoCardBlock(cn1, cn2)]);
+        return Promise.resolve([makeTwoCardFrame(cn1, cn2)]);
       }
       return Promise.resolve([[]]);
+    },
+  };
+}
+
+/** A station that never answers GET_SYS_VAL — models a SLEEPING coupled unit.
+ * SET_MS echoes (the master is awake), but the forwarded pointer read times
+ * out every attempt, so readCoupledBackupMemory throws CoupledStationAsleepError. */
+function makeAsleepStation(): MockStation {
+  return {
+    sendMessage(message: SiMessageWithoutMode) {
+      if (message.command === proto.cmd.SET_MS) {
+        return Promise.resolve([[proto.cmd.SET_MS, 0x01, 0x4d]]);
+      }
+      // GET_SYS_VAL (and anything forwarded to the coupled station): reject,
+      // as the multiplexer would on a dropped NAK / timeout.
+      return Promise.reject(new Error('Send timed out (simulated asleep)'));
     },
   };
 }
@@ -274,5 +295,17 @@ describe('checkunit', () => {
     assert.ok(body.cardNumbers.includes(333333), 'right reader cards should be present');
     assert.ok(body.cardNumbers.includes(444444), 'right reader cards should be present');
     assert.ok(!body.cardNumbers.includes(111111), 'left reader cards should not be present');
+  });
+
+  test('Test 7: sleeping coupled unit → 503 station_asleep (not a raw 500)', async () => {
+    ctx.app.bridgeLifecycles = [makeLifecycle(makeAsleepStation())];
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/checkunit/snapshot`,
+    });
+    assert.equal(res.statusCode, 503);
+    const body = JSON.parse(res.body) as { error: string; message: string };
+    assert.equal(body.error, 'station_asleep');
+    assert.match(body.message, /wake|asleep|dip/i);
   });
 });

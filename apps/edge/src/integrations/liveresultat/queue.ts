@@ -67,10 +67,6 @@ export interface PushQueueConfig {
   liveresultatPwd: string;
   /** Liveresultat push endpoint URL. Default production URL. */
   liveresultatUrl?: string;
-  /** Competition name for MOP XML metadata. */
-  competitionName: string;
-  /** Competition date (YYYY-MM-DD) for MOP XML metadata. */
-  competitionDate: string;
 }
 
 export interface PushQueueOpts {
@@ -155,26 +151,25 @@ export function createPushQueue(opts: PushQueueOpts): PushQueueHandle {
 
     const mopXml = buildMopXml({
       state,
-      competition: {
-        id: config.liveresultatId,
-        name: config.competitionName,
-        date: config.competitionDate,
-      },
+      competition: { id: config.liveresultatId, name: '', date: '' },
       classes: meta.classes,
       clubs: meta.clubs,
     });
 
     const url = config.liveresultatUrl ?? DEFAULT_LIVERESULTAT_URL;
+    const pushOpts = {
+      url,
+      competitionId: config.liveresultatId,
+      password: config.liveresultatPwd,
+      mopXml,
+    };
+    if (opts.fetchImpl !== undefined) {
+      Object.assign(pushOpts, { fetchImpl: opts.fetchImpl });
+    }
 
     lastPushAt = Date.now();
     try {
-      await pushToLiveresultat({
-        url,
-        competitionId: config.liveresultatId,
-        password: config.liveresultatPwd,
-        mopXml,
-        ...(opts.fetchImpl !== undefined ? { fetchImpl: opts.fetchImpl } : {}),
-      });
+      await pushToLiveresultat(pushOpts);
       lastSuccessAt = Date.now();
       lastError = null;
       retryCount = 0;

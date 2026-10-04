@@ -63,7 +63,7 @@
     "@fartola/shared-types": "workspace:*",
     "@fartola/sportident": "workspace:*",
     "@types/better-sqlite3": "^7.6.0",
-    "@types/node": "^22.10.0",
+    "@types/node": "^24.12.4",
     "@types/ws": "^8.18.1",
     "@types/yauzl": "^2.10.3",
     "drizzle-kit": "^0.31.10",

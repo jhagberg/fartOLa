@@ -33,6 +33,7 @@ export function drawRandom(runners: DrawRunner[], opts: DrawRandomOptions = {}):
   // Fisher-Yates in-place shuffle
   for (let i = order.length - 1; i > 0; i--) {
     const j = rng(0, i + 1);
+    // i and j are bounded by order.length, so these indexes are in range.
     const tmp = order[i]!;
     order[i] = order[j]!;
     order[j] = tmp;
@@ -41,6 +42,7 @@ export function drawRandom(runners: DrawRunner[], opts: DrawRandomOptions = {}):
   // Count adjacencies in the shuffled order
   let adjacencyCount = 0;
   for (let i = 0; i < order.length - 1; i++) {
+    // The loop stops before the last element, so i and i + 1 are in range.
     if (order[i]!.club !== null && order[i]!.club === order[i + 1]!.club) adjacencyCount++;
   }
 

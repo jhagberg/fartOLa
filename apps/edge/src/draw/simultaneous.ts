@@ -22,6 +22,7 @@ export function drawSimultaneous(runners: DrawRunner[]): DrawResult {
   // Count adjacencies in the unchanged input order.
   let adjacencyCount = 0;
   for (let i = 0; i < runners.length - 1; i++) {
+    // The loop stops before the last element, so i and i + 1 are in range.
     if (runners[i]!.club !== null && runners[i]!.club === runners[i + 1]!.club) adjacencyCount++;
   }
 

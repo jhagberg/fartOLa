@@ -718,8 +718,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         .select({
           liveresultatId: competitions.liveresultatId,
           liveresultatPwd: competitions.liveresultatPwd,
-          name: competitions.name,
-          date: competitions.date,
         })
         .from(competitions)
         .where(eq(competitions.id, competitionId))
@@ -728,8 +726,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       return {
         liveresultatId: row.liveresultatId,
         liveresultatPwd: row.liveresultatPwd,
-        competitionName: row.name,
-        competitionDate: row.date,
       };
     },
     getMopMeta: (competitionId) => {

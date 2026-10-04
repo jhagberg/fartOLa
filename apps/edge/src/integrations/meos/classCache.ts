@@ -31,7 +31,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 /** Fetch timeout — 5 seconds (T-02.1-18). */
 const FETCH_TIMEOUT_MS = 5_000;
 
-type FetchImpl = (url: string, init?: RequestInit) => Promise<Response>;
+type FetchImpl = (url: string) => Promise<Response>;
 
 /** Internal cache state. Exposed via `getClassCacheForTest()` for unit tests. */
 interface CacheState {
@@ -106,10 +106,7 @@ export async function refreshClassCache(
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let xml: string;
     try {
-      const res = await fetchImpl(`http://${meosHost}:2009/?get=class`, {
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`MeOS REST error: ${res.status} ${res.statusText}`);
+      const res = await fetchImpl(`http://${meosHost}:2009/?get=class`);
       xml = await res.text();
     } finally {
       clearTimeout(timer);

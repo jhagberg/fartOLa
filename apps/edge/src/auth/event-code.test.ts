@@ -216,31 +216,40 @@ describe('validateCode', () => {
 });
 
 describe('signCookie + verifyCookie', () => {
-  test('Test 7: round-trip — signCookie produces string; verifyCookie returns payload with competitionId', () => {
+  test('Test 7: round-trip — signCookie produces string; verifyCookie returns payload with competitionId + codeId', () => {
     const competitionId = 'comp-xyz';
+    const codeId = 'code-abc-123';
     const expiresAt = Date.now() + 86_400_000;
-    const cookie = signCookie(competitionId, TEST_SECRET, expiresAt);
+    const cookie = signCookie(competitionId, codeId, TEST_SECRET, expiresAt);
     assert.equal(typeof cookie, 'string', 'signCookie must return a string');
     assert.ok(cookie.includes('.'), 'cookie must contain dot separator');
 
     const payload = verifyCookie(cookie, competitionId, TEST_SECRET);
     assert.ok(payload !== null, 'verifyCookie must return payload for valid cookie');
     assert.equal(payload.competitionId, competitionId);
+    assert.equal(payload.codeId, codeId);
     assert.ok(payload.expiresAt === expiresAt);
   });
 
   test('Test 8: verifyCookie returns null for tampered cookie (single char flip in signature)', () => {
-    const cookie = signCookie('comp-1', TEST_SECRET, Date.now() + 86_400_000);
+    const cookie = signCookie('comp-1', 'code-1', TEST_SECRET, Date.now() + 86_400_000);
     const [payloadPart, sigPart] = cookie.split('.');
-    // Flip one character in the signature
-    const tamperedSig = sigPart.slice(0, -1) + (sigPart.at(-1) === 'a' ? 'b' : 'a');
+    assert.ok(
+      payloadPart !== undefined && sigPart !== undefined,
+      'signed cookie must have two parts'
+    );
+    // Flip a character near the start of the signature (avoiding the last
+    // char whose low bits are base64 padding for 32-byte HMAC output).
+    const i = 2;
+    const tamperedSig =
+      sigPart.slice(0, i) + (sigPart[i] === 'A' ? 'B' : 'A') + sigPart.slice(i + 1);
     const tamperedCookie = `${payloadPart}.${tamperedSig}`;
     const result = verifyCookie(tamperedCookie, 'comp-1', TEST_SECRET);
     assert.equal(result, null, 'expected null for tampered cookie');
   });
 
   test('Test 11: verifyCookie returns null when cookie competitionId mismatches provided competitionId', () => {
-    const cookie = signCookie('comp-A', TEST_SECRET, Date.now() + 86_400_000);
+    const cookie = signCookie('comp-A', 'code-A', TEST_SECRET, Date.now() + 86_400_000);
     // Cookie was signed for comp-A but we verify against comp-B
     const result = verifyCookie(cookie, 'comp-B', TEST_SECRET);
     assert.equal(result, null, 'expected null for competitionId mismatch');

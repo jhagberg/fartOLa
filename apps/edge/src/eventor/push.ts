@@ -152,7 +152,7 @@ async function fetchOnce(
         ApiKey: apiKey,
         'Content-Type': 'application/zip',
       },
-      body: zipBuffer,
+      body: new Uint8Array(zipBuffer),
       signal: controller.signal,
     });
     const body = await res.text();
