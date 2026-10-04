@@ -421,6 +421,32 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         if (update !== -1) cardUpdates.splice(update, 1);
         skipRow(w.entry, 'duplicate_runner');
       }
+      // A dropped card change no longer frees its runner's old card, which a
+      // later row may have taken. Replay the remaining changes in row order
+      // against the cards actually held; one that takes a held card is
+      // dropped too.
+      const cardHolder = new Map<number, string>();
+      const cardOf = new Map<string, number | null>();
+      for (const c of localCompetitors) {
+        if (c.cardNumber !== null) cardHolder.set(c.cardNumber, c.id);
+        cardOf.set(c.id, c.cardNumber);
+      }
+      for (let i = 0; i < exactWrites.length; i++) {
+        const w = exactWrites[i]!;
+        if (w.cardNumber === undefined) continue;
+        const holder = cardHolder.get(w.cardNumber);
+        if (holder !== undefined && holder !== w.id) {
+          exactWrites.splice(i--, 1);
+          const update = cardUpdates.findIndex((u) => u.row === w.entry.row);
+          if (update !== -1) cardUpdates.splice(update, 1);
+          skipRow(w.entry, 'duplicate_card');
+          continue;
+        }
+        const previous = cardOf.get(w.id);
+        if (previous !== null && previous !== undefined) cardHolder.delete(previous);
+        cardHolder.set(w.cardNumber, w.id);
+        cardOf.set(w.id, w.cardNumber);
+      }
       skipped.sort((a, b) => a.row - b.row);
       const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
 

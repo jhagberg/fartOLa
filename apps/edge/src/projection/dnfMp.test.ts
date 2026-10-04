@@ -359,6 +359,30 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.equal(mp.elapsed_time_ms, null);
   });
 
+  // 02:00–03:00 runs twice on 2026-10-25: start 02:50 CEST, last control
+  // 02:03 CET, finish 02:10 CET, read 03:05 CET is a 20-minute run. Each
+  // clock alone would pick the CET reading and put the start after the finish.
+  test('2026-10-25: start 02:50 CEST, finish 02:10 CET, read 03:05 CET → 20 min', () => {
+    const at = (code: number, sec: number): NdjsonPunch => ({ ...hd(sec), code });
+    const result = detectStatus(
+      {
+        ...CTX,
+        readAtMs: Date.parse('2026-10-25T02:05:00Z'),
+        start: hd(2 * 3600 + 50 * 60),
+        finish: hd(2 * 3600 + 10 * 60),
+        punches: [
+          at(31, 2 * 3600 + 53 * 60),
+          at(32, 2 * 3600 + 58 * 60),
+          at(33, 2 * 3600 + 1 * 60),
+          at(34, 2 * 3600 + 3 * 60),
+        ],
+      },
+      COURSE
+    );
+    assert.equal(result.status, 'OK');
+    assert.equal(result.elapsed_time_ms, 20 * 60 * 1000);
+  });
+
   test('SI5 start 11:50 + finish 00:20 (half_day 0) read at 12:25 → 30 min', () => {
     const raw = (sec: number): HalfDayClock => ({
       seconds_in_half_day: sec,
@@ -392,6 +416,8 @@ describe('startMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () 
       startMethod,
       drawnStartMs: drawn ? DRAWN : null,
       start: punch ? hd(10 * 3600 + 30) : null,
+      punches: [],
+      finish: null,
     });
   const cases: Array<[StartMethod, boolean, boolean, number | null]> = [
     // method, start time?, punch?, expected start

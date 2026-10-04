@@ -17,7 +17,12 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { HalfDayClock } from '@fartola/sportident';
-import { halfDayClockToMs, diffMs, cardClockToEpochMs } from './halfDayClockMath.ts';
+import {
+  halfDayClockToMs,
+  diffMs,
+  cardClockToEpochMs,
+  cardClocksToEpochMs,
+} from './halfDayClockMath.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** Build a HalfDayClock from a "seconds since the day's midnight" scalar.
@@ -189,5 +194,82 @@ describe('cardClockToEpochMs across DST (Europe/Stockholm)', () => {
     // 12:00 — 24.5 h back in real time on the 25 h day.
     const read = utc('2026-10-25T09:30:00Z'); // 10:30 CET
     assert.equal(cardClockToEpochMs(hd(12 * 3600), 'SIAC', read), utc('2026-10-24T10:00:00Z'));
+  });
+});
+
+// One read's clocks resolved together: in the repeated autumn hour each clock
+// alone can't tell CEST from CET, but the card's order can.
+describe('cardClocksToEpochMs — one read across DST (Europe/Stockholm)', () => {
+  const utc = (iso: string): number => Date.parse(iso);
+  const wall = (h: number, m: number, s = 0): HalfDayClock => hd(h * 3600 + m * 60 + s);
+
+  test('2026-10-25: start 02:50 CEST, punches 02:58 CEST / 02:03 CET, finish 02:10 CET, read 03:05 CET', () => {
+    const got = cardClocksToEpochMs(
+      { start: wall(2, 50), punches: [wall(2, 58), wall(2, 3)], finish: wall(2, 10) },
+      'SIAC',
+      utc('2026-10-25T02:05:00Z')
+    );
+    assert.deepEqual(got, {
+      check: null,
+      start: utc('2026-10-25T00:50:00Z'),
+      punches: [utc('2026-10-25T00:58:00Z'), utc('2026-10-25T01:03:00Z')],
+      finish: utc('2026-10-25T01:10:00Z'),
+    });
+    assert.equal(got.finish! - got.start!, 20 * 60 * 1000);
+  });
+
+  test('2026-10-25: check 02:45 before start 02:50, both CEST, finish 02:10 CET', () => {
+    const got = cardClocksToEpochMs(
+      { check: wall(2, 45), start: wall(2, 50), punches: [], finish: wall(2, 10) },
+      'SIAC',
+      utc('2026-10-25T02:05:00Z')
+    );
+    assert.equal(got.check, utc('2026-10-25T00:45:00Z'));
+    assert.equal(got.start, utc('2026-10-25T00:50:00Z'));
+  });
+
+  test('2026-10-25: a last control stamped seconds after the finish stays in the same hour', () => {
+    // Station clocks a few seconds apart, not an hour.
+    const got = cardClocksToEpochMs(
+      { start: wall(2, 5), punches: [wall(2, 30, 5)], finish: wall(2, 30, 3) },
+      'SIAC',
+      utc('2026-10-25T01:45:00Z') // 02:45 CET
+    );
+    assert.equal(got.punches[0], utc('2026-10-25T01:30:05Z'));
+    assert.equal(got.finish, utc('2026-10-25T01:30:03Z'));
+  });
+
+  test('2026-10-25 on SI5 (no PM bit): start 02:50 CEST, finish 02:10 CET → 20 min', () => {
+    const got = cardClocksToEpochMs(
+      { start: wall(2, 50), punches: [], finish: wall(2, 10) },
+      'SI5',
+      utc('2026-10-25T02:05:00Z')
+    );
+    assert.equal(got.finish! - got.start!, 20 * 60 * 1000);
+  });
+
+  test('2026-03-29: start 01:50 CET, punch 01:58 CET, finish 03:10 CEST, read 03:20 CEST → 20 min', () => {
+    const got = cardClocksToEpochMs(
+      { start: wall(1, 50), punches: [wall(1, 58)], finish: wall(3, 10) },
+      'SIAC',
+      utc('2026-03-29T01:20:00Z')
+    );
+    assert.equal(got.start, utc('2026-03-29T00:50:00Z'));
+    assert.deepEqual(got.punches, [utc('2026-03-29T00:58:00Z')]);
+    assert.equal(got.finish, utc('2026-03-29T01:10:00Z'));
+  });
+
+  test('outside DST switches it agrees with cardClockToEpochMs clock by clock', () => {
+    const read = utc('2026-10-03T11:00:00Z');
+    const clocks = {
+      start: wall(10, 0),
+      punches: [wall(10, 20), wall(12, 30)],
+      finish: wall(10, 40),
+    };
+    const got = cardClocksToEpochMs(clocks, 'SIAC', read);
+    const one = (c: HalfDayClock): number => cardClockToEpochMs(c, 'SIAC', read);
+    assert.equal(got.start, one(clocks.start));
+    assert.deepEqual(got.punches, clocks.punches.map(one));
+    assert.equal(got.finish, one(clocks.finish));
   });
 });

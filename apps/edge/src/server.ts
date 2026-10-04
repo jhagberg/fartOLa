@@ -404,7 +404,10 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // Install- and session-level writes with no competition of their own:
     // API keys, which competition SI reads go to, creating competitions. Only
     // the operator machine may make them; a helper's event code is scoped to
-    // one competition and never reaches these.
+    // one competition and never reaches these. The FARTOLA_DEV tools under
+    // /api/__dev/ and /api/__admin/ (simulated reads, backup, retention,
+    // Eventor refresh) are operator-only too: run-local.sh enables them by
+    // default on a LAN bind.
     const OPERATOR_ONLY_WRITES = new Set([
       '/api/settings/integrations',
       '/api/sessions/active-competition',
@@ -415,7 +418,11 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
 
     app.addHook('preHandler', async (request, reply) => {
       if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method.toUpperCase())) return;
-      const operatorOnly = OPERATOR_ONLY_WRITES.has(request.routeOptions.url ?? '');
+      const routeUrl = request.routeOptions.url ?? '';
+      const operatorOnly =
+        OPERATOR_ONLY_WRITES.has(routeUrl) ||
+        routeUrl.startsWith('/api/__dev/') ||
+        routeUrl.startsWith('/api/__admin/');
       const routeCompetitionId = gatedCompetitionId(
         request.routeOptions.url,
         request.params as Record<string, string | undefined>,
