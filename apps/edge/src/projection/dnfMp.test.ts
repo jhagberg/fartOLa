@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import { detectStatus } from './dnfMp.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** Build a HalfDayClock from a "seconds since the day's midnight" scalar.
  * Wraps modulo 24h. */
@@ -34,10 +35,20 @@ function p(code: number): NdjsonPunch {
 
 const COURSE = [31, 32, 33, 34] as const;
 
+/** 02.1-14 Task 3: card-clock context — a SIAC (PM bit trusted) read at
+ * 13:00 on the race day, no drawn start. Tests override as needed. */
+const DAY = '2026-10-03';
+const CTX = {
+  cardType: 'SIAC',
+  readAtMs: localToEpochMs(DAY, 13 * 3600),
+  drawnStartMs: null as number | null,
+};
+
 describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 1 OK: 4 controls in order with finish stamped → status=OK, elapsed=600s', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: hd(10 * 3600 + 600),
         punches: [p(31), p(32), p(33), p(34)],
@@ -54,6 +65,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 2 DNF (finish=null) — incomplete punches → DNF gate fires', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: null,
         punches: [p(31), p(32)],
@@ -74,6 +86,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     // code 2 OR 3 in punches[]" and emitted MP.
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: null,
         punches: [p(31), p(32), p(33), p(34)],
@@ -89,6 +102,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 3 MP missing-middle: punches [31,33,34] missing 32', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: hd(10 * 3600 + 600),
         punches: [p(31), p(33), p(34)],
@@ -108,6 +122,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 4 OK extra: a stray code 99 is listed in extra_codes but is not MP', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: hd(10 * 3600 + 600),
         punches: [p(31), p(32), p(99), p(33), p(34)],
@@ -126,6 +141,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 5 MP out-of-order: punches [31,33,32,34] flag 33 as out-of-order', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: hd(10 * 3600 + 600),
         punches: [p(31), p(33), p(32), p(34)],
@@ -141,6 +157,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 6: elapsed=null when no start', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: null,
         finish: hd(10 * 3600 + 600),
         punches: [p(31), p(32), p(33), p(34)],
@@ -152,7 +169,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   });
 
   test('test 7: empty punches AND finish=null → DNF, elapsed=null', () => {
-    const result = detectStatus({ start: null, finish: null, punches: [] }, COURSE);
+    const result = detectStatus({ ...CTX, start: null, finish: null, punches: [] }, COURSE);
     assert.equal(result.status, 'DNF');
     assert.equal(result.elapsed_time_ms, null);
     assert.deepEqual(result.missing_codes, [31, 32, 33, 34]);
@@ -161,6 +178,7 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 8: empty punches but finish present → MP (all controls missing)', () => {
     const result = detectStatus(
       {
+        ...CTX,
         start: hd(10 * 3600),
         finish: hd(10 * 3600 + 5),
         punches: [],
@@ -185,7 +203,17 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
       half_day: 0,
       weekday: null,
     };
-    const result = detectStatus({ start, finish, punches: [p(31), p(32), p(33), p(34)] }, COURSE);
+    // 02.1-14 Task 3: read after midnight so the 23:50 start is placed on the previous day.
+    const result = detectStatus(
+      {
+        ...CTX,
+        readAtMs: localToEpochMs('2026-10-04', 15 * 60),
+        start,
+        finish,
+        punches: [p(31), p(32), p(33), p(34)],
+      },
+      COURSE
+    );
     assert.equal(result.status, 'OK');
     assert.equal(result.elapsed_time_ms, 20 * 60 * 1000);
   });
@@ -193,13 +221,16 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
   test('test 10: elapsed across AM/PM half-day boundary (11:50 → 12:10 = 20 min)', () => {
     const start = hd(11 * 3600 + 50 * 60);
     const finish = hd(12 * 3600 + 10 * 60);
-    const result = detectStatus({ start, finish, punches: [p(31), p(32), p(33), p(34)] }, COURSE);
+    const result = detectStatus(
+      { ...CTX, start, finish, punches: [p(31), p(32), p(33), p(34)] },
+      COURSE
+    );
     assert.equal(result.status, 'OK');
     assert.equal(result.elapsed_time_ms, 20 * 60 * 1000);
   });
 
   // 02.1-14 Task 2: course controls in order as a subsequence of the punches.
-  const FIN = { start: hd(10 * 3600), finish: hd(10 * 3600 + 600) };
+  const FIN = { ...CTX, start: hd(10 * 3600), finish: hd(10 * 3600 + 600) };
 
   test('subsequence: extras anywhere (before, between, after) → OK', () => {
     const result = detectStatus(
@@ -239,5 +270,65 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.deepEqual(result.missing_codes, [32]);
     assert.deepEqual(result.out_of_order_codes, [32]);
     assert.deepEqual(result.extra_codes, [32]);
+  });
+
+  // 02.1-14 Task 3: elapsed is measured from the drawn start when there is one.
+  const RUN = [p(31), p(32), p(33), p(34)];
+
+  test('drawn start 10:00 + start punch 10:01 + finish 10:45 → 45 min (drawn wins)', () => {
+    const result = detectStatus(
+      {
+        ...CTX,
+        drawnStartMs: localToEpochMs(DAY, 10 * 3600),
+        start: hd(10 * 3600 + 60),
+        finish: hd(10 * 3600 + 45 * 60),
+        punches: RUN,
+      },
+      COURSE
+    );
+    assert.equal(result.elapsed_time_ms, 45 * 60 * 1000);
+  });
+
+  test('no drawn start + start punch 10:01 + finish 10:45 → 44 min', () => {
+    const result = detectStatus(
+      { ...CTX, start: hd(10 * 3600 + 60), finish: hd(10 * 3600 + 45 * 60), punches: RUN },
+      COURSE
+    );
+    assert.equal(result.elapsed_time_ms, 44 * 60 * 1000);
+  });
+
+  test('neither drawn start nor start punch → elapsed null, status still OK / MP', () => {
+    const ok = detectStatus(
+      { ...CTX, start: null, finish: hd(10 * 3600 + 45 * 60), punches: RUN },
+      COURSE
+    );
+    assert.equal(ok.status, 'OK');
+    assert.equal(ok.elapsed_time_ms, null);
+    const mp = detectStatus(
+      { ...CTX, start: null, finish: hd(10 * 3600 + 45 * 60), punches: [p(31)] },
+      COURSE
+    );
+    assert.equal(mp.status, 'MP');
+    assert.equal(mp.elapsed_time_ms, null);
+  });
+
+  test('SI5 start 11:50 + finish 00:20 (half_day 0) read at 12:25 → 30 min', () => {
+    const raw = (sec: number): HalfDayClock => ({
+      seconds_in_half_day: sec,
+      half_day: 0,
+      weekday: null,
+    });
+    const result = detectStatus(
+      {
+        ...CTX,
+        cardType: 'SI5',
+        readAtMs: localToEpochMs(DAY, 12 * 3600 + 25 * 60),
+        start: raw(11 * 3600 + 50 * 60),
+        finish: raw(20 * 60),
+        punches: RUN,
+      },
+      COURSE
+    );
+    assert.equal(result.elapsed_time_ms, 30 * 60 * 1000);
   });
 });

@@ -20,6 +20,7 @@ import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 import type { Event, Competitor, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { reduce, type CourseWithControlCodes } from './reduce.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1204,5 +1205,31 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     const anna = state.competitors.get('c-anna');
     assert.ok(anna);
     assert.equal(anna.status, 'OK', 'after clearing DQ with voided leg, should be OK not MP');
+  });
+});
+
+// 02.1-14 Task 3: the reducer passes the drawn start and the read time.
+describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+
+  test('drawn 10:00, start punch 10:01, finish 10:45 → 45 min; open start → 44 min', () => {
+    seqCounter = 0;
+    const punches = [p(31), p(32)];
+    const read = (card: number): Event =>
+      cardRead(card, punches, hd(10 * 3600 + 60), hd(10 * 3600 + 45 * 60), {
+        eventTimeMs: at(10 * 3600 + 50 * 60),
+      });
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101), read(102)],
+      competitors: [
+        comp({ id: 'drawn', cardNumber: 101, startTimeMs: at(10 * 3600) }),
+        comp({ id: 'open', cardNumber: 102 }),
+      ],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 45 * 60 * 1000);
+    assert.equal(state.competitors.get('open')!.elapsed_time_ms, 44 * 60 * 1000);
   });
 });

@@ -197,6 +197,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         view.card_read_history.push({
           event_time_ms: e.eventTimeMs,
           card_number: payload.card_number,
+          card_type: payload.card_type,
           punches: payload.punches,
           start: payload.start,
           finish: payload.finish,
@@ -231,7 +232,14 @@ export function reduce(input: ReduceInput): CompetitionState {
             : expected;
           const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
           const detected = detectStatus(
-            { start: payload.start, finish: payload.finish, punches: payload.punches },
+            {
+              start: payload.start,
+              finish: payload.finish,
+              punches: payload.punches,
+              cardType: payload.card_type,
+              readAtMs: e.eventTimeMs,
+              drawnStartMs: competitor.startTimeMs,
+            },
             resolvedExpected
           );
           view.status = detected.status;
@@ -382,6 +390,9 @@ export function reduce(input: ReduceInput): CompetitionState {
                 start: view.latest_start,
                 finish: view.latest_finish,
                 punches: view.latest_punches,
+                cardType: latestRead?.card_type ?? '',
+                readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
+                drawnStartMs: competitor?.startTimeMs ?? null,
               },
               resolvedExpected
             );
@@ -470,7 +481,14 @@ export function reduce(input: ReduceInput): CompetitionState {
       : expected;
     const resolvedExpected = filterVoidedLegs(afterReplacements, view.voided_legs);
     const detected = detectStatus(
-      { start: latestRead.start, finish: latestRead.finish, punches: latestRead.punches },
+      {
+        start: latestRead.start,
+        finish: latestRead.finish,
+        punches: latestRead.punches,
+        cardType: latestRead.card_type,
+        readAtMs: latestRead.event_time_ms,
+        drawnStartMs: competitor?.startTimeMs ?? null,
+      },
       resolvedExpected
     );
     // Post-pass also updates status to reflect voided legs (MP→OK transition).

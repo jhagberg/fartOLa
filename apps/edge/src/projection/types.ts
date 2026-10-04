@@ -51,6 +51,8 @@ export interface CompetitorView {
   card_read_history: Array<{
     event_time_ms: number;
     card_number: number;
+    /** card_read payload card_type — SI5 has no AM/PM bit (02.1-14 Task 3). */
+    card_type: string;
     punches: NdjsonPunch[];
     start: HalfDayClock | null;
     finish: HalfDayClock | null;

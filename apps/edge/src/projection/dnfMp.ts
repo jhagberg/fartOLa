@@ -16,9 +16,10 @@
 //     contains only control-station punches — the decoder layer already
 //     separates start/finish/check at the storage→raceResult boundary.
 //
-//   - Elapsed time = diffMs(payload.start, payload.finish) from
-//     halfDayClockMath.ts. Caller wraps the call; we return null when
-//     either half-day clock is null.
+//   - Elapsed time = absolute finish − (drawn start ?? absolute start
+//     punch); card clocks are placed in time by cardClockToEpochMs
+//     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3).
+//     Null when there is no finish or no start of either kind.
 //
 // Per CONTEXT D-12 (punch-only DNF, no time-auto-DNF in Phase 1) and
 // UI-SPEC §"Manual DNF override" (manual_dnf wins). The manual override is
@@ -33,12 +34,18 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { diffMs } from './halfDayClockMath.ts';
+import { cardClockToEpochMs } from './halfDayClockMath.ts';
 
 export interface DetectInput {
   start: HalfDayClock | null;
   finish: HalfDayClock | null;
   punches: readonly NdjsonPunch[];
+  /** card_read payload card_type; 'SI5' has no AM/PM bit (02.1-14 Task 3). */
+  cardType: string;
+  /** Host time of the read (event_time_ms); anchors the card clock. */
+  readAtMs: number;
+  /** Drawn start (competitors.start_time_ms, epoch ms); null = open start. */
+  drawnStartMs: number | null;
 }
 
 export interface StatusResult {
@@ -66,7 +73,7 @@ export function detectStatus(
   input: DetectInput,
   expectedControlCodes: readonly number[]
 ): StatusResult {
-  const elapsed = diffMs(input.start, input.finish);
+  const elapsed = elapsedMs(input);
 
   // Gate 1: no finish stamp → DNF, regardless of punches[] contents.
   if (input.finish === null) {
@@ -115,4 +122,19 @@ export function detectStatus(
     out_of_order_codes: outOfOrder,
     elapsed_time_ms: elapsed,
   };
+}
+
+/** Running time = finish − start, both absolute (02.1-14 Task 3). The drawn
+ * start wins over a start punch (MeOS default); open-start classes (no drawn
+ * time) use the punch. Null without a finish or any start. */
+function elapsedMs(input: DetectInput): number | null {
+  if (input.finish === null) return null;
+  const toEpoch = (c: HalfDayClock): number =>
+    cardClockToEpochMs(c, input.cardType, input.readAtMs);
+  const startMs = input.drawnStartMs ?? (input.start === null ? null : toEpoch(input.start));
+  if (startMs === null) return null;
+  const elapsed = toEpoch(input.finish) - startMs;
+  // A finish before the start (wrong day / wrong drawn time) is no time,
+  // not a winning negative one.
+  return elapsed >= 0 ? elapsed : null;
 }

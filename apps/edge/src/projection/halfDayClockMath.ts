@@ -22,6 +22,7 @@
 //   this file mirrors its 24h-ring semantics for the inverse direction)
 
 import type { HalfDayClock } from '@fartola/sportident';
+import { COMPETITION_TZ, epochToLocalSeconds } from '../time/competitionClock.ts';
 
 const HALF_DAY_MS = 12 * 3600 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
@@ -51,4 +52,32 @@ export function diffMs(start: HalfDayClock | null, finish: HalfDayClock | null):
   const s = halfDayClockToMs(start);
   const f = halfDayClockToMs(finish);
   return (((f - s) % DAY_MS) + DAY_MS) % DAY_MS;
+}
+
+/** How far a card time may lie AFTER the read time and still count as "before
+ * the read": the station clock can run ahead of the laptop clock. Without it
+ * a finish stamped seconds after the host's read time would be placed 24 h
+ * (SI5: 12 h) too early. Runs longer than 12 h minus this cannot be resolved
+ * on SI5 anyway. */
+const CLOCK_SKEW_TOLERANCE_MS = 3600 * 1000;
+
+/** Absolute epoch ms for a card clock. The card time is placed in the 12 h
+ * before `readAtMs` when the card cannot say AM/PM (SI5); otherwise
+ * half_day is trusted and the date is the one that puts it in the 24 h
+ * before readAtMs. Both windows end CLOCK_SKEW_TOLERANCE_MS after readAtMs.
+ * Wall-clock arithmetic: a DST switch inside the window shifts the result by
+ * the DST hour (only possible for runs across 02:00–03:00 at night). */
+export function cardClockToEpochMs(
+  clock: HalfDayClock,
+  cardType: string,
+  readAtMs: number,
+  tz: string = COMPETITION_TZ
+): number {
+  const noPmBit = cardType === 'SI5';
+  const period = noPmBit ? HALF_DAY_MS : DAY_MS;
+  const cardMs = noPmBit ? clock.seconds_in_half_day * 1000 : halfDayClockToMs(clock);
+  const anchor = readAtMs + CLOCK_SKEW_TOLERANCE_MS;
+  const anchorLocalMs = Math.round(epochToLocalSeconds(anchor, tz) * 1000);
+  const back = (((anchorLocalMs - cardMs) % period) + period) % period;
+  return anchor - back;
 }
