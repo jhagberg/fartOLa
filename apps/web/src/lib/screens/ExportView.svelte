@@ -35,7 +35,7 @@
     type ExportStatus,
     type ExportPreviewResult,
     type ExportPreviewError,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
 
   interface Props {
     competitionId: string;

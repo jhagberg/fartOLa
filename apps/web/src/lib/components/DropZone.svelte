@@ -24,7 +24,7 @@
   - 01-12-PLAN.md task 1
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   interface Props {
     /** Currently selected file (display-only); the parent owns state. */

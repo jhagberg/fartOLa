@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import KvarISkovenView from '$lib/screens/KvarISkovenView.svelte';
+  import KvarISkovenView from '#lib/screens/KvarISkovenView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

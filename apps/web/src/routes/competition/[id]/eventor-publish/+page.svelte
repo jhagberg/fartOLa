@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import EventorPublishView from '$lib/screens/EventorPublishView.svelte';
+  import EventorPublishView from '#lib/screens/EventorPublishView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

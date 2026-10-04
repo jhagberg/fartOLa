@@ -21,10 +21,10 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { listHiredCards, returnHiredCard } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { listHiredCards, returnHiredCard } from '#lib/api/client.ts';
   import type { HiredCardRow } from '@fartola/shared-types';
-  import Button from '$lib/ui/Button.svelte';
+  import Button from '#lib/ui/Button.svelte';
 
   interface Props {
     competitionId: string;

@@ -13,8 +13,8 @@
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
 import { epochToLocalSeconds, formatLocalTime, type StartMethod } from '@fartola/shared-types';
-import { patchCompetitorStartTime } from '$lib/api/client.ts';
-import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
+import { patchCompetitorStartTime } from '#lib/api/client.ts';
+import type { ReceiptRead, ReceiptPunch } from '#lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
 

@@ -22,14 +22,14 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     getCompetition,
     listCompetitors,
     listVoidedControls,
     patchCompetition,
     setControlVoided,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
   import { goto } from '$app/navigation';
   import type {
     CompetitionDTO,

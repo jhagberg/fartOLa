@@ -20,10 +20,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { t } from '$lib/i18n/index.ts';
-  import { listCompetitions, postAccess } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { listCompetitions, postAccess } from '#lib/api/client.ts';
   import type { CompetitionDTO } from '@fartola/shared-types';
-  import Button from '$lib/ui/Button.svelte';
+  import Button from '#lib/ui/Button.svelte';
 
   let competitions: CompetitionDTO[] = $state([]);
   let selectedCompId: string = $state('');

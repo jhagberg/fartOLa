@@ -17,8 +17,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { searchEventorClubs } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { searchEventorClubs } from '#lib/api/client.ts';
   import type { EventorClubSuggestion } from '@fartola/shared-types';
 
   interface Props {

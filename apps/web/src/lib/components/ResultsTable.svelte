@@ -13,9 +13,9 @@
   - 01-UI-SPEC.md §"Live results auto-update"
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import StatusPill from '$lib/ui/StatusPill.svelte';
-  import { formatElapsed } from '$lib/screens/readout-types.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import StatusPill from '#lib/ui/StatusPill.svelte';
+  import { formatElapsed } from '#lib/screens/readout-types.ts';
 
   interface ResultRow {
     competitor_id: string;

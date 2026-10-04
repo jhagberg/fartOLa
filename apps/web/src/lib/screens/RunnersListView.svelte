@@ -21,20 +21,20 @@
   import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     listCompetitors,
     listClasses,
     listHiredCards,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
   import { formatLocalTime } from '@fartola/shared-types';
-  import Button from '$lib/ui/Button.svelte';
-  import Input from '$lib/ui/Input.svelte';
-  import Icon from '$lib/ui/Icon.svelte';
-  import Modal from '$lib/ui/Modal.svelte';
-  import EditCompetitorModal from '$lib/components/EditCompetitorModal.svelte';
-  import AddRunnerSheet from '$lib/components/AddRunnerSheet.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import Input from '#lib/ui/Input.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
+  import Modal from '#lib/ui/Modal.svelte';
+  import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
+  import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
   import ImportRunnersView from './ImportRunnersView.svelte';
 
   interface Props {
@@ -125,22 +125,18 @@
   function openImportSheet(): void {
     importSheetOpen = true;
     if (!importParamOpen) {
-      const u = new URL(page.url);
+      const u = new URL(page.url.href);
       u.searchParams.set('import', '1');
-      void goto(u.pathname + u.search, { replaceState: true, keepFocus: true, noScroll: true });
+      void goto(u.pathname + u.search, { replace: true, reset: false });
     }
   }
 
   function closeImportSheet(): void {
     importSheetOpen = false;
     if (importParamOpen) {
-      const u = new URL(page.url);
+      const u = new URL(page.url.href);
       u.searchParams.delete('import');
-      void goto(u.pathname + (u.search.length > 1 ? u.search : ''), {
-        replaceState: true,
-        keepFocus: true,
-        noScroll: true,
-      });
+      void goto(u.pathname + (u.search.length > 1 ? u.search : ''), { replace: true, reset: false });
     }
     // After an import the operator expects the list to reflect new rows.
     void loadAll();

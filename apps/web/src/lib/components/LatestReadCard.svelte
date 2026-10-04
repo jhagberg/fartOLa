@@ -35,9 +35,9 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import StatusPill from '$lib/ui/StatusPill.svelte';
-  import PulseDot from '$lib/ui/PulseDot.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import StatusPill from '#lib/ui/StatusPill.svelte';
+  import PulseDot from '#lib/ui/PulseDot.svelte';
 
   interface Read {
     cardNumber: number;

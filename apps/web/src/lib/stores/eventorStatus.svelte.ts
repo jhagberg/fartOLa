@@ -22,7 +22,7 @@
 // - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-EV-3
 //   (warn-and-run; never block UI on cache absence)
 
-import { getEventorStatus as fetchEventorStatus } from '$lib/api/client.ts';
+import { getEventorStatus as fetchEventorStatus } from '#lib/api/client.ts';
 
 export type EventorStatusVisible =
   'unknown' | 'ready' | 'stale' | 'offline' | 'no_key' | 'refreshing';

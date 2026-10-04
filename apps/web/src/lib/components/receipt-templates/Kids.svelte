@@ -18,14 +18,14 @@
   - 01-UI-SPEC.md §"Receipt templates" — Kids is monochrome procedural
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     skogisFromInput,
     skogisGeometry,
     skogisDisplayName,
     SKOGIS_INK,
     SKOGIS_PAPER,
-  } from '$lib/skogis/skogis.ts';
+  } from '#lib/skogis/skogis.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read }: ReceiptTemplateProps = $props();

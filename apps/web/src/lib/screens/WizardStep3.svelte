@@ -30,11 +30,11 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     createCompetitionFromWizard,
     setActiveCompetition,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
 
   type ReaderStatus = 'opening' | 'open' | 'error';
 

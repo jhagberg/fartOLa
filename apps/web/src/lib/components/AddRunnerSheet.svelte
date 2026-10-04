@@ -29,18 +29,18 @@
   non-returner.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import { ApiError, createCompetitor } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { ApiError, createCompetitor } from '#lib/api/client.ts';
   import type {
     ClassDTO,
     CompetitorDTO,
     EventorNameSuggestion,
     EventorClubSuggestion,
   } from '@fartola/shared-types';
-  import Modal from '$lib/ui/Modal.svelte';
-  import Button from '$lib/ui/Button.svelte';
-  import Field from '$lib/ui/Field.svelte';
-  import Icon from '$lib/ui/Icon.svelte';
+  import Modal from '#lib/ui/Modal.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import Field from '#lib/ui/Field.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
   import SmartRunnerSearch from './SmartRunnerSearch.svelte';
   import SmartClubSearch from './SmartClubSearch.svelte';
 

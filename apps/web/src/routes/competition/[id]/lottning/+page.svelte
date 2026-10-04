@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import LottningView from '$lib/screens/LottningView.svelte';
+  import LottningView from '#lib/screens/LottningView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

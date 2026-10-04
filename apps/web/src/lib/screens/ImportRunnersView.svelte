@@ -23,7 +23,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     listEventorEvents,
     importEntriesFromEventor,
@@ -34,12 +34,12 @@
     type EventorEventListItem,
     type EventorImportResult,
     type EventorEventMeta,
-  } from '$lib/api/client.ts';
-  import { ApiError } from '$lib/api/client.ts';
-  import Button from '$lib/ui/Button.svelte';
-  import Field from '$lib/ui/Field.svelte';
-  import Input from '$lib/ui/Input.svelte';
-  import Icon from '$lib/ui/Icon.svelte';
+  } from '#lib/api/client.ts';
+  import { ApiError } from '#lib/api/client.ts';
+  import Button from '#lib/ui/Button.svelte';
+  import Field from '#lib/ui/Field.svelte';
+  import Input from '#lib/ui/Input.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
 
   interface Props {
     competitionId: string;

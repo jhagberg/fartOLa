@@ -10,7 +10,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import RunnersListView from '$lib/screens/RunnersListView.svelte';
+  import RunnersListView from '#lib/screens/RunnersListView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

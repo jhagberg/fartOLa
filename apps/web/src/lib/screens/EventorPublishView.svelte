@@ -6,8 +6,8 @@
   Follows ExportView trigger-button → async call → result/error pattern.
 -->
 <script lang="ts">
-  import { postEventorPushResults, postEventorPushStartlist, ApiError } from '$lib/api/client.ts';
-  import { t } from '$lib/i18n/index.ts';
+  import { postEventorPushResults, postEventorPushStartlist, ApiError } from '#lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   interface Props {
     competitionId: string;

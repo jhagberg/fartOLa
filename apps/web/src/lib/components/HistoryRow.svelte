@@ -18,7 +18,7 @@
     active row gets accent left bar)
 -->
 <script lang="ts">
-  import StatusPill from '$lib/ui/StatusPill.svelte';
+  import StatusPill from '#lib/ui/StatusPill.svelte';
 
   interface Row {
     cardNumber: number;

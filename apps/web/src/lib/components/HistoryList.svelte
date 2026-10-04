@@ -12,7 +12,7 @@
   - 01-UI-SPEC.md §"Readout view live behavior" — cap 12, click re-renders
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import HistoryRow from './HistoryRow.svelte';
 
   interface Row {

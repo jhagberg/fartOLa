@@ -14,7 +14,7 @@
   Locked by 01-13-PLAN.md task 1.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read, classResults = [] }: ReceiptTemplateProps = $props();
