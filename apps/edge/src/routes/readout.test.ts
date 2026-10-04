@@ -39,6 +39,8 @@ import {
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import type { HalfDayClock } from '@fartola/sportident';
+import { eq } from 'drizzle-orm';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -228,6 +230,27 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.equal(row.missing_start, true);
     assert.equal(row.suggested_start_offset_ms, 114_000);
     assert.equal(typeof row.suggested_start_ms, 'number');
+  });
+
+  // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).
+  test('test 2c: start punch 3:12 after the start time → late_start_ms on the row', async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2c');
+    const readAt = localToEpochMs('2026-05-14', 9 * 3600 + 40 * 60);
+    const startTime = localToEpochMs('2026-05-14', 9 * 3600) - 192_000; // 08:56:48
+    ctx.handle.db
+      .update(competitors)
+      .set({ startTimeMs: startTime })
+      .where(eq(competitors.id, competitorId))
+      .run();
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-2c', 7501853, readAt, 1); // punch 09:00:00
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2c/readout' });
+    const row = (
+      res.json() as {
+        history: Array<{ late_start_ms: number | null; early_start_ms: number | null }>;
+      }
+    ).history[0]!;
+    assert.equal(row.late_start_ms, 192_000);
+    assert.equal(row.early_start_ms, null);
   });
 
   test('test 3: 15 card_read events → history.length === 12 (cap)', async () => {

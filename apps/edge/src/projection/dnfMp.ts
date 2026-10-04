@@ -16,8 +16,8 @@
 //     contains only control-station punches — the decoder layer already
 //     separates start/finish/check at the storage→raceResult boundary.
 //
-//   - Elapsed time = absolute finish − start, where start is the card's
-//     start punch, else the drawn start (startMs below, 02.1-14 Task 11);
+//   - Elapsed time = absolute finish − start, where start follows the
+//     class's start method (startMs below, 02.1-14 Task 14);
 //     card clocks are placed in time by cardClockToEpochMs
 //     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3).
 //     Null when there is no finish or no start of either kind.
@@ -35,7 +35,11 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
+import type { Class } from '../db/types.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
+
+/** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
+export type StartMethod = Class['startMethod'];
 
 export interface DetectInput {
   start: HalfDayClock | null;
@@ -47,8 +51,8 @@ export interface DetectInput {
   readAtMs: number;
   /** Drawn start (competitors.start_time_ms, epoch ms); null = open start. */
   drawnStartMs: number | null;
-  /** Class ignores start punches ("Ej startstämpling", MeOS IgnoreStart). */
-  ignoreStartPunch: boolean;
+  /** The class's start method (02.1-14 Task 14). */
+  startMethod: StartMethod;
 }
 
 export interface StatusResult {
@@ -127,16 +131,50 @@ export function detectStatus(
   };
 }
 
-/** The start a running time is measured from (epoch ms), as in MeOS
- * (02.1-14 Task 11): the card's start punch replaces the drawn start
- * (oRunner.cpp:1331-1344), except in a class that ignores start punches when
- * the runner has a drawn start (oRunner.cpp:1226-1227). Null without either. */
+/** The start a running time is measured from (epoch ms), by the class's
+ * start method (02.1-14 Task 14). Null when there is none (missing start).
+ *   - start_time:  the runner's start time; the punch is ignored. A late
+ *                  runner keeps the original start time (SOFT TR 4.18.9
+ *                  (2026-07-01)); the secretariat sets a new one for the
+ *                  organiser's mistake.
+ *   - start_punch: the start punch, else the start time (MeOS,
+ *                  oRunner.cpp:1331-1344; SOFT TR 4.18.16 (2026-07-01)).
+ *   - auto:        start_time when the runner has a start time, else the
+ *                  punch (fri starttid in open classes, SOFT TR 7.4.3
+ *                  (2026-07-01)). */
 export function startMs(
-  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'ignoreStartPunch'>
+  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'>
 ): number | null {
-  if (input.ignoreStartPunch && input.drawnStartMs !== null) return input.drawnStartMs;
-  if (input.start === null) return input.drawnStartMs;
-  return cardClockToEpochMs(input.start, input.cardType, input.readAtMs);
+  const punch =
+    input.start === null ? null : cardClockToEpochMs(input.start, input.cardType, input.readAtMs);
+  switch (input.startMethod) {
+    case 'start_time':
+      return input.drawnStartMs;
+    case 'start_punch':
+      return punch ?? input.drawnStartMs;
+    case 'auto':
+      return input.drawnStartMs ?? punch;
+  }
+}
+
+/** Late / early start punch for the jury (02.1-14 Task 14), only where the
+ * time runs from the start time (start_time, or auto with a start time):
+ * a punch more than 60 s after the start time is a late start (SOFT TR
+ * 4.18.9 (2026-07-01), TA "Sen start": original start time applies), a
+ * punch before it a possible false start (SOFT TR 8.2.8 (2026-07-01)).
+ * Warnings only; the time is not changed. Both in ms, positive. */
+export const LATE_START_GRACE_MS = 60_000;
+export function startPunchWarning(
+  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'>
+): { late_start_ms: number | null; early_start_ms: number | null } {
+  const none = { late_start_ms: null, early_start_ms: null };
+  if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
+    return none;
+  }
+  const diff = cardClockToEpochMs(input.start, input.cardType, input.readAtMs) - input.drawnStartMs;
+  if (diff > LATE_START_GRACE_MS) return { late_start_ms: diff, early_start_ms: null };
+  if (diff < 0) return { late_start_ms: null, early_start_ms: -diff };
+  return none;
 }
 
 /** Running time = finish − start, both absolute (02.1-14 Task 3); start per

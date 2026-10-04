@@ -178,34 +178,39 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.equal(ctx.handle.db.select().from(classes).get()?.noTiming, false);
   });
 
-  // 02.1-14 Task 11: classes that ignore start punches ("Ej startstämpling").
-  test('PATCH ignore_start_punch toggles the flag and shows in the DTO', async () => {
+  // 02.1-14 Task 14: start method per class (replaces Task 11's
+  // ignore_start_punch). Default 'auto'.
+  test('PATCH start_method sets it and shows in the DTO; unknown value → 400', async () => {
     const url = `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`;
-    const on = await ctx.app.inject({
+    const listed = async () =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'GET',
+            url: `/api/competitions/${ctx.competitionId}/classes`,
+          })
+        ).json() as {
+          classes: Array<{ id: string; start_method: string; no_timing: boolean }>;
+        }
+      ).classes.find((c) => c.id === ctx.classId);
+    assert.equal((await listed())?.start_method, 'auto');
+
+    for (const method of ['start_punch', 'start_time', 'auto']) {
+      const res = await ctx.app.inject({ method: 'PATCH', url, payload: { start_method: method } });
+      assert.equal(res.statusCode, 200);
+      assert.equal((await listed())?.start_method, method);
+      assert.equal(ctx.handle.db.select().from(classes).get()?.startMethod, method);
+    }
+    assert.equal((await listed())?.no_timing, false, 'no_timing untouched');
+
+    const bad = await ctx.app.inject({ method: 'PATCH', url, payload: { start_method: 'punch' } });
+    assert.equal(bad.statusCode, 400);
+    const old = await ctx.app.inject({
       method: 'PATCH',
       url,
       payload: { ignore_start_punch: true },
     });
-    assert.equal(on.statusCode, 200);
-    const list = await ctx.app.inject({
-      method: 'GET',
-      url: `/api/competitions/${ctx.competitionId}/classes`,
-    });
-    const dto = (
-      list.json() as {
-        classes: Array<{ id: string; ignore_start_punch: boolean; no_timing: boolean }>;
-      }
-    ).classes.find((c) => c.id === ctx.classId);
-    assert.equal(dto?.ignore_start_punch, true);
-    assert.equal(dto?.no_timing, false, 'no_timing untouched');
-
-    const off = await ctx.app.inject({
-      method: 'PATCH',
-      url,
-      payload: { ignore_start_punch: false },
-    });
-    assert.equal(off.statusCode, 200);
-    assert.equal(ctx.handle.db.select().from(classes).get()?.ignoreStartPunch, false);
+    assert.equal(old.statusCode, 400, 'the Task 11 flag is gone');
   });
 
   test('PATCH with an empty body → 400', async () => {

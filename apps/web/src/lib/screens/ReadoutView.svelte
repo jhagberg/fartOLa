@@ -97,6 +97,7 @@
     toReceiptRead,
     readElapsedMs,
     missingStartHint,
+    startWarning,
     setStartFromInput,
   } from './readout-types.ts';
 
@@ -262,7 +263,7 @@
         const elapsedMs = readElapsedMs(
           row,
           competitor?.start_time_ms ?? null,
-          cls?.ignore_start_punch ?? false
+          cls?.start_method ?? 'auto'
         );
         // 02.1-14 Task 9: no running time for a class without timing.
         if (elapsedMs === null || cls?.no_timing) return '—';
@@ -280,6 +281,8 @@
       // 02.1-14 Task 13: "Saknar starttid" + suggestion.
       missingStart: row.missing_start,
       missingStartHint: missingStartHint(row),
+      // 02.1-14 Task 14: late / early start punch (jury warning).
+      startWarning: startWarning(row),
     };
   });
 
@@ -290,12 +293,12 @@
     if (!row || row.unmatched) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
-    // Elapsed: finish − start (punch unless the class ignores it), like the
+    // Elapsed: finish − start per the class's start method, like the
     // projection.
     const elapsedMs = readElapsedMs(
       row,
       competitor?.start_time_ms ?? null,
-      cls?.ignore_start_punch ?? false
+      cls?.start_method ?? 'auto'
     );
     return toReceiptRead({
       row,

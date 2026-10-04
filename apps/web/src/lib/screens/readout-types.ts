@@ -12,7 +12,7 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
-import { epochToLocalSeconds, formatLocalTime } from '@fartola/shared-types';
+import { epochToLocalSeconds, formatLocalTime, type StartMethod } from '@fartola/shared-types';
 import { patchCompetitorStartTime } from '$lib/api/client.ts';
 import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
 
@@ -73,6 +73,10 @@ export interface ReadoutHistoryRow {
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
+  /** 02.1-14 Task 14 — start punch more than 60 s after / before the start
+   * time in a class timed from it (ms, positive). Jury warnings only. */
+  late_start_ms: number | null;
+  early_start_ms: number | null;
 }
 
 export interface ReadoutResponse {
@@ -92,22 +96,26 @@ export function historyKey(row: ReadoutHistoryRow): string {
 const HALF_DAY_SEC = 43200;
 
 /** Running time for a read: finish − start, as the edge projection computes
- * it (dnfMp.startMs, 02.1-14 Task 11): the start punch wins over the drawn
- * start, unless the class ignores start punches and there is a drawn start.
+ * it (dnfMp.startMs, 02.1-14 Task 14): the class's start method picks the
+ * start — 'auto' the start time if any, else the punch; 'start_time' the
+ * start time only; 'start_punch' the punch, else the start time.
  * No start at all → null; the old first-punch fallback showed a misleading
  * time. Card clocks are compared modulo 12 h (runs under 12 h), so SI5 cards
  * without a PM bit work too. */
 export function readElapsedMs(
   row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
   drawnStartMs: number | null,
-  ignoreStartPunch = false
+  startMethod: StartMethod = 'auto'
 ): number | null {
   if (row.finish_seconds_in_half_day === null) return null;
-  const useDrawn =
-    drawnStartMs !== null && (ignoreStartPunch || row.start_seconds_in_half_day === null);
-  const base = useDrawn
-    ? epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC
-    : row.start_seconds_in_half_day;
+  const drawn = drawnStartMs === null ? null : epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC;
+  const punch = row.start_seconds_in_half_day;
+  const base =
+    startMethod === 'start_time'
+      ? drawn
+      : startMethod === 'start_punch'
+        ? (punch ?? drawn)
+        : (drawn ?? punch);
   if (base === null) return null;
   const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
   return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
@@ -126,6 +134,19 @@ export function missingStartHint(
     offset: formatElapsed(offset),
     suggested: formatLocalTime(suggested),
   };
+}
+
+/** 02.1-14 Task 14: "Sen start +3:12" / "Tjuvstart? −0:05" for the read-out
+ * card — an i18n key and the difference — or null. */
+export function startWarning(
+  row: Pick<ReadoutHistoryRow, 'late_start_ms' | 'early_start_ms'>
+): { key: 'ro.lateStart' | 'ro.earlyStart'; diff: string } | null {
+  if (row.late_start_ms !== null)
+    return { key: 'ro.lateStart', diff: formatElapsed(row.late_start_ms) };
+  if (row.early_start_ms !== null) {
+    return { key: 'ro.earlyStart', diff: formatElapsed(row.early_start_ms) };
+  }
+  return null;
 }
 
 /** 'HH:MM' or 'HH:MM:SS' → epoch ms on the same competition-local day as

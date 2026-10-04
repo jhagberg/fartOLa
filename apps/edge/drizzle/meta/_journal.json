@@ -92,6 +92,13 @@
       "when": 1791244800000,
       "tag": "0013_classes_ignore_start_punch",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791331200000,
+      "tag": "0014_classes_start_method",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@
 // Vitest coverage for readElapsedMs (02.1-14 follow-up, item F): the readout
 // view's running time uses the start punch when present, else the drawn
 // start, and shows nothing otherwise (no first-punch fallback). Task 11:
-// a class that ignores start punches uses the drawn start when it has one.
+// Task 14: the class's start method picks the start (auto/start_time/start_punch).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { localToEpochMs } from '@fartola/shared-types';
@@ -11,6 +11,7 @@ import {
   readElapsedMs,
   toReceiptRead,
   missingStartHint,
+  startWarning,
   parseStartTimeInput,
   setStartFromInput,
   type ReadoutHistoryRow,
@@ -30,18 +31,24 @@ const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
 const drawn10 = localToEpochMs('2026-10-03', 10 * 3600);
 
 describe('readElapsedMs', () => {
-  // 02.1-14 Task 11 (correction to Task 3): the start punch wins, as in
-  // MeOS. This test said "drawn start wins" (45 min) before the correction.
-  it('start punch wins over the drawn start', () => {
-    expect(readElapsedMs(row({}), drawn10)).toBe(44 * 60 * 1000);
+  // 02.1-14 Task 14: the class's start method, as dnfMp.startMs. Task 11
+  // had the start punch win (MeOS); the default 'auto' now times a runner
+  // with a start time from it (SOFT TR 4.18.9 (2026-07-01)).
+  it('auto: start time wins over the start punch', () => {
+    expect(readElapsedMs(row({}), drawn10)).toBe(45 * 60 * 1000);
+    expect(readElapsedMs(row({}), drawn10, 'auto')).toBe(45 * 60 * 1000);
   });
 
-  it('class ignores start punches + drawn start → drawn start', () => {
-    expect(readElapsedMs(row({}), drawn10, true)).toBe(45 * 60 * 1000);
+  it('start_punch: punch wins; no punch → start time', () => {
+    expect(readElapsedMs(row({}), drawn10, 'start_punch')).toBe(44 * 60 * 1000);
+    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10, 'start_punch')).toBe(
+      45 * 60 * 1000
+    );
   });
 
-  it('class ignores start punches, no drawn start → start punch', () => {
-    expect(readElapsedMs(row({}), null, true)).toBe(44 * 60 * 1000);
+  it('start_time: start time only; punch without start time → null', () => {
+    expect(readElapsedMs(row({}), drawn10, 'start_time')).toBe(45 * 60 * 1000);
+    expect(readElapsedMs(row({}), null, 'start_time')).toBeNull();
   });
 
   it('no start punch → drawn start', () => {
@@ -188,5 +195,37 @@ describe('missing start (02.1-14 Task 13)', () => {
       expect(en[key], `missing en key ${key}`).toBeTruthy();
     }
     expect(sv['ro.missingStart.hint']).toContain('{{check}}');
+  });
+});
+
+// 02.1-14 Task 14: late / early start punch against the start time, a
+// warning for the jury on the read-out card (SOFT TR 4.18.9 (2026-07-01)).
+describe('startWarning (02.1-14 Task 14)', () => {
+  it('late start → "Sen start +3:12"', () => {
+    expect(startWarning(row({ late_start_ms: 192_000, early_start_ms: null }))).toEqual({
+      key: 'ro.lateStart',
+      diff: '3:12',
+    });
+  });
+
+  it('early start → "Tjuvstart? −0:05"', () => {
+    expect(startWarning(row({ late_start_ms: null, early_start_ms: 5_000 }))).toEqual({
+      key: 'ro.earlyStart',
+      diff: '0:05',
+    });
+  });
+
+  it('none → null', () => {
+    expect(startWarning(row({ late_start_ms: null, early_start_ms: null }))).toBeNull();
+  });
+
+  it('sv + en have the warning keys', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    expect(sv['ro.lateStart']).toBe('Sen start +{{diff}}');
+    expect(sv['ro.earlyStart']).toBe('Tjuvstart? −{{diff}}');
+    for (const key of ['ro.lateStart', 'ro.earlyStart']) {
+      expect(en[key], `missing en key ${key}`).toBeTruthy();
+    }
   });
 });

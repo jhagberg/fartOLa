@@ -38,7 +38,7 @@ interface CountRow {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EXPECTED_MIGRATION_COUNT = 13;
+const EXPECTED_MIGRATION_COUNT = 14;
 
 interface JournalEntry {
   idx: number;
@@ -77,7 +77,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     const handle = openDatabase(':memory:');
     try {
       // openDatabase already ran the migrator once. The current journal has
-      // 13 entries: 0000..0007 plus 0009..0013 (0008 is intentionally absent).
+      // 14 entries: 0000..0007 plus 0009..0014 (0008 is intentionally absent).
       const initialCount = handle.sqlite
         .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
         .get();
@@ -85,7 +85,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
       assert.equal(
         initialCount.count,
         EXPECTED_MIGRATION_COUNT,
-        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0013, excluding 0008), got ${initialCount.count}`
+        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0014, excluding 0008), got ${initialCount.count}`
       );
 
       // Call again — should be a no-op.
@@ -100,7 +100,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     }
   });
 
-  test('test 2 (C-H1): 0000..0013 applied with distinct hashes; triggers present', () => {
+  test('test 2 (C-H1): 0000..0014 applied with distinct hashes; triggers present', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
@@ -329,6 +329,37 @@ describe('migrator: idempotency + cold-start coverage', () => {
         .prepare("SELECT 1 FROM pragma_table_info('classes') WHERE name = 'course_id'")
         .get();
       assert.ok(courseId, '0011 applied after the re-dated 0010');
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test('test 10 (02.1-14 Task 14): 0014 maps ignore_start_punch to start_method', () => {
+    const sqlite = new Database(':memory:');
+    try {
+      migrateWithOldJournal(sqlite, (entries) => entries.filter((e) => e.idx <= 13));
+      sqlite.exec(`
+        INSERT INTO competitions (id, name, date, created_at_ms) VALUES ('comp', 'C', '2026-10-03', 0);
+        INSERT INTO classes (id, competition_id, name, ignore_start_punch) VALUES
+          ('ign', 'comp', 'D10', 1),
+          ('pun', 'comp', 'H10', 0);
+      `);
+
+      runMigrations(sqlite);
+      const rows = sqlite
+        .prepare<
+          unknown[],
+          { id: string; start_method: string }
+        >('SELECT id, start_method FROM classes ORDER BY id')
+        .all();
+      assert.deepEqual(rows, [
+        { id: 'ign', start_method: 'start_time' },
+        { id: 'pun', start_method: 'auto' },
+      ]);
+      const old = sqlite
+        .prepare("SELECT 1 FROM pragma_table_info('classes') WHERE name = 'ignore_start_punch'")
+        .get();
+      assert.equal(old, undefined, 'ignore_start_punch dropped');
     } finally {
       sqlite.close();
     }

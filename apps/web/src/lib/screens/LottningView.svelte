@@ -28,7 +28,7 @@
   import Select from '$lib/ui/Select.svelte';
   import Input from '$lib/ui/Input.svelte';
   import Button from '$lib/ui/Button.svelte';
-  import type { ClassDTO } from '@fartola/shared-types';
+  import type { ClassDTO, StartMethod } from '@fartola/shared-types';
   import { localToEpochMs, formatLocalTime } from '@fartola/shared-types';
 
   interface Props {
@@ -184,13 +184,14 @@
   const selectedNoTiming = $derived(
     classes.find((c) => c.id === selectedClassId)?.no_timing ?? false
   );
-  /** 02.1-14 Task 11: the selected class ignores start punches. */
-  const selectedIgnoreStartPunch = $derived(
-    classes.find((c) => c.id === selectedClassId)?.ignore_start_punch ?? false
+  /** 02.1-14 Task 14: which start the selected class's times run from. */
+  const selectedStartMethod = $derived<StartMethod>(
+    classes.find((c) => c.id === selectedClassId)?.start_method ?? 'auto'
   );
+  const START_METHODS: StartMethod[] = ['auto', 'start_time', 'start_punch'];
 
   async function saveClassFlag(
-    flag: { no_timing: boolean } | { ignore_start_punch: boolean }
+    flag: { no_timing: boolean } | { start_method: StartMethod }
   ): Promise<void> {
     if (!selectedClassId) return;
     const id = selectedClassId;
@@ -339,17 +340,21 @@
       <span>{t('lottning.noTiming')}</span>
     </label>
 
-    <!-- Class ignores start punches (02.1-14 Task 11) -->
-    <label class="check-row">
-      <input
-        type="checkbox"
-        checked={selectedIgnoreStartPunch}
+    <!-- Which start the class's times run from (02.1-14 Task 14) -->
+    <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
+      <Select
+        id="lottning-start-method"
+        value={selectedStartMethod}
         disabled={!selectedClassId}
-        onchange={(e) => void saveClassFlag({ ignore_start_punch: e.currentTarget.checked })}
-        data-testid="lottning-ignore-start-punch"
-      />
-      <span>{t('lottning.ignoreStartPunch')}</span>
-    </label>
+        onchange={(e) =>
+          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
+        data-testid="lottning-start-method"
+      >
+        {#each START_METHODS as m (m)}
+          <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
+        {/each}
+      </Select>
+    </Field>
 
     {#if error}
       <p class="err" role="alert">{error}</p>

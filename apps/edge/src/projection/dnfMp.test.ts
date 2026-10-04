@@ -14,7 +14,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { detectStatus } from './dnfMp.ts';
+import { detectStatus, startMs, type StartMethod } from './dnfMp.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** Build a HalfDayClock from a "seconds since the day's midnight" scalar.
@@ -42,7 +42,7 @@ const CTX = {
   cardType: 'SIAC',
   readAtMs: localToEpochMs(DAY, 13 * 3600),
   drawnStartMs: null as number | null,
-  ignoreStartPunch: false,
+  startMethod: 'auto' as StartMethod,
 };
 
 describe('detectStatus — OK / MP / DNF + elapsed', () => {
@@ -273,13 +273,13 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.deepEqual(result.extra_codes, [32]);
   });
 
-  // 02.1-14 Task 11 (correction to Task 3): the start punch wins over the
-  // drawn start, as in MeOS (oRunner.cpp:1331-1344), unless the class
-  // ignores start punches and the runner has a drawn start (oRunner.cpp:1226).
-  // This test said "drawn wins" before the correction.
+  // 02.1-14 Task 14 (Decision 2026-10-05, follows SOFT not MeOS): the
+  // class's start method decides the start. These tests said "the start
+  // punch wins" (MeOS, Task 11) before; with the default method 'auto' a
+  // runner with a start time is timed from it (SOFT TR 4.18.9 (2026-07-01)).
   const RUN = [p(31), p(32), p(33), p(34)];
 
-  test('drawn start 10:00 + start punch 10:01 + finish 10:45 → 44 min (punch wins)', () => {
+  test('auto: drawn start 10:00 + start punch 10:01 + finish 10:45 → 45 min (start time)', () => {
     const result = detectStatus(
       {
         ...CTX,
@@ -290,28 +290,13 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
       },
       COURSE
     );
-    assert.equal(result.elapsed_time_ms, 44 * 60 * 1000);
+    assert.equal(result.elapsed_time_ms, 45 * 60 * 1000);
   });
 
-  test('DM dag 1: moved to 10:22:00, punched 10:22:06 → timed from 10:22:06', () => {
+  test('DM dag 1, SOFT TR 4.18.9 (2026-07-01): moved to 10:22:00, punched 10:22:06 → from 10:22:00', () => {
     const result = detectStatus(
       {
         ...CTX,
-        drawnStartMs: localToEpochMs(DAY, 10 * 3600 + 22 * 60),
-        start: hd(10 * 3600 + 22 * 60 + 6),
-        finish: hd(10 * 3600 + 52 * 60),
-        punches: RUN,
-      },
-      COURSE
-    );
-    assert.equal(result.elapsed_time_ms, (30 * 60 - 6) * 1000);
-  });
-
-  test('same with ignore_start_punch → timed from the drawn 10:22:00', () => {
-    const result = detectStatus(
-      {
-        ...CTX,
-        ignoreStartPunch: true,
         drawnStartMs: localToEpochMs(DAY, 10 * 3600 + 22 * 60),
         start: hd(10 * 3600 + 22 * 60 + 6),
         finish: hd(10 * 3600 + 52 * 60),
@@ -322,18 +307,19 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.equal(result.elapsed_time_ms, 30 * 60 * 1000);
   });
 
-  test('ignore_start_punch without a drawn start → the start punch', () => {
+  test('same with start_punch (MeOS) → timed from the punch 10:22:06', () => {
     const result = detectStatus(
       {
         ...CTX,
-        ignoreStartPunch: true,
-        start: hd(10 * 3600 + 60),
-        finish: hd(10 * 3600 + 45 * 60),
+        startMethod: 'start_punch',
+        drawnStartMs: localToEpochMs(DAY, 10 * 3600 + 22 * 60),
+        start: hd(10 * 3600 + 22 * 60 + 6),
+        finish: hd(10 * 3600 + 52 * 60),
         punches: RUN,
       },
       COURSE
     );
-    assert.equal(result.elapsed_time_ms, 44 * 60 * 1000);
+    assert.equal(result.elapsed_time_ms, (30 * 60 - 6) * 1000);
   });
 
   test('no start punch → the drawn start', () => {
@@ -392,4 +378,39 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     );
     assert.equal(result.elapsed_time_ms, 30 * 60 * 1000);
   });
+});
+
+// 02.1-14 Task 14: the three start methods × {start time, punch, both,
+// neither}. Start time 10:00:00, punch 10:00:30 (SIAC, read at 13:00).
+describe('startMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () => {
+  const DRAWN = localToEpochMs(DAY, 10 * 3600);
+  const PUNCH = DRAWN + 30_000;
+  const at = (startMethod: StartMethod, drawn: boolean, punch: boolean): number | null =>
+    startMs({
+      cardType: 'SIAC',
+      readAtMs: CTX.readAtMs,
+      startMethod,
+      drawnStartMs: drawn ? DRAWN : null,
+      start: punch ? hd(10 * 3600 + 30) : null,
+    });
+  const cases: Array<[StartMethod, boolean, boolean, number | null]> = [
+    // method, start time?, punch?, expected start
+    ['start_time', true, false, DRAWN],
+    ['start_time', false, true, null], // punch ignored → missing start
+    ['start_time', true, true, DRAWN],
+    ['start_time', false, false, null],
+    ['start_punch', true, false, DRAWN], // no punch → start time
+    ['start_punch', false, true, PUNCH],
+    ['start_punch', true, true, PUNCH],
+    ['start_punch', false, false, null],
+    ['auto', true, false, DRAWN],
+    ['auto', false, true, PUNCH], // open class / fri starttid (SOFT TR 7.4.3 (2026-07-01))
+    ['auto', true, true, DRAWN],
+    ['auto', false, false, null],
+  ];
+  for (const [method, drawn, punch, want] of cases) {
+    test(`${method}: start time ${drawn ? 'yes' : 'no'}, punch ${punch ? 'yes' : 'no'} → ${want === null ? 'none' : want === DRAWN ? 'start time' : 'punch'}`, () => {
+      assert.equal(at(method, drawn, punch), want);
+    });
+  }
 });

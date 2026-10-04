@@ -39,6 +39,7 @@ export {
   CompetitionPatchInput,
   ClassDTO,
   ClassCreateInput,
+  StartMethod,
   CourseDTO,
   CourseCreateInput,
   CourseControlDTO,

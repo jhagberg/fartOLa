@@ -90,8 +90,8 @@ export interface CompetitorView {
    * elapsed_time_ms is still computed, but public surfaces (results, MOP,
    * export, receipts) must not show it. */
   no_timing: boolean;
-  /** 02.1-14 Task 13: the latest read has a finish but neither a start punch
-   * nor a drawn start, so there is no running time or place (MeOS would
+  /** 02.1-14 Task 13: the latest read has a finish but no start under the
+   * class's start method (Task 14), so there is no running time or place (MeOS would
    * silently time from ZeroTime). Status is still detected (OK/MP). */
   missing_start: boolean;
   /** 02.1-14 Task 13: suggested start (epoch ms) for a missing start = the
@@ -101,6 +101,12 @@ export interface CompetitorView {
   /** The check → start punch gap used: the median over the competition's
    * runners with both, or 1:54 when fewer than 10. Null with no suggestion. */
   suggested_start_offset_ms: number | null;
+  /** 02.1-14 Task 14: where the time runs from the start time, a start
+   * punch more than 60 s after it (ms after the start time; "Sen start",
+   * SOFT TR 4.18.9 (2026-07-01)). A warning only — the time is unchanged. */
+  late_start_ms: number | null;
+  /** Same, a start punch before the start time (ms before it; "Tjuvstart?"). */
+  early_start_ms: number | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection

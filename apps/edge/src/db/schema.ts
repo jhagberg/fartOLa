@@ -280,10 +280,13 @@ export const classes = sqliteTable(
      * resultListMode="UnorderedNoTimes"). Status is still computed; results,
      * exports and receipts show no running time or place. */
     noTiming: integer('no_timing', { mode: 'boolean' }).notNull().default(false),
-    /** 02.1-14 Task 11 — class ignores start punches (MeOS "Ej
-     * startstämpling"): a runner with a drawn start is timed from it, not
-     * from the card's start punch. */
-    ignoreStartPunch: integer('ignore_start_punch', { mode: 'boolean' }).notNull().default(false),
+    /** 02.1-14 Task 14 — which start the running time is measured from
+     * (dnfMp.startMs): 'auto' (start time if any, else start punch),
+     * 'start_time' (start punch ignored), 'start_punch' (MeOS default).
+     * Replaces Task 11's ignore_start_punch (migration 0014). */
+    startMethod: text('start_method', { enum: ['auto', 'start_time', 'start_punch'] })
+      .notNull()
+      .default('auto'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );

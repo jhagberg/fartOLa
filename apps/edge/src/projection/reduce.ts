@@ -43,7 +43,7 @@
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
-import { detectStatus, startMs } from './dnfMp.ts';
+import { detectStatus, startMs, startPunchWarning, type StartMethod } from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
@@ -171,10 +171,12 @@ export function reduce(input: ReduceInput): CompetitionState {
 
   // 02.1-14 Task 9: classes without timing.
   const noTimingClasses = new Set(input.classes.filter((c) => c.noTiming).map((c) => c.id));
-  // 02.1-14 Task 11: classes that ignore start punches ("Ej startstämpling").
-  const ignoreStartPunchClasses = new Set(
-    input.classes.filter((c) => c.ignoreStartPunch).map((c) => c.id)
+  // 02.1-14 Task 14: start method per class ('auto' when unset).
+  const startMethodByClass = new Map<string, StartMethod>(
+    input.classes.map((c) => [c.id, c.startMethod])
   );
+  const startMethodOf = (classId: string | undefined): StartMethod =>
+    (classId === undefined ? undefined : startMethodByClass.get(classId)) ?? 'auto';
 
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
@@ -202,6 +204,8 @@ export function reduce(input: ReduceInput): CompetitionState {
       missing_start: false,
       suggested_start_ms: null,
       suggested_start_offset_ms: null,
+      late_start_ms: null,
+      early_start_ms: null,
     });
   }
   const pendingUnknownCards = new Set<number>();
@@ -302,7 +306,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               cardType: payload.card_type,
               readAtMs: e.eventTimeMs,
               drawnStartMs: competitor.startTimeMs,
-              ignoreStartPunch: ignoreStartPunchClasses.has(competitor.classId),
+              startMethod: startMethodOf(competitor.classId),
             },
             resolvedExpected
           );
@@ -459,8 +463,7 @@ export function reduce(input: ReduceInput): CompetitionState {
                 cardType: latestRead?.card_type ?? '',
                 readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
                 drawnStartMs: competitor?.startTimeMs ?? null,
-                ignoreStartPunch:
-                  competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
+                startMethod: startMethodOf(competitor?.classId),
               },
               resolvedExpected
             );
@@ -557,8 +560,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
-        ignoreStartPunch:
-          competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
+        startMethod: startMethodOf(competitor?.classId),
       },
       resolvedExpected
     );
@@ -579,8 +581,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
-        ignoreStartPunch:
-          competitor !== undefined && ignoreStartPunchClasses.has(competitor.classId),
+        startMethod: startMethodOf(competitor?.classId),
       }),
       caps
     );
@@ -601,9 +602,11 @@ export function reduce(input: ReduceInput): CompetitionState {
     }
   }
 
-  // 02.1-14 Task 13: flag a finished read with no start of either kind and
-  // suggest one. "Read so far" = every read in the log at this reduce(), so
-  // the suggestion firms up as more runners read out (deterministic).
+  // 02.1-14 Task 13: flag a finished read with no start (per the class's
+  // start method, Task 14) and suggest one. "Read so far" = every read in
+  // the log at this reduce(), so the suggestion firms up as more runners
+  // read out (deterministic). Task 14: also warn for a late / early start
+  // punch where the time runs from the start time.
   const gaps = [...checkToStartMsByCompetitor.values()].sort((a, b) => a - b);
   const mid = gaps.length >> 1;
   const checkToStartMs =
@@ -614,13 +617,22 @@ export function reduce(input: ReduceInput): CompetitionState {
         : Math.round((gaps[mid - 1]! + gaps[mid]!) / 2);
   for (const v of competitorViews.values()) {
     const latest = v.card_read_history[v.card_read_history.length - 1];
+    if (latest === undefined || v.status === 'PEND') continue;
+    const startInput = {
+      start: latest.start,
+      cardType: latest.card_type,
+      readAtMs: latest.event_time_ms,
+      drawnStartMs: v.start_time_ms,
+      startMethod: startMethodOf(v.class_id),
+    };
+    const warning = startPunchWarning(startInput);
+    v.late_start_ms = warning.late_start_ms;
+    v.early_start_ms = warning.early_start_ms;
     if (
-      latest === undefined ||
       v.manual_status !== null ||
       (v.status !== 'OK' && v.status !== 'MP') ||
       latest.finish === null ||
-      latest.start !== null ||
-      v.start_time_ms !== null
+      startMs(startInput) !== null
     ) {
       continue;
     }

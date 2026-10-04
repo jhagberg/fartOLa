@@ -51,6 +51,8 @@ test('receipts for an untimed class carry no time or place (02.1-14 Task 9)', as
     missing_start: false,
     suggested_start_ms: null,
     suggested_start_offset_ms: null,
+    late_start_ms: null,
+    early_start_ms: null,
   };
   const data: ReceiptData = {
     competitor,

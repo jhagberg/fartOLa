@@ -132,6 +132,13 @@ export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 // Class — mutable config table, always nested under a competition.
 // ---------------------------------------------------------------------------
 
+/** 02.1-14 Task 14 — which start a class's running times are measured from:
+ * 'auto' = the runner's start time when there is one, else the start punch;
+ * 'start_time' = the start time only (start punch ignored, SOFT TR 4.18.9
+ * (2026-07-01)); 'start_punch' = the start punch, else the start time (MeOS). */
+export const StartMethod = z.enum(['auto', 'start_time', 'start_punch']);
+export type StartMethod = z.infer<typeof StartMethod>;
+
 export const ClassDTO = z.object({
   id: UUID,
   competition_id: UUID,
@@ -140,9 +147,8 @@ export const ClassDTO = z.object({
   /** 02.1-14 Task 9: class without timing (IOF resultListMode=
    * "UnorderedNoTimes") — no running time or place is shown. */
   no_timing: z.boolean(),
-  /** 02.1-14 Task 11: class ignores start punches ("Ej startstämpling") —
-   * a runner with a drawn start is timed from it, not the start punch. */
-  ignore_start_punch: z.boolean(),
+  /** 02.1-14 Task 14: which start the running time is measured from. */
+  start_method: StartMethod,
 });
 export type ClassDTO = z.infer<typeof ClassDTO>;
 

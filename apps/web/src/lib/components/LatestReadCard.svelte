@@ -18,6 +18,11 @@
     - The parent re-fetches /readout on either action and the
       StatusPill flips in-place via the WS results_update broadcast.
 
+  Late / early start (02.1-14 Task 14): in a class timed from the start
+  time, a start punch more than 60 s late shows "Sen start +3:12" and one
+  before the start time "Tjuvstart? −0:05" — for the jury; the time is not
+  changed (SOFT TR 4.18.9 (2026-07-01)).
+
   Missing start (02.1-14 Task 13): a finished read with neither a start
   punch nor a drawn start shows "Saknar starttid", the suggestion (check +
   median → start), a time field prefilled with it, and "Sätt starttid"
@@ -56,6 +61,8 @@
     missingStart: boolean;
     /** Suggested start (check + median); null without a check punch. */
     missingStartHint: { check: string; offset: string; suggested: string } | null;
+    /** 02.1-14 Task 14: late / early start punch against the start time. */
+    startWarning: { key: 'ro.lateStart' | 'ro.earlyStart'; diff: string } | null;
   }
 
   type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
@@ -252,6 +259,12 @@
           </div>
         </div>
       </div>
+
+      {#if read.startWarning}
+        <div class="start-warning mono" role="status" data-testid="start-warning">
+          ⚠ {t(read.startWarning.key, { diff: read.startWarning.diff })}
+        </div>
+      {/if}
 
       {#if read.missingStart && read.competitorId}
         <div class="missing-start" role="alert" data-testid="missing-start">
@@ -605,6 +618,15 @@
     border-radius: var(--radius);
     color: var(--dnf);
     font-size: 14px;
+  }
+  .start-warning {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--mp);
+    border-radius: var(--radius);
+    color: var(--mp);
+    font-size: 14px;
+    font-weight: 600;
   }
   .start-input {
     width: 9ch;

@@ -77,7 +77,7 @@ function makeClasses(): ClassDTO[] {
       name: 'H21',
       short_name: null,
       no_timing: false,
-      ignore_start_punch: false,
+      start_method: 'auto',
     },
     {
       id: 'cls-d21',
@@ -85,7 +85,7 @@ function makeClasses(): ClassDTO[] {
       name: 'D21',
       short_name: null,
       no_timing: false,
-      ignore_start_punch: false,
+      start_method: 'auto',
     },
   ];
 }
@@ -122,6 +122,8 @@ function makeCompetitorView(
     missing_start: false,
     suggested_start_ms: null,
     suggested_start_offset_ms: null,
+    late_start_ms: null,
+    early_start_ms: null,
   };
 }
 

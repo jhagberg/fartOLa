@@ -40,7 +40,7 @@ import {
   buildStartListXml,
   type StartListCompetitor,
 } from '../xml/iofExport.ts';
-import type { CompetitionDTO } from '@fartola/shared-types';
+import type { CompetitionDTO, StartMethod } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrors export.ts — shared row shapes)
@@ -63,7 +63,7 @@ interface ClassRow {
   name: string;
   shortName: string | null;
   noTiming: boolean;
-  ignoreStartPunch: boolean;
+  startMethod: StartMethod;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -129,7 +129,7 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
           name: r.name,
           short_name: r.shortName,
           no_timing: r.noTiming,
-          ignore_start_punch: r.ignoreStartPunch,
+          start_method: r.startMethod,
         })),
         courses: [],
         state,

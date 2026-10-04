@@ -54,6 +54,8 @@ function makeCompetitorView(overrides: Partial<CompetitorView> = {}): Competitor
     missing_start: false,
     suggested_start_ms: null,
     suggested_start_offset_ms: null,
+    late_start_ms: null,
+    early_start_ms: null,
     ...overrides,
   };
 }

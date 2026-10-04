@@ -54,7 +54,7 @@ import {
   type StartListInput,
   type StartListCompetitor,
 } from '../xml/iofExport.ts';
-import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
+import type { CompetitionDTO, ClassDTO, StartMethod } from '@fartola/shared-types';
 
 function parseStatus(raw: unknown): ExportStatus {
   // C-L1: default to 'Final' when absent / unknown. The query layer is
@@ -91,7 +91,7 @@ interface ClassRow {
   name: string;
   shortName: string | null;
   noTiming: boolean;
-  ignoreStartPunch: boolean;
+  startMethod: StartMethod;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -117,7 +117,7 @@ function classRowToDTO(row: ClassRow): ClassDTO {
     name: row.name,
     short_name: row.shortName,
     no_timing: row.noTiming,
-    ignore_start_punch: row.ignoreStartPunch,
+    start_method: row.startMethod,
   };
 }
 

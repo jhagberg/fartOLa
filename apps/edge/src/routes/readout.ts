@@ -118,6 +118,11 @@ interface HistoryRow {
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
+  /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
+   * early_start_ms: start punch late (> 60 s) or early against the start
+   * time in a class timed from it. Warnings for the jury only. */
+  late_start_ms: number | null;
+  early_start_ms: number | null;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side
@@ -294,6 +299,8 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
+          late_start_ms: view?.late_start_ms ?? null,
+          early_start_ms: view?.early_start_ms ?? null,
         };
       });
 

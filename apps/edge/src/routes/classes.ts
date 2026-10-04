@@ -19,7 +19,7 @@ import crypto from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { ClassCreateInput, type ClassDTO } from '@fartola/shared-types';
+import { ClassCreateInput, StartMethod, type ClassDTO } from '@fartola/shared-types';
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -27,19 +27,18 @@ import { issuesToErrors } from './_zod-errors.ts';
 // Phase 2.1 D-08: PATCH class route for maxTimeSec editing.
 // Backend ownership here (consumed by Plan 05 UI).
 // 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field), and
-// Task 11 ignore_start_punch. Each field is optional; only the fields sent
-// are updated.
+// Task 14 start_method. Each field is optional; only the fields sent are
+// updated.
 const PatchClassInput = z
   .object({
     maxTimeSec: z.number().int().positive().nullable().optional(),
     no_timing: z.boolean().optional(),
-    ignore_start_punch: z.boolean().optional(),
+    start_method: StartMethod.optional(),
   })
   .strict()
   .refine(
-    (b) =>
-      b.maxTimeSec !== undefined || b.no_timing !== undefined || b.ignore_start_punch !== undefined,
-    { message: 'maxTimeSec, no_timing or ignore_start_punch required' }
+    (b) => b.maxTimeSec !== undefined || b.no_timing !== undefined || b.start_method !== undefined,
+    { message: 'maxTimeSec, no_timing or start_method required' }
   );
 
 function classRowToDTO(row: Class): ClassDTO {
@@ -49,7 +48,7 @@ function classRowToDTO(row: Class): ClassDTO {
     name: row.name,
     short_name: row.shortName,
     no_timing: row.noTiming,
-    ignore_start_punch: row.ignoreStartPunch,
+    start_method: row.startMethod,
   };
 }
 
@@ -98,13 +97,13 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
         return reply.code(404).send({ error: 'class_not_found' });
       }
 
-      const { maxTimeSec, no_timing, ignore_start_punch } = parsed.data;
+      const { maxTimeSec, no_timing, start_method } = parsed.data;
       app.fartolaDb.db
         .update(classes)
         .set({
           ...(maxTimeSec !== undefined ? { maxTimeSec } : {}),
           ...(no_timing !== undefined ? { noTiming: no_timing } : {}),
-          ...(ignore_start_punch !== undefined ? { ignoreStartPunch: ignore_start_punch } : {}),
+          ...(start_method !== undefined ? { startMethod: start_method } : {}),
         })
         .where(eq(classes.id, classId))
         .run();
@@ -141,7 +140,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       // 02.1-14 Task 4: assigned by course import / course creation.
       courseId: null,
       noTiming: false,
-      ignoreStartPunch: false,
+      startMethod: 'auto',
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

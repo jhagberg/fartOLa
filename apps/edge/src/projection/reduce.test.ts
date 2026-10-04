@@ -20,6 +20,7 @@ import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 import type { Event, Competitor, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { reduce, type CourseWithControlCodes } from './reduce.ts';
+import type { StartMethod } from './dnfMp.ts';
 import type { CompetitorView } from './types.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
@@ -1330,12 +1331,13 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
 });
 
 // 02.1-14 Task 3: the reducer passes the drawn start and the read time.
-// Task 11 corrected the rule: the start punch wins over the drawn start
-// (MeOS oRunner.cpp:1331-1344); this test expected 45 min (drawn wins).
+// Task 11 made the start punch win (MeOS, 44 min); Task 14 follows SOFT TR
+// 4.18.9 (2026-07-01) again: in the default 'auto' method the start time
+// wins (45 min), as this test first expected.
 describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
 
-  test('drawn 10:00, start punch 10:01, finish 10:45 → 44 min; open start → 44 min', () => {
+  test('drawn 10:00, start punch 10:01, finish 10:45 → 45 min; open start → 44 min', () => {
     seqCounter = 0;
     const punches = [p(31), p(32)];
     const read = (card: number): Event =>
@@ -1352,50 +1354,68 @@ describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
       classes: [cls('cls-H21')],
       courses: [course('cls-H21', [31, 32])],
     });
-    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 44 * 60 * 1000);
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 45 * 60 * 1000);
     assert.equal(state.competitors.get('open')!.elapsed_time_ms, 44 * 60 * 1000);
   });
 });
 
-// 02.1-14 Task 11: start punch wins unless the class ignores start punches
-// ("Ej startstämpling") and the runner has a drawn start (oRunner.cpp:1226).
-describe('reduce — start punch vs drawn start (02.1-14 Task 11)', () => {
+// 02.1-14 Task 14 (replaces Task 11's ignoreStartPunch): the class's start
+// method decides the start. 'auto' = the start time when the runner has one
+// (SOFT TR 4.18.9 (2026-07-01): ursprunglig starttid gäller), else the punch.
+describe('reduce — start method per class (02.1-14 Task 14)', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
   const t = (code: number, sec: number): NdjsonPunch => ({ code, ...hd(sec) });
+  const START = 10 * 3600 + 22 * 60;
   // DM dag 1, D10: moved to 10:22:00, punched start 10:22:06.
-  const read = (card: number, punches: NdjsonPunch[] = [p(31)]): Event =>
-    cardRead(card, punches, hd(10 * 3600 + 22 * 60 + 6), hd(10 * 3600 + 52 * 60), {
+  const read = (card: number, punches: NdjsonPunch[] = [p(31)], startSec = START + 6): Event =>
+    cardRead(card, punches, hd(startSec), hd(10 * 3600 + 52 * 60), {
       eventTimeMs: at(10 * 3600 + 55 * 60),
     });
-  const drawn = at(10 * 3600 + 22 * 60);
+  const drawn = at(START);
+  const withMethod = (startMethod: StartMethod): Class => ({ ...cls('cls-H21'), startMethod });
 
-  test('drawn 10:22:00 + punch 10:22:06 → timed from 10:22:06', () => {
-    seqCounter = 0;
-    const state = reduce({
-      competition_id: 'comp-1',
-      events: [read(101)],
-      competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
-      classes: [cls('cls-H21')],
-      courses: [course('cls-H21', [31])],
-    });
-    assert.equal(state.competitors.get('a')!.elapsed_time_ms, (30 * 60 - 6) * 1000);
-  });
-
-  test('class with ignoreStartPunch → timed from the drawn 10:22:00', () => {
+  test('auto: start time 10:22:00 + punch 10:22:06 → timed from 10:22:00 (SOFT TR 4.18.9)', () => {
     seqCounter = 0;
     const state = reduce({
       competition_id: 'comp-1',
       events: [read(101), read(102)],
       competitors: [
         comp({ id: 'a', cardNumber: 101, startTimeMs: drawn }),
-        // No drawn start: the punch is the only start there is.
+        // No start time (open class): the punch is the only start there is.
         comp({ id: 'open', cardNumber: 102 }),
       ],
-      classes: [{ ...cls('cls-H21'), ignoreStartPunch: true }],
+      classes: [withMethod('auto')],
       courses: [course('cls-H21', [31])],
     });
     assert.equal(state.competitors.get('a')!.elapsed_time_ms, 30 * 60 * 1000);
     assert.equal(state.competitors.get('open')!.elapsed_time_ms, (30 * 60 - 6) * 1000);
+  });
+
+  test('start_punch (MeOS): timed from the punch 10:22:06', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101)],
+      competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
+      classes: [withMethod('start_punch')],
+      courses: [course('cls-H21', [31])],
+    });
+    assert.equal(state.competitors.get('a')!.elapsed_time_ms, (30 * 60 - 6) * 1000);
+  });
+
+  test('start_time without a start time: punch ignored → missing start, no time', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [read(101)],
+      competitors: [comp({ id: 'a', cardNumber: 101 })],
+      classes: [withMethod('start_time')],
+      courses: [course('cls-H21', [31])],
+    });
+    const a = state.competitors.get('a')!;
+    assert.equal(a.status, 'OK');
+    assert.equal(a.elapsed_time_ms, null);
+    assert.equal(a.missing_start, true);
   });
 
   test('voided first leg runs from the same start as the running time', () => {
@@ -1404,19 +1424,52 @@ describe('reduce — start punch vs drawn start (02.1-14 Task 11)', () => {
     const punches = [t(31, 10 * 3600 + 25 * 60 + 6), t(32, 10 * 3600 + 40 * 60)];
     const voidLeg = (competitor_id: string): Event =>
       evt({ event_type: 'leg_voided', competitor_id, control_code: 31, max_seconds: null });
-    const run = (ignoreStartPunch: boolean): number | null =>
+    const run = (method: StartMethod): number | null =>
       reduce({
         competition_id: 'comp-1',
         events: [read(101, punches), voidLeg('a')],
         competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
-        classes: [{ ...cls('cls-H21'), ignoreStartPunch }],
+        classes: [withMethod(method)],
         courses: [course('cls-H21', [31, 32])],
       }).competitors.get('a')!.elapsed_time_ms;
     // Voiding the first leg leaves finish − 31 (26:54) whichever start is
-    // used, as long as both use the same one. Punch: 29:54 − 3:00; drawn
-    // (ignoreStartPunch): 30:00 − 3:06. Mixed starts would give 26:48.
-    assert.equal(run(false), (26 * 60 + 54) * 1000);
-    assert.equal(run(true), (26 * 60 + 54) * 1000);
+    // used, as long as both use the same one. Punch: 29:54 − 3:00; start
+    // time: 30:00 − 3:06. Mixed starts would give 26:48.
+    assert.equal(run('start_punch'), (26 * 60 + 54) * 1000);
+    assert.equal(run('auto'), (26 * 60 + 54) * 1000);
+  });
+
+  // A late or early start punch in a class timed from the start time is a
+  // warning for the jury, not a time change (SOFT TR 4.18.9 (2026-07-01),
+  // TA "Sen start"; TR 4.18.16 (2026-07-01) start punching).
+  const warnings = (method: StartMethod, startSec: number, startTimeMs: number | null = drawn) => {
+    seqCounter = 0;
+    const a = reduce({
+      competition_id: 'comp-1',
+      events: [read(101, [p(31)], startSec)],
+      competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs })],
+      classes: [withMethod(method)],
+      courses: [course('cls-H21', [31])],
+    }).competitors.get('a')!;
+    return { late: a.late_start_ms, early: a.early_start_ms };
+  };
+
+  test('late start: punch more than 60 s after the start time → late_start_ms', () => {
+    assert.deepEqual(warnings('auto', START + 60), { late: null, early: null });
+    assert.deepEqual(warnings('auto', START + 61), { late: 61_000, early: null });
+    assert.deepEqual(warnings('start_time', START + 192), { late: 192_000, early: null });
+  });
+
+  test('early start: punch before the start time → early_start_ms', () => {
+    assert.deepEqual(warnings('auto', START), { late: null, early: null });
+    assert.deepEqual(warnings('auto', START - 1), { late: null, early: 1_000 });
+    assert.deepEqual(warnings('start_time', START - 5), { late: null, early: 5_000 });
+  });
+
+  test('no warnings when timed from the punch (start_punch, or no start time)', () => {
+    assert.deepEqual(warnings('start_punch', START + 192), { late: null, early: null });
+    assert.deepEqual(warnings('start_punch', START - 5), { late: null, early: null });
+    assert.deepEqual(warnings('auto', START + 192, null), { late: null, early: null });
   });
 });
 

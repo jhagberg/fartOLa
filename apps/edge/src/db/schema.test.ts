@@ -508,16 +508,21 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
     }
   });
 
-  test('classes has ignore_start_punch column (NOT NULL, default 0, 02.1-14 Task 11)', () => {
+  test("classes has start_method column (NOT NULL, default 'auto', 02.1-14 Task 14)", () => {
     const handle = openDatabase(':memory:');
     try {
-      const col = handle.sqlite
+      const cols = handle.sqlite
         .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
-        .all()
-        .find((c) => c.name === 'ignore_start_punch');
-      assert.ok(col, 'classes.ignore_start_punch column missing');
-      assert.equal(col.notnull, 1, 'classes.ignore_start_punch must be NOT NULL');
-      assert.equal(col.dflt_value, 'false');
+        .all();
+      const col = cols.find((c) => c.name === 'start_method');
+      assert.ok(col, 'classes.start_method column missing');
+      assert.equal(col.notnull, 1, 'classes.start_method must be NOT NULL');
+      assert.equal(col.dflt_value, "'auto'");
+      assert.equal(
+        cols.find((c) => c.name === 'ignore_start_punch'),
+        undefined,
+        'Task 11 ignore_start_punch replaced by start_method'
+      );
     } finally {
       handle.close();
     }
