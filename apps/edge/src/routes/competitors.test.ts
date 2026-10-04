@@ -191,6 +191,28 @@ describe('competitors walk-up registration', () => {
     assert.ok(body.errors.some((e) => e.path === 'consent'));
   });
 
+  test('SOFT TR 4.14.4: a walk-up entry stores the consent (explicit, with its time)', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const before = Date.now();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: { competition_id: competitionId, name: 'Vera', class_id: classId, consent: true },
+    });
+    const after = Date.now();
+    assert.equal(res.statusCode, 201);
+    const row = ctx.handle.db
+      .select({ at: competitors.consentAtMs, status: competitors.consentStatus })
+      .from(competitors)
+      .where(eq(competitors.id, (res.json() as { id: string }).id))
+      .get();
+    assert.equal(row?.status, 'explicit');
+    assert.ok(
+      row?.at !== null && row!.at! >= before && row!.at! <= after,
+      `consentAtMs ${row?.at}`
+    );
+  });
+
   test('test 4: POST with consent: false → 400', async () => {
     const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
     const res = await ctx.app.inject({
