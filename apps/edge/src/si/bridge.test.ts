@@ -32,7 +32,7 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-06-PLAN.md task 2
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
 
-import { describe, test } from 'node:test';
+import { describe, test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -45,7 +45,8 @@ import { eq, isNull } from 'drizzle-orm';
 
 import { openDatabase } from '../db/index.ts';
 import type { DbHandle } from '../db/index.ts';
-import { events } from '../db/schema.ts';
+import { classes, competitors, controls, courseControls, courses, events } from '../db/schema.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 import { attachBridge, type BridgeOpts } from './bridge.ts';
 import type { ChannelName } from '@fartola/shared-types';
 import type { ProjectionStore } from '../projection/store.ts';
@@ -703,6 +704,141 @@ describe('SI bridge — plan 15 auto-print wiring', () => {
       assert.match(stderr, /7501853/, `stderr must mention the card number; got: ${stderr}`);
     } finally {
       restore();
+      ctx.handle.close();
+    }
+  });
+});
+
+// SOFT TR 8.1.4 / 8.5.5 / 8.5.6 (2026-07-01): the punches are read from the
+// card after the finish, and one who abandons is read out at the finish and
+// does not complete. The SI8 card (9 controls) is replayed through the real
+// station + bridge into an active competition with a real projection.
+describe("SI bridge — read-out to the competitor's result (SOFT TR 8.1.4, 8.5.5, 8.5.6)", () => {
+  const SI8 = fs
+    .readFileSync(path.join(FIXTURE_DIR, 'si8-jonas-001.expected.json'), 'utf8')
+    .split('\n')
+    .filter((l) => l.includes('"card_read"'))
+    .map(
+      (l) => JSON.parse(l) as Record<string, unknown> & { punches: Array<{ code: number }> }
+    )[0]!;
+  const CODES = SI8.punches.map((p) => p.code);
+
+  async function setup(t: TestContext): Promise<{ ctx: ReplayCtx; store: ProjectionStore }> {
+    // Read-outs are anchored to the host clock; pin it after the run (12:00).
+    t.mock.timers.enable({ apis: ['Date'], now: localToEpochMs('2026-05-13', 12 * 3600) });
+    const ctx = await bootCtx();
+    ctx.handle.db
+      .insert(classes)
+      .values({ id: 'cls-h21', competitionId: 'comp-1', name: 'H21' })
+      .run();
+    ctx.handle.db
+      .insert(courses)
+      .values({ id: 'crs-a', competitionId: 'comp-1', name: 'A', classId: 'cls-h21' })
+      .run();
+    CODES.forEach((code, i) => {
+      ctx.handle.db
+        .insert(controls)
+        .values({ id: `ctl-${code}`, competitionId: 'comp-1', code })
+        .run();
+      ctx.handle.db
+        .insert(courseControls)
+        .values({ id: `cc-${i}`, courseId: 'crs-a', controlId: `ctl-${code}`, orderIdx: i })
+        .run();
+    });
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'cmp-1',
+        competitionId: 'comp-1',
+        name: 'Anna',
+        classId: 'cls-h21',
+        cardNumber: SI8['card_number'] as number,
+      })
+      .run();
+    const store = createProjectionStore({ handle: ctx.handle, broadcast: () => {}, debounceMs: 0 });
+    return { ctx, store };
+  }
+
+  /** Drive the SI8 transcript; `edit` may change the decoded card before the
+   * bridge sees it (a fake station relays it). */
+  async function readOut(
+    ctx: ReplayCtx,
+    store: ProjectionStore,
+    edit: (card: { raceResult: { finishTime?: unknown } }) => void = () => {}
+  ): Promise<void> {
+    const raw = fs.readFileSync(path.join(FIXTURE_DIR, 'si8-jonas-001.bytes.hex'), 'utf8');
+    const transport = new PlaybackTransport(parseTranscript(raw));
+    const station = new SiMainStation(transport);
+    const relay = new EventEmitter();
+    station.on('cardRead', (card: { raceResult: { finishTime?: unknown } }) => {
+      edit(card);
+      relay.emit('cardRead', card);
+    });
+    const attached = attachBridge(relay as unknown as SiMainStation, {
+      handle: ctx.handle,
+      nodeId: 'node-bridge',
+      getActiveCompetitionId: () => 'comp-1',
+      broadcast: () => {},
+      projectionStore: store,
+    });
+    try {
+      await transport.open();
+      await station.readCards();
+      await transport.pumpRemaining();
+      await new Promise((r) => setTimeout(r, 80));
+      await station.close();
+    } finally {
+      attached.detach();
+    }
+  }
+
+  test("SOFT TR 8.1.4: an SI8 read-out stores every punch, start and finish, and the runner gets OK with the card's time", async (t) => {
+    const { ctx, store } = await setup(t);
+    try {
+      await readOut(ctx, store);
+      const row = ctx.handle.db
+        .select()
+        .from(events)
+        .where(eq(events.eventType, 'card_read'))
+        .get();
+      const payload = row!.payload as Record<string, unknown>;
+      for (const key of ['card_number', 'start', 'finish', 'check', 'punch_count', 'punches'])
+        assert.deepEqual(payload[key], SI8[key], key);
+      assert.equal(CODES.length, 9);
+      const anna = store.recomputeNow('comp-1')!.competitors.get('cmp-1')!;
+      assert.equal(anna.status, 'OK');
+      assert.deepEqual(anna.missing_codes, []);
+      const start = SI8['start'] as { seconds_in_half_day: number };
+      const finish = SI8['finish'] as { seconds_in_half_day: number };
+      assert.equal(
+        anna.elapsed_time_ms,
+        (finish.seconds_in_half_day - start.seconds_in_half_day) * 1000
+      );
+    } finally {
+      store.dispose();
+      ctx.handle.close();
+    }
+  });
+
+  test('SOFT TR 8.5.5/8.5.6: a runner who abandons (read out without a finish punch) gets DNF', async (t) => {
+    const { ctx, store } = await setup(t);
+    try {
+      await readOut(ctx, store, (card) => {
+        card.raceResult.finishTime = undefined;
+      });
+      const row = ctx.handle.db
+        .select()
+        .from(events)
+        .where(eq(events.eventType, 'card_read'))
+        .get();
+      const payload = row!.payload as Record<string, unknown>;
+      assert.equal(payload['finish'], null);
+      assert.deepEqual(payload['punches'], SI8['punches']);
+      const anna = store.recomputeNow('comp-1')!.competitors.get('cmp-1')!;
+      assert.equal(anna.status, 'DNF');
+      assert.equal(anna.elapsed_time_ms, null);
+    } finally {
+      store.dispose();
       ctx.handle.close();
     }
   });
