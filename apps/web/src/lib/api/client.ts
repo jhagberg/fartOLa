@@ -416,7 +416,7 @@ export function unDnf(competitionId: string, competitorId: string): Promise<{ lo
 // call setManualStatus() so the operator can pick any of the five states.
 // ---------------------------------------------------------------------------
 
-export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
 export function setManualStatus(
   competitionId: string,

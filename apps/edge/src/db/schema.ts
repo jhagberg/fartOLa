@@ -156,7 +156,8 @@ export type EventPayload =
       // keep replaying correctly.
       event_type: 'manual_status_set';
       competitor_id: string;
-      status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+      // 'MP' since 02.1-14 Task 10 (set by hand, as MeOS).
+      status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
       reason: string;
     }
   | {

@@ -111,7 +111,7 @@ interface HistoryRow {
    * null means the status is auto-detected (from card_read + course).
    * The UI uses this to distinguish auto-DNF (no clear button) from
    * manual-DNF (clear button visible). */
-  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side

@@ -1472,3 +1472,54 @@ describe('reduce — class without timing (02.1-14 Task 9)', () => {
     assert.equal(state.competitors.get('h')!.no_timing, false);
   });
 });
+
+// 02.1-14 Task 10: the operator can set MP by hand (MeOS "Felstämplad").
+describe('reduce — manual MP (02.1-14 Task 10)', () => {
+  const setMp = (competitor_id: string): Event =>
+    evt({ event_type: 'manual_status_set', competitor_id, status: 'MP', reason: 'by hand' });
+  const okRun = (card: number, sec: number): Event =>
+    cardRead(card, [p(31)], hd(10 * 3600), hd(10 * 3600 + sec));
+  const base = {
+    competition_id: 'comp-1',
+    competitors: [comp({ id: 'a', cardNumber: 1 })],
+    classes: [cls('cls-H21')],
+    courses: [course('cls-H21', [31])],
+  };
+
+  test('MP on a runner without a read-out → MP', () => {
+    seqCounter = 0;
+    const state = reduce({ ...base, events: [setMp('a')] });
+    assert.equal(state.competitors.get('a')!.status, 'MP');
+  });
+
+  test('MP on an OK read-out → MP, and a later read does not override it', () => {
+    seqCounter = 0;
+    const state = reduce({ ...base, events: [okRun(1, 600), setMp('a'), okRun(1, 600)] });
+    assert.equal(state.competitors.get('a')!.status, 'MP');
+    assert.equal(state.results_by_class.get('cls-H21')![0]!.place, null);
+  });
+
+  test('clear → back to the auto-detected status', () => {
+    seqCounter = 0;
+    const state = reduce({
+      ...base,
+      events: [
+        okRun(1, 600),
+        setMp('a'),
+        evt({ event_type: 'clear_manual_status', competitor_id: 'a' }),
+      ],
+    });
+    assert.equal(state.competitors.get('a')!.status, 'OK');
+    assert.equal(state.competitors.get('a')!.manual_status, null);
+  });
+
+  test('MP set by hand is not promoted to MAX', () => {
+    seqCounter = 0;
+    const state = reduce({
+      ...base,
+      classes: [clsWithMax('cls-H21', 300)],
+      events: [okRun(1, 600), setMp('a')],
+    });
+    assert.equal(state.competitors.get('a')!.status, 'MP');
+  });
+});

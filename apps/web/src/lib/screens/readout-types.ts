@@ -65,7 +65,7 @@ export interface ReadoutHistoryRow {
    * when the current status was set by an operator override. null means
    * the status is auto-detected from card_read + course. The UI uses this
    * to show the clear button only for manual overrides, not for auto-DNF. */
-  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
 }
 
 export interface ReadoutResponse {

@@ -347,11 +347,12 @@ export type UnDnfInput = z.infer<typeof UnDnfInput>;
 //
 // IOF v3 mapping (apps/edge/src/xml/iofExport.ts):
 //   DNF → DidNotFinish | DNS → DidNotStart | DQ → Disqualified
-//   CANCEL → Cancelled | MAX → OverTime
+//   CANCEL → Cancelled | MAX → OverTime | MP → MissingPunch
+// MP can be set by hand as in MeOS (02.1-14 Task 10).
 // ---------------------------------------------------------------------------
 
 export const ManualStatusInput = z.object({
-  status: z.enum(['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX']),
+  status: z.enum(['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX', 'MP']),
   reason: z.string().min(1).max(500),
 });
 export type ManualStatusInput = z.infer<typeof ManualStatusInput>;

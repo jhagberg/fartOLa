@@ -138,7 +138,7 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   // Phase 2.0 — generalized manual-status override.
   //
   //   POST /api/competitions/:id/competitors/:competitorId/status
-  //        body: { status: 'DNF'|'DNS'|'DQ'|'CANCEL'|'MAX', reason: string }
+  //        body: { status: 'DNF'|'DNS'|'DQ'|'CANCEL'|'MAX'|'MP', reason: string }
   //
   //   POST /api/competitions/:id/competitors/:competitorId/clear-status
   //        body: {} (presence is the action)

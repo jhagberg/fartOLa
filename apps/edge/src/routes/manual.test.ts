@@ -283,6 +283,32 @@ describe('POST /api/competitions/:id/competitors/:competitorId/status (idempoten
   });
 });
 
+// 02.1-14 Task 10: the secretariat can set "Felstämplad" (MP) by hand, e.g.
+// for a runner who went home without reading out (MeOS allows it).
+describe('POST /api/competitions/:id/competitors/:competitorId/status MP (02.1-14 Task 10)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('MP is accepted → 201 and the projection shows MP', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'MP', reason: 'Gick hem utan att läsa ut' },
+    });
+    assert.equal(res.statusCode, 201);
+    const view = ctx.app.projectionStore.recomputeNow(competitionId)?.competitors.get(competitorId);
+    assert.equal(view?.status, 'MP');
+    assert.equal(view?.manual_status, 'MP');
+  });
+});
+
 describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => {
   let ctx: Ctx;
   beforeEach(async () => {

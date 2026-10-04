@@ -32,10 +32,11 @@ import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 export type PunchStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
 
 /** Subset of PunchStatus an operator can assert via manual_status_set.
- * Auto-detected states (PEND/OK/MP) are NEVER operator-asserted — they fall
- * out of dnfMp.detectStatus naturally. DNF stays asserter-allowed for back-
- * compat with the legacy manual_dnf event. */
-export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+ * PEND/OK are never operator-asserted — they fall out of dnfMp.detectStatus.
+ * DNF stays asserter-allowed for back-compat with the legacy manual_dnf
+ * event. MP can be set by hand as in MeOS ("Felstämplad", e.g. a runner who
+ * went home without reading out — 02.1-14 Task 10). */
+export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
 /** One competitor's projected view — what readout + receipts render. */
 export interface CompetitorView {

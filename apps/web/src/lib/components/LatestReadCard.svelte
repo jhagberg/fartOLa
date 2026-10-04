@@ -42,14 +42,14 @@
      * by the operator via manual_status_set. null means auto-detected
      * (from card_read + course). Used to decide whether the clear button
      * should appear — auto-DNF shows an explanation popover instead. */
-    manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | null;
+    manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
     place: number | null;
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
     competitorId: string | null;
   }
 
-  type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+  type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
   interface Props {
     /** null = waiting state. */
@@ -92,13 +92,15 @@
 
   // Manual-status popover state. Defaults to DNF so the existing test path
   // (manual-dnf-btn → dnf-reason-input → dnf-confirm) keeps producing a DNF.
-  const MANUAL_STATUSES: ManualStatus[] = ['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX'];
+  // 02.1-14 Task 10: MP ("Felstämplad") can be set by hand, as in MeOS.
+  const MANUAL_STATUSES: ManualStatus[] = ['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX', 'MP'];
   const REASON_BY_STATUS: Record<ManualStatus, string> = {
     DNF: 'Bröt loppet',
     DNS: 'Kom inte till start',
     DQ: 'Diskvalificerad',
     CANCEL: 'Återbud',
     MAX: 'Maxtid passerad',
+    MP: 'Felstämplad',
   };
 
   let dnfOpen = $state(false);
