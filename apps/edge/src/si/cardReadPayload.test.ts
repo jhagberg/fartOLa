@@ -162,7 +162,11 @@ async function captureFirstCardRead(basename: string): Promise<BaseSiCard | null
   await transport.open();
   await station.readCards();
   await transport.pumpRemaining();
-  await new Promise((r) => setTimeout(r, 80));
+  // Wait for the read itself rather than a fixed 80 ms, which was too short
+  // when the whole edge suite runs in parallel.
+  for (let waited = 0; captured === null && waited < 3000; waited += 20) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
   await station.close();
   return captured;
 }
