@@ -37,16 +37,19 @@ const expectedPunches = Array.from({ length: 16 }, (_, i) => ({
   time: Math.floor(i / 4) * (256 - 4) + i + 1,
 }));
 
+/** PTD bit 0 marks PM; where this synthetic data sets it, times are +12 h. */
+const PM = 43_200;
+
 describe('SiCard6', () => {
   test('decodes the upstream 16-punch example', () => {
     const card = new SiCard6(0);
     card._decodeFromStorage([...block0, ...Array(128 * 5).fill(undefined), ...block6]);
     assert.equal(card.raceResult.cardNumber, 500029);
     assert.equal(card.punchCount, 16);
-    assert.equal(card.raceResult.startTime, 38297);
+    assert.equal(card.raceResult.startTime, 38297 + PM);
     assert.equal(card.raceResult.finishTime, 10250);
-    assert.equal(card.raceResult.checkTime, 38283);
-    assert.equal(card.raceResult.clearTime, 38262);
+    assert.equal(card.raceResult.checkTime, 38283 + PM);
+    assert.equal(card.raceResult.clearTime, 38262 + PM);
     assert.deepEqual(card.raceResult.punches, expectedPunches);
   });
 

@@ -11,6 +11,9 @@ import { SiCard8 } from './SiCard8.ts';
 import { SiCard9 } from './SiCard9.ts';
 import { SiCard11 } from './SiCard11.ts';
 
+/** PTD bit 0 marks PM; where this synthetic data sets it, times are +12 h. */
+const PM = 43_200;
+
 const hex = (s: string): number[] =>
   s
     .trim()
@@ -49,7 +52,7 @@ const expectedPunches = [
   [44, 11308],
   [45, 11565],
   [46, 11822],
-].map(([code, time]) => ({ code, time }));
+].map(([code, time]) => ({ code: code!, time: time! + (code! % 2) * PM })); // PTD byte == code here
 
 describe('SiCard8', () => {
   test('decodes the upstream 16-punch example', () => {
@@ -57,8 +60,8 @@ describe('SiCard8', () => {
     card._decodeFromStorage([...page0, ...page1]);
     assert.equal(card.raceResult.cardNumber, 2345678);
     assert.equal(card.punchCount, 16);
-    assert.equal(card.raceResult.startTime, 8721);
-    assert.equal(card.raceResult.checkTime, 8735);
+    assert.equal(card.raceResult.startTime, 8721 + PM);
+    assert.equal(card.raceResult.checkTime, 8735 + PM);
     assert.deepEqual(card.raceResult.punches, expectedPunches);
   });
 

@@ -10,6 +10,8 @@
 //                              ; else if (b19 > 4 || four-byte-form)  cardnum |= b19 << 16
 // Need value in [8_000_000, 9_000_000). Pick exactly 8_500_000 = 0x80, 0xC0, 0xC0:
 //   0x80 0xC0 0xC0 -> (0xC0 << 16) | (0xC0 << 8) | 0x80
+// fartOLa: times whose punch record has PTD bit 0 (PM) set are +43200 vs upstream,
+// because fartOLa decodes the PM flag and upstream does not.
 //                  -> 0xC0_C0_80 = 12_632_192? Let's recompute.
 // Per arr2cardNumber: arr is [b19, b1A, b1B]. We get back arr by [params[5], params[4], params[3]]
 // = [b1B, b1A, b19] reversed by the storage's SiArray(3, i -> [[0x19 + (2-i)]]) i.e.
@@ -51,26 +53,26 @@ export const fixture: SiCardSample & { name: string } = {
     // wins on collision). The SIAC routing in BaseSiCard.detectFromMessage uses range
     // 8M-9M, NOT the series label — see codex review #4.
     cardNumber: 8_500_608,
-    startTime: 8721,
+    startTime: 51921,
     finishTime: null,
-    checkTime: 8735,
+    checkTime: 51935,
     punchCount: 16,
     punches: [
-      { code: 31, time: 7967 },
+      { code: 31, time: 51167 },
       { code: 32, time: 8224 },
-      { code: 33, time: 8481 },
+      { code: 33, time: 51681 },
       { code: 34, time: 8738 },
-      { code: 35, time: 8995 },
+      { code: 35, time: 52195 },
       { code: 36, time: 9252 },
-      { code: 37, time: 9509 },
+      { code: 37, time: 52709 },
       { code: 38, time: 9766 },
-      { code: 39, time: 10023 },
+      { code: 39, time: 53223 },
       { code: 40, time: 10280 },
-      { code: 41, time: 10537 },
+      { code: 41, time: 53737 },
       { code: 42, time: 10794 },
-      { code: 43, time: 11051 },
+      { code: 43, time: 54251 },
       { code: 44, time: 11308 },
-      { code: 45, time: 11565 },
+      { code: 45, time: 54765 },
       { code: 46, time: 11822 },
     ],
     cardHolder: {

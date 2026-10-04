@@ -360,7 +360,8 @@ export const render = (message: SiMessage): number[] => {
 
 // --- SiTime / SiTimestamp ---------------------------------------------------
 // SiTime models the half-day clock primitive on every SI card (seconds since
-// midnight or midday, 0..43199). `null` represents `proto.NO_TIME` (0xEEEE)
+// midnight or midday, 0..43199). Cards with a PTD byte (SI6, SI8+) also say
+// AM or PM; given that byte, SiTime returns seconds since midnight instead. `null` represents `proto.NO_TIME` (0xEEEE)
 // which means "no punch yet". Wall-clock reconstruction needs the event date
 // and is Phase 1's job — Phase 0 emits raw seconds.
 //
@@ -372,12 +373,20 @@ export type SiTimestamp = number | null;
 
 export class SiTime extends SiDataType<SiTimestamp> {
   private readonly intField: SiInt | undefined;
+  private readonly ptdField: SiInt | undefined;
   public intParts: [[number], [number]] | undefined;
 
-  constructor(intParts: [[number], [number]] | undefined) {
+  /**
+   * `ptdOffset` is the PTD byte of the punch record on cards that have one
+   * (SI6, SI8 and later; not SI5). Its bit 0 is the PM flag, so a PM time
+   * comes back as seconds since midnight (43200..86399) — which
+   * `toHalfDayClock` then splits into `half_day: 1`.
+   */
+  constructor(intParts: [[number], [number]] | undefined, ptdOffset?: number) {
     super();
     this.intParts = intParts;
     this.intField = intParts === undefined ? undefined : new SiInt(intParts);
+    this.ptdField = ptdOffset === undefined ? undefined : new SiInt([[ptdOffset]]);
   }
 
   typeSpecificExtractFromData(data: SiStorageData): SiTimestamp | undefined {
@@ -385,6 +394,7 @@ export class SiTime extends SiDataType<SiTimestamp> {
     const timeInt = this.intField.typeSpecificExtractFromData(data);
     if (timeInt === proto.NO_TIME) return null;
     if (timeInt === undefined || timeInt > SI_TIME_CUTOFF) return undefined;
-    return timeInt;
+    const ptd = this.ptdField?.typeSpecificExtractFromData(data);
+    return ptd !== undefined && (ptd & 0x01) === 1 ? timeInt + SI_TIME_CUTOFF : timeInt;
   }
 }

@@ -54,10 +54,10 @@ export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> 
     new SiArray(3, (i) => new SiInt([[0x0b + (2 - i)]])),
     (extractedValue) => arr2cardNumber(extractedValue)
   ),
-  startTime: new SiTime([[0x1b], [0x1a]]),
-  finishTime: new SiTime([[0x17], [0x16]]),
-  checkTime: new SiTime([[0x1f], [0x1e]]),
-  clearTime: new SiTime([[0x23], [0x22]]),
+  startTime: new SiTime([[0x1b], [0x1a]], 0x18),
+  finishTime: new SiTime([[0x17], [0x16]], 0x14),
+  checkTime: new SiTime([[0x1f], [0x1e]], 0x1c),
+  clearTime: new SiTime([[0x23], [0x22]], 0x20),
   punchCount: new SiInt([[0x12]]),
   punches: new SiModified(
     new SiArray(
@@ -65,7 +65,7 @@ export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> 
       (i) =>
         new SiDict({
           code: new SiInt([[getPunchOffset(i) + 1]]),
-          time: new SiTime([[getPunchOffset(i) + 3], [getPunchOffset(i) + 2]]),
+          time: new SiTime([[getPunchOffset(i) + 3], [getPunchOffset(i) + 2]], getPunchOffset(i)),
         })
     ),
     (allPunches) => cropPunches(allPunches as (PotentialSiCard6Punch | undefined)[])
