@@ -29,8 +29,8 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 
 | Status | Antal |
 |---|---|
-| UPPFYLLD | 28 |
-| DELVIS | 18 |
+| UPPFYLLD | 27 |
+| DELVIS | 19 |
 | SAKNAS | 26 |
 | PLANERAD | 0 |
 | EJ TILLÄMPLIG | 3 |
@@ -110,7 +110,7 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 | TR 7.5.6 med TA | I rankingklass med begränsat antal deltagare ska det finnas en reservlista i rankingordning, och reserver sätts in i turordning. | Reservlista och insättning. | SAKNAS | Saknas. |
 | TR 7.5.7, TR 7.5.8 med TA | Utrymme för efteranmälda ska alltid finnas. Efteranmälda lottas ihop med övriga, eller startar först (dag) eller sist (natt). Vakanta platser får erbjudas på tävlingsdagen, utom i elitklass. | Placera efteranmälda i luckor eller före/efter klassen utan att omlotta de redan lottade. | DELVIS | Starttid kan sättas per löpare (`routes/competitors.ts:731`). Omlottning nollställer hela klassen, test: `routes/lottning.test.ts` › `test 6: re-lotta clears old times, other class untouched`. Det finns ingen markering för efteranmälan, ingen automatisk placering och inga vakanser som går att boka (se TR 7.3.2). |
 | TR 7.5.9, TA till TR 7.8.2 (kval), TA till TR 7.8.3 (kvalgräns) | Vid kval och final ska första finalstart ske tidigast 150 minuter efter sista kvalmålgång. Resultatlistan visar kvalgränsen. | Modell för kval och final. | SAKNAS | Saknas. |
-| TR 7.6.1 | Vid nivå 1–3 får bara ett av SOFT godkänt elektroniskt stämplingssystem användas. | Stöd för ett godkänt system. | UPPFYLLD | SportIdent-avkodning i `packages/sportident` (SI5/6/8/9/10/11/SIAC). Test: `packages/sportident/src/SiCard/types/SiCard10.test.ts` › `1) SI10-typical fixture decodes byte-for-byte to expected cardData` och i `packages/sportident/src/SiCard/types/SIAC.test.ts` › `1) SIAC-typical fixture decodes to expected cardData`. Emit stöds inte. |
+| TR 7.6.1 | Vid nivå 1–3 får bara ett av SOFT godkänt elektroniskt stämplingssystem användas. Vilket system som används ska anges i Eventor. | Läsa brickorna från ett godkänt system. | DELVIS | Avkodningen är bevisad: SportIdent i `packages/sportident` (SI5/6/8/9/10/11/SIAC), test: `packages/sportident/src/SiCard/types/SiCard10.test.ts` › `1) SI10-typical fixture decodes byte-for-byte to expected cardData` och `packages/sportident/src/SiCard/types/SIAC.test.ts` › `1) SIAC-typical fixture decodes to expected cardData`. Att systemet är godkänt av SOFT och att det anges i Eventor ligger utanför programvaran (arrangören anger det i Eventor). Emit stöds inte. |
 | TA till TR 7.6.1 (enheternas tid) | Före tävlingen kontrolleras enheternas programvara, batteri, tid och funktion, och tiden ska vara lika i alla start- och målenheter. | Läsa och jämföra enheternas klockor. | SAKNAS | fartOLa läser inte enheternas klocka eller batteri. Görs i dag med SI-Config. |
 | TA till TR 7.6.1 (backup) | På nivå 1 ska varje kontroll ha minst två enheter, och vid beröringsfri stämpling bör löparna ha dubbla brickor. | Dubbelstämpling vid samma kontroll ska inte ge fel, och två brickor per löpare ska kunna slås ihop. | DELVIS | Dubbelstämpling räknas som extra, inte som fel (`projection/dnfMp.ts:75-120`). Varje tävlande har bara ett brickfält (`competitors.cardNumber`, `db/schema.ts:364`), så två brickor per löpare stöds inte. |
 | TR 7.6.2, TR 8.3.2 | Kontrollstämpling sker på föreskrivet sätt, och kontrollerna besöks i nummerordning om inget annat anges. | Banans kontroller i ordning som delföljd av stämplarna. Extra stämplar är tillåtna. | UPPFYLLD | `projection/dnfMp.ts:75-120`. Test: `projection/dnfMp.test.ts` › `test 3 MP missing-middle: punches [31,33,34] missing 32`, `projection/dnfMp.test.ts` › `test 4 OK extra: a stray code 99 is listed in extra_codes but is not MP` och `projection/dnfMp.test.ts` › `subsequence: butterfly [31,32,31,33] punched 31,32,33 → MP missing [31]`. Valfri ordning och poängorientering (TR 3.2.4) stöds inte. |
