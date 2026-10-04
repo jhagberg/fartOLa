@@ -12,8 +12,15 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
-import { epochToLocalSeconds, formatLocalTime, type StartMethod } from '@fartola/shared-types';
+import {
+  epochToLocalSeconds,
+  formatLocalTime,
+  softStatus,
+  type SoftStatus,
+  type StartMethod,
+} from '@fartola/shared-types';
 import { patchCompetitorStartTime } from '$lib/api/client.ts';
+import { t } from '$lib/i18n/index.ts';
 import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -320,6 +327,13 @@ export function rawPunchesToReceipt(
 
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
+/** The label a published surface (results screen, receipts) shows for a
+ * status: SOFT's names, TA till TR 7.8.2 / TR 4.21.3. The operator's own
+ * views keep the detailed status.* labels (Felstämpling, Bröt …). */
+export function softStatusLabel(key: SoftStatus): string {
+  return t(`soft.status.${key}`);
+}
+
 export function toReceiptRead(input: {
   row: ReadoutHistoryRow;
   className: string;
@@ -354,6 +368,9 @@ export function toReceiptRead(input: {
     readTime: formatTimeOfDay(input.row.event_time_ms),
     elapsed: formatElapsed(input.noTiming ? null : (input.elapsedMs ?? null)),
     status: input.row.status,
+    statusLabel: softStatusLabel(
+      softStatus(input.row.status, { noTiming: input.noTiming === true })
+    ),
     place: input.place ?? null,
     punches,
     progress: {

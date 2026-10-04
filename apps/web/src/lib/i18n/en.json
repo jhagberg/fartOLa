@@ -349,6 +349,14 @@
   "status.CANCEL": "Cancelled",
   "status.MAX": "Over time",
 
+  "soft.status.OK": "OK",
+  "soft.status.DELTAGIT": "Participated",
+  "soft.status.EJ_GODKAND": "Not approved",
+  "soft.status.DISKAD": "Disqualified",
+  "soft.status.EJ_START": "Did not start",
+  "soft.status.EJ_UTLAST": "Not read out",
+  "soft.status.ATERBUD": "Withdrawn",
+
   "rcpt.status.tooltip.ok": "Valid result — all controls punched in the correct order.",
   "rcpt.status.tooltip.mp": "Mispunch — a control is missing, extra, or punched out of order.",
   "rcpt.status.tooltip.dnf": "Did not finish — no finish punch on the card.",

@@ -41,6 +41,7 @@
 // - REQ-EVT-CMP-006 (DNF/MP from event log)
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
+import { softStatus } from '@fartola/shared-types';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import { detectStatus, startMs, startPunchWarning, type StartMethod } from './dnfMp.ts';
@@ -694,6 +695,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         elapsed_time_ms: timed ? v.elapsed_time_ms : null,
         place: p,
         behind_leader_ms: behind,
+        soft_status: softStatus(v.status, { noTiming: !timed }),
       };
     });
     resultsByClass.set(cls.id, rows);

@@ -72,9 +72,9 @@ export default async function kids(printer: ThermalPrinterLike, data: ReceiptDat
   printer.drawLine();
 
   printer.println(
-    data.competitor.no_timing
-      ? receiptTime(data.competitor)
-      : `Tid: ${formatElapsed(data.competitor.elapsed_time_ms)}`
+    data.competitor.status === 'OK' && !data.competitor.no_timing
+      ? `Tid: ${formatElapsed(data.competitor.elapsed_time_ms)}`
+      : receiptTime(data.competitor)
   );
   if (data.placeContext.place !== null) {
     printer.println(`Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length}`);

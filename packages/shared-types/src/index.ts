@@ -101,5 +101,9 @@ export type {
   SkogisStats,
 } from './skogis.ts';
 
+// --- Result statuses as SOFT names them (TA till TR 7.8.2) -----------------
+export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
+export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
+
 // --- Competition clock (epoch ms ↔ local wall clock) ----------------------
 export { COMPETITION_TZ, localToEpochMs, epochToLocalSeconds, formatLocalTime } from './time.ts';

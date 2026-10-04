@@ -30,7 +30,7 @@
   import { t } from '$lib/i18n/index.ts';
   import { WsClient } from '$lib/ws/client.ts';
   import { resultsChannel, type WsEnvelope } from '@fartola/shared-types';
-  import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
+  import type { CompetitionDTO, ClassDTO, CourseDTO, SoftStatus } from '@fartola/shared-types';
   import { getCompetition, getResults } from '$lib/api/client.ts';
   import ClassTabs from '$lib/components/ClassTabs.svelte';
   import ResultsTable from '$lib/components/ResultsTable.svelte';
@@ -44,6 +44,7 @@
     elapsed_time_ms: number | null;
     place: number | null;
     behind_leader_ms: number | null;
+    soft_status: SoftStatus;
   }
 
   interface ResultsClass {

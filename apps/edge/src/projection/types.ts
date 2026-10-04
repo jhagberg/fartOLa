@@ -19,6 +19,7 @@
 // - REQ-EVT-003 / REQ-EVT-004 (reducer is pure + idempotent)
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
+import type { SoftStatus } from '@fartola/shared-types';
 
 // Phase 2.0 extension (2026-05-18): four operator-flagged states added on
 // top of the auto-detected PEND/OK/MP/DNF set. Each maps to an IOF v3
@@ -123,6 +124,10 @@ export interface ResultView {
   place: number | null;
   /** ms behind the leader for OK rows; null otherwise. */
   behind_leader_ms: number | null;
+  /** The status as SOFT names it in a published result list (TA till TR
+   * 7.8.2, TR 4.21.3), live: a runner not read out is EJ_UTLAST here and
+   * "Ej start" only in the final ResultList export. */
+  soft_status: SoftStatus;
 }
 
 /** Top-level reducer output. Maps are used (not arrays) so callers can

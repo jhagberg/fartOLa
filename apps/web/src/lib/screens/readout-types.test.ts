@@ -6,10 +6,11 @@
 // Task 14: the class's start method picks the start (auto/start_time/start_punch).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { localToEpochMs } from '@fartola/shared-types';
+import { localToEpochMs, softStatus } from '@fartola/shared-types';
 import {
   readElapsedMs,
   toReceiptRead,
+  softStatusLabel,
   missingStartHint,
   startWarning,
   parseStartTimeInput,
@@ -102,6 +103,39 @@ describe('toReceiptRead — class without timing', () => {
     expect(read.elapsed).toBe('—');
     expect(read.punches.length).toBeGreaterThan(0);
     for (const p of read.punches) expect([p.split, p.time]).toEqual(['—', '—']);
+  });
+});
+
+// The results screen and the receipts are published: they use SOFT's names,
+// the operator's own views keep Felstämpling, Bröt … (status.*).
+describe('SOFT status names on published surfaces', () => {
+  it('SOFT TA till TR 7.8.2: results screen labels — "Ej godkänd", "Diskad", "Ej start", "Ej utläst"', () => {
+    const label = (s: Parameters<typeof softStatus>[0]): string => softStatusLabel(softStatus(s));
+    for (const s of ['MP', 'DNF', 'MAX'] as const) expect(label(s)).toBe('Ej godkänd');
+    expect(label('DQ')).toBe('Diskad');
+    expect(label('DNS')).toBe('Ej start');
+    expect(label('PEND')).toBe('Ej utläst');
+  });
+
+  it('SOFT TA till TR 7.8.2: the receipt preview prints the SOFT name, "Deltagit" when untimed (TR 4.21.3)', () => {
+    const base = {
+      className: 'H21',
+      classId: 'h21',
+      club: null,
+      competitionName: 'X',
+      competitionDate: '2026-10-04',
+    };
+    const mp = toReceiptRead({
+      ...base,
+      row: row({ card_number: 1, status: 'MP', event_time_ms: 0 }),
+    });
+    expect(mp.statusLabel).toBe('Ej godkänd');
+    const ok = toReceiptRead({
+      ...base,
+      row: row({ card_number: 1, status: 'OK', event_time_ms: 0 }),
+      noTiming: true,
+    });
+    expect(ok.statusLabel).toBe('Deltagit');
   });
 });
 

@@ -69,9 +69,10 @@ export interface MopBuildInput {
  *   0 = unknown     (PEND)
  *   1 = OK          (OK)
  *   2 = DNS         (DNS)
- *   3 = DNF/MP      (MP, DNF)
+ *   3 = DNF/MP      (MP, DNF, MAX: "Ej godkänd", SOFT TA till TR 7.8.2;
+ *                    over max time the result is invalid, TR 4.21.1)
  *   4 = DSQ         (DQ)
- *   10 = cancelled  (CANCEL, MAX treated as cancelled for liveresultat) */
+ *   10 = cancelled  (CANCEL) */
 function mopStat(status: PunchStatus): number {
   switch (status) {
     case 'OK':
@@ -80,11 +81,11 @@ function mopStat(status: PunchStatus): number {
       return 2;
     case 'MP':
     case 'DNF':
+    case 'MAX':
       return 3;
     case 'DQ':
       return 4;
     case 'CANCEL':
-    case 'MAX':
       return 10;
     case 'PEND':
     default:

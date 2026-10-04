@@ -14,9 +14,10 @@
 //   §"Receipt templates" + §"Receipt-specific typography"
 
 import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
+import { softStatus, SOFT_STATUS_SV } from '@fartola/shared-types';
 
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
-import type { CompetitorView } from '../projection/types.ts';
+import type { CompetitorView, ResultView } from '../projection/types.ts';
 import { formatLocalTime } from '../time/competitionClock.ts';
 
 import classic from './templates/classic.ts';
@@ -89,13 +90,23 @@ export function formatElapsed(ms: number | null): string {
   return `${m}:${pad(s)}`;
 }
 
-/** 02.1-14 Task 9: what a receipt prints for the running time. An untimed
- * class prints no time — "Godkänd" when OK, as MeOS's readout does. */
+/** What a receipt prints for the running time. A run that is not approved
+ * prints SOFT's status name instead ("Ej godkänd", "Diskad", "Ej start";
+ * TA till TR 7.8.2), and an OK run in an untimed class "Deltagit" (TR
+ * 4.21.3; 02.1-14 Task 9: no time). */
 export function receiptTime(
   c: Pick<CompetitorView, 'no_timing' | 'status' | 'elapsed_time_ms'>
 ): string {
-  if (!c.no_timing) return formatElapsed(c.elapsed_time_ms);
-  return c.status === 'OK' ? 'Godkänd' : '—';
+  if (c.status === 'PEND') return c.no_timing ? '—' : formatElapsed(c.elapsed_time_ms);
+  const soft = softStatus(c.status, { noTiming: c.no_timing });
+  return soft === 'OK' ? formatElapsed(c.elapsed_time_ms) : SOFT_STATUS_SV[soft];
+}
+
+/** A result-row's time column: the time for an OK row, else SOFT's name. */
+export function rowTime(row: Pick<ResultView, 'soft_status' | 'elapsed_time_ms'>): string {
+  return row.soft_status === 'OK'
+    ? formatElapsed(row.elapsed_time_ms)
+    : SOFT_STATUS_SV[row.soft_status];
 }
 
 /** Format the +M:SS leader-gap suffix used by every template's place line. */

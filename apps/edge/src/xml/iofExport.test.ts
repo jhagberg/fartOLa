@@ -10,7 +10,8 @@
 //   5. W-5 empty competition VALID — zero ClassResult children, validateXml
 //      accepts, @status still emitted.
 //   6. Competitor with null club has no Organisation element.
-//   7. Status mapping for OK/MP/DNF (PEND omitted entirely).
+//   7. Status mapping for OK/MP/DNF (PEND omitted from a Provisional list;
+//      a Final list reports it as DidNotStart, SOFT TA till TR 7.8.2).
 //   8. Round-trip parse via fast-xml-parser confirms structural fields.
 //
 // Locked by:
@@ -35,7 +36,7 @@ import {
   type StartListInput,
 } from './iofExport.ts';
 import type { CompetitionState, CompetitorView, ResultView } from '../projection/types.ts';
-import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
+import { softStatus, type CompetitionDTO, type ClassDTO } from '@fartola/shared-types';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // PATTERNS S-5: HERE-based path resolution. The frozen-fixture lives next to
@@ -194,6 +195,7 @@ function rowFor(c: CompetitorView, place: number | null): ResultView {
     elapsed_time_ms: c.elapsed_time_ms,
     place,
     behind_leader_ms: null,
+    soft_status: softStatus(c.status),
   };
 }
 
@@ -277,7 +279,9 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     state.competitors.set(pendCia.id, pendCia);
     state.results_by_class.set('cls-d21', [rowFor(pendCia, null)]);
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    // Provisional: PEND may still be out in the forest (Final reports it
+    // as DidNotStart, see the SOFT TA till TR 7.8.2 test).
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     assert.equal(summary.class_count, 1);
     assert.ok(xml.includes('<Name>H21</Name>'));
     assert.ok(!xml.includes('<Name>D21</Name>'));
@@ -382,13 +386,39 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     const h21Rows = state.results_by_class.get('cls-h21')!;
     h21Rows.push(rowFor(dani, null));
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     // PEND not emitted → total person_result_count unchanged from the seed (3).
     assert.equal(summary.person_result_count, 3);
     assert.ok(!xml.includes('Danielsson'), 'PEND competitor must not appear');
     assert.ok(xml.includes('<Status>OK</Status>'));
     assert.ok(xml.includes('<Status>MissingPunch</Status>'));
     assert.ok(xml.includes('<Status>DidNotFinish</Status>'));
+  });
+
+  test('SOFT TA till TR 7.8.2: a runner never read out is DidNotStart ("Ej start") in the final ResultList', async () => {
+    const state = makeSeededState();
+    const dani = makeCompetitorView({
+      id: 'cmp-dani',
+      name: 'Dani Danielsson',
+      club: 'StorTuna OK',
+      class_id: 'cls-h21',
+      card_number: 8888888,
+      status: 'PEND',
+      elapsed_time_ms: null,
+    });
+    state.competitors.set(dani.id, dani);
+    state.results_by_class.get('cls-h21')!.push(rowFor(dani, null));
+
+    const res = await validateAndBuild(makeInput({ state, status: 'Final' }));
+    assert.equal(res.valid, true, `XSD-invalid output: ${JSON.stringify(res)}`);
+    if (!res.valid) return;
+    assert.equal(res.build.summary.person_result_count, 4);
+    const daniXml = res.build.xml.slice(res.build.xml.indexOf('Danielsson'));
+    assert.match(daniXml, /<Status>DidNotStart<\/Status>/);
+    assert.ok(!daniXml.slice(0, daniXml.indexOf('</PersonResult>')).includes('<Time>'));
+    // The other IOF statuses are unchanged.
+    assert.ok(res.build.xml.includes('<Status>MissingPunch</Status>'));
+    assert.ok(res.build.xml.includes('<Status>DidNotFinish</Status>'));
   });
 
   test('test 8: round-trip parse confirms structural fields', () => {

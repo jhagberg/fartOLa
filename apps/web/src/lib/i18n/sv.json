@@ -349,6 +349,14 @@
   "status.CANCEL": "Återbud",
   "status.MAX": "Maxtid",
 
+  "soft.status.OK": "Godkänd",
+  "soft.status.DELTAGIT": "Deltagit",
+  "soft.status.EJ_GODKAND": "Ej godkänd",
+  "soft.status.DISKAD": "Diskad",
+  "soft.status.EJ_START": "Ej start",
+  "soft.status.EJ_UTLAST": "Ej utläst",
+  "soft.status.ATERBUD": "Återbud",
+
   "rcpt.status.tooltip.ok": "Godkänt resultat — alla kontroller stämplade i rätt ordning.",
   "rcpt.status.tooltip.mp": "Felstämpling — en eller flera kontroller saknas, är extra, eller stämplade i fel ordning.",
   "rcpt.status.tooltip.dnf": "Bröt loppet — ingen målstämpling registrerad.",

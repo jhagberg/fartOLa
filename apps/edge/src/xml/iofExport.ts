@@ -32,9 +32,11 @@
 //     Organisation (only when club non-null), Result
 //     (StartTime?, FinishTime?, Time, Position (OK only), Status).
 //
-//   - PEND competitors are EXCLUDED. ResultList semantics target finished
-//     events; the toggle between Final/Provisional flips the top-level
-//     @status only — not what rows are emitted.
+//   - PEND competitors (never read out): a Final list (@status Complete)
+//     reports them as DidNotStart, "Ej start" in SOFT's terms (TA till TR
+//     7.8.2); fartOLa has no results-locked state, so the Final export is
+//     what "final" means. A Provisional list (Snapshot) leaves them out —
+//     they may still be in the forest.
 //
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-16-PLAN.md task 1
@@ -161,7 +163,8 @@ export type IofResultStatus =
   | 'OverTime';
 
 /** Internal projection status → IOF ResultStatus enum value. Returns null for
- * PEND — those competitors are excluded from the export entirely.
+ * PEND — a Provisional export leaves those competitors out, a Final one
+ * reports them as DidNotStart (see buildPersonResult).
  *
  * The Phase 2.0 manual states (DNS/DQ/CANCEL/MAX) round-trip into the IOF
  * XSD enum via the obvious mapping (DidNotStart / Disqualified / Cancelled
@@ -233,16 +236,17 @@ interface ResultListNode {
 }
 
 // ---------------------------------------------------------------------------
-// Build a single PersonResult subtree. Returns null for PEND (excluded from
-// the export entirely).
+// Build a single PersonResult subtree. Returns null for PEND in a Provisional
+// list (excluded); a Final list reports PEND as DidNotStart.
 // ---------------------------------------------------------------------------
 
 function buildPersonResult(
   view: CompetitorView,
   place: number | null,
-  noTiming: boolean
+  noTiming: boolean,
+  final: boolean
 ): PersonResultNode | null {
-  const xmlStatus = statusForXml(view.status);
+  const xmlStatus = statusForXml(view.status) ?? (final ? 'DidNotStart' : null);
   if (xmlStatus === null) return null;
 
   const { family, given } = splitName(view.name);
@@ -314,8 +318,8 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     for (const row of rows) {
       const view = input.state.competitors.get(row.competitor_id);
       if (view === undefined) continue;
-      const node = buildPersonResult(view, row.place, cls.no_timing);
-      if (node === null) continue; // PEND: skipped
+      const node = buildPersonResult(view, row.place, cls.no_timing, status === 'Final');
+      if (node === null) continue; // PEND in a Provisional list: skipped
       personResults.push(node);
       personResultCount += 1;
     }

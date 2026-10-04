@@ -499,7 +499,7 @@
   <div class="kids-subtitle">{subtitle}</div>
   <div class="kids-time">{read.elapsed}</div>
   <div class="kids-meta">
-    {read.status} · {ctrlCount}
+    {read.statusLabel} · {ctrlCount}
     {t('rcpt.kids.controls')}{read.place ? ` · ${t('rcpt.place').toLowerCase()} ${read.place}` : ''}
   </div>
 </div>

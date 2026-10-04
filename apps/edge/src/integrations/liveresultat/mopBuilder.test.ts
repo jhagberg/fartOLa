@@ -276,4 +276,24 @@ describe('buildMopXml', () => {
     assert.equal(base['@_rt'], undefined);
     assert.equal(base['@_stat'], 1);
   });
+  it('SOFT TA till TR 7.8.2: over max time is sent as not approved (stat 3), not cancelled', () => {
+    const competitors = new Map<string, CompetitorView>();
+    competitors.set(
+      'max',
+      makeCompetitorView({ id: 'max', class_id: 'cls-1', status: 'MAX', elapsed_time_ms: 9e6 })
+    );
+    competitors.set('dq', makeCompetitorView({ id: 'dq', class_id: 'cls-1', status: 'DQ' }));
+    const xml = buildMopXml({
+      state: makeState({ competitors }),
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      classes: [{ id: 'cls-1', name: 'H21' }],
+      clubs: [],
+    });
+    const root = parseXml(xml)['MOPComplete'] as Record<string, unknown>;
+    const cmps = root['cmp'] as Array<Record<string, unknown>>;
+    const stat = (id: string): unknown =>
+      (cmps.find((c) => c['@_id'] === id)!['base'] as Record<string, unknown>)['@_stat'];
+    assert.equal(stat('max'), 3);
+    assert.equal(stat('dq'), 4);
+  });
 });
