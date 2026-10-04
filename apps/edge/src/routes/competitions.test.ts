@@ -26,7 +26,7 @@ import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
-import { competitors } from '../db/schema.ts';
+import { competitors, events } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import type { FastifyInstance } from 'fastify';
 
@@ -463,6 +463,74 @@ describe('competitions REST CRUD', () => {
       payload: { max_time_sec: -5 },
     });
     assert.equal(bad.statusCode, 400);
+  });
+
+  test('SOFT TR 4.21.1: via the routes, the competition max time decides MAX in every class, over a class value', async () => {
+    const id = await createComp();
+    const set = (url: string, payload: object) => ctx.app.inject({ method: 'PATCH', url, payload });
+    const classIds: string[] = [];
+    for (const name of ['H21', 'D21']) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${id}/classes`,
+        payload: { name },
+      });
+      classIds.push((res.json() as { id: string }).id);
+    }
+    // D21 has its own 900 s; the competition max time is 600 s.
+    assert.equal(
+      (await set(`/api/competitions/${id}/classes/${classIds[1]}`, { maxTimeSec: 900 })).statusCode,
+      200
+    );
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 600 })).statusCode,
+      200
+    );
+    assert.equal(
+      (await ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/start-race` }))
+        .statusCode,
+      201
+    );
+    // A 700 s run in each class.
+    classIds.forEach((classId, i) => {
+      ctx.handle.db
+        .insert(competitors)
+        .values({ id: `cmp-${i}`, competitionId: id, name: `R${i}`, classId, cardNumber: 100 + i })
+        .run();
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId: 'test-node',
+          localSeq: 1000 + i,
+          competitionId: id,
+          eventType: 'card_read',
+          eventTimeMs: Date.now() + 1000,
+          recordedAtMs: Date.now() + 1000,
+          payload: {
+            event_type: 'card_read',
+            card_number: 100 + i,
+            card_type: 'SI10',
+            start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+            finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 700, weekday: null },
+            check: null,
+            clear: null,
+            punch_count: 0,
+            punches: [],
+            card_holder: null,
+          },
+        })
+        .run();
+    });
+    ctx.app.projectionStore.markDirty(id);
+    const res = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}/results` });
+    assert.equal(res.statusCode, 200);
+    const rows = (
+      res.json() as { classes: Array<{ class_name: string; rows: Array<{ status: string }> }> }
+    ).classes.map((c) => [c.class_name, c.rows.map((r) => r.status)]);
+    assert.deepEqual(rows.sort(), [
+      ['D21', ['MAX']],
+      ['H21', ['MAX']],
+    ]);
   });
 
   test('SOFT TR 4.21.2: the max time cannot be changed after the first start (409)', async () => {

@@ -995,27 +995,32 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(anna.status, 'OK');
   });
 
-  test('SOFT TR 4.21.1: the competition max time applies to every class; a class value overrides it', () => {
+  test('SOFT TR 4.21.1: the competition max time applies to every class, over any class value', () => {
     seqCounter = 0;
     // 700 s runs in two classes. Competition max time 600 s; H21 has no own
-    // value, D21 overrides with 900 s (non-sanctioned use).
-    const events = [
-      cardRead(1, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
-      cardRead(2, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 700)),
-    ];
-    const state = reduce({
-      competition_id: 'comp-1',
-      max_time_sec: 600,
-      events,
-      competitors: [
-        comp({ id: 'c-anna', cardNumber: 1 }),
-        comp({ id: 'c-bea', cardNumber: 2, classId: 'cls-D21' }),
-      ],
-      classes: [cls('cls-H21'), clsWithMax('cls-D21', 900)],
-      courses: [course('cls-H21', [31, 32, 33, 34]), course('cls-D21', [31, 32, 33, 34])],
-    });
-    assert.equal(state.competitors.get('c-anna')?.status, 'MAX');
-    assert.equal(state.competitors.get('c-bea')?.status, 'OK');
+    // value, D21 has 900 s. The competition value wins in both.
+    const read = (card: number, sec: number): Event =>
+      cardRead(card, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + sec));
+    const project = (maxTimeSec: number | null) =>
+      reduce({
+        competition_id: 'comp-1',
+        max_time_sec: maxTimeSec,
+        events: [read(1, 700), read(2, 700), read(3, 1000)],
+        competitors: [
+          comp({ id: 'c-anna', cardNumber: 1 }),
+          comp({ id: 'c-bea', cardNumber: 2, classId: 'cls-D21' }),
+          comp({ id: 'c-cia', cardNumber: 3, classId: 'cls-D21' }),
+        ],
+        classes: [cls('cls-H21'), clsWithMax('cls-D21', 900)],
+        courses: [course('cls-H21', [31, 32, 33, 34]), course('cls-D21', [31, 32, 33, 34])],
+      });
+    const statuses = (maxTimeSec: number | null) => {
+      const state = project(maxTimeSec);
+      return ['c-anna', 'c-bea', 'c-cia'].map((id) => state.competitors.get(id)!.status);
+    };
+    assert.deepEqual(statuses(600), ['MAX', 'MAX', 'MAX'], 'one limit for every class');
+    // Without a competition max time, a class value applies (non-sanctioned).
+    assert.deepEqual(statuses(null), ['OK', 'OK', 'MAX']);
   });
 
   // Test 3: No cap → no MAX promotion

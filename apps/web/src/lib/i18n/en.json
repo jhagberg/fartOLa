@@ -472,7 +472,7 @@
   "lottning.redrawConfirm": "Redraw class {{class}}? All start times for this class will be cleared.",
   "lottning.drawn": "{{count}} runners drawn",
   "lottning.maxTime": "Class max time override (mm:ss)",
-  "lottning.maxTimeHint": "Leave empty to use the competition max time. At sanctioned events the max time is the same for all classes (SOFT TR 4.21.1).",
+  "lottning.maxTimeHint": "Used only when the competition has no max time (non-sanctioned events). At sanctioned events the competition max time applies to all classes (SOFT TR 4.21.1).",
   "lottning.noTiming": "No timing",
   "lottning.startMethod": "Time runs from",
   "lottning.startMethod.auto": "Automatic",

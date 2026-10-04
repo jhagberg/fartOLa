@@ -26,8 +26,8 @@ import { issuesToErrors } from './_zod-errors.ts';
 import { maxTimeLocked } from './_maxTime.ts';
 
 // Phase 2.1 D-08: PATCH class route for maxTimeSec editing — a per-class
-// override of the competition max time (SOFT TR 4.21.1 wants one value for
-// all classes, so the override is for non-sanctioned use).
+// max time, used only when the competition has none (SOFT TR 4.21.1 wants
+// one value for all classes, so it is for non-sanctioned use).
 // Backend ownership here (consumed by Plan 05 UI).
 // 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field), and
 // Task 14 start_method. Each field is optional; only the fields sent are
