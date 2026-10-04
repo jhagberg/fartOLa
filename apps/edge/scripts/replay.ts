@@ -25,6 +25,7 @@ import { openDatabase } from '../src/db/index.ts';
 import { competitions, competitors } from '../src/db/schema.ts';
 import type { ManualStatus } from '../src/projection/types.ts';
 import { ensureNodeId } from '../src/db/node-id.ts';
+import { formatLocalTime } from '../src/time/competitionClock.ts';
 import { loadCompetitionInputs } from '../src/projection/loader.ts';
 import { reduce } from '../src/projection/reduce.ts';
 import { buildServer } from '../src/server.ts';
@@ -52,6 +53,8 @@ export interface Mismatch {
   got: string;
   expectedTime: number | null;
   gotTime: number | null;
+  /** fartOLa warned "Saknar starttid"; its suggested start, if any. */
+  missingStart?: { suggestedStartMs: number | null };
 }
 
 export interface ReplayReport {
@@ -227,6 +230,9 @@ export async function replay(dir: string): Promise<ReplayReport> {
           got,
           expectedTime: e.time,
           gotTime,
+          ...(view?.missing_start
+            ? { missingStart: { suggestedStartMs: view.suggested_start_ms } }
+            : {}),
         });
     }
     return {
@@ -261,7 +267,10 @@ export function formatReport(r: ReplayReport): string {
     out.push(`\n${cls}`);
     for (const m of ms)
       out.push(
-        `  bricka ${m.card ?? '–'}: väntat ${m.expected} ${mmss(m.expectedTime)}, fick ${m.got} ${mmss(m.gotTime)}`
+        `  bricka ${m.card ?? '–'}: väntat ${m.expected} ${mmss(m.expectedTime)}, fick ${m.got} ${mmss(m.gotTime)}` +
+          (m.missingStart
+            ? ` — varnad: saknar starttid, förslag ${m.missingStart.suggestedStartMs === null ? '–' : formatLocalTime(m.missingStart.suggestedStartMs)}`
+            : '')
       );
   }
   return out.join('\n');
