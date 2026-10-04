@@ -126,6 +126,42 @@ describe('importStartList', () => {
     assert.equal(entries[0]!.startTimeMs, expected);
   });
 
+  test('a StartTime without an offset is competition-local time, whatever the host time zone', () => {
+    const saved = process.env['TZ'];
+    process.env['TZ'] = 'UTC'; // a UTC host: Date.parse would read 10:00 as 10:00Z
+    try {
+      const xml = buildStartListXml({
+        classes: [
+          {
+            name: 'H21',
+            persons: [
+              { given: 'Anna', family: 'Andersson', startTime: '2026-10-03T10:00:00' },
+              { given: 'Bo', family: 'Berg', startTime: '2026-01-15T10:00:00.5' },
+            ],
+          },
+        ],
+      });
+      const [anna, bo] = importStartList(xml);
+      assert.equal(anna!.startTimeMs, Date.parse('2026-10-03T08:00:00Z')); // CEST
+      assert.equal(bo!.startTimeMs, Date.parse('2026-01-15T09:00:00.5Z')); // CET
+    } finally {
+      if (saved === undefined) delete process.env['TZ'];
+      else process.env['TZ'] = saved;
+    }
+  });
+
+  test('a StartTime with an offset is taken as given', () => {
+    const xml = buildStartListXml({
+      classes: [
+        {
+          name: 'H21',
+          persons: [{ given: 'Anna', family: 'Andersson', startTime: '2026-10-03T10:00:00+01:00' }],
+        },
+      ],
+    });
+    assert.equal(importStartList(xml)[0]!.startTimeMs, Date.parse('2026-10-03T09:00:00Z'));
+  });
+
   // 02.1-14 Task 6 changed this: the entry used to be dropped silently; it is
   // now kept with startTimeMs=null so the import route reports it as skipped.
   test('test 3: entry without StartTime is kept with startTimeMs null', () => {

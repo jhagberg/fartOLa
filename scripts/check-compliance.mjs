@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Authored for fartola. Not ported from upstream.
 //
-// Gate for the rule-compliance matrices in .planning/compliance/*.md (one per
+// Gate for the rule-compliance matrices in .planning/compliance/*regelverk*.md (one per
 // rulebook, e.g. SOFT Regelverk för OL 20260701_2). Fails when
 //   - a rule row has no status, or one that is not in the allowed set;
 //   - an UPPFYLLD row names no test;
@@ -68,7 +68,9 @@ export function check(markdown, name) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const files = existsSync(DIR) ? readdirSync(DIR).filter((f) => f.endsWith('.md')) : [];
+  // Only the rulebook matrices; other notes here (e.g. meos-jamforelse.md) have
+  // other columns.
+  const files = existsSync(DIR) ? readdirSync(DIR).filter((f) => /regelverk.*\.md$/.test(f)) : [];
   let failed = false;
   for (const f of files) {
     const { errors, counts } = check(readFileSync(path.join(DIR, f), 'utf-8'), f);

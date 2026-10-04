@@ -102,4 +102,11 @@ export type {
 } from './skogis.ts';
 
 // --- Competition clock (epoch ms ↔ local wall clock) ----------------------
-export { COMPETITION_TZ, localToEpochMs, epochToLocalSeconds, formatLocalTime } from './time.ts';
+export {
+  COMPETITION_TZ,
+  localToEpochMs,
+  epochToLocalSeconds,
+  epochToWallClockMs,
+  wallClockToEpochMs,
+  formatLocalTime,
+} from './time.ts';

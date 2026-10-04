@@ -63,6 +63,65 @@ export interface StatusResult {
   elapsed_time_ms: number | null;
 }
 
+/** Replacement controls (D-15): expected code → codes that also count for it. */
+export type ControlAlternatives = ReadonlyMap<number, readonly number[]>;
+
+export interface CourseMatch {
+  /** Per expected position, the index of the punch matched to it, or -1. */
+  matched: number[];
+  missing: number[];
+  out_of_order: number[];
+  extra: number[];
+}
+
+/**
+ * Match the course controls in order as a subsequence of the punched codes —
+ * the orienteering rule MeOS applies (02.1-14 Task 2). Walk the expected
+ * codes; each is matched greedily at the first punch after the previous
+ * match whose code is the expected one or one of its replacement controls
+ * (D-15, single level — no chaining). Repeated controls (butterflies) simply
+ * match again later in the punch list.
+ *   - missing:      expected codes with no punch after the previous match
+ *   - out_of_order: missing codes that were punched (or replaced), but only
+ *                   before the previous match (informational; also in missing)
+ *   - extra:        punches not used by the match (informational — stray
+ *                   controls, double punches, out-of-order punches)
+ * Shared by detectStatus and the voided-leg time (reduce.ts) so both see the
+ * same matched punch per course position.
+ */
+export function matchCourse(
+  punchedCodes: readonly number[],
+  expectedControlCodes: readonly number[],
+  alternatives?: ControlAlternatives
+): CourseMatch {
+  const used = new Array<boolean>(punchedCodes.length).fill(false);
+  const matched: number[] = [];
+  const missing: number[] = [];
+  const outOfOrder: number[] = [];
+  let next = 0;
+  for (const code of expectedControlCodes) {
+    const alts = alternatives?.get(code);
+    const fits = (c: number): boolean => c === code || (alts !== undefined && alts.includes(c));
+    let idx = -1;
+    for (let i = next; i < punchedCodes.length; i++) {
+      if (fits(punchedCodes[i]!)) {
+        idx = i;
+        break;
+      }
+    }
+    matched.push(idx);
+    if (idx === -1) {
+      missing.push(code);
+      if (punchedCodes.some(fits)) outOfOrder.push(code);
+      continue;
+    }
+    used[idx] = true;
+    next = idx + 1;
+  }
+  const extra = punchedCodes.filter((_, i) => !used[i]);
+  return { matched, missing, out_of_order: outOfOrder, extra };
+}
+
 /**
  * Classify a single card_read against the expected course controls.
  *
@@ -72,13 +131,15 @@ export interface StatusResult {
  * read before the finish punch, or the cable was yanked mid-read).
  *
  * Gate 2 (OK/MP): `input.finish !== null` → `expectedControlCodes` must
- * appear in order as a subsequence of `input.punches` (control-station
- * punches only — Phase 0 decoder separates start/finish/check at the
- * storage→raceResult boundary). Extra punches never cause MP.
+ * appear in order as a subsequence of `input.punches` (matchCourse; control-
+ * station punches only — Phase 0 decoder separates start/finish/check at the
+ * storage→raceResult boundary). Extra punches never cause MP; only missing
+ * codes do.
  */
 export function detectStatus(
   input: DetectInput,
-  expectedControlCodes: readonly number[]
+  expectedControlCodes: readonly number[],
+  alternatives?: ControlAlternatives
 ): StatusResult {
   const elapsed = elapsedMs(input);
 
@@ -93,40 +154,17 @@ export function detectStatus(
     };
   }
 
-  // Gate 2 (02.1-14 Task 2): the course controls must appear in order as a
-  // subsequence of the punches — the orienteering rule MeOS applies. Walk
-  // the expected codes; each is matched greedily at the first punch after
-  // the previous match. Repeated controls (butterflies) simply match again
-  // later in the punch list.
-  //   - missing:      expected codes with no punch after the previous match
-  //   - out_of_order: missing codes that were punched, but only before the
-  //                   previous match (informational; also in missing)
-  //   - extra:        punches not used by the match (informational — stray
-  //                   controls, double punches, out-of-order punches)
-  // Only missing codes cause MP.
-  const actual = input.punches.map((p) => p.code);
-  const used = new Array<boolean>(actual.length).fill(false);
-  const missing: number[] = [];
-  const outOfOrder: number[] = [];
-  let next = 0;
-  for (const code of expectedControlCodes) {
-    const idx = actual.indexOf(code, next);
-    if (idx === -1) {
-      missing.push(code);
-      if (actual.includes(code)) outOfOrder.push(code);
-      continue;
-    }
-    used[idx] = true;
-    next = idx + 1;
-  }
-  const extra = actual.filter((_, i) => !used[i]);
-
-  const status: 'OK' | 'MP' = missing.length === 0 ? 'OK' : 'MP';
+  // Gate 2 (02.1-14 Task 2): in-order subsequence match.
+  const match = matchCourse(
+    input.punches.map((p) => p.code),
+    expectedControlCodes,
+    alternatives
+  );
   return {
-    status,
-    missing_codes: missing,
-    extra_codes: extra,
-    out_of_order_codes: outOfOrder,
+    status: match.missing.length === 0 ? 'OK' : 'MP',
+    missing_codes: match.missing,
+    extra_codes: match.extra,
+    out_of_order_codes: match.out_of_order,
     elapsed_time_ms: elapsed,
   };
 }

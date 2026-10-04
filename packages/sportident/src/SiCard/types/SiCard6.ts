@@ -10,10 +10,11 @@
 //     real devices, and readout doesn't need it. One round trip fewer.
 //   - Stripped lodash; no console warnings (decoders are pure).
 //   - Test-only `_decodeFromStorage(bytes)` like the other card types.
+//   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
-import { SiTime, arr2cardNumber } from '../../siProtocol.ts';
+import { SiTime, arr2cardNumber, siPunchCode } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
 import { SiDict } from '../../storage/SiDict.ts';
@@ -64,7 +65,7 @@ export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> 
       MAX_NUM_PUNCHES,
       (i) =>
         new SiDict({
-          code: new SiInt([[getPunchOffset(i) + 1]]),
+          code: siPunchCode(getPunchOffset(i)),
           time: new SiTime([[getPunchOffset(i) + 3], [getPunchOffset(i) + 2]], getPunchOffset(i)),
         })
     ),

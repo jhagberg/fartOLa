@@ -17,10 +17,11 @@
 //     station.
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
+//   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
-import { SiTime, arr2cardNumber } from '../../siProtocol.ts';
+import { SiTime, arr2cardNumber, siPunchCode } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
 import { SiDict } from '../../storage/SiDict.ts';
@@ -134,7 +135,7 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
       MAX_NUM_PUNCHES,
       (i) =>
         new SiDict({
-          code: new SiInt([[getPunchOffset(i) + 1]]),
+          code: siPunchCode(getPunchOffset(i)),
           time: new SiTime([[getPunchOffset(i) + 3], [getPunchOffset(i) + 2]], getPunchOffset(i)),
         })
     ),

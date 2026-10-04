@@ -238,3 +238,44 @@ describe('POST /api/competitions/:id/event-codes/:codeId/revoke', () => {
     assert.equal(res.statusCode, 403);
   });
 });
+
+describe('event-code expiry: next local midnight in Stockholm after the competition date', () => {
+  let ctx: Ctx;
+  let savedTz: string | undefined;
+  beforeEach(async () => {
+    savedTz = process.env['TZ'];
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    if (savedTz === undefined) delete process.env['TZ'];
+    else process.env['TZ'] = savedTz;
+    await teardown(ctx);
+  });
+
+  async function expiryFor(date: string, hostTz: string): Promise<number> {
+    process.env['TZ'] = hostTz;
+    const id = `comp-${date}`;
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES (?, ?, ?, ?)`)
+      .run(id, 'Expiry', date, Date.now());
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/event-codes`,
+      remoteAddress: '127.0.0.1',
+      payload: {},
+    });
+    assert.equal(res.statusCode, 201);
+    return res.json<{ expires_at_ms: number }>().expires_at_ms;
+  }
+
+  test('a summer event on a UTC host expires at 00:00 CEST, not 02:00', async () => {
+    assert.equal(await expiryFor('2026-07-15', 'UTC'), Date.parse('2026-07-15T22:00:00Z'));
+  });
+
+  test('on 2026-10-25 (25 h day) it expires at midnight, not 23:00', async () => {
+    assert.equal(
+      await expiryFor('2026-10-25', 'Europe/Stockholm'),
+      Date.parse('2026-10-25T23:00:00Z')
+    );
+  });
+});

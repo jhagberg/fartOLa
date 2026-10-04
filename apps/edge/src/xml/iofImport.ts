@@ -15,6 +15,8 @@
 
 import { XMLParser } from 'fast-xml-parser';
 
+import { localToEpochMs } from '../time/competitionClock.ts';
+
 // ---------------------------------------------------------------------------
 // Safe parser instance — same config as parse.ts (T-FILE-IMPORT parity).
 // ---------------------------------------------------------------------------
@@ -54,12 +56,21 @@ function asInt(x: unknown): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
-/** Parse an ISO 8601 dateTime string (with or without Z/offset) to epoch ms.
- * Returns null when parsing fails so the caller can report the entry rather
- * than crash. */
+/** xs:dateTime without Z/offset: date, then local wall-clock time. */
+const LOCAL_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$/;
+
+/** Parse an ISO 8601 dateTime string to epoch ms. One without Z/offset is
+ * local time in COMPETITION_TZ — not the host's zone, which Date.parse would
+ * use. Returns null when parsing fails so the caller can report the entry
+ * rather than crash. */
 function parseDateTimeMs(raw: unknown): number | null {
   const s = asString(raw);
   if (s === null) return null;
+  const local = LOCAL_DATE_TIME.exec(s);
+  if (local !== null) {
+    const [, date, h, m, sec] = local;
+    return localToEpochMs(date!, Number(h) * 3600 + Number(m) * 60 + Number(sec));
+  }
   const ms = Date.parse(s);
   return Number.isFinite(ms) ? ms : null;
 }
@@ -78,8 +89,9 @@ export interface ImportedStartEntry {
   className: string;
   /** <Organisation><Name>, or null if absent. */
   club: string | null;
-  /** Epoch ms parsed from the StartList's StartTime element (UTC); null when
-   * missing or unparseable (the route reports the row as skipped). */
+  /** Epoch ms parsed from the StartList's StartTime element (an offset-free
+   * time is COMPETITION_TZ local time); null when missing or unparseable (the
+   * route reports the row as skipped). */
   startTimeMs: number | null;
   /** SI card number from PersonRaceStart > ControlCard, if present. */
   siCard: number | null;
