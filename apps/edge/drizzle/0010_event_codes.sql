@@ -1,4 +1,4 @@
-CREATE TABLE `event_codes` (
+CREATE TABLE IF NOT EXISTS `event_codes` (
 	`id` text PRIMARY KEY NOT NULL,
 	`competition_id` text NOT NULL,
 	`code` text NOT NULL,
@@ -8,5 +8,5 @@ CREATE TABLE `event_codes` (
 	FOREIGN KEY (`competition_id`) REFERENCES `competitions`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `idx_event_codes_comp_code` ON `event_codes` (`competition_id`,`code`);--> statement-breakpoint
-CREATE INDEX `idx_event_codes_comp_active` ON `event_codes` (`competition_id`,`expires_at_ms`);
+CREATE INDEX IF NOT EXISTS `idx_event_codes_comp_code` ON `event_codes` (`competition_id`,`code`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `idx_event_codes_comp_active` ON `event_codes` (`competition_id`,`expires_at_ms`);

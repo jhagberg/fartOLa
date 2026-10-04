@@ -17,11 +17,14 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import crypto from 'node:crypto';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import { openDatabase } from './index.ts';
-import { runMigrations } from './migrate.ts';
+import { MIGRATIONS_FOLDER, runMigrations } from './migrate.ts';
 import { ensureNodeId } from './node-id.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
@@ -36,6 +39,38 @@ interface CountRow {
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXPECTED_MIGRATION_COUNT = 11;
+
+interface JournalEntry {
+  idx: number;
+  when: number;
+  tag: string;
+}
+
+/** Bring a fresh sqlite to the state an older build left it in: run the real
+ * drizzle migrator over a copy of drizzle/ whose journal is cut down (and
+ * optionally edited) by `edit`. */
+function migrateWithOldJournal(
+  sqlite: Database.Database,
+  edit: (entries: JournalEntry[]) => JournalEntry[]
+): void {
+  const dir = mkdtempSync(path.join(tmpdir(), 'fartola-old-journal-'));
+  try {
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = path.join(dir, 'meta/_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: JournalEntry[];
+    };
+    journal.entries = edit(journal.entries);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    migrate(drizzle(sqlite), { migrationsFolder: dir });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const hasTable = (sqlite: Database.Database, name: string): boolean =>
+  sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(name) !==
+  undefined;
 
 describe('migrator: idempotency + cold-start coverage', () => {
   test('test 1: calling runMigrations twice on the same sqlite is a no-op', () => {
@@ -243,6 +278,59 @@ describe('migrator: idempotency + cold-start coverage', () => {
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('test 8 (02.1-14): a db stopped at 0009 gets 0010 event_codes on upgrade', () => {
+    // 0010 used to carry a journal `when` older than 0009's. drizzle only
+    // applies migrations newer than the newest applied created_at, so a db
+    // migrated up to 0009 silently skipped 0010 and never got event_codes.
+    const sqlite = new Database(':memory:');
+    try {
+      migrateWithOldJournal(sqlite, (entries) => entries.filter((e) => e.idx <= 9));
+      assert.equal(hasTable(sqlite, 'event_codes'), false, 'precondition: stopped at 0009');
+
+      runMigrations(sqlite);
+      assert.equal(hasTable(sqlite, 'event_codes'), true, '0010 must apply after 0009');
+      const count = sqlite
+        .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
+        .get();
+      assert.equal(count?.count, EXPECTED_MIGRATION_COUNT);
+
+      // Fully migrated: rerunning is a no-op.
+      assert.doesNotThrow(() => runMigrations(sqlite));
+      assert.equal(
+        sqlite
+          .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
+          .get()?.count,
+        EXPECTED_MIGRATION_COUNT
+      );
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test('test 9 (02.1-14): a db that applied 0010 under its old timestamp upgrades cleanly', () => {
+    // A fresh db built from the old journal applied 0010 (fresh dbs apply
+    // everything), but its newest created_at is 0009's, so the re-dated 0010
+    // runs again on upgrade. It must be idempotent.
+    const sqlite = new Database(':memory:');
+    try {
+      migrateWithOldJournal(sqlite, (entries) =>
+        entries
+          .filter((e) => e.idx <= 10)
+          .map((e) => (e.idx === 10 ? { ...e, when: 1748127600000 } : e))
+      );
+      assert.equal(hasTable(sqlite, 'event_codes'), true, 'precondition: 0010 applied');
+
+      assert.doesNotThrow(() => runMigrations(sqlite));
+      assert.equal(hasTable(sqlite, 'event_codes'), true);
+      const courseId = sqlite
+        .prepare("SELECT 1 FROM pragma_table_info('classes') WHERE name = 'course_id'")
+        .get();
+      assert.ok(courseId, '0011 applied after the re-dated 0010');
+    } finally {
+      sqlite.close();
     }
   });
 
