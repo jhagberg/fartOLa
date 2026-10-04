@@ -39,6 +39,12 @@ export interface Expected {
   time: number | null;
 }
 
+/** One line of manual.ndjson: a secretariat action in MeOS, with its time. */
+type ManualAction = { ts_ms: number; card: number | null } & (
+  | { action?: 'status'; status: ManualStatus }
+  | { action: 'start_time'; start: string | null }
+);
+
 export interface Mismatch {
   card: number | null;
   className: string;
@@ -146,7 +152,7 @@ export async function replay(dir: string): Promise<ReplayReport> {
       ? readFileSync(manualPath, 'utf-8')
           .split('\n')
           .filter(Boolean)
-          .map((l) => JSON.parse(l) as { ts_ms: number; card: number | null; status: ManualStatus })
+          .map((l) => JSON.parse(l) as ManualAction)
       : [];
     const idByCard = new Map(
       handle.db
@@ -160,6 +166,16 @@ export async function replay(dir: string): Promise<ReplayReport> {
     for (const m of manual) {
       const competitorId = m.card === null ? undefined : idByCard.get(m.card);
       if (!competitorId) continue;
+      if (m.action === 'start_time') {
+        // Start times are a column, not an event: set through the route.
+        const res = await app.inject({
+          method: 'PATCH',
+          url: `${base}/competitors/${competitorId}/start-time`,
+          payload: { start_time_ms: m.start === null ? null : Date.parse(m.start) },
+        });
+        if (res.statusCode >= 300) throw new Error(`start-time: ${res.statusCode} ${res.body}`);
+        continue;
+      }
       insertEvent(
         handle,
         nodeId,
