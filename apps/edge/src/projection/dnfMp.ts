@@ -36,7 +36,7 @@
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Class } from '../db/types.ts';
-import { cardClockToEpochMs } from './halfDayClockMath.ts';
+import { cardClocksToEpochMs } from './halfDayClockMath.ts';
 
 /** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
 export type StartMethod = Class['startMethod'];
@@ -169,6 +169,20 @@ export function detectStatus(
   };
 }
 
+/** What the start is resolved from. The card's later clocks are needed to
+ * place a start punch in the hour repeated as DST ends (halfDayClockMath). */
+type StartInput = Pick<
+  DetectInput,
+  'start' | 'punches' | 'finish' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'
+>;
+
+/** The start punch as epoch ms, resolved together with the rest of the card. */
+function startPunchMs(input: StartInput): number | null {
+  return input.start === null
+    ? null
+    : cardClocksToEpochMs(input, input.cardType, input.readAtMs).start;
+}
+
 /** The start a running time is measured from (epoch ms), by the class's
  * start method (02.1-14 Task 14). Null when there is none (missing start).
  *   - start_time:  the runner's start time; the punch is ignored. A late
@@ -180,11 +194,8 @@ export function detectStatus(
  *   - auto:        start_time when the runner has a start time, else the
  *                  punch (fri starttid in open classes, SOFT TR 7.4.3
  *                  (2026-07-01)). */
-export function startMs(
-  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'>
-): number | null {
-  const punch =
-    input.start === null ? null : cardClockToEpochMs(input.start, input.cardType, input.readAtMs);
+export function startMs(input: StartInput): number | null {
+  const punch = startPunchMs(input);
   switch (input.startMethod) {
     case 'start_time':
       return input.drawnStartMs;
@@ -202,14 +213,15 @@ export function startMs(
  * punch before it a possible false start (SOFT TR 8.2.8 (2026-07-01)).
  * Warnings only; the time is not changed. Both in ms, positive. */
 export const LATE_START_GRACE_MS = 60_000;
-export function startPunchWarning(
-  input: Pick<DetectInput, 'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'>
-): { late_start_ms: number | null; early_start_ms: number | null } {
+export function startPunchWarning(input: StartInput): {
+  late_start_ms: number | null;
+  early_start_ms: number | null;
+} {
   const none = { late_start_ms: null, early_start_ms: null };
   if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
     return none;
   }
-  const diff = cardClockToEpochMs(input.start, input.cardType, input.readAtMs) - input.drawnStartMs;
+  const diff = startPunchMs(input)! - input.drawnStartMs;
   if (diff > LATE_START_GRACE_MS) return { late_start_ms: diff, early_start_ms: null };
   if (diff < 0) return { late_start_ms: null, early_start_ms: -diff };
   return none;
@@ -221,7 +233,7 @@ function elapsedMs(input: DetectInput): number | null {
   if (input.finish === null) return null;
   const start = startMs(input);
   if (start === null) return null;
-  const elapsed = cardClockToEpochMs(input.finish, input.cardType, input.readAtMs) - start;
+  const elapsed = cardClocksToEpochMs(input, input.cardType, input.readAtMs).finish! - start;
   // A finish before the start (wrong day / wrong drawn time) is no time,
   // not a winning negative one.
   return elapsed >= 0 ? elapsed : null;
