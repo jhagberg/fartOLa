@@ -9,7 +9,6 @@
   in screens/missing-starts.ts.
 -->
 <script lang="ts">
-  import { formatLocalTime } from '@fartola/shared-types';
   import { t } from '#lib/i18n/index.ts';
   import { listMissingStarts } from '#lib/api/client.ts';
   import { formatElapsed } from '#lib/screens/readout-types.ts';
@@ -17,6 +16,7 @@
     applyMissingStartRows,
     initialStartText,
     resultingTimeMs,
+    wallText,
     statsLabel,
     type MissingStartItem,
     type MissingStartsResponse,
@@ -65,7 +65,7 @@
         items.map((item) => ({ item, text: texts[item.competitor_id] ?? '' }))
       );
       if (!res.ok) {
-        error = t('lottning.invalidTime');
+        error = t(res.error === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime');
         return;
       }
       await load();
@@ -115,7 +115,7 @@
           <tr data-testid="missing-start-row">
             <td>{item.name}</td>
             <td>{item.class_name}</td>
-            <td class="mono">{item.check_ms === null ? '—' : formatLocalTime(item.check_ms)}</td>
+            <td class="mono">{wallText(item.check_wall) || '—'}</td>
             <td>
               <input
                 type="text"

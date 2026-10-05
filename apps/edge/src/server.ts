@@ -72,7 +72,7 @@ import registerEventorPushRoutes from './routes/eventorPush.ts';
 import registerCheckunitRoutes from './routes/checkunit.ts';
 import registerEventCodesRoutes from './routes/event-codes.ts';
 import registerAccessRoute from './routes/access.ts';
-import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
+import { LOGGER_REDACT_OPTIONS, LOGGER_SERIALIZERS } from './log/redact.ts';
 import { verifyCookie } from './auth/event-code.ts';
 import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
@@ -185,16 +185,23 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
   // (tests) we keep the silent path. When they pass an object (the
   // streaming test that captures pino chunks for assertion), we merge
   // redact on top of their config so the caller's stream still wins.
+  // The req serializer masks secret query parameters (MeOS `?pwd=`) in
+  // the URL every request is logged with.
   let loggerOpt: BuildServerOpts['logger'] | Record<string, unknown>;
   if (opts.logger === false) {
     loggerOpt = false;
   } else if (typeof opts.logger === 'object' && opts.logger !== null) {
+    const callerOpts = opts.logger as Record<string, unknown>;
     loggerOpt = {
-      ...(opts.logger as Record<string, unknown>),
+      ...callerOpts,
       redact: LOGGER_REDACT_OPTIONS,
+      serializers: {
+        ...(callerOpts['serializers'] as Record<string, unknown> | undefined),
+        ...LOGGER_SERIALIZERS,
+      },
     };
   } else {
-    loggerOpt = { redact: LOGGER_REDACT_OPTIONS };
+    loggerOpt = { redact: LOGGER_REDACT_OPTIONS, serializers: LOGGER_SERIALIZERS };
   }
   const app = fastify({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

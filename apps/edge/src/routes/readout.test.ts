@@ -224,12 +224,19 @@ describe('GET /api/competitions/:id/readout', () => {
           missing_start: boolean;
           suggested_start_ms: number | null;
           suggested_start_offset_ms: number | null;
+          suggested_start_wall: string | null;
+          finish_wall: string | null;
         }>;
       }
     ).history[0]!;
     assert.equal(row.missing_start, true);
     assert.equal(row.suggested_start_offset_ms, 114_000);
     assert.equal(typeof row.suggested_start_ms, 'number');
+    // The card's clock as wall-clock strings (read at epoch 100 ms, 01:00
+    // local on 1970-01-01, so the 08:58 check and 09:30 finish are the day
+    // before): what the UI resolves an edited start against.
+    assert.equal(row.suggested_start_wall, '1969-12-31T08:59:54');
+    assert.equal(row.finish_wall, '1969-12-31T09:30:00');
   });
 
   // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).

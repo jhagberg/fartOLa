@@ -1451,6 +1451,35 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(anna.missing_start, true);
   });
 
+  // Codex third review of #51, finding 2: the post-pass skipped runners whose
+  // final waiver list is empty, so a read scored while 31 was waived kept OK.
+  test('void 31 → read missing 31 → unvoid 31 → MP again', () => {
+    seqCounter = 0;
+    const t = 10 * 3600;
+    const events = [
+      evt({ event_type: 'leg_voided', competitor_id: 'c-anna', control_code: 31 }),
+      cardRead(
+        1,
+        [{ code: 32, seconds_in_half_day: t + 600, half_day: 0, weekday: null }],
+        hd(t),
+        hd(t + 1200)
+      ),
+      evt({ event_type: 'leg_unvoided', competitor_id: 'c-anna', control_code: 31 }),
+    ];
+    const state = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [cls('cls-H21')],
+      courses: [course('cls-H21', [31, 32])],
+    });
+    const anna = state.competitors.get('c-anna')!;
+    assert.deepEqual(anna.voided_legs, []);
+    assert.equal(anna.status, 'MP');
+    assert.deepEqual(anna.missing_codes, [31]);
+    assert.equal(anna.elapsed_time_ms, 1200 * 1000);
+  });
+
   // Test 14: clear_manual_status with voided leg — re-derive should filter voided
   test('test 14: clear_manual_status with voided leg re-derives correctly', () => {
     seqCounter = 0;

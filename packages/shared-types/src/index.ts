@@ -109,4 +109,8 @@ export {
   epochToWallClockMs,
   wallClockToEpochMs,
   formatLocalTime,
+  formatWallClock,
+  parseWallClock,
+  parseTimeOfDay,
+  startBeforeFinishWallMs,
 } from './time.ts';

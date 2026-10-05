@@ -41,6 +41,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 
+import { formatWallClock } from '@fartola/shared-types';
 import {
   events,
   competitors as competitorsTable,
@@ -50,6 +51,7 @@ import {
   courseControls,
   controls,
 } from '../db/schema.ts';
+import { cardClockToWallMs } from '../projection/halfDayClockMath.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 
@@ -118,6 +120,12 @@ interface HistoryRow {
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
+  /** The suggestion and this read's finish as local wall-clock strings
+   * 'YYYY-MM-DDTHH:MM:SS' (the card's clock, the scale the running time is
+   * computed on): the UI resolves an edited start before the finish on it,
+   * also in the hour skipped when DST starts. */
+  suggested_start_wall: string | null;
+  finish_wall: string | null;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -299,6 +307,16 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
+          suggested_start_wall:
+            view?.suggested_start_wall_ms == null
+              ? null
+              : formatWallClock(view.suggested_start_wall_ms),
+          finish_wall:
+            payload.finish === null
+              ? null
+              : formatWallClock(
+                  cardClockToWallMs(payload.finish, payload.card_type, e.eventTimeMs)
+                ),
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
         };

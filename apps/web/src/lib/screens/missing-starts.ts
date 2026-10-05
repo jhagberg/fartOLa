@@ -6,13 +6,18 @@
 // batch apply. Kept out of the component so it can be tested without
 // mounting Svelte.
 
-import { formatLocalTime } from '@fartola/shared-types';
+import { formatWallClock, parseWallClock } from '@fartola/shared-types';
 import {
   applyMissingStarts,
   type MissingStartItem,
   type MissingStartsResponse,
 } from '#lib/api/client.ts';
-import { formatElapsed, parseStartTimeInput } from './readout-types.ts';
+import {
+  formatElapsed,
+  resolveStartInput,
+  wallTimeOfDay,
+  type StartEntry,
+} from './readout-types.ts';
 
 export type { MissingStartItem, MissingStartsResponse };
 
@@ -35,36 +40,53 @@ export function statsLabel(
   return { key: 'ms.statsFallback', vars: { offset: formatElapsed(r.offset_ms), n: r.n } };
 }
 
+/** A listed wall-clock time ('YYYY-MM-DDTHH:MM:SS') as 'HH:MM:SS', or ''. */
+export function wallText(wall: string | null): string {
+  const ms = wall === null ? null : parseWallClock(wall);
+  return ms === null ? '' : wallTimeOfDay(ms);
+}
+
 /** The editable start field starts at the suggestion (HH:MM:SS), or empty. */
 export function initialStartText(item: MissingStartItem): string {
-  return item.suggested_start_ms === null ? '' : formatLocalTime(item.suggested_start_ms);
+  return wallText(item.suggested_start_wall);
 }
 
-/** Start text → epoch ms on the runner's day (the finish anchors it). */
-function parseStart(item: MissingStartItem, text: string): number | null {
-  return parseStartTimeInput(text, item.suggested_start_ms ?? item.finish_ms);
+/** Start text → a start on the runner's wall-clock timeline, before the
+ * finish (readout-types resolveStartInput). */
+function parseStart(item: MissingStartItem, text: string): StartEntry {
+  return resolveStartInput(text, item.finish_wall);
 }
 
-/** Running time with the edited start; null when the text is not a time or
- * the start is after the finish. */
+/** Running time with the edited start: finish − start on the wall clock,
+ * as the backend computes it; null when the text is not a time or the start
+ * is after the finish. */
 export function resultingTimeMs(item: MissingStartItem, text: string): number | null {
   const start = parseStart(item, text);
-  if (start === null || start > item.finish_ms) return null;
-  return item.finish_ms - start;
+  if ('error' in start) return null;
+  return parseWallClock(item.finish_wall)! - start.wallMs;
 }
 
-/** "Sätt" / "Sätt alla": one batch. Any row without a valid time → nothing
- * is sent and those competitor ids come back. */
+/** "Sätt" / "Sätt alla": one batch. Any row without a valid start → nothing
+ * is sent and those competitor ids come back, with the first one's reason. */
 export async function applyMissingStartRows(
   competitionId: string,
   rows: Array<{ item: MissingStartItem; text: string }>
-): Promise<{ ok: true; updated: number } | { ok: false; invalid: string[] }> {
+): Promise<
+  | { ok: true; updated: number }
+  | { ok: false; invalid: string[]; error: 'invalid' | 'after_finish' }
+> {
   const parsed = rows.map((r) => ({ id: r.item.competitor_id, start: parseStart(r.item, r.text) }));
-  const invalid = parsed.filter((p) => p.start === null).map((p) => p.id);
-  if (invalid.length > 0) return { ok: false, invalid };
+  const bad = parsed.filter((p) => 'error' in p.start);
+  if (bad.length > 0) {
+    const first = bad[0]!.start as { error: 'invalid' | 'after_finish' };
+    return { ok: false, invalid: bad.map((p) => p.id), error: first.error };
+  }
   const { updated } = await applyMissingStarts(
     competitionId,
-    parsed.map((p) => ({ competitor_id: p.id, start_time_ms: p.start! }))
+    parsed.map((p) => ({
+      competitor_id: p.id,
+      start_wall: formatWallClock((p.start as { wallMs: number }).wallMs),
+    }))
   );
   return { ok: true, updated };
 }

@@ -138,6 +138,7 @@ export function reduce(input: ReduceInput): CompetitionState {
   // comparisons to ~1000 Map.get() calls. Externally-visible behavior is
   // identical to the plan-07 linear scan — same fixture, same output.
   const cardIndex = buildCardIndex(competitorsByCompetition);
+  const competitorById = new Map(competitorsByCompetition.map((c) => [c.id, c]));
 
   // 02.1-14 Task 5: course-wide voided controls are dropped from every
   // course before scoring. The final void/unvoid state applies to every read
@@ -215,6 +216,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       no_timing: noTimingClasses.has(c.classId),
       missing_start: false,
       suggested_start_ms: null,
+      suggested_start_wall_ms: null,
       suggested_start_offset_ms: null,
       late_start_ms: null,
       early_start_ms: null,
@@ -227,6 +229,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   // reads with a check and a start punch, check → start.
   const checkMsByCompetitor = new Map<string, number | null>();
   const checkToStartMsByCompetitor = new Map<string, number>();
+  // Competitors whose waiver list (voided_legs) changed at any point: the
+  // post-pass re-scores exactly these, also when the final list is empty.
+  const waiverChanged = new Set<string>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
   // race_started_at_ms), but a replayed `race_started` event below can
   // re-seed this mid-walk if the column got out of sync. Three states:
@@ -305,6 +310,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               cardType: payload.card_type,
               readAtMs: e.eventTimeMs,
               drawnStartMs: competitor.startTimeMs,
+              drawnStartWallMs: competitor.startWallMs,
               startMethod: startMethodOf(competitor.classId),
             },
             resolvedExpected,
@@ -460,6 +466,7 @@ export function reduce(input: ReduceInput): CompetitionState {
                 cardType: latestRead?.card_type ?? '',
                 readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
                 drawnStartMs: competitor?.startTimeMs ?? null,
+                drawnStartWallMs: competitor?.startWallMs ?? null,
                 startMethod: startMethodOf(competitor?.classId),
               },
               resolvedExpected,
@@ -496,6 +503,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // event's max_seconds is ignored.
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
+          waiverChanged.add(view.id);
           if (!view.voided_legs.includes(payload.control_code)) {
             view.voided_legs = [...view.voided_legs, payload.control_code].sort((a, b) => a - b);
           }
@@ -506,6 +514,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // Phase 2.1 (D-16): remove control_code from view.voided_legs.
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
+          waiverChanged.add(view.id);
           view.voided_legs = view.voided_legs.filter((c) => c !== payload.control_code);
         }
         break;
@@ -528,11 +537,13 @@ export function reduce(input: ReduceInput): CompetitionState {
   // 2026-07-01): "Inga resultat får konstrueras eller rekonstrueras baserat
   // på sträcktiderna." MeOS can drop a leg's time ("Utan tidtagning",
   // oRunner.cpp:1789-1800); fartOLa deliberately does not.
-  for (const view of competitorViews.values()) {
+  //
+  // Every runner whose waiver list changed is re-scored against the FINAL
+  // list, also an empty one: void 31 → read missing 31 → unvoid 31 is MP.
+  for (const id of waiverChanged) {
+    const view = competitorViews.get(id)!;
     // PEND = no read, or one the race-phase gate kept from scoring.
-    if (view.voided_legs.length === 0 || view.manual_status !== null || view.status === 'PEND') {
-      continue;
-    }
+    if (view.manual_status !== null || view.status === 'PEND') continue;
     const latestRead = view.card_read_history[view.card_read_history.length - 1];
     if (latestRead === undefined) continue;
     const competitor = competitorsByCompetition.find((c) => c.id === view.id);
@@ -546,6 +557,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
+        drawnStartWallMs: competitor?.startWallMs ?? null,
         startMethod: startMethodOf(competitor?.classId),
       },
       filterVoidedLegs(expected, view.voided_legs),
@@ -592,6 +604,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
+      drawnStartWallMs: competitorById.get(v.id)?.startWallMs ?? null,
       startMethod: startMethodOf(v.class_id),
     };
     const warning = startPunchWarning(startInput);
@@ -608,8 +621,10 @@ export function reduce(input: ReduceInput): CompetitionState {
     v.missing_start = true;
     const checkMs = checkMsByCompetitor.get(v.id) ?? null;
     if (checkMs !== null) {
-      // Leaves the system as a start time (epoch ms).
-      v.suggested_start_ms = wallMsToEpochMs(checkMs + checkToStartMs);
+      // Station clock, kept as is for "Fastställ saknade starttider" (a
+      // time in the skipped spring-DST hour has no epoch ms of its own).
+      v.suggested_start_wall_ms = checkMs + checkToStartMs;
+      v.suggested_start_ms = wallMsToEpochMs(v.suggested_start_wall_ms);
       v.suggested_start_offset_ms = checkToStartMs;
     }
   }
