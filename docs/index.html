@@ -512,6 +512,19 @@
     .replay-num { font-family: var(--font-mono); font-size: 26px; font-weight: 600; color: var(--accent-strong); letter-spacing: -0.02em; }
     .replay-card h4 { margin: 4px 0 8px; font-size: 15.5px; font-weight: 600; }
     .replay-card p { margin: 0; color: var(--fg-muted); font-size: 14.5px; line-height: 1.55; }
+    /* ---------- rulebook compliance ---------- */
+    .cmp-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+    .cmp-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-top: 8px; }
+    @media (max-width: 880px) { .cmp-top, .cmp-cols { grid-template-columns: minmax(0, 1fr); } }
+    .cmp-table { width: 100%; border-collapse: collapse; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; font-size: 14.5px; }
+    .cmp-table th, .cmp-table td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    .cmp-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; }
+    .cmp-table td + td, .cmp-table th + th { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+    .cmp-table tr.total td { font-weight: 600; border-bottom: none; }
+    .cmp-notes p { margin: 0 0 12px; color: var(--fg-muted); font-size: 14.5px; }
+    .cmp-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--fg-muted); font-size: 14.5px; line-height: 1.55; }
+    .cmp-list b { color: var(--fg); font-weight: 600; }
+    .small { font-size: 13px; color: var(--fg-faint); margin-top: 14px; }
   </style>
 </head>
 <body>
@@ -532,11 +545,11 @@
       <nav id="topnav">
         <a href="#hur">Hur</a>
         <a href="#lage">Läget</a>
+        <a href="#regelverk">Regelverk</a>
         <a href="#roadmap">Roadmap</a>
         <a href="#diff">Design</a>
         <!-- TODO(adr-review): ADR-granskningen pågår separat; uppdatera ADR-länkarna när adr.html är klar. -->
         <a href="adr.html">ADR</a>
-        <a href="#tech">Standarder</a>
         <a href="#om">Om</a>
         <a href="https://github.com/jhagberg/fartOLa" target="_blank" rel="noopener">GitHub</a>
       </nav>
@@ -732,6 +745,89 @@
     </div>
   </section>
 
+  <!-- ---------- RULEBOOK COMPLIANCE ---------- -->
+  <section id="regelverk" class="tinted">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-eyebrow">SOFT:s regelverk</div>
+        <h2>Vilka regler <i>fartOLa</i> klarar, och vilka som saknas.</h2>
+        <p>Vi har gått igenom Regelverk för OL, version 20260701_2 (gäller från 2026-07-01), och tagit ut de 75 regler och anvisningar som ett tävlingsprogram måste stödja. Varje regel har en status för <i>fartOLa</i>. Samma regler är också bedömda för MeOS 5.0 U3 utifrån källkoden.</p>
+      </div>
+
+      <div class="callout" style="margin-bottom: 28px;">
+        <span class="callout-icon">!</span>
+        <div>
+          <b><i>fartOLa</i> är inte godkänt av SOFT.</b> På en sanktionerad tävling ska ett tidtagningsprogram som SOFT godkänt användas (TR 7.1.2), och lottningen ska göras med en godkänd metod eller programvara (TR 7.5.2). Därför kan <i>fartOLa</i> i dag inte vara huvudsystem på en sanktionerad tävling, oavsett hur många regler som är uppfyllda.
+        </div>
+      </div>
+
+      <div class="cmp-top">
+        <table class="cmp-table">
+          <thead>
+            <tr><th>Status</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Uppfylld</td><td>26</td><td>36</td></tr>
+            <tr><td>Delvis</td><td>20</td><td>26</td></tr>
+            <tr><td>Saknas</td><td>24</td><td>7</td></tr>
+            <tr><td>Ej tillämplig (sköts i Eventor eller av SOFT)</td><td>5</td><td>6</td></tr>
+            <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
+          </tbody>
+        </table>
+        <div class="cmp-notes">
+          <p>En regel räknas som uppfylld i <i>fartOLa</i> bara om den pekar på ett namngivet test som fallerar när beteendet går sönder. Testerna körs i CI, och CI stoppar om ett test som matrisen pekar på saknas eller om siffrorna i sammanfattningen inte stämmer.</p>
+          <p>MeOS-kolumnen bygger på en genomgång av källkoden. Programmet har inte byggts eller körts för jämförelsen.</p>
+          <p>
+            <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Hela regelmatrisen</a> ·
+            <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/meos-jamforelse.md" target="_blank" rel="noopener">Jämförelsen med MeOS</a>
+          </p>
+          <p class="small">Filerna hamnar i main när PR #51–#53 slås ihop. Till dess finns de i <a href="https://github.com/jhagberg/fartOLa/pull/53/files" target="_blank" rel="noopener">PR #53</a>.</p>
+        </div>
+      </div>
+
+      <div class="cmp-cols">
+        <div>
+          <h3 class="sub-head">Här ligger <i>fartOLa</i> före MeOS (9 regler)</h3>
+          <ul class="cmp-list">
+            <li><b>Sen start</b> (TR 4.18.9): tiden räknas från starttiden, och sen start flaggas. MeOS gör så bara om ”Ej startstämpling” är påslaget i varje klass.</li>
+            <li><b>Hela banans tid</b> (TR 4.20.10): <i>fartOLa</i> drar aldrig av sträcktider. MeOS kan göra det med kontrollstatus ”Utan tidtagning” eller ”Försvunnen”.</li>
+            <li><b>Hela sekunder</b> (TR 4.20.7): den officiella tiden avrundas till hel sekund. MeOS klipper av när tiondelar är påslagna.</li>
+            <li><b>Maxtid</b> (TR 4.21.1, 4.21.2): en maxtid för alla klasser, låst vid första start. I MeOS kan en klass få ett eget värde, och maxtiden kan ändras när som helst.</li>
+            <li><b>Anmälan utan namn</b> (TR 7.5.1) lottas inte. I MeOS hittades ingen sådan kontroll.</li>
+            <li><b>Resultatlistan</b> (TR 7.8.2) visar klass, bana och banlängd. MeOS standardlista saknar banlängd.</li>
+            <li><b>Statusrader</b> (TA till TR 7.8.2) med SOFT:s ord: ”Ej godkänd”, ”Diskad”, ”Ej start”, ”Deltagit”. MeOS skriver ”Felst.”, ”Utg.” och ”Disk.”.</li>
+            <li><b>Manuell status</b> (TR 10.1.2, 10.1.3) sparas med en motivering. MeOS har ingen motivering.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="sub-head">Här ligger MeOS före (27 regler, plus godkännandet)</h3>
+          <ul class="cmp-list">
+            <li><b>Tävlingsformer:</b> stafett, patrull, etapper, distrikt och mästerskap (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3 m.fl.).</li>
+            <li><b>Deltagaruppgifter:</b> utan tidtagning per deltagare (TR 3.4.8), födelseår och åldersklass (TR 3.4.4), avgifter (TR 4.12.4, 4.12.6).</li>
+            <li><b>Rättning i sekretariatet:</b> tidstillägg (TR 4.18.14, 10.4.2), måltid för hand (TR 4.20.6), manuella stämplar (TR 8.1.4), anteckning om ny starttid (TA till TR 4.18.9) och rättning av resultatlistan (TR 10.4.10).</li>
+            <li><b>Listor:</b> startlistor att anslå (TR 4.16.1, 7.5.4) och kontroll att alla kommit i mål (TR 4.22.1).</li>
+            <li><b>Störda klasser:</b> ogiltigförklarad klass och avkortad bana (TR 4.23.1, 4.23.3).</li>
+            <li><b>Lottning:</b> vakanser, efteranmälda utan omlottning, ranking och seedning, jaktstart, startplanering över klasser, kval och final (TA till TR 6.5.1, TR 7.3.2–7.5.9).</li>
+          </ul>
+          <p class="small">Lika för 38 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel stängningstid för målet (TR 4.16.3), ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
+        </div>
+      </div>
+
+      <h3 class="sub-head">De största luckorna</h3>
+      <ol class="cmp-list">
+        <li><i>fartOLa</i> är inte godkänt som tidtagnings- eller lottningsprogram (TR 7.1.2, 7.5.2).</li>
+        <li>Stängningstiden för målet (sista start plus maxtid) räknas inte fram. Arrangören får räkna ut den själv (TR 4.16.3, 4.22.1).</li>
+        <li>Det går inte att ge tidstillägg, mata in måltid för hand eller lägga till manuella stämplar (TR 4.18.14, 10.4.2, 4.20.6, 8.1.4).</li>
+        <li>”Deltagit” utan tidtagning går bara att välja för en hel klass, inte för en enskild deltagare (TR 3.4.8, 4.21.3).</li>
+        <li>Klasstyp och födelseår saknas. Därför finns ingen spärr mot direktanmälan i elitklass eller fri starttid i åldersklass, och ingen ålderskontroll (TR 3.4.2, 3.4.4, 4.14.1, 7.4.2).</li>
+        <li>Ingen kontroll av klasser med samma bana som startar samtidigt, och ingen seedning eller reservlista (TR 7.5.3, 7.4.5, 7.5.6).</li>
+        <li>Startlistan saknar banlängd, startplats och startnummer (TR 7.5.4, 4.16.1).</li>
+        <li>Pushen till liveresultat och uppladdningen till Eventor är testade mot ersatta nätanrop, inte mot de riktiga tjänsterna (TR 7.7.1, 4.21.4).</li>
+        <li>Efteranmälda kan inte läggas in utan att hela klassen lottas om, och vakanser går inte att boka (TR 7.5.7, 7.5.8, 7.3.2).</li>
+      </ol>
+    </div>
+  </section>
+
   <!-- ---------- DIFFERENTIATORS ---------- -->
   <section id="diff">
     <div class="wrap">
@@ -902,7 +998,7 @@
           <span class="ord">Nästa</span>
           <div>
             <h4>Luckorna mot regelverket</h4>
-            <p>Innan <i>fartOLa</i> kan vara huvudsystem behövs bland annat manuell inmatning i sekretariatet (måltid, stämplar, tidstillägg), utskrivbara listor och efteranmälda utan omlottning. Det här är ingen egen fas i roadmapen.</p>
+            <p>Innan <i>fartOLa</i> kan vara huvudsystem behövs bland annat manuell inmatning i sekretariatet (måltid, stämplar, tidstillägg), utskrivbara listor och efteranmälda utan omlottning. Hela listan finns under <a href="#regelverk">Regelverk</a> ovan. Det här är ingen egen fas i roadmapen.</p>
           </div>
           <span class="pill next">↗ Nästa</span>
         </div>
@@ -1109,6 +1205,7 @@
         <a href="https://github.com/jhagberg/fartOLa" target="_blank" rel="noopener">GitHub</a>
         <!-- TODO(adr-review): antalet ADR:er står inte här längre; länken ses över när ADR-granskningen är klar. -->
         <a href="adr.html">ADR</a>
+        <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Regelmatris</a>
         <a href="https://github.com/jhagberg/fartOLa/tree/main/.planning" target="_blank" rel="noopener">Planning docs</a>
         <a href="https://github.com/jhagberg/fartOLa/blob/main/LICENSE" target="_blank" rel="noopener">Licens</a>
         <a href="demo/index.html">Demo</a>
