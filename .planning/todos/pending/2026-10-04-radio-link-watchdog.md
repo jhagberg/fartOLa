@@ -56,6 +56,39 @@ or gateway is as likely as a single transmitter.
    directly instead of through MeOS, with the same health check built in:
    last-heard per unit, loss rate against readout, alert.
 
+## ROC (roc.olresultat.se): punches hidden by a wrong date
+
+On dag 2 MeOS's ROC input got no punches from one ROC sender. Not a
+station clock: the SI stations' clocks were right (weekday byte in the
+raw autosend frames = Sunday) and the card readouts were fine. The
+"ClusterFriend" sender on ROC unit O-Ringen107 had its own system clock
+≈18h50m behind, and it stamps each punch with *its* date + the SI time of
+day, so rows were stored as 2026-10-03 with the right time of day. The
+same SI record via sender "LivePunch" got the right date (ROC id 4596 vs
+4597, byte-identical raw data).
+
+MeOS asks `getpunches.asp?unitId=..&lastId=..&date=<competition date>
+&time=<zero time>` (meos `code/onlineinput.cpp:521`) and the ROC server
+filters `timestamp >= date+time`, so those rows never reached MeOS —
+although MeOS itself reads only the time of day (`onlineinput.cpp:803`).
+A local proxy (`~/roc-datefix/roc_datefix.py`, not in any repo) forced
+today's date on rows with id >= a hardcoded min id and applied MeOS's
+filter after that; MeOS polled it 09:56–12:02.
+
+For native ROC input in fartOLa:
+
+- Poll with `unitId` and `lastId` only (HTTP 500 without `lastId`);
+  never filter by date on the server. Skip rows from before the
+  competition by id (the first id of the day), not by timestamp.
+- Use the time of day only and place it on the competition clock like
+  card times (`cardClockToWallMs`). Times are local wall clock, no zone.
+- A row whose date is not the competition date is a warning on that
+  sender ("ClusterFriend O-Ringen107: date 1 day off"), never a silent
+  drop.
+- Deduplicate on (card, code, time of day) across sender types.
+- Watchdog: per sender, the delivery delay (ROC's "Leveranstid från ROC"
+  was ≈18h50m for the bad sender vs ≈0.5 s for LivePunch) and silence.
+
 ## Open questions
 
 - Exact gateway model and protocol (SH Radio Gateway → SIRAP / TCP?
