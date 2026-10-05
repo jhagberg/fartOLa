@@ -568,7 +568,7 @@
         <h1>Tidtagning för orientering, byggd för <span class="accent">klubben och skogen</span>.</h1>
         <p class="hero-tagline">Full fart från start till mål – eller slipp skit i resultatlistan.</p>
         <p class="lede">
-          <i>fartOLa</i> är ett tävlingssystem för orientering. En liten server på en Linux-laptop läser SI-brickorna, och sekretariatet arbetar i webbläsaren på dator, platta eller telefon. Varje stämpling sparas som en händelse i en lokal logg<sup>*</sup>, så resultaten kan räknas fram och räknas om när som helst. <b>Läget nu:</b> vi har spelat upp två riktiga tävlingsdagar i <i>fartOLa</i>. Resultaten blev desamma som i den officiella listan för alla löpare utom en per dag, och båda skillnaderna är förklarade. Som huvudsystem på en tävling har <i>fartOLa</i> ännu inte använts.
+          <i>fartOLa</i> är ett tävlingssystem för orientering. En liten server läser SI-brickorna, och sekretariatet arbetar i webbläsaren på dator, platta eller telefon. Varje stämpling sparas som en händelse i en lokal logg<sup>*</sup>, så resultaten kan räknas fram och räknas om när som helst. <b>Läget nu:</b> vi har spelat upp två riktiga tävlingsdagar i <i>fartOLa</i>. Resultaten blev desamma som i den officiella listan för alla löpare utom en per dag, och båda skillnaderna är förklarade. Som huvudsystem på en tävling har <i>fartOLa</i> ännu inte använts.
         </p>
         <p class="hero-foot">
           <b>*Tekniskt:</b> en append-only-logg med idempotenta händelser, så samma stämpling kan skickas in tio gånger utan att räknas dubbelt.
@@ -840,7 +840,7 @@
         <div class="diff-card">
           <span class="diff-num">01 · PLATTFORM</span>
           <h3>Webbläsaren är gränssnittet</h3>
-          <p>Sekretariatet arbetar i Chrome eller Edge på Linux, Mac, Windows eller en Android-platta. Servern som läser SI-brickorna körs på en Linux-laptop. Inga Windows-drivrutiner och ingen datorpark att underhålla.</p>
+          <p>Sekretariatet arbetar i Chrome eller Edge på Linux, Mac, Windows eller en Android-platta. Servern som läser SI-brickorna är byggd för att gå på Linux, Mac, Windows och Raspberry Pi, men än så länge är den bara provad på Linux. Klienterna behöver ingen installation, bara en webbläsare.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">02 · ARKITEKTUR</span>
