@@ -111,4 +111,6 @@ export {
   formatLocalTime,
   formatWallClock,
   parseWallClock,
+  parseTimeOfDay,
+  startBeforeFinishWallMs,
 } from './time.ts';

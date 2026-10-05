@@ -12,8 +12,15 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
-import { epochToLocalSeconds, formatLocalTime, type StartMethod } from '@fartola/shared-types';
-import { patchCompetitorStartTime } from '$lib/api/client.ts';
+import {
+  epochToLocalSeconds,
+  formatWallClock,
+  parseTimeOfDay,
+  parseWallClock,
+  startBeforeFinishWallMs,
+  type StartMethod,
+} from '@fartola/shared-types';
+import { patchCompetitorStartWall } from '$lib/api/client.ts';
 import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -73,6 +80,11 @@ export interface ReadoutHistoryRow {
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
+  /** The suggestion and this read's finish as local wall-clock strings
+   * 'YYYY-MM-DDTHH:MM:SS' — the card's clock, the scale the running time is
+   * computed on (null without one). */
+  suggested_start_wall: string | null;
+  finish_wall: string | null;
   /** 02.1-14 Task 14 — start punch more than 60 s after / before the start
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
@@ -125,15 +137,25 @@ export function readElapsedMs(
  * missing start, or null when the start is not missing or there is no
  * suggestion (no check punch). */
 export function missingStartHint(
-  row: Pick<ReadoutHistoryRow, 'missing_start' | 'suggested_start_ms' | 'suggested_start_offset_ms'>
+  row: Pick<
+    ReadoutHistoryRow,
+    'missing_start' | 'suggested_start_wall' | 'suggested_start_offset_ms'
+  >
 ): { check: string; offset: string; suggested: string } | null {
-  const { suggested_start_ms: suggested, suggested_start_offset_ms: offset } = row;
+  const { suggested_start_offset_ms: offset } = row;
+  const suggested =
+    row.suggested_start_wall === null ? null : parseWallClock(row.suggested_start_wall);
   if (!row.missing_start || suggested === null || offset === null) return null;
   return {
-    check: formatLocalTime(suggested - offset),
+    check: wallTimeOfDay(suggested - offset),
     offset: formatElapsed(offset),
-    suggested: formatLocalTime(suggested),
+    suggested: wallTimeOfDay(suggested),
   };
+}
+
+/** Wall-clock ms → 'HH:MM:SS'. */
+export function wallTimeOfDay(wallMs: number): string {
+  return formatWallClock(wallMs).slice(11, 19);
 }
 
 /** 02.1-14 Task 14: "Sen start +3:12" / "Tjuvstart? −0:05" for the read-out
@@ -149,29 +171,36 @@ export function startWarning(
   return null;
 }
 
-/** 'HH:MM' or 'HH:MM:SS' → epoch ms on the same competition-local day as
- * `refMs` (the suggestion or the read time). Null when not a valid time. */
-export function parseStartTimeInput(text: string, refMs: number): number | null {
-  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text.trim());
-  if (!m) return null;
-  const [h, min, sec] = [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)];
-  if (h > 23 || min > 59 || sec > 59) return null;
-  const localMidnightMs = refMs - epochToLocalSeconds(refMs) * 1000;
-  return localMidnightMs + (h * 3600 + min * 60 + sec) * 1000;
+/** An edited start: on the wall-clock timeline, or why not. */
+export type StartEntry = { wallMs: number } | { error: 'invalid' | 'after_finish' };
+
+/** 'HH:MM' or 'HH:MM:SS' → a start on the finish's wall-clock timeline
+ * (`finishWall` 'YYYY-MM-DDTHH:MM:SS', as the backend computes the running
+ * time): the latest such time not after the finish, so 23:50 against a
+ * finish at 00:10 is the day before; more than 12 h before it means the
+ * start is after the finish. No epoch arithmetic, so DST nights are no
+ * different. */
+export function resolveStartInput(text: string, finishWall: string | null): StartEntry {
+  const seconds = parseTimeOfDay(text);
+  const finish = finishWall === null ? null : parseWallClock(finishWall);
+  if (seconds === null || finish === null) return { error: 'invalid' };
+  const wallMs = startBeforeFinishWallMs(seconds, finish);
+  return wallMs === null ? { error: 'after_finish' } : { wallMs };
 }
 
-/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time. Returns
- * false (and sends nothing) when the text is not a valid time. */
+/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time as a
+ * wall-clock time. Sends nothing when the text is not a time, or the start
+ * would be after the finish. */
 export async function setStartFromInput(
   competitionId: string,
   competitorId: string,
   text: string,
-  refMs: number
-): Promise<boolean> {
-  const startMs = parseStartTimeInput(text, refMs);
-  if (startMs === null) return false;
-  await patchCompetitorStartTime(competitionId, competitorId, startMs);
-  return true;
+  finishWall: string | null
+): Promise<'ok' | 'invalid' | 'after_finish'> {
+  const entry = resolveStartInput(text, finishWall);
+  if ('error' in entry) return entry.error;
+  await patchCompetitorStartWall(competitionId, competitorId, formatWallClock(entry.wallMs));
+  return 'ok';
 }
 
 /** Format `ms` (UTC epoch millis) as `HH:MM:SS` in the local timezone.
