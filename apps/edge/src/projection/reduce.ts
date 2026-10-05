@@ -227,6 +227,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   // reads with a check and a start punch, check → start.
   const checkMsByCompetitor = new Map<string, number | null>();
   const checkToStartMsByCompetitor = new Map<string, number>();
+  // Competitors whose waiver list (voided_legs) changed at any point: the
+  // post-pass re-scores exactly these, also when the final list is empty.
+  const waiverChanged = new Set<string>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
   // race_started_at_ms), but a replayed `race_started` event below can
   // re-seed this mid-walk if the column got out of sync. Three states:
@@ -496,6 +499,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // event's max_seconds is ignored.
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
+          waiverChanged.add(view.id);
           if (!view.voided_legs.includes(payload.control_code)) {
             view.voided_legs = [...view.voided_legs, payload.control_code].sort((a, b) => a - b);
           }
@@ -506,6 +510,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // Phase 2.1 (D-16): remove control_code from view.voided_legs.
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
+          waiverChanged.add(view.id);
           view.voided_legs = view.voided_legs.filter((c) => c !== payload.control_code);
         }
         break;
@@ -528,11 +533,13 @@ export function reduce(input: ReduceInput): CompetitionState {
   // 2026-07-01): "Inga resultat får konstrueras eller rekonstrueras baserat
   // på sträcktiderna." MeOS can drop a leg's time ("Utan tidtagning",
   // oRunner.cpp:1789-1800); fartOLa deliberately does not.
-  for (const view of competitorViews.values()) {
+  //
+  // Every runner whose waiver list changed is re-scored against the FINAL
+  // list, also an empty one: void 31 → read missing 31 → unvoid 31 is MP.
+  for (const id of waiverChanged) {
+    const view = competitorViews.get(id)!;
     // PEND = no read, or one the race-phase gate kept from scoring.
-    if (view.voided_legs.length === 0 || view.manual_status !== null || view.status === 'PEND') {
-      continue;
-    }
+    if (view.manual_status !== null || view.status === 'PEND') continue;
     const latestRead = view.card_read_history[view.card_read_history.length - 1];
     if (latestRead === undefined) continue;
     const competitor = competitorsByCompetition.find((c) => c.id === view.id);
