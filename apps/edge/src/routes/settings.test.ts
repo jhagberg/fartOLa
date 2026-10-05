@@ -389,6 +389,24 @@ describe('GET/PUT /api/settings/meos', () => {
     assert.deepEqual(await get(), { has_meos_password: false, meos_allow_without_password: false });
   });
 
+  // Codex third review of #51, finding 5: the flags tell the LAN whether
+  // /mip and /mop are open; only the operator machine may read them.
+  test('GET from the LAN → 403 operator_only; from localhost → 200', async () => {
+    const lan = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/settings/meos',
+      remoteAddress: '192.168.1.50',
+    });
+    assert.equal(lan.statusCode, 403);
+    assert.deepEqual(lan.json(), { error: 'operator_only' });
+    const local = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/settings/meos',
+      remoteAddress: '127.0.0.1',
+    });
+    assert.equal(local.statusCode, 200);
+  });
+
   test('PUT a password → has_meos_password; the password is never returned', async () => {
     const CANARY = 'MEOS-CANARY-PWD-777';
     const res = await put({ meos_password: CANARY });

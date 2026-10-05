@@ -52,6 +52,7 @@ function receiptData(over: Partial<CompetitorView> = {}): ReceiptData {
     no_timing: true,
     missing_start: false,
     suggested_start_ms: null,
+    suggested_start_wall_ms: null,
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,

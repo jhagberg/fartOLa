@@ -658,19 +658,14 @@
   }
 
   // 02.1-14 Task 13: "Sätt starttid" on a read without a start. The time is
-  // placed on the day of the suggestion (or of the read).
+  // placed on the card's wall clock, before the read's finish.
   async function onSetStartTimeHandler(competitorId: string, text: string): Promise<void> {
     const row = currentRow;
     if (!row) return;
     try {
-      const sent = await setStartFromInput(
-        competitionId,
-        competitorId,
-        text,
-        row.suggested_start_ms ?? row.event_time_ms
-      );
-      if (!sent) {
-        toast(t('lottning.invalidTime'));
+      const result = await setStartFromInput(competitionId, competitorId, text, row.finish_wall);
+      if (result !== 'ok') {
+        toast(t(result === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime'));
         return;
       }
       await Promise.all([refetchReadout(), refetchCompetitors()]);

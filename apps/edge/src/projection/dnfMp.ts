@@ -37,7 +37,7 @@
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Class } from '../db/types.ts';
-import { epochToWallClockMs } from '../time/competitionClock.ts';
+import { epochToWallClockMs, wallClockToEpochMs } from '../time/competitionClock.ts';
 import { cardClockToWallMs } from './halfDayClockMath.ts';
 
 /** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
@@ -53,6 +53,9 @@ export interface DetectInput {
   readAtMs: number;
   /** Drawn start (competitors.start_time_ms, epoch ms); null = open start. */
   drawnStartMs: number | null;
+  /** competitors.start_wall_ms: the same start as a wall-clock time, when it
+   * was set as one (see drawnStartWallMs). */
+  drawnStartWallMs?: number | null;
   /** The class's start method (02.1-14 Task 14). */
   startMethod: StartMethod;
 }
@@ -173,8 +176,22 @@ export function detectStatus(
 /** What the start is resolved from. */
 type StartInput = Pick<
   DetectInput,
-  'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'
+  'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'drawnStartWallMs' | 'startMethod'
 >;
+
+/** The runner's start time on the local wall-clock timeline. A start set as
+ * a wall-clock time (competitors.start_wall_ms) counts as is while
+ * start_time_ms is still its epoch: a station time in the hour skipped when
+ * DST starts (02:00:54 on 2026-03-29) has no epoch that reads back as it.
+ * Any writer that changed start_time_ms since makes it stale. */
+export function drawnStartWallMs(
+  input: Pick<StartInput, 'drawnStartMs' | 'drawnStartWallMs'>
+): number | null {
+  const { drawnStartMs: epoch, drawnStartWallMs: wall } = input;
+  if (epoch === null) return null;
+  if (wall != null && wallClockToEpochMs(wall).includes(epoch)) return wall;
+  return epochToWallClockMs(epoch);
+}
 
 /** The start punch on the local wall-clock timeline. */
 function startPunchWallMs(input: StartInput): number | null {
@@ -197,7 +214,7 @@ function startPunchWallMs(input: StartInput): number | null {
  *                  (2026-07-01)). */
 export function startWallMs(input: StartInput): number | null {
   const punch = startPunchWallMs(input);
-  const drawn = input.drawnStartMs === null ? null : epochToWallClockMs(input.drawnStartMs);
+  const drawn = drawnStartWallMs(input);
   switch (input.startMethod) {
     case 'start_time':
       return drawn;
@@ -223,7 +240,7 @@ export function startPunchWarning(input: StartInput): {
   if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
     return none;
   }
-  const diff = startPunchWallMs(input)! - epochToWallClockMs(input.drawnStartMs);
+  const diff = startPunchWallMs(input)! - drawnStartWallMs(input)!;
   if (diff > LATE_START_GRACE_MS) return { late_start_ms: diff, early_start_ms: null };
   if (diff < 0) return { late_start_ms: null, early_start_ms: -diff };
   return none;

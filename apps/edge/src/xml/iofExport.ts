@@ -73,6 +73,9 @@ export interface ExportInput {
   /** Competitor id → Eventor person id (EntryList import), written as
    * Person > Id so Eventor links the results (SOFT TA till TR 7.8.3). */
   eventorPersonIds?: ReadonlyMap<string, number>;
+  /** Competitor id → competitors.start_wall_ms, for a start set as a
+   * wall-clock time (dnfMp.drawnStartWallMs). */
+  startWallMs?: ReadonlyMap<string, number>;
   state: CompetitionState;
   status?: ExportStatus;
   /** Creator attribute on the root element. Defaults to `fartOLa v0.1`. Tests
@@ -271,7 +274,8 @@ interface ResultListNode {
  * start time; one who did not start (or never read out) has neither. */
 function raceTimes(
   view: CompetitorView,
-  cls: ClassDTO
+  cls: ClassDTO,
+  drawnStartWallMs: number | null
 ): { start: number | null; finish: number | null } {
   if (view.status === 'PEND' || view.status === 'DNS' || view.status === 'CANCEL') {
     return { start: null, finish: null };
@@ -285,6 +289,7 @@ function raceTimes(
     cardType: read.card_type,
     readAtMs: read.event_time_ms,
     drawnStartMs: view.start_time_ms,
+    drawnStartWallMs,
     startMethod: cls.start_method,
   });
   return {
@@ -300,7 +305,8 @@ function buildPersonResult(
   view: CompetitorView,
   place: number | null,
   cls: ClassDTO,
-  eventorPersonId: number | undefined
+  eventorPersonId: number | undefined,
+  drawnStartWallMs: number | null
 ): PersonResultNode | null {
   const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
@@ -326,7 +332,7 @@ function buildPersonResult(
   // StartList), absolute from the competition clock. An untimed class
   // exports neither.
   if (!noTiming) {
-    const { start, finish } = raceTimes(view, cls);
+    const { start, finish } = raceTimes(view, cls, drawnStartWallMs);
     if (start !== null) result.StartTime = new Date(start).toISOString();
     if (finish !== null) result.FinishTime = new Date(finish).toISOString();
   }
@@ -403,7 +409,13 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     for (const row of rows) {
       const view = input.state.competitors.get(row.competitor_id);
       if (view === undefined) continue;
-      const node = buildPersonResult(view, row.place, cls, input.eventorPersonIds?.get(view.id));
+      const node = buildPersonResult(
+        view,
+        row.place,
+        cls,
+        input.eventorPersonIds?.get(view.id),
+        input.startWallMs?.get(view.id) ?? null
+      );
       if (node === null) {
         pendingCount += 1; // PEND: no result yet, left out
         continue;

@@ -14,7 +14,6 @@ import {
   resultRowCells,
   missingStartHint,
   startWarning,
-  parseStartTimeInput,
   setStartFromInput,
   type ReadoutHistoryRow,
 } from './readout-types.ts';
@@ -171,6 +170,7 @@ describe('missing start (02.1-14 Task 13)', () => {
     const r = row({
       missing_start: true,
       suggested_start_ms: check + 114_000,
+      suggested_start_wall: '2026-10-03T10:21:31',
       suggested_start_offset_ms: 114_000,
     });
     expect(missingStartHint(r)).toEqual({
@@ -180,10 +180,27 @@ describe('missing start (02.1-14 Task 13)', () => {
     });
   });
 
+  // Codex third review of #51, finding 4: the hint is the card's clock, also
+  // in the hour skipped when DST starts.
+  it('hint: station times in the skipped spring hour stay as they are', () => {
+    const r = row({
+      missing_start: true,
+      suggested_start_ms: Date.parse('2026-03-29T01:00:54Z'),
+      suggested_start_wall: '2026-03-29T02:00:54',
+      suggested_start_offset_ms: 114_000,
+    });
+    expect(missingStartHint(r)).toEqual({
+      check: '01:59:00',
+      offset: '1:54',
+      suggested: '02:00:54',
+    });
+  });
+
   it('hint: none without a suggestion or without a missing start', () => {
     const noCheck = row({
       missing_start: true,
       suggested_start_ms: null,
+      suggested_start_wall: null,
       suggested_start_offset_ms: null,
     });
     expect(missingStartHint(noCheck)).toBeNull();
@@ -192,25 +209,17 @@ describe('missing start (02.1-14 Task 13)', () => {
         row({
           missing_start: false,
           suggested_start_ms: check,
+          suggested_start_wall: '2026-10-03T10:19:37',
           suggested_start_offset_ms: 0,
         })
       )
     ).toBeNull();
   });
 
-  it('parses HH:MM:SS and HH:MM on the reference day; rejects garbage', () => {
-    expect(parseStartTimeInput('10:21:40', check)).toBe(
-      localToEpochMs('2026-10-03', 10 * 3600 + 21 * 60 + 40)
-    );
-    expect(parseStartTimeInput(' 10:22 ', check)).toBe(
-      localToEpochMs('2026-10-03', 10 * 3600 + 22 * 60)
-    );
-    expect(parseStartTimeInput('10:61:00', check)).toBeNull();
-    expect(parseStartTimeInput('abc', check)).toBeNull();
-    expect(parseStartTimeInput('', check)).toBeNull();
-  });
-
-  it('"Sätt starttid" PATCHes the edited value to the start-time route', async () => {
+  const patchBody = async (
+    text: string,
+    finishWall: string
+  ): Promise<{ result: string; body: unknown }> => {
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ id: 'r1' }), {
@@ -219,22 +228,50 @@ describe('missing start (02.1-14 Task 13)', () => {
         })
     );
     global.fetch = fetchMock as unknown as typeof fetch;
-    const sent = await setStartFromInput('comp-1', 'r1', '10:21:40', check + 114_000);
-    expect(sent).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/competitions/comp-1/competitors/r1/start-time');
-    expect(init.method).toBe('PATCH');
-    expect(JSON.parse(init.body as string)).toEqual({
-      start_time_ms: localToEpochMs('2026-10-03', 10 * 3600 + 21 * 60 + 40),
+    const result = await setStartFromInput('comp-1', 'r1', text, finishWall);
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit] | undefined;
+    if (call !== undefined) {
+      expect(call[0]).toBe('/api/competitions/comp-1/competitors/r1/start-time');
+      expect(call[1].method).toBe('PATCH');
+    }
+    return { result, body: call === undefined ? null : JSON.parse(call[1].body as string) };
+  };
+
+  it('"Sätt starttid" PATCHes the edited start as a wall-clock time before the finish', async () => {
+    expect(await patchBody('10:21:40', '2026-10-03T10:55:00')).toEqual({
+      result: 'ok',
+      body: { start_wall: '2026-10-03T10:21:40' },
+    });
+    expect((await patchBody(' 10:22 ', '2026-10-03T10:55:00')).body).toEqual({
+      start_wall: '2026-10-03T10:22:00',
     });
   });
 
-  it('an invalid time is not sent', async () => {
-    const fetchMock = vi.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
-    expect(await setStartFromInput('comp-1', 'r1', '25:00', check)).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('DST days: 03:00 against a finish at 03:10 is saved as 03:00', async () => {
+    for (const day of ['2026-03-29', '2026-10-25']) {
+      expect((await patchBody('03:00', `${day}T03:10:00`)).body).toEqual({
+        start_wall: `${day}T03:00:00`,
+      });
+    }
+  });
+
+  it('23:50 against a finish at 00:10 is saved on the day before', async () => {
+    expect((await patchBody('23:50', '2026-10-04T00:10:00')).body).toEqual({
+      start_wall: '2026-10-03T23:50:00',
+    });
+  });
+
+  it('an invalid time, or a start after the finish, is not sent', async () => {
+    for (const text of ['25:00', '10:61:00', 'abc', '']) {
+      expect(await patchBody(text, '2026-10-03T10:55:00')).toEqual({
+        result: 'invalid',
+        body: null,
+      });
+    }
+    expect(await patchBody('11:00', '2026-10-03T10:55:00')).toEqual({
+      result: 'after_finish',
+      body: null,
+    });
   });
 
   it('sv + en have the read-out card keys', async () => {

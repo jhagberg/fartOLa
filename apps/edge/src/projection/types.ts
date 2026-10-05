@@ -99,6 +99,10 @@ export interface CompetitorView {
    * card's check punch + suggested_start_offset_ms. Null without a check
    * punch or when the start is not missing. */
   suggested_start_ms: number | null;
+  /** The same suggestion on the local wall-clock timeline (the card's own
+   * clock): what the operator applies. In the hour skipped when DST starts
+   * it differs from suggested_start_ms by that hour. */
+  suggested_start_wall_ms: number | null;
   /** The check → start punch gap used: the median over the competition's
    * runners with both, or 1:54 when fewer than 10. Null with no suggestion. */
   suggested_start_offset_ms: number | null;

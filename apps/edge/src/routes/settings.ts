@@ -133,7 +133,15 @@ function meosSettings(app: FastifyInstance): {
 }
 
 export default async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/settings/meos', async () => meosSettings(app));
+  // Operator machine only, like the PUT (server.ts OPERATOR_ONLY_WRITES):
+  // the flags tell the LAN whether /mip and /mop are open. The write gate
+  // covers writes only, so the GET checks here.
+  app.get('/api/settings/meos', async (req, reply) => {
+    if (!app.fartolaIsOperatorMachine(req.socket.remoteAddress)) {
+      return reply.code(403).send({ error: 'operator_only' });
+    }
+    return meosSettings(app);
+  });
 
   app.put('/api/settings/meos', async (req, reply) => {
     const parsed = MeosSettingsInput.safeParse(req.body ?? {});

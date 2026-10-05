@@ -14,6 +14,7 @@
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { Writable } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
@@ -37,7 +38,8 @@ interface Ctx {
   savedEnv: Record<string, string | undefined>;
 }
 
-async function boot(): Promise<Ctx> {
+/** `logChunks` given → the server logs at info into it (request logging). */
+async function boot(logChunks?: string[]): Promise<Ctx> {
   const savedEnv: Record<string, string | undefined> = {};
   for (const k of ENV_KEYS) {
     savedEnv[k] = process.env[k];
@@ -45,7 +47,19 @@ async function boot(): Promise<Ctx> {
   }
   const handle = openDatabase(':memory:');
   const nodeId = ensureNodeId(handle);
-  const app = await buildServer({ logger: false, dbHandle: handle, nodeId });
+  const logger =
+    logChunks === undefined
+      ? false
+      : {
+          level: 'info',
+          stream: new Writable({
+            write(chunk: Buffer, _enc, cb): void {
+              logChunks.push(chunk.toString('utf8'));
+              cb();
+            },
+          }),
+        };
+  const app = await buildServer({ logger, dbHandle: handle, nodeId });
   return { app, handle, savedEnv };
 }
 
@@ -192,5 +206,33 @@ describe('MeOS integration access — password from the environment', () => {
   test('MEOS_PASSWORD env wins, like the other secrets', async () => {
     assert.equal((await mip(ctx)).statusCode, 401);
     assert.equal((await mip(ctx, { pwd: 'fran-env' })).statusCode, 200);
+  });
+});
+
+// Codex third review of #51, finding 1: the request log line carries the
+// URL, and with it a `?pwd=` password in plain text.
+describe('MeOS password in the query string is not logged', () => {
+  const CANARY = 'CANARY-MEOS-REVIEW';
+  let ctx: Ctx;
+  let logChunks: string[];
+  beforeEach(async () => {
+    logChunks = [];
+    ctx = await boot(logChunks);
+    await configure(ctx, { meos_password: CANARY });
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  test('authenticated GET /mip?pwd=… logs the URL with pwd=***', async () => {
+    assert.equal((await mip(ctx, { remoteAddress: LAN, queryPwd: CANARY })).statusCode, 200);
+    // Any route, also one that does not exist.
+    await ctx.app.inject({ method: 'GET', url: `/api/nope?a=1&pwd=${CANARY}&b=2` });
+    // An encoded or upper-case key is masked too.
+    await ctx.app.inject({ method: 'GET', url: `/api/nope?P%77D=${CANARY}` });
+    const log = logChunks.join('');
+    assert.ok(!log.includes(CANARY), log);
+    assert.match(log, /"url":"\/mip\?pwd=\*\*\*"/);
+    assert.match(log, /"url":"\/api\/nope\?a=1&pwd=\*\*\*&b=2"/);
   });
 });

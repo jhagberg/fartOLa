@@ -250,6 +250,7 @@
   "ms.result": "Time",
   "ms.set": "Set",
   "ms.setAll": "Set all",
+  "ms.startAfterFinish": "The start time is after the finish.",
   "ro.edit": "Edit",
   "ro.editTitle": "Edit competitor",
   "ro.editSave": "Save",
