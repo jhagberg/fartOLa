@@ -63,7 +63,7 @@
 | TR 4.20.8 (individuell start) | UPPFYLLD | UPPFYLLER | `calculatePlace` (`oEventResult.cpp:64-100`): lika resultat ger samma placering, och nästa placering hoppar över. | Lika lagrade tider delar placering. Med tiondelar påslagna jämförs oavrundade tider (se TR 4.20.7). |
 | TR 4.20.8 (gemensam start/jaktstart) | SAKNAS | UPPFYLLER INTE | Listan "Målgångsordning" (`swedish.lng:546`) och sortering på måltid (`oRunner.cpp:2301`, `oRunner.cpp:4108`). Placeringen räknas ur tiden (`oEventResult.cpp:369`). | Ingen av dem ger en domarordning för löpare med samma registrerade sekund, och placeringskolumnen går inte att redigera. |
 | TR 4.20.9 (maxtid) | UPPFYLLD | UPPFYLLER | Löptid över `MaxTime` ger `StatusMAX` (`oRunner.cpp:1608-1616`), och bara OK blir Maxtid (`oRunner.cpp:1653-1654`). Felstämpling går alltså före. "Maxtid" (`oEvent.cpp:5343`). | Uppfyllt när maxtiden är inmatad. Utan satt maxtid (standard 0) blir ingen löpare Maxtid, så arrangören måste mata in den publicerade maxtiden. |
-| TR 4.20.10 | DELVIS | DELVIS | Löptiden är måltid minus starttid plus `TimeAdjust` (`oRunner.cpp:819-823`). Avdrag av sträcktid sker bara med uttryckligen valda kontrollstatusar ("Utan tidtagning", "Försvunnen", `oRunner.cpp:1789`, `oRunner.cpp:1799`) eller positiv `MinTime` "Minsta sträcktid" (`oRunner.cpp:1826`). | Standard följer regeln. De valfria inställningarna drar av sträcktid och strider då mot regeln, samma slags avvikelse som fartOLa:s `leg_voided`. Ingen av dem är på som standard. |
+| TR 4.20.10 | UPPFYLLD | DELVIS | Löptiden är måltid minus starttid plus `TimeAdjust` (`oRunner.cpp:819-823`). Avdrag av sträcktid sker bara med uttryckligen valda kontrollstatusar ("Utan tidtagning", "Försvunnen", `oRunner.cpp:1789`, `oRunner.cpp:1799`) eller positiv `MinTime` "Minsta sträcktid" (`oRunner.cpp:1826`). | Standard följer regeln. De valfria inställningarna drar av sträcktid och strider då mot regeln, samma slags avvikelse som fartOLa:s `leg_voided`. Ingen av dem är på som standard. |
 | TR 4.21.1 | UPPFYLLD | DELVIS | En maxtid för tävlingen: `MaxTime` "Gräns för maxtid" (`oEvent.cpp:165`, tävlingsformuläret `TabCompetition.cpp:4335-4339`). Klasser med 0 ärver den (`oClass.cpp:3304-3306`). | Regeln kräver en maxtid fastställd i förväg, inte att 2× eller 4× räknas ut automatiskt. Kvar: utan inmatat värde finns ingen maxtid, och en klass kan få ett eget värde som avviker från tävlingens (fartOLa låter tävlingens värde gälla över klassens). |
 | TR 4.21.2 | UPPFYLLD | UPPFYLLER INTE | `setMaximalTime` (`oEvent.cpp:4935-4938`) sätter värdet utan villkor. | Sökt: "MaxTime" med "lock"/"Lock". |
 | TR 4.21.3 | DELVIS | DELVIS | Utskrivbara resultatlistor genom listsystemet (`oListInfo.cpp:4864`, `EStdResultList`), med utskrift och PDF (`printer.cpp`, `pdfwriter.cpp`). | Listan på arenan finns. Standardutskriften skriver "Godkänd" för deltagare utan tidtagning (inte "Deltagit") och "Felst.", "Utg." och "Disk." (`oListInfo.cpp:1680`, `oListInfo.cpp:4889`, `oEvent.cpp:5662`, `oEvent.cpp:5693`). |
@@ -143,15 +143,16 @@
 | EJ TILLÄMPLIG | 6 |
 | **Totalt** | **75** |
 
-Som jämförelse har fartOLa 25 UPPFYLLD, 21 DELVIS, 24 SAKNAS och 5 EJ TILLÄMPLIG.
+Som jämförelse har fartOLa 26 UPPFYLLD, 20 DELVIS, 24 SAKNAS och 5 EJ TILLÄMPLIG.
 
 MeOS-betygen är rättade efter en oberoende källkodsgranskning (Codex, MeOS 5.0 U3 build 1851, utan att programmet byggts eller körts): TR 3.4.8/4.14.1 (utan tidtagning), TR 4.14.4, TA till TR 4.18.9 och TR 4.23.3 blev UPPFYLLER, och TA till TR 7.8.3 (koppling) och TR 10.2.2/10.2.3 EJ TILLÄMPLIG. Anmärkningarna för TR 4.14.1 (direktanmälan), 4.18.9, 4.20.6, 4.20.7, 4.20.8, 4.20.9, 4.20.10, 4.21.1, 4.21.3, 7.5.2 och 10.4.10 är preciserade. TR 7.6.1 är DELVIS för båda av samma skäl (godkännande och angivelse i Eventor ligger utanför programmet).
 
 Raderna jämförs i ordningen UPPFYLLD/UPPFYLLER > DELVIS > SAKNAS/UPPFYLLER INTE.
 
-**fartOLa ligger före MeOS (8 rader):**
+**fartOLa ligger före MeOS (9 rader):**
 
 - TR 4.18.9 med TA (sen start): fartOLa räknar tiden från starttiden som standard och varnar för sen start. MeOS gör det bara med "Ej startstämpling" påslaget i varje klass.
+- TR 4.20.10: fartOLa räknar alltid tiden för hela banan och drar aldrig av sträcktid. MeOS kan göra det med kontrollstatus "Utan tidtagning" eller "Försvunnen".
 - TR 4.20.7: fartOLa avrundar den officiella tiden till hel sekund. MeOS klipper av när tiondelar är påslagna (standard är hela sekunder).
 - TR 4.21.1 och TR 4.21.2: i fartOLa gäller tävlingens maxtid alla klasser och låses vid första start. I MeOS kan en klass få ett eget värde, och maxtiden kan ändras när som helst.
 - TR 7.5.1 (utan namn): fartOLa lottar inte en tävlande utan namn. I MeOS hittades ingen kontroll.
@@ -170,7 +171,7 @@ Med samma status har fartOLa dessutom några kvalitativa fördelar. Random-lottn
 - Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.4.1 (jaktstart och bokning), TR 7.4.5 (seedning), TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
 - TR 7.1.2: MeOS används som godkänt huvudsystem, vilket fartOLa inte är. Det går inte att belägga i koden.
 
-**Lika (39 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: stängningstid för målet (TR 4.16.3), målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
+**Lika (38 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: stängningstid för målet (TR 4.16.3), målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
 
 ## 4. MeOS-funktioner som fartOLa saknar utöver regelraderna
 
