@@ -78,6 +78,7 @@ import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
 import { competitors, eventCodes } from './db/schema.ts';
+import { resolveMeosAccess } from './config/secrets.ts';
 import type { PrinterSink } from './print/sink.ts';
 import { createStdoutPrinterSink } from './print/stdout-sink.ts';
 import type { ChannelName } from '@fartola/shared-types';
@@ -209,8 +210,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
   // CLI) so the MeOS parallel-run laptop can open the SPA over LAN.
   // Same-origin Host header is the implicit trust anchor — Fastify only
   // serves bound interfaces, so an attacker on the LAN must already be
-  // on the LAN, which is the explicit Phase 2.0 trust model (D-MIP-1 /
-  // D-MOP-4 no-auth closed-LAN posture).
+  // on the LAN (Phase 2.0 trust model). The MeOS endpoints' no-auth
+  // posture (D-MIP-1 / D-MOP-4) was revised on 2026-10-05: they take a
+  // password, or stay on this machine (integrations/meos/access.ts).
   const corsOrigin: Array<RegExp> = [
     /^http:\/\/127\.0\.0\.1(:\d+)?$/,
     /^http:\/\/localhost(:\d+)?$/,
@@ -247,6 +249,35 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // allow-list can permit LAN origins when the operator explicitly
     // opted in. Default false (loopback only). Code-review F-001 fix.
     app.decorate('fartolaAllowLan', opts.allowLan === true);
+
+    // Snapshot this host's own interface addresses at boot (operator-self
+    // bypass — see fartolaIsOperatorMachine). Only consulted when allowLan is
+    // set; loopback-only binds never see a non-loopback source. A mid-session
+    // IP change (DHCP/Wi-Fi switch) needs a restart to refresh this set.
+    const localInterfaceAddresses = new Set<string>();
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        localInterfaceAddresses.add(addr.address);
+      }
+    }
+    // The operator machine: loopback, or (allowLan only) this host's own
+    // interface addresses — the operator may open the UI via THIS laptop's
+    // own LAN IP (the URL run-local.sh prints), in which case the socket
+    // source is one of this host's addresses, not loopback. A real helper
+    // machine always has a *different* source IP, so trusting our own
+    // addresses doesn't widen LAN access. socket.remoteAddress only — never
+    // X-Forwarded-For (header spoofing, T-02.1-27). Used by the write gate
+    // below and the MeOS endpoints (integrations/meos/access.ts).
+    app.decorate('fartolaIsOperatorMachine', (remoteAddr: string | undefined): boolean => {
+      if (remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1') {
+        return true;
+      }
+      if (opts.allowLan !== true || remoteAddr === undefined) return false;
+      const normalizedAddr = remoteAddr.startsWith('::ffff:')
+        ? remoteAddr.slice('::ffff:'.length)
+        : remoteAddr;
+      return localInterfaceAddresses.has(normalizedAddr);
+    });
 
     await app.register(wsPlugin);
 
@@ -316,11 +347,12 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerSettingsRoutes);
     // Phase 2.0 Plan 02-03 — MIP server (GET /mip). Mounted at the ROOT,
     // not /api/*, because MeOS hard-codes its poll URL and won't add a
-    // prefix. D-MIP-1: no auth (closed club LAN).
+    // prefix. D-MIP-1 (revised 2026-10-05): MeOS password, see access.ts.
     await app.register(registerMipRoute);
     // Phase 2.0 Plan 02-04 — MOP receiver (POST /mop). Same root-mount
-    // posture as MIP — MeOS hard-codes its push URL. D-MOP-4: no auth,
-    // always-on; D-MOP-1..3 govern the shadow-table writes and auto-merge.
+    // posture as MIP — MeOS hard-codes its push URL. D-MOP-4 (revised
+    // 2026-10-05): MeOS password, see access.ts; D-MOP-1..3 govern the
+    // shadow-table writes and auto-merge.
     await app.register(registerMopRoute);
     await app.register(registerLottningRoutes);
     await app.register(registerLiveresultatRoutes);
@@ -341,15 +373,13 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // authenticated write request.
     const eventCodeSigningSecret = getOrCreateSigningSecret(app);
 
-    // Snapshot this host's own interface addresses at boot (operator-self
-    // bypass — see the onRequest gate below). Only consulted when allowLan is
-    // set; loopback-only binds never see a non-loopback source. A mid-session
-    // IP change (DHCP/Wi-Fi switch) needs a restart to refresh this set.
-    const localInterfaceAddresses = new Set<string>();
-    for (const addrs of Object.values(networkInterfaces())) {
-      for (const addr of addrs ?? []) {
-        localInterfaceAddresses.add(addr.address);
-      }
+    // D-MOP-4 / D-MIP-1 revised 2026-10-05: running MeOS without a password
+    // is the operator's explicit choice — say so once at startup.
+    const meosAccess = resolveMeosAccess(opts.dbHandle);
+    if (meosAccess.password === undefined && meosAccess.allowWithoutPassword) {
+      app.log.warn(
+        'MeOS-koppling utan lösenord är tillåten: alla på nätverket kan läsa alla anmälda via /mip och lägga till löpare via /mop'
+      );
     }
 
     // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on every write
@@ -410,6 +440,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // default on a LAN bind.
     const OPERATOR_ONLY_WRITES = new Set([
       '/api/settings/integrations',
+      '/api/settings/meos',
       '/api/sessions/active-competition',
       '/api/sessions/reconnect-bridge',
       '/api/competitions',
@@ -430,25 +461,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
       );
       if (routeCompetitionId === undefined && !operatorOnly) return;
 
-      // Localhost bypass — check socket.remoteAddress ONLY (never XFF).
-      const remoteAddr = request.socket.remoteAddress;
-      const isLoopback =
-        remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
-      if (isLoopback) return;
-
-      // Operator-self bypass (allowLan only): the operator may open the UI via
-      // THIS laptop's own LAN IP — the URL run-local.sh prints — in which case
-      // the socket source is one of this host's interface addresses, not
-      // loopback, even though the request still originates on the trusted
-      // operator machine. A real helper machine always has a *different* source
-      // IP (covered by the cookie path below), so trusting our own addresses
-      // doesn't widen LAN access. Still socket.remoteAddress only — XFF ignored.
-      if (opts.allowLan === true && remoteAddr !== undefined) {
-        const normalizedAddr = remoteAddr.startsWith('::ffff:')
-          ? remoteAddr.slice('::ffff:'.length)
-          : remoteAddr;
-        if (localInterfaceAddresses.has(normalizedAddr)) return;
-      }
+      // Operator machine (loopback, or this host's own LAN IP with allowLan)
+      // — socket.remoteAddress only, never XFF. Helpers use the cookie below.
+      if (app.fartolaIsOperatorMachine(request.socket.remoteAddress)) return;
 
       if (operatorOnly) return reply.code(403).send({ error: 'operator_only' });
       if (routeCompetitionId === undefined) return; // operator-only handled above
@@ -572,6 +587,9 @@ declare module 'fastify' {
      * GET /api/bridge/status so a fresh page-load can prime its
      * StationCard before any connection_changed envelope arrives. */
     bridgeState: 'opening' | 'open' | 'closed' | 'error';
+    /** True when a request's socket source is the operator machine: loopback,
+     * or (allowLan) one of this host's own interface addresses. */
+    fartolaIsOperatorMachine: (remoteAddr: string | undefined) => boolean;
   }
 }
 

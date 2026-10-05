@@ -23,6 +23,11 @@
      save on next boot. The input stays editable — the operator can
      still queue a config-table override that env will trump.
 
+  MeOS-koppling (D-MOP-4 / D-MIP-1 revised 2026-10-05): password for
+  GET /mip + POST /mop (never shown, only "set"), and the explicit
+  "Tillåt MeOS utan lösenord" choice with its warning. Without either,
+  MeOS only works from this machine.
+
   Locked by:
   - .planning/phases/02-4-klubbs-mvp/02-07-PLAN.md task 3
   - apps/edge/src/routes/settings.ts (the REST surface)
@@ -34,6 +39,9 @@
   import {
     listIntegrations,
     setIntegration,
+    getMeosSettings,
+    setMeosSettings,
+    type MeosSettings,
     type IntegrationStatus,
     type IntegrationSource,
     listEventCodes,
@@ -65,7 +73,39 @@
 
   onMount(() => {
     void fetchAll();
+    void fetchMeos();
   });
+
+  // MeOS-koppling.
+  let meos: MeosSettings | null = $state(null);
+  let meosDraft = $state('');
+  let meosSaving = $state(false);
+  let meosToast: RowState['toast'] = $state(null);
+
+  async function fetchMeos(): Promise<void> {
+    try {
+      meos = await getMeosSettings();
+    } catch {
+      meos = null;
+    }
+  }
+
+  async function saveMeos(body: {
+    meos_password?: string;
+    meos_allow_without_password?: boolean;
+  }): Promise<void> {
+    meosSaving = true;
+    meosToast = null;
+    try {
+      meos = await setMeosSettings(body);
+      meosToast = body.meos_password === '' ? 'cleared' : 'saved';
+      meosDraft = '';
+    } catch {
+      meosToast = 'error';
+    } finally {
+      meosSaving = false;
+    }
+  }
 
   async function fetchAll(): Promise<void> {
     loading = true;
@@ -321,6 +361,71 @@
     {/if}
   </section>
 
+  <section class="card" data-testid="meos-settings-section">
+    <header class="section-head">
+      <h2>{t('settings.meos.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.meos.desc')}</p>
+
+    {#if meos === null}
+      <p class="muted">{t('settings.integrations.loading')}</p>
+    {:else}
+      <label class="label" for="meos-password-input">{t('settings.meos.password')}</label>
+      <div class="input-line">
+        <input
+          id="meos-password-input"
+          class="key-input"
+          type="password"
+          placeholder={meos.has_meos_password
+            ? t('settings.meos.passwordSet')
+            : t('settings.meos.passwordNotSet')}
+          bind:value={meosDraft}
+          autocomplete="new-password"
+          spellcheck="false"
+          data-testid="meos-password-input"
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={meosSaving || (meosDraft.length === 0 && !meos.has_meos_password)}
+          onclick={() => void saveMeos({ meos_password: meosDraft })}
+          data-testid="meos-password-save"
+        >
+          {meosSaving
+            ? t('settings.integrations.saving')
+            : meosDraft.length === 0 && meos.has_meos_password
+              ? t('settings.integrations.clear')
+              : t('settings.integrations.save')}
+        </Button>
+      </div>
+
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={meos.meos_allow_without_password}
+          disabled={meosSaving}
+          onchange={(e) =>
+            void saveMeos({ meos_allow_without_password: e.currentTarget.checked })}
+          data-testid="meos-allow-checkbox"
+        />
+        {t('settings.meos.allowWithoutPassword')}
+      </label>
+      <p class="banner" data-testid="meos-allow-warning">{t('settings.meos.allowWarning')}</p>
+
+      {#if toastLabel(meosToast)}
+        <p
+          class="toast"
+          class:toast-err={meosToast === 'error'}
+          role="status"
+          aria-live="polite"
+          data-testid="meos-settings-toast"
+        >
+          {toastLabel(meosToast)}
+        </p>
+      {/if}
+    {/if}
+  </section>
+
   <!-- ------------------------------------------------------------------ -->
   <!-- Hjälpkoder section                                                   -->
   <!-- ------------------------------------------------------------------ -->
@@ -516,6 +621,12 @@
   }
   .toast-err {
     color: var(--dnf);
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--fs-label);
   }
   .generate-row {
     display: flex;

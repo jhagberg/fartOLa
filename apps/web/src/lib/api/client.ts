@@ -746,6 +746,27 @@ export function setIntegration(
   });
 }
 
+/** MeOS integration (GET /mip, POST /mop) access. The password is never
+ * returned, only whether one is set (D-MOP-4 revised 2026-10-05). */
+export interface MeosSettings {
+  has_meos_password: boolean;
+  meos_allow_without_password: boolean;
+}
+
+/** GET /api/settings/meos. */
+export function getMeosSettings(): Promise<MeosSettings> {
+  return apiFetch<MeosSettings>('/api/settings/meos');
+}
+
+/** PUT /api/settings/meos — empty meos_password clears it. Operator machine
+ * only. */
+export function setMeosSettings(body: {
+  meos_password?: string;
+  meos_allow_without_password?: boolean;
+}): Promise<MeosSettings> {
+  return apiFetch<MeosSettings>('/api/settings/meos', { method: 'PUT', body });
+}
+
 // ---------------------------------------------------------------------------
 // Hired cards (Hyrbricka — Phase 2.0 Plan 02-05)
 // ---------------------------------------------------------------------------

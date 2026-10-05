@@ -14,8 +14,10 @@
 //   </MIPData>
 //
 // Locked decisions honored:
-//   - D-MIP-1: NO auth. `pwd` query param is silently ignored. Closed club
-//     LAN posture for 4-klubbs; Phase 2.1 will gate sanctioned events.
+//   - D-MIP-1 (revised 2026-10-05): was "NO auth, closed club LAN". /mip
+//     hands out every entry, so it now takes the MeOS password (`pwd`) when
+//     one is set, else only this machine unless the operator explicitly
+//     allows MeOS without a password (meosAccessHook, access.ts).
 //   - D-MIP-2: `lastid` = events.local_seq. Zero new state — we read the
 //     Phase 1 events table directly with WHERE local_seq > input_lastid.
 //   - D-MIP-3: only <entry> on bind + <entry> re-emit on card-replace.
@@ -67,13 +69,14 @@ import type { EventPayload } from '../../db/schema.ts';
 import { issuesToErrors } from '../../routes/_zod-errors.ts';
 import { MIP_NS, coerceInt } from './shared.ts';
 import { refreshClassCache } from './classCache.ts';
+import { meosAccessHook } from './access.ts';
 
 const ACTIVE_COMP_KEY = 'active_competition_id';
 
 // Zod schema — strict integers only. We accept the conventional MIP-spec
 // names AND a couple of pragmatic aliases (`x-lastid`, `x-competition`)
-// that some MIP test harnesses use. `pwd` is ignored (D-MIP-1) but allowed
-// in the schema so it doesn't trip 400.
+// that some MIP test harnesses use. `pwd` is checked by meosAccessHook
+// (access.ts) before this handler; allowed here so it doesn't trip 400.
 const MipQuery = z.object({
   competition: z.coerce.number().int().nonnegative().optional(),
   lastid: z.coerce.number().int().nonnegative().optional(),
@@ -130,7 +133,7 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     suppressBooleanAttributes: false,
   });
 
-  app.get('/mip', async (req, reply) => {
+  app.get('/mip', { onRequest: meosAccessHook(app) }, async (req, reply) => {
     // (1) Parse query — Zod rejects decimals/negatives/garbage with 400
     // (RESEARCH Landmine "input.php lastid coercion" — we're stricter).
     const parsedQuery = MipQuery.safeParse(req.query);
@@ -144,14 +147,12 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     const headers = req.headers;
     const lastid =
       queryData.lastid ?? coerceInt(headers['lastid']) ?? coerceInt(headers['x-lastid']) ?? 0;
-    // `competition` and `pwd` are accepted but ignored — D-MIP-1 + the
-    // single-active-competition session model owns scope. Read-and-discard
-    // satisfies the linter without changing behavior.
+    // `competition` is accepted but ignored — the single-active-competition
+    // session model owns scope (`pwd` was checked in meosAccessHook).
+    // Read-and-discard satisfies the linter without changing behavior.
     void queryData.competition;
     void coerceInt(headers['competition']);
     void coerceInt(headers['x-competition']);
-    void queryData.pwd;
-    void headers['pwd'];
 
     // (3) Resolve active competition. If no competition is active, emit
     // an empty <MIPData lastid="0"/> — safe default that MeOS treats as

@@ -40,18 +40,17 @@
 // - REQ-EVT-CMP-005 (auto-attach card → competitor)
 // - REQ-EVT-CMP-006 (DNF/MP from event log)
 
-import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
+import type { HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import {
   detectStatus,
-  matchCourse,
-  startMs,
+  startWallMs,
   startPunchWarning,
   type ControlAlternatives,
   type StartMethod,
 } from './dnfMp.ts';
-import { cardClocksToEpochMs } from './halfDayClockMath.ts';
+import { cardClockToWallMs, wallMsToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
@@ -223,11 +222,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   }
   const pendingUnknownCards = new Set<number>();
   let lastEventSeq = 0;
-  // Phase 2.1 (D-16): track leg_voided max_seconds caps per competitor.
-  // Maps competitorId → (controlCode → maxSeconds | null).
-  const voidedLegCapsByCompetitor = new Map<string, Map<number, number | null>>();
-  // 02.1-14 Task 13: per competitor, the latest read's check punch (epoch ms)
-  // and, for in-race reads with a check and a start punch, check → start.
+  // 02.1-14 Task 13: per competitor, the latest read's check punch (local
+  // wall-clock ms, like every card clock — halfDayClockMath) and, for in-race
+  // reads with a check and a start punch, check → start.
   const checkMsByCompetitor = new Map<string, number | null>();
   const checkToStartMsByCompetitor = new Map<string, number>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
@@ -276,11 +273,13 @@ export function reduce(input: ReduceInput): CompetitionState {
         // applied later still win in the same way. `undefined` here
         // means the caller (Phase-1 tests) opted out of the gate.
         const inRacePhase = inRacePhaseAt(e.eventTimeMs);
-        const cardMs = cardClocksToEpochMs(payload, payload.card_type, e.eventTimeMs);
-        const checkMs = cardMs.check;
+        const wallMs = (c: HalfDayClock | null): number | null =>
+          c === null ? null : cardClockToWallMs(c, payload.card_type, e.eventTimeMs);
+        const checkMs = wallMs(payload.check);
+        const startPunchMs = wallMs(payload.start);
         checkMsByCompetitor.set(competitor.id, checkMs);
-        if (inRacePhase && checkMs !== null && cardMs.start !== null) {
-          checkToStartMsByCompetitor.set(competitor.id, cardMs.start - checkMs);
+        if (inRacePhase && checkMs !== null && startPunchMs !== null) {
+          checkToStartMsByCompetitor.set(competitor.id, startPunchMs - checkMs);
         } else {
           checkToStartMsByCompetitor.delete(competitor.id);
         }
@@ -492,19 +491,14 @@ export function reduce(input: ReduceInput): CompetitionState {
         break;
       }
       case 'leg_voided': {
-        // Phase 2.1 (D-16): add control_code to view.voided_legs.
+        // Phase 2.1 (D-16): the control is not required for this runner.
+        // The running time is never reduced (SOFT TR 4.20.10); an old
+        // event's max_seconds is ignored.
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
           if (!view.voided_legs.includes(payload.control_code)) {
             view.voided_legs = [...view.voided_legs, payload.control_code].sort((a, b) => a - b);
           }
-          // Track max_seconds cap for this voided leg.
-          let caps = voidedLegCapsByCompetitor.get(payload.competitor_id);
-          if (caps === undefined) {
-            caps = new Map();
-            voidedLegCapsByCompetitor.set(payload.competitor_id, caps);
-          }
-          caps.set(payload.control_code, payload.max_seconds);
         }
         break;
       }
@@ -513,8 +507,6 @@ export function reduce(input: ReduceInput): CompetitionState {
         const view = competitorViews.get(payload.competitor_id);
         if (view !== undefined) {
           view.voided_legs = view.voided_legs.filter((c) => c !== payload.control_code);
-          const caps = voidedLegCapsByCompetitor.get(payload.competitor_id);
-          if (caps !== undefined) caps.delete(payload.control_code);
         }
         break;
       }
@@ -528,29 +520,24 @@ export function reduce(input: ReduceInput): CompetitionState {
     }
   }
 
-  // Phase 2.1 (D-16): post-pass voided-leg elapsed recomputation.
-  // We defer this to after the event loop so that leg_voided events that
-  // arrive after card_read events still affect the elapsed time (event order
-  // within the sorted log should not change the projection of derived state).
-  for (const [competitorId, caps] of voidedLegCapsByCompetitor) {
-    const view = competitorViews.get(competitorId);
-    if (view === undefined || view.voided_legs.length === 0) continue;
-    // The control verdict is re-derived for every scored read (PEND = no
-    // read, or one the race-phase gate kept from scoring), independently of
-    // the time: a runner without a start has no time but can still go
-    // MP → OK. The time is only adjusted where the view has one.
-    const rescoreStatus = view.manual_status === null && view.status !== 'PEND';
-    if (!rescoreStatus && view.elapsed_time_ms === null) continue;
-    // Re-derive elapsed from the latest card_read history entry.
+  // Phase 2.1 (D-16): post-pass voided-leg re-scoring. Deferred to after the
+  // event loop so a leg_voided event sorted after the card_read still clears
+  // the MP (event order within the sorted log should not change the
+  // projection). Only the control verdict changes: the running time stays
+  // finish − start for the whole course. SOFT TR 4.20.10 (Regelverk för OL
+  // 2026-07-01): "Inga resultat får konstrueras eller rekonstrueras baserat
+  // på sträcktiderna." MeOS can drop a leg's time ("Utan tidtagning",
+  // oRunner.cpp:1789-1800); fartOLa deliberately does not.
+  for (const view of competitorViews.values()) {
+    // PEND = no read, or one the race-phase gate kept from scoring.
+    if (view.voided_legs.length === 0 || view.manual_status !== null || view.status === 'PEND') {
+      continue;
+    }
     const latestRead = view.card_read_history[view.card_read_history.length - 1];
     if (latestRead === undefined) continue;
-    // Start from the raw detected elapsed (before any voided-leg subtraction).
-    // We need the original detectStatus elapsed, not an already-adjusted one.
-    // Re-detect from the latest read's punches and timestamps.
-    const competitor = competitorsByCompetition.find((c) => c.id === competitorId);
+    const competitor = competitorsByCompetition.find((c) => c.id === view.id);
     const course = competitor ? courseByClass.get(competitor.classId) : undefined;
     const expected = course?.control_codes ?? [];
-    const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
     const detected = detectStatus(
       {
         start: latestRead.start,
@@ -561,48 +548,22 @@ export function reduce(input: ReduceInput): CompetitionState {
         drawnStartMs: competitor?.startTimeMs ?? null,
         startMethod: startMethodOf(competitor?.classId),
       },
-      resolvedExpected,
+      filterVoidedLegs(expected, view.voided_legs),
       alternativesOf(course)
     );
-    // Post-pass also updates status to reflect voided legs (MP→OK transition).
-    if (rescoreStatus) {
-      view.status = detected.status;
-      view.missing_codes = detected.missing_codes;
-      view.extra_codes = detected.extra_codes;
-      view.out_of_order_codes = detected.out_of_order_codes;
-    }
-    if (view.elapsed_time_ms === null || detected.elapsed_time_ms === null) continue;
-    const adjustedElapsed = computeVoidedElapsed(
-      detected.elapsed_time_ms,
-      expected,
-      alternativesOf(course),
-      view.voided_legs,
-      latestRead,
-      startMs({
-        start: latestRead.start,
-        punches: latestRead.punches,
-        finish: latestRead.finish,
-        cardType: latestRead.card_type,
-        readAtMs: latestRead.event_time_ms,
-        drawnStartMs: competitor?.startTimeMs ?? null,
-        startMethod: startMethodOf(competitor?.classId),
-      }),
-      caps
-    );
-    view.elapsed_time_ms = adjustedElapsed;
-    // Re-apply MAX gate after voided adjustment.
-    if (view.manual_status === null && competitor !== undefined) {
-      const maxTimeSec = maxTimeByClass.get(competitor.classId);
-      if (
-        detected.status === 'OK' &&
-        maxTimeSec !== undefined &&
-        adjustedElapsed / 1000 > maxTimeSec
-      ) {
-        view.status = 'MAX';
-      } else if (view.status === 'MAX') {
-        // Was MAX from the gate, now under cap — revert to detected status.
-        view.status = detected.status;
-      }
+    view.status = detected.status;
+    view.missing_codes = detected.missing_codes;
+    view.extra_codes = detected.extra_codes;
+    view.out_of_order_codes = detected.out_of_order_codes;
+    view.elapsed_time_ms = detected.elapsed_time_ms;
+    const maxTimeSec = competitor ? maxTimeByClass.get(competitor.classId) : undefined;
+    if (
+      view.status === 'OK' &&
+      maxTimeSec !== undefined &&
+      view.elapsed_time_ms !== null &&
+      view.elapsed_time_ms / 1000 > maxTimeSec
+    ) {
+      view.status = 'MAX';
     }
   }
 
@@ -628,8 +589,6 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (latest === undefined || v.status === 'PEND') continue;
     const startInput = {
       start: latest.start,
-      punches: latest.punches,
-      finish: latest.finish,
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
@@ -642,14 +601,15 @@ export function reduce(input: ReduceInput): CompetitionState {
       v.manual_status !== null ||
       (v.status !== 'OK' && v.status !== 'MP') ||
       latest.finish === null ||
-      startMs(startInput) !== null
+      startWallMs(startInput) !== null
     ) {
       continue;
     }
     v.missing_start = true;
     const checkMs = checkMsByCompetitor.get(v.id) ?? null;
     if (checkMs !== null) {
-      v.suggested_start_ms = checkMs + checkToStartMs;
+      // Leaves the system as a start time (epoch ms).
+      v.suggested_start_ms = wallMsToEpochMs(checkMs + checkToStartMs);
       v.suggested_start_offset_ms = checkToStartMs;
     }
   }
@@ -742,64 +702,4 @@ export function voidedControlCodes(events: readonly Event[], competitionId: stri
 function filterVoidedLegs(expected: readonly number[], voidedLegs: readonly number[]): number[] {
   if (voidedLegs.length === 0) return [...expected];
   return expected.filter((code) => !voidedLegs.includes(code));
-}
-
-/**
- * Phase 2.1 (D-16): Compute elapsed_time_ms after subtracting voided leg durations.
- *
- * Legs come from the course, not from adjacent punches: the course is matched
- * against the punches with the same advancing cursor as detectStatus
- * (dnfMp.matchCourse, replacements included), and every course position whose
- * control is voided is a leg:
- *   leg_ms = matched punch at that position − matched punch at the nearest
- *            earlier course position the runner punched
- * so stray punches in between don't shorten the leg, and a control visited
- * twice (butterfly) voids both legs into it. With no earlier matched control
- * the leg runs from `runStartMs`, the same start the running time uses
- * (dnfMp.startMs, 02.1-14 Task 11). An unpunched voided control has no
- * measurable leg. Card clocks are made absolute like in detectStatus.
- *
- * Subtract min(leg_ms, max_seconds * 1000) per leg; the max_seconds cap comes
- * from the leg_voided event payload.
- *
- * SOFT TR 4.20.10 (2026) forbids building results from split times; this
- * per-runner subtraction is flagged DELVIS in
- * .planning/compliance/soft-regelverk-2026.md and kept as is.
- */
-function computeVoidedElapsed(
-  elapsedMs: number,
-  courseCodes: readonly number[],
-  alternatives: ControlAlternatives | undefined,
-  voidedLegs: readonly number[],
-  read: {
-    start: HalfDayClock | null;
-    punches: readonly NdjsonPunch[];
-    finish: HalfDayClock | null;
-    card_type: string;
-    event_time_ms: number;
-  },
-  runStartMs: number | null,
-  caps: ReadonlyMap<number, number | null>
-): number {
-  const { punches } = read;
-  const punchMs = cardClocksToEpochMs(read, read.card_type, read.event_time_ms).punches;
-  const { matched } = matchCourse(
-    punches.map((p) => p.code),
-    courseCodes,
-    alternatives
-  );
-  let adjusted = elapsedMs;
-  let prevMs = runStartMs; // time at the nearest earlier matched course control
-  courseCodes.forEach((controlCode, i) => {
-    const idx = matched[i]!;
-    if (idx === -1) return;
-    const atMs = punchMs[idx]!;
-    if (voidedLegs.includes(controlCode) && prevMs !== null && atMs > prevMs) {
-      const legMs = atMs - prevMs;
-      const maxSec = caps.get(controlCode);
-      adjusted -= maxSec !== null && maxSec !== undefined ? Math.min(legMs, maxSec * 1000) : legMs;
-    }
-    prevMs = atMs;
-  });
-  return Math.max(0, adjusted);
 }

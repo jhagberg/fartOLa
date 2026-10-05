@@ -15,6 +15,15 @@
 //     Unknown key → 400 unknown_integration_key (prevents arbitrary
 //     config writes via this REST surface).
 //
+//   GET /api/settings/meos
+//     → 200 { has_meos_password, meos_allow_without_password }
+//   PUT /api/settings/meos { meos_password?, meos_allow_without_password? }
+//     → 200 (same shape). The MeOS integration password (GET /mip, POST
+//     /mop — D-MOP-4 / D-MIP-1 revised 2026-10-05, integrations/meos/
+//     access.ts). Never returned. Empty meos_password deletes it. Running
+//     without one from other machines is an explicit choice: the flag
+//     defaults to false. Operator machine only (server.ts write gate).
+//
 // Boot precedence (Plan 02-07 task 2 — apps/edge/src/config/secrets.ts):
 //   process.env.X (CLI / ~/.env.fartola) > config table > absent.
 // process.env wins so headless / CI installs keep working unchanged.
@@ -31,8 +40,22 @@
 
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { config as configTable } from '../db/schema.ts';
+import {
+  MEOS_ALLOW_WITHOUT_PASSWORD_KEY,
+  MEOS_PASSWORD_KEY,
+  resolveMeosAccess,
+} from '../config/secrets.ts';
+import { issuesToErrors } from './_zod-errors.ts';
+
+const MeosSettingsInput = z
+  .object({
+    meos_password: z.string().max(512).optional(),
+    meos_allow_without_password: z.boolean().optional(),
+  })
+  .strict();
 
 /** Phase 2.1+ adds LIVELOX_API_KEY + LIVERESULTAT_API_KEY. We list them
  * upfront so the GET surface reports `set:false, source:absent` for
@@ -85,7 +108,48 @@ function isAllowedKey(value: unknown): value is IntegrationKey {
   return typeof value === 'string' && (INTEGRATIONS_ALLOWLIST as readonly string[]).includes(value);
 }
 
+/** Upsert a config row; an empty value deletes it. */
+function writeConfigRow(app: FastifyInstance, key: string, value: string): void {
+  if (value.length === 0) {
+    app.fartolaDb.db.delete(configTable).where(eq(configTable.key, key)).run();
+  } else {
+    app.fartolaDb.db
+      .insert(configTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: configTable.key, set: { value } })
+      .run();
+  }
+}
+
+function meosSettings(app: FastifyInstance): {
+  has_meos_password: boolean;
+  meos_allow_without_password: boolean;
+} {
+  const { password, allowWithoutPassword } = resolveMeosAccess(app.fartolaDb);
+  return {
+    has_meos_password: password !== undefined,
+    meos_allow_without_password: allowWithoutPassword,
+  };
+}
+
 export default async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/settings/meos', async () => meosSettings(app));
+
+  app.put('/api/settings/meos', async (req, reply) => {
+    const parsed = MeosSettingsInput.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send(issuesToErrors(parsed.error.issues));
+    const { meos_password, meos_allow_without_password } = parsed.data;
+    if (meos_password !== undefined) writeConfigRow(app, MEOS_PASSWORD_KEY, meos_password);
+    if (meos_allow_without_password !== undefined) {
+      writeConfigRow(
+        app,
+        MEOS_ALLOW_WITHOUT_PASSWORD_KEY,
+        meos_allow_without_password ? 'true' : ''
+      );
+    }
+    return meosSettings(app);
+  });
+
   app.get('/api/settings/integrations', async () => {
     const integrations = INTEGRATIONS_ALLOWLIST.map((key) => resolveIntegrationStatus(app, key));
     return { integrations };

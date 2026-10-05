@@ -71,3 +71,21 @@ export function resolveSecretSource(handle: DbHandle, key: string): SecretSource
   }
   return 'absent';
 }
+
+/** MeOS integration (GET /mip, POST /mop) password, and the operator's
+ * explicit choice to run without one (D-MOP-4 / D-MIP-1, revised
+ * 2026-10-05). Stored like the API keys: env > config table > absent. */
+export const MEOS_PASSWORD_KEY = 'MEOS_PASSWORD';
+export const MEOS_ALLOW_WITHOUT_PASSWORD_KEY = 'MEOS_ALLOW_WITHOUT_PASSWORD';
+
+export interface MeosAccessConfig {
+  password: string | undefined;
+  allowWithoutPassword: boolean;
+}
+
+export function resolveMeosAccess(handle: DbHandle): MeosAccessConfig {
+  return {
+    password: resolveSecret(handle, MEOS_PASSWORD_KEY),
+    allowWithoutPassword: resolveSecret(handle, MEOS_ALLOW_WITHOUT_PASSWORD_KEY) === 'true',
+  };
+}

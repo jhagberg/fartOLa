@@ -353,3 +353,73 @@ describe('PUT /api/settings/integrations — pino log redaction (Test 7)', () =>
     );
   });
 });
+
+// D-MOP-4 / D-MIP-1 revised 2026-10-05: the MeOS integration password. Write-
+// only like the API keys: the GET says whether one is set, never what it is.
+describe('GET/PUT /api/settings/meos', () => {
+  const ENV_KEYS = ['MEOS_PASSWORD', 'MEOS_ALLOW_WITHOUT_PASSWORD'] as const;
+  const saved: Record<string, string | undefined> = {};
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    ctx = await boot(true /* logger on, capture stream */);
+  });
+
+  afterEach(async () => {
+    await teardown(ctx);
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  const get = async (): Promise<Record<string, unknown>> => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/settings/meos' });
+    assert.equal(res.statusCode, 200);
+    return res.json<Record<string, unknown>>();
+  };
+  const put = (payload: unknown) =>
+    ctx.app.inject({ method: 'PUT', url: '/api/settings/meos', payload: payload as object });
+
+  test('default: no password, not allowed without one', async () => {
+    assert.deepEqual(await get(), { has_meos_password: false, meos_allow_without_password: false });
+  });
+
+  test('PUT a password → has_meos_password; the password is never returned', async () => {
+    const CANARY = 'MEOS-CANARY-PWD-777';
+    const res = await put({ meos_password: CANARY });
+    assert.equal(res.statusCode, 200);
+    assert.ok(!res.body.includes(CANARY));
+    const body = await get();
+    assert.deepEqual(body, { has_meos_password: true, meos_allow_without_password: false });
+    assert.ok(!JSON.stringify(body).includes(CANARY));
+    await new Promise((r) => setTimeout(r, 50));
+    ctx.app.log.info({ body: { meos_password: CANARY } }, 'debug paste');
+    await new Promise((r) => setTimeout(r, 50));
+    assert.ok(!ctx.logChunks.join('').includes(CANARY), 'pino log must not contain the password');
+  });
+
+  test('PUT empty password clears it; the allow flag is stored separately', async () => {
+    await put({ meos_password: 'x', meos_allow_without_password: true });
+    assert.deepEqual(await get(), { has_meos_password: true, meos_allow_without_password: true });
+    await put({ meos_password: '' });
+    assert.deepEqual(await get(), { has_meos_password: false, meos_allow_without_password: true });
+    await put({ meos_allow_without_password: false });
+    assert.deepEqual(await get(), { has_meos_password: false, meos_allow_without_password: false });
+  });
+
+  test('invalid body → 400', async () => {
+    for (const payload of [
+      { meos_password: 42 },
+      { meos_allow_without_password: 'yes' },
+      { meos_password: 'x'.repeat(513) },
+      { other: 1 },
+    ]) {
+      assert.equal((await put(payload)).statusCode, 400, JSON.stringify(payload));
+    }
+  });
+});
