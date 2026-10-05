@@ -86,8 +86,6 @@ export interface CourseMatch {
  *                   before the previous match (informational; also in missing)
  *   - extra:        punches not used by the match (informational — stray
  *                   controls, double punches, out-of-order punches)
- * Shared by detectStatus and the voided-leg time (reduce.ts) so both see the
- * same matched punch per course position.
  */
 export function matchCourse(
   punchedCodes: readonly number[],
