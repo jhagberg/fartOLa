@@ -1302,11 +1302,17 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.deepEqual(anna.missing_codes, [32]);
   });
 
-  // Test 11: voided leg elapsed recomputation — subtract leg duration
-  test('test 11: voided leg — elapsed recalculated by subtracting voided leg duration', () => {
+  // Tests 11-12: a voided leg never changes the running time. SOFT TR
+  // 4.20.10 (Regelverk för OL 2026-07-01): "Resultaten måste baseras på de
+  // tävlandes tider för hela banan. Inga resultat får konstrueras eller
+  // rekonstrueras baserat på sträcktiderna." Until 2026-10-05 the reducer
+  // subtracted the voided leg (capped by max_seconds); these two tests locked
+  // that and now lock the opposite. leg_voided only means "this control is
+  // not required for this runner".
+  test('test 11: voided leg — running time is the whole course, not reduced (TR 4.20.10)', () => {
     seqCounter = 0;
-    // Anna has punches: 31 at 10:00:00, 32 at 10:01:00 (60s leg), finish at 10:05:00 (300s total).
-    // Voiding control 32 (60s leg, no cap) → elapsed = 300 - 60 = 240s.
+    // 31 at +60 s, 32 at +120 s (60 s leg), finish at +300 s. Voiding 32
+    // leaves the time at 300 s.
     const baseMs = 10 * 3600; // 10:00:00 in seconds
     const events = [
       cardRead(
@@ -1320,12 +1326,7 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
         hd(baseMs),
         hd(baseMs + 300)
       ),
-      evt({
-        event_type: 'leg_voided',
-        competitor_id: 'c-anna',
-        control_code: 32,
-        max_seconds: null,
-      }),
+      evt({ event_type: 'leg_voided', competitor_id: 'c-anna', control_code: 32 }),
     ];
     const state = reduce({
       competition_id: 'comp-1',
@@ -1336,14 +1337,15 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     });
     const anna = state.competitors.get('c-anna');
     assert.ok(anna);
-    // Original elapsed = 300s. Voided leg 32: punch_at_32 - punch_at_31 = 120-60 = 60s. Subtract 60s → 240s.
-    assert.equal(anna.elapsed_time_ms, 240 * 1000);
+    assert.equal(anna.status, 'OK');
+    assert.deepEqual(anna.voided_legs, [32]);
+    assert.equal(anna.elapsed_time_ms, 300 * 1000);
   });
 
-  // Test 12: voided leg with max_seconds cap — subtract min(actual, cap)
-  test('test 12: voided leg with max_seconds cap — subtracts min(actual, cap)', () => {
+  test('test 12: an old leg_voided event with max_seconds replays; the cap is ignored', () => {
     seqCounter = 0;
-    // Anna's leg 32 is 90s actual, but max_seconds is 60 → subtract 60s.
+    // Event logs from before 2026-10-05 may carry max_seconds. They must
+    // still replay: the control stays voided, the time stays whole.
     const baseMs = 10 * 3600;
     const events = [
       cardRead(
@@ -1361,7 +1363,7 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
         event_type: 'leg_voided',
         competitor_id: 'c-anna',
         control_code: 32,
-        max_seconds: 60, // cap at 60s even though actual leg is 90s
+        max_seconds: 60,
       }),
     ];
     const state = reduce({
@@ -1373,8 +1375,37 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     });
     const anna = state.competitors.get('c-anna');
     assert.ok(anna);
-    // Original elapsed = 300s. Voided leg actual = 90s but capped at 60s → subtract 60s → 240s.
-    assert.equal(anna.elapsed_time_ms, 240 * 1000);
+    assert.equal(anna.status, 'OK');
+    assert.deepEqual(anna.voided_legs, [32]);
+    assert.equal(anna.elapsed_time_ms, 300 * 1000);
+  });
+
+  test('voided leg does not bring a runner over max time back under it (TR 4.20.10)', () => {
+    seqCounter = 0;
+    // 700 s run, class max 600 s, the 31 → 32 leg is 400 s. Subtracting it
+    // used to turn MAX into OK; the time is now the whole course.
+    const t = 10 * 3600;
+    const events = [
+      cardRead(
+        1,
+        [
+          { code: 31, seconds_in_half_day: t + 100, half_day: 0, weekday: null },
+          { code: 32, seconds_in_half_day: t + 500, half_day: 0, weekday: null },
+        ],
+        hd(t),
+        hd(t + 700)
+      ),
+      evt({ event_type: 'leg_voided', competitor_id: 'c-anna', control_code: 32 }),
+    ];
+    const anna = reduce({
+      competition_id: 'comp-1',
+      events,
+      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31, 32])],
+    }).competitors.get('c-anna')!;
+    assert.equal(anna.status, 'MAX');
+    assert.equal(anna.elapsed_time_ms, 700 * 1000);
   });
 
   // Test 13: voided leg — competitor misses voided control → OK, not MP
@@ -1412,66 +1443,6 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.ok(anna);
     assert.equal(anna.status, 'OK', 'voided control should not cause MP');
     assert.deepEqual(anna.missing_codes, []);
-  });
-
-  test('voided leg runs from the previous course control, not a stray punch before it', () => {
-    seqCounter = 0;
-    // 10:00–11:00, course [31, 32]: 31 at 10:10, stray 99 at 10:19, 32 at
-    // 10:20. The leg into 32 is 31 → 32 = 10 min, so voiding it leaves 50.
-    const t = 10 * 3600;
-    const at = (code: number, sec: number): NdjsonPunch => ({
-      code,
-      seconds_in_half_day: sec,
-      half_day: 0,
-      weekday: null,
-    });
-    const events = [
-      cardRead(1, [at(31, t + 600), at(99, t + 1140), at(32, t + 1200)], hd(t), hd(t + 3600)),
-      evt({
-        event_type: 'leg_voided',
-        competitor_id: 'c-anna',
-        control_code: 32,
-        max_seconds: null,
-      }),
-    ];
-    const state = reduce({
-      competition_id: 'comp-1',
-      events,
-      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
-      classes: [cls('cls-H21')],
-      courses: [course('cls-H21', [31, 32])],
-    });
-    assert.equal(state.competitors.get('c-anna')?.elapsed_time_ms, 50 * 60 * 1000);
-  });
-
-  test('voided leg into a control visited twice: both legs into it are taken out', () => {
-    seqCounter = 0;
-    // Course [31, 32, 33, 32] (butterfly), 30 min run: 31 at +5, 32 at +10,
-    // 33 at +15, 32 at +20. Voiding 32 removes 31→32 and 33→32 (5 + 5 min).
-    const t = 10 * 3600;
-    const at = (code: number, min: number): NdjsonPunch => ({
-      code,
-      seconds_in_half_day: t + min * 60,
-      half_day: 0,
-      weekday: null,
-    });
-    const events = [
-      cardRead(1, [at(31, 5), at(32, 10), at(33, 15), at(32, 20)], hd(t), hd(t + 1800)),
-      evt({
-        event_type: 'leg_voided',
-        competitor_id: 'c-anna',
-        control_code: 32,
-        max_seconds: null,
-      }),
-    ];
-    const state = reduce({
-      competition_id: 'comp-1',
-      events,
-      competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
-      classes: [cls('cls-H21')],
-      courses: [course('cls-H21', [31, 32, 33, 32])],
-    });
-    assert.equal(state.competitors.get('c-anna')?.elapsed_time_ms, 20 * 60 * 1000);
   });
 
   test('voiding the missing control of a runner without a start → OK, missing start flagged', () => {
@@ -1575,7 +1546,6 @@ describe('reduce — elapsed from drawn start (02.1-14 Task 3)', () => {
 // (SOFT TR 4.18.9 (2026-07-01): ursprunglig starttid gäller), else the punch.
 describe('reduce — start method per class (02.1-14 Task 14)', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
-  const t = (code: number, sec: number): NdjsonPunch => ({ code, ...hd(sec) });
   const START = 10 * 3600 + 22 * 60;
   // DM dag 1, D10: moved to 10:22:00, punched start 10:22:06.
   const read = (card: number, punches: NdjsonPunch[] = [p(31)], startSec = START + 6): Event =>
@@ -1627,27 +1597,6 @@ describe('reduce — start method per class (02.1-14 Task 14)', () => {
     assert.equal(a.status, 'OK');
     assert.equal(a.elapsed_time_ms, null);
     assert.equal(a.missing_start, true);
-  });
-
-  test('voided first leg runs from the same start as the running time', () => {
-    seqCounter = 0;
-    // 31 at 10:25:06, 32 at 10:40; void 31.
-    const punches = [t(31, 10 * 3600 + 25 * 60 + 6), t(32, 10 * 3600 + 40 * 60)];
-    const voidLeg = (competitor_id: string): Event =>
-      evt({ event_type: 'leg_voided', competitor_id, control_code: 31, max_seconds: null });
-    const run = (method: StartMethod): number | null =>
-      reduce({
-        competition_id: 'comp-1',
-        events: [read(101, punches), voidLeg('a')],
-        competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
-        classes: [withMethod(method)],
-        courses: [course('cls-H21', [31, 32])],
-      }).competitors.get('a')!.elapsed_time_ms;
-    // Voiding the first leg leaves finish − 31 (26:54) whichever start is
-    // used, as long as both use the same one. Punch: 29:54 − 3:00; start
-    // time: 30:00 − 3:06. Mixed starts would give 26:48.
-    assert.equal(run('start_punch'), (26 * 60 + 54) * 1000);
-    assert.equal(run('auto'), (26 * 60 + 54) * 1000);
   });
 
   // A late or early start punch in a class timed from the start time is a
@@ -1861,14 +1810,14 @@ describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
   });
 });
 
-// Item F (02.1-14 follow-up): a voided first leg is measured from the same
-// start the running time uses. Since Task 11 that is the start punch when
-// there is one (both runners here: 10 − 3 = 9 − 2 = 7 min either way).
-describe('reduce — voided first leg from the drawn start', () => {
+// Item F (02.1-14 follow-up) used to measure a voided first leg from the
+// start the running time uses and subtract it. Since 2026-10-05 a voided leg
+// never changes the time (SOFT TR 4.20.10): both runners keep finish − start.
+describe('reduce — voided first leg keeps the running time', () => {
   const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
   const t = (sec: number): NdjsonPunch => ({ code: 31, ...hd(sec) });
 
-  test('drawn 10:00, start punch 10:01, 31 at 10:03, finish 10:10; void 31 → 7 min', () => {
+  test('drawn 10:00, start punch 10:01, 31 at 10:03, finish 10:10; void 31 → time unchanged', () => {
     seqCounter = 0;
     const read = (card: number): Event =>
       cardRead(
@@ -1881,7 +1830,7 @@ describe('reduce — voided first leg from the drawn start', () => {
         }
       );
     const voidLeg = (competitor_id: string): Event =>
-      evt({ event_type: 'leg_voided', competitor_id, control_code: 31, max_seconds: null });
+      evt({ event_type: 'leg_voided', competitor_id, control_code: 31 });
     const state = reduce({
       competition_id: 'comp-1',
       events: [read(101), read(102), voidLeg('drawn'), voidLeg('open')],
@@ -1892,9 +1841,9 @@ describe('reduce — voided first leg from the drawn start', () => {
       classes: [cls('cls-H21')],
       courses: [course('cls-H21', [31, 32])],
     });
-    // Drawn: 10 min − leg 3 min (10:00 → 10:03). Open start: 9 min − 2 min.
-    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 7 * 60 * 1000);
-    assert.equal(state.competitors.get('open')!.elapsed_time_ms, 7 * 60 * 1000);
+    // Drawn: 10:00 → 10:10. Open start: start punch 10:01 → 10:10.
+    assert.equal(state.competitors.get('drawn')!.elapsed_time_ms, 10 * 60 * 1000);
+    assert.equal(state.competitors.get('open')!.elapsed_time_ms, 9 * 60 * 1000);
   });
 });
 

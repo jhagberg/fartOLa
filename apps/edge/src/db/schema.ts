@@ -84,14 +84,16 @@ export type EventPayload =
   | {
       // Phase 2.1 — voided leg. Emitted by
       // POST /api/competitions/:id/competitors/:cid/void-leg.
-      // The reducer subtracts min(actual_leg_ms, max_seconds * 1000) from
-      // elapsed_time_ms. Reversible via leg_unvoided.
+      // The control is not required for this runner (approve despite a
+      // missing punch); the running time is never changed (SOFT TR 4.20.10,
+      // 2026-10-05). Reversible via leg_unvoided.
       event_type: 'leg_voided';
       competitor_id: string;
       /** SPORTident control code of the leg being voided. */
       control_code: number;
-      /** Optional time cap for this leg in seconds (null = uncapped). */
-      max_seconds: number | null;
+      /** Legacy time cap from event logs before 2026-10-05. Ignored by the
+       * reducer: results may not be built from split times (TR 4.20.10). */
+      max_seconds?: number | null;
       /** Optional operator reason. */
       reason?: string;
     }

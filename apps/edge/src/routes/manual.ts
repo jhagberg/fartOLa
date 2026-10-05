@@ -267,6 +267,10 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   //   POST /api/competitions/:id/competitors/:cid/void-leg
   //   POST /api/competitions/:id/competitors/:cid/unvoid-leg
   //
+  // A voided leg means "approve without this control" for one runner; the
+  // running time is never reduced (SOFT TR 4.20.10, decided 2026-10-05), so
+  // the body takes no time cap.
+  //
   // Both endpoints follow the same pattern as the manual-status routes:
   //   1. Cross-competition pre-flight (404 if competitor not in competition).
   //   2. Zod-validate body.
@@ -307,7 +311,6 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
           event_type: 'leg_voided',
           competitor_id: competitorId,
           control_code: parsed.data.control_code,
-          max_seconds: parsed.data.max_seconds,
           ...(parsed.data.reason !== undefined ? { reason: parsed.data.reason } : {}),
         },
         competitionId
@@ -317,7 +320,6 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         payload: {
           competitor_id: competitorId,
           control_code: parsed.data.control_code,
-          max_seconds: parsed.data.max_seconds,
         },
         seq: r.local_seq,
       });

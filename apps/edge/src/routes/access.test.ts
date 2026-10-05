@@ -689,6 +689,11 @@ describe('write gate — operator-only routes (no competition of their own)', ()
       url: '/api/settings/integrations',
       payload: { eventor_api_key: 'x' },
     },
+    {
+      method: 'PUT' as const,
+      url: '/api/settings/meos',
+      payload: { meos_allow_without_password: true },
+    },
     { method: 'POST' as const, url: '/api/sessions/active-competition', payload: {} },
     { method: 'DELETE' as const, url: '/api/sessions/active-competition', payload: undefined },
     { method: 'POST' as const, url: '/api/sessions/reconnect-bridge', payload: {} },

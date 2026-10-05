@@ -15,7 +15,8 @@
 //   - Test 4: walk-up registration with hired_card=true → <card hired="true">12345</card>.
 //   - Test 5: 5 walk-ups with local_seq 1..5 → GET /mip?lastid=3 returns
 //     exactly 2 entries (seq 4 + 5); response lastid = 5.
-//   - Test 6: pwd silently ignored (no 401, no 403).
+//   - Test 6: no password set → pwd ignored from this machine (the password
+//     cases are in access.test.ts; D-MIP-1 revised 2026-10-05).
 //   - Test 7: query param wins over header.
 //   - Test 8: garbage lastid → 400 with structured error.
 //   - Test 9 (Task 3 / D-MIP-3): card-replace re-emit round-trip — same
@@ -265,7 +266,7 @@ describe('GET /mip — integrations/meos/mip', () => {
     assert.match(body, /lastid="5"/);
   });
 
-  test('test 6: pwd query param silently ignored — returns 200', async () => {
+  test('test 6: no password set, localhost — a pwd query param is ignored, 200', async () => {
     const res1 = await ctx.app.inject({ method: 'GET', url: '/mip' });
     const res2 = await ctx.app.inject({ method: 'GET', url: '/mip?pwd=anything' });
     assert.equal(res1.statusCode, 200);

@@ -65,86 +65,35 @@ export function diffMs(start: HalfDayClock | null, finish: HalfDayClock | null):
  * on SI5 anyway. */
 const CLOCK_SKEW_TOLERANCE_MS = 3600 * 1000;
 
-/** Absolute epoch ms for a card clock. The card time is placed in the 12 h
- * before `readAtMs` when the card cannot say AM/PM (SI5); otherwise
- * half_day is trusted and the date is the one that puts it in the 24 h
- * before readAtMs. Both windows end CLOCK_SKEW_TOLERANCE_MS after readAtMs
- * and are measured on the local wall clock.
+/** A card clock on the local wall-clock timeline (ms since 1970-01-01 00:00
+ * local, epochToWallClockMs's scale): the latest wall-clock instant with the
+ * card's time of day not after the read's wall-clock time plus
+ * CLOCK_SKEW_TOLERANCE_MS. SI5 has no PM bit, so it is placed within 12 h;
+ * other cards within 24 h.
  *
- * Card clocks are local wall time, so the chosen wall time is converted with
- * the UTC offset in force at it: a run across a DST switch keeps its real
- * length. A card time in the hour repeated as DST ends (2026-10-25
- * 02:00–03:00) is two instants; the one closest before the read wins (a
- * runner reads out soon after finishing), else the earlier (clock skew). */
-export function cardClockToEpochMs(
+ * No DST arithmetic, like MeOS (oEvent::convertTimes: seconds from the zero
+ * time on the local wall clock, wrapping at 24 h). SI cards store a 12-hour
+ * clock with no date or time zone and SI stations don't switch DST, so the
+ * times on the card are what count: running time = finish − start on this
+ * timeline, also on the DST nights. The read time only anchors the date.
+ * Convert to epoch (wallMsToEpochMs) only where an absolute timestamp
+ * leaves the system. */
+export function cardClockToWallMs(
   clock: HalfDayClock,
   cardType: string,
   readAtMs: number,
   tz: string = COMPETITION_TZ
 ): number {
-  return latestNotAfter(cardClockCandidates(clock, cardType, readAtMs, tz), readAtMs);
-}
-
-/** How far a card time may lie after the next one on the same card and still
- * read as before it when choosing between the two instants of the repeated
- * autumn hour: stations are synchronised, but not to the second. Well under
- * the hour between the two candidates. */
-const STATION_SKEW_TOLERANCE_MS = 60 * 1000;
-
-/** The clocks of one card read in card order (check, start, punches,
- * finish), each as epoch ms (null where the card has none).
- *
- * Each date is chosen like cardClockToEpochMs. A clock in the hour repeated
- * as DST ends has two instants, and the read alone can't tell which: start
- * 02:50 CEST and finish 02:10 CET is a 20-minute run, but both readings of
- * 02:50 lie before the read. So the finish is resolved against the read, and
- * each earlier clock takes the latest instant not after the next resolved
- * clock (allowing STATION_SKEW_TOLERANCE_MS), else the earlier one. */
-export function cardClocksToEpochMs(
-  read: {
-    check?: HalfDayClock | null;
-    start: HalfDayClock | null;
-    punches: readonly HalfDayClock[];
-    finish: HalfDayClock | null;
-  },
-  cardType: string,
-  readAtMs: number,
-  tz: string = COMPETITION_TZ
-): { check: number | null; start: number | null; punches: number[]; finish: number | null } {
-  const clocks = [read.check ?? null, read.start, ...read.punches, read.finish];
-  const out: (number | null)[] = clocks.map(() => null);
-  let limit = readAtMs;
-  for (let i = clocks.length - 1; i >= 0; i--) {
-    const clock = clocks[i];
-    if (clock === null || clock === undefined) continue;
-    const ms = latestNotAfter(cardClockCandidates(clock, cardType, readAtMs, tz), limit);
-    out[i] = ms;
-    limit = ms + STATION_SKEW_TOLERANCE_MS;
-  }
-  return {
-    check: out[0]!,
-    start: out[1]!,
-    punches: out.slice(2, -1) as number[],
-    finish: out[out.length - 1]!,
-  };
-}
-
-/** Every instant (ascending) the card clock can be within the read window. */
-function cardClockCandidates(
-  clock: HalfDayClock,
-  cardType: string,
-  readAtMs: number,
-  tz: string
-): number[] {
   const noPmBit = cardType === 'SI5';
   const period = noPmBit ? HALF_DAY_MS : DAY_MS;
   const cardMs = noPmBit ? clock.seconds_in_half_day * 1000 : halfDayClockToMs(clock);
-  const anchorWall = epochToWallClockMs(readAtMs + CLOCK_SKEW_TOLERANCE_MS, tz);
-  const back = (((anchorWall - cardMs) % period) + period) % period;
-  return wallClockToEpochMs(anchorWall - back, tz);
+  const anchor = epochToWallClockMs(readAtMs, tz) + CLOCK_SKEW_TOLERANCE_MS;
+  return anchor - ((((anchor - cardMs) % period) + period) % period);
 }
 
-function latestNotAfter(candidates: number[], limitMs: number): number {
-  const notAfter = candidates.filter((c) => c <= limitMs);
-  return notAfter.length > 0 ? Math.max(...notAfter) : candidates[0]!;
+/** A wall-clock ms (cardClockToWallMs's scale) as epoch ms. A wall time in the
+ * hour repeated as DST ends is two instants; the earlier is taken (either
+ * maps back to the same wall time). */
+export function wallMsToEpochMs(wallMs: number, tz: string = COMPETITION_TZ): number {
+  return wallClockToEpochMs(wallMs, tz)[0]!;
 }

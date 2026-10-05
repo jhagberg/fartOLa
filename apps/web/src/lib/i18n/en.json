@@ -462,6 +462,13 @@
   "settings.integrations.key.EVENTOR_API_KEY": "Eventor API key",
   "settings.integrations.key.LIVELOX_API_KEY": "Livelox API key",
   "settings.integrations.key.LIVERESULTAT_API_KEY": "Liveresultat API key",
+  "settings.meos.title": "MeOS connection",
+  "settings.meos.desc": "Password for the MeOS connection (MIP /mip and MOP /mop). Enter the same password in MeOS. Without a password the connection only works from this computer.",
+  "settings.meos.password": "Password",
+  "settings.meos.passwordSet": "Password set — type a new one to change it",
+  "settings.meos.passwordNotSet": "No password set",
+  "settings.meos.allowWithoutPassword": "Allow MeOS without password",
+  "settings.meos.allowWarning": "Warning: without a password, everyone on the network can read all entries and add runners through the MeOS connection.",
 
   "common.class": "Class",
   "common.startTime": "Start time",

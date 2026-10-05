@@ -462,6 +462,13 @@
   "settings.integrations.key.EVENTOR_API_KEY": "Eventor API-nyckel",
   "settings.integrations.key.LIVELOX_API_KEY": "Livelox API-nyckel",
   "settings.integrations.key.LIVERESULTAT_API_KEY": "Liveresultat API-nyckel",
+  "settings.meos.title": "MeOS-koppling",
+  "settings.meos.desc": "Lösenord för MeOS-kopplingen (MIP /mip och MOP /mop). Ange samma lösenord i MeOS. Utan lösenord fungerar kopplingen bara från den här datorn.",
+  "settings.meos.password": "Lösenord",
+  "settings.meos.passwordSet": "Lösenord satt — skriv ett nytt för att byta",
+  "settings.meos.passwordNotSet": "Inget lösenord satt",
+  "settings.meos.allowWithoutPassword": "Tillåt MeOS utan lösenord",
+  "settings.meos.allowWarning": "Varning: utan lösenord kan alla på nätverket läsa alla anmälda och lägga till löpare via MeOS-kopplingen.",
 
   "common.class": "Klass",
   "common.startTime": "Starttid",

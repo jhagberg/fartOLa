@@ -324,7 +324,7 @@ describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => 
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
-      payload: { control_code: 42, max_seconds: null },
+      payload: { control_code: 42 },
     });
     assert.equal(res.statusCode, 201);
     const body = res.json() as { local_seq: number };
@@ -338,9 +338,9 @@ describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => 
       .all();
     const voidRow = evtRows.find((e) => e.eventType === 'leg_voided');
     assert.ok(voidRow);
-    const payload = voidRow.payload as { control_code: number; max_seconds: number | null };
+    const payload = voidRow.payload as { control_code: number; max_seconds?: unknown };
     assert.equal(payload.control_code, 42);
-    assert.equal(payload.max_seconds, null);
+    assert.equal('max_seconds' in payload, false);
 
     // Projection reflects voided leg.
     const projection = ctx.app.projectionStore.recomputeNow(competitionId);
@@ -354,7 +354,21 @@ describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => 
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
-      payload: { control_code: 'not-a-number', max_seconds: null },
+      payload: { control_code: 'not-a-number' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  // SOFT TR 4.20.10 (2026-07-01): results may not be built from split
+  // times, so a voided leg never shortens the running time and the route
+  // no longer takes a time cap. A caller still sending one gets 400
+  // instead of a silently ignored field.
+  test('void-leg with a max_seconds time cap → 400 (TR 4.20.10)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42, max_seconds: 60 },
     });
     assert.equal(res.statusCode, 400);
   });
@@ -365,7 +379,7 @@ describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => 
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${competitionId}/competitors/${bogus}/void-leg`,
-      payload: { control_code: 31, max_seconds: null },
+      payload: { control_code: 31 },
     });
     assert.equal(res.statusCode, 404);
   });
@@ -376,7 +390,7 @@ describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => 
     await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
-      payload: { control_code: 42, max_seconds: null },
+      payload: { control_code: 42 },
     });
     // Then unvoid.
     const res = await ctx.app.inject({
