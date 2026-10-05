@@ -564,14 +564,14 @@
   <section class="hero">
     <div class="wrap hero-inner">
       <div>
-        <span class="eyebrow">● Phase 2.1 klar · PR #51–#53 väntar på merge · oktober 2026</span>
+        <span class="eyebrow">● Phase 2.1 klar · PR #51–#53 öppna · oktober 2026</span>
         <h1>Tidtagning för orientering, byggd för <span class="accent">klubben och skogen</span>.</h1>
-        <p class="hero-tagline">Full fart från start till mål — eller slipp skit i resultatlistan.</p>
+        <p class="hero-tagline">Full fart från start till mål – eller slipp skit i resultatlistan.</p>
         <p class="lede">
           <i>fartOLa</i> är ett tävlingssystem för orientering. En liten server på en Linux-laptop läser SI-brickorna, och sekretariatet arbetar i webbläsaren på dator, platta eller telefon. Varje stämpling sparas som en händelse i en lokal logg<sup>*</sup>, så resultaten kan räknas fram och räknas om när som helst. <b>Läget nu:</b> vi har spelat upp två riktiga tävlingsdagar i <i>fartOLa</i>. Resultaten blev desamma som i den officiella listan för alla löpare utom en per dag, och båda skillnaderna är förklarade. Som huvudsystem på en tävling har <i>fartOLa</i> ännu inte använts.
         </p>
         <p class="hero-foot">
-          <b>*Tekniskt:</b> append-only event log med idempotenta händelser — samma stämpling kan skickas in tio gånger utan att räknas dubbelt.
+          <b>*Tekniskt:</b> en append-only-logg med idempotenta händelser, så samma stämpling kan skickas in tio gånger utan att räknas dubbelt.
         </p>
         <div class="hero-ctas">
           <a href="demo/index.html" class="btn primary">Öppna klickbar demo <span class="arrow">→</span></a>
@@ -673,7 +673,7 @@
         <div class="step">
           <div>
             <h4>Visa resultat</h4>
-            <p>Per klass på en skärm vid målet, och till liveresultat.orientering.se om tävlingen är upplagd där.</p>
+            <p>Per klass på en skärm vid målet, och till liveresultat.orientering.se om tävlingen är upplagd där. Pushen är ännu inte provad mot den riktiga tjänsten.</p>
           </div>
         </div>
         <div class="step">
@@ -685,7 +685,7 @@
         <div class="step">
           <div>
             <h4>Ladda upp resultatet</h4>
-            <p>Resultatlistan exporteras som IOF XML 3.0 eller laddas upp direkt till Eventor. Direktuppladdningen är ännu inte provad mot den riktiga tjänsten.</p>
+            <p>Resultatlistan exporteras som IOF XML 3.0 eller laddas upp direkt till Eventor. Uppladdningen till Eventor, både av start- och resultatlistor, är ännu inte provad mot den riktiga tjänsten.</p>
           </div>
         </div>
       </div>
@@ -834,7 +834,6 @@
       <div class="sec-head">
         <div class="sec-eyebrow">Sex tekniska val</div>
         <h2>Hur <i>fartOLa</i> är designat.</h2>
-        <p>Varje punkt är ett konkret val, inte en säljpitch.</p>
       </div>
 
       <div class="diff-grid">
@@ -856,7 +855,7 @@
         <div class="diff-card">
           <span class="diff-num">04 · DATA</span>
           <h3>Buggar är reparerbara</h3>
-          <p>Stämplingarna ligger som händelser, inte som muterad state. Ändra reducern, räkna om — inget korrupt resultatregister att laga på plats.</p>
+          <p>Stämplingarna sparas som händelser och skrivs aldrig över. Hittar vi ett fel i resultatberäkningen rättar vi koden och räknar om allt. Det finns inget trasigt resultatregister att laga för hand mitt under tävlingen.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">05 · BARN</span>
@@ -866,7 +865,7 @@
         <div class="diff-card">
           <span class="diff-num">06 · STANDARDER</span>
           <h3>Pratar med det som redan finns</h3>
-          <p>IOF XML 3.0, Eventor (anmälningar, löpardatabas, uppladdning av start- och resultatlistor), liveresultat (MOP 2.0) och MeOS MIP 3.0 och MOP 2.0. ROC och SIRAP för radiokontroller är planerade. En klubb kan köra sitt nuvarande system som huvudsystem och <i>fartOLa</i> bredvid under en övergång.</p>
+          <p>IOF XML 3.0, Eventor (anmälningar, löpardatabas, uppladdning av start- och resultatlistor), liveresultat (MOP 2.0) samt MeOS MIP 3.0 och MOP 2.0. ROC och SIRAP för radiokontroller är planerade. En klubb kan köra sitt nuvarande system som huvudsystem och <i>fartOLa</i> bredvid under en övergång.</p>
         </div>
       </div>
     </div>
@@ -976,7 +975,7 @@
           <span class="ord">Phase 2.1</span>
           <div>
             <h4>Grunden för sanktionerade tävlingar</h4>
-            <p>Stänger luckorna från 4-klubbs och lägger till det en sanktionerad tävling behöver. Därefter kom arbetet med att räkna exakt som den officiella listan när riktiga tävlingar spelas upp, och genomgången mot SOFT:s regelverk. Väntar på merge i PR #51–#53.</p>
+            <p>Stänger luckorna från 4-klubbs och lägger till det en sanktionerad tävling behöver. Sedan kom uppspelningen av riktiga tävlingar, där resultaten ska bli desamma som i den officiella listan, och genomgången mot SOFT:s regelverk. Koden ligger i PR #51–#53, som slås ihop tillsammans.</p>
             <div class="crit">
               <span>Lottning: SOFT, slump, gemensam start</span>
               <span>Startlista in och ut (IOF XML)</span>
@@ -1057,7 +1056,6 @@
       <div class="sec-head">
         <div class="sec-eyebrow">Principer</div>
         <h2>Vad som styr designen.</h2>
-        <p>Ingen av punkterna nedan är en preferens. De kommer från användarna och federationen.</p>
       </div>
 
       <div class="principles">
@@ -1071,11 +1069,11 @@
         </div>
         <div class="principle">
           <h4>SI5 överges aldrig</h4>
-          <p>Klubbar äger SI5-kort. Legacy-stöd är inte förhandlingsbart. Samma gäller IOF XML 2.0.3 för äldre banverktyg.</p>
+          <p>Klubbarna har kvar sina SI5-brickor, så stödet för dem tas inte bort. Filer i IOF XML 2.0.3 från äldre banprogram ska också gå att läsa in, men det är inte byggt än.</p>
         </div>
         <div class="principle">
           <h4>Stora träffytor</h4>
-          <p>Operatörer jobbar i stress, i solljus, på 13"-laptop. Inga 12px-grå-på-vita texter. 44px minsta träffyta, högkontrast-läge.</p>
+          <p>Sekretariatet arbetar under stress, i solljus och på 13-tumsskärmar. Ingen liten grå text på vit botten, knappar på minst 44 px och ett läge med hög kontrast.</p>
         </div>
         <div class="principle">
           <h4>Dataminimering</h4>
@@ -1087,7 +1085,7 @@
         </div>
         <div class="principle">
           <h4>Öppen källkod</h4>
-          <p>Appen är AGPL-3.0. <code>packages/sportident</code> är MIT — samma licens som uppströmsbiblioteket vi portar från.</p>
+          <p>Appen är AGPL-3.0. <code>packages/sportident</code> är MIT, samma licens som biblioteket koden är portad från.</p>
         </div>
       </div>
     </div>
@@ -1164,13 +1162,13 @@
             <b>Jonas Hagberg</b>, senior systemutvecklare och certifierad IT-arkitekt på <a href="https://github.com/NBISweden" target="_blank" rel="noopener">@NBISweden</a> till vardags. Springer för <b>Stora Tuna OK</b> och började faktiskt orientera först på <b>Ösa-träffen 2023</b>, så jag är nybörjare i skogen.
           </p>
           <p>
-            Det som driver mig är tekniskt: göra något modernt och busenkelt att sätta igång, som funkar på Linux, Mac och Android — inte bara Windows, och som kan rulla en hel tävlingsdag på batteri med billig och stabil hårdvara.
+            Det som driver mig är tekniskt: göra något modernt och busenkelt att sätta igång, som funkar på Linux, Mac och Android och inte bara Windows, och som kan rulla en hel tävlingsdag på batteri med billig och stabil hårdvara.
           </p>
           <p>
             <i>fartOLa</i> byggs på lediga kvällar och helger, tillsammans med Claude, Codex och Gemini. Och SI-protokollet visade sig vara mer spännande att gräva i än jag trodde.
           </p>
           <p class="muted">
-            Projektet är pengafritt, AGPL-3.0-licensierat och utan exit-mål. Säg hej via <a href="https://github.com/jhagberg" target="_blank" rel="noopener">GitHub</a>, öppna en <a href="https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bdemo%5D" target="_blank" rel="noopener">issue</a> eller maila <a href="mailto:fartola@lindan.se">fartola@lindan.se</a>. Feedback från riktiga sekretariat och löpare är det enda som styr roadmapen.
+            Projektet är pengafritt, AGPL-3.0-licensierat och utan exit-mål. Säg hej via <a href="https://github.com/jhagberg" target="_blank" rel="noopener">GitHub</a>, öppna en <a href="https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bdemo%5D" target="_blank" rel="noopener">issue</a> eller maila <a href="mailto:fartola@lindan.se">fartola@lindan.se</a>. Feedback från sekretariat och löpare styr, tillsammans med regelverket, vad som byggs härnäst.
           </p>
         </div>
       </div>
