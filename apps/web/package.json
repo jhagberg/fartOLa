@@ -30,7 +30,7 @@
     "@fontsource/jetbrains-mono": "^5.1.0",
     "@fontsource/source-sans-3": "^5.1.0",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.60.1",
+    "@sveltejs/kit": "^3.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "jsdom": "^25.0.0",
     "svelte": "^5.55.9",
