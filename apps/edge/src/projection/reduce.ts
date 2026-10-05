@@ -138,6 +138,7 @@ export function reduce(input: ReduceInput): CompetitionState {
   // comparisons to ~1000 Map.get() calls. Externally-visible behavior is
   // identical to the plan-07 linear scan — same fixture, same output.
   const cardIndex = buildCardIndex(competitorsByCompetition);
+  const competitorById = new Map(competitorsByCompetition.map((c) => [c.id, c]));
 
   // 02.1-14 Task 5: course-wide voided controls are dropped from every
   // course before scoring. The final void/unvoid state applies to every read
@@ -215,6 +216,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       no_timing: noTimingClasses.has(c.classId),
       missing_start: false,
       suggested_start_ms: null,
+      suggested_start_wall_ms: null,
       suggested_start_offset_ms: null,
       late_start_ms: null,
       early_start_ms: null,
@@ -308,6 +310,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               cardType: payload.card_type,
               readAtMs: e.eventTimeMs,
               drawnStartMs: competitor.startTimeMs,
+              drawnStartWallMs: competitor.startWallMs,
               startMethod: startMethodOf(competitor.classId),
             },
             resolvedExpected,
@@ -463,6 +466,7 @@ export function reduce(input: ReduceInput): CompetitionState {
                 cardType: latestRead?.card_type ?? '',
                 readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
                 drawnStartMs: competitor?.startTimeMs ?? null,
+                drawnStartWallMs: competitor?.startWallMs ?? null,
                 startMethod: startMethodOf(competitor?.classId),
               },
               resolvedExpected,
@@ -553,6 +557,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
+        drawnStartWallMs: competitor?.startWallMs ?? null,
         startMethod: startMethodOf(competitor?.classId),
       },
       filterVoidedLegs(expected, view.voided_legs),
@@ -599,6 +604,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
+      drawnStartWallMs: competitorById.get(v.id)?.startWallMs ?? null,
       startMethod: startMethodOf(v.class_id),
     };
     const warning = startPunchWarning(startInput);
@@ -615,8 +621,10 @@ export function reduce(input: ReduceInput): CompetitionState {
     v.missing_start = true;
     const checkMs = checkMsByCompetitor.get(v.id) ?? null;
     if (checkMs !== null) {
-      // Leaves the system as a start time (epoch ms).
-      v.suggested_start_ms = wallMsToEpochMs(checkMs + checkToStartMs);
+      // Station clock, kept as is for "Fastställ saknade starttider" (a
+      // time in the skipped spring-DST hour has no epoch ms of its own).
+      v.suggested_start_wall_ms = checkMs + checkToStartMs;
+      v.suggested_start_ms = wallMsToEpochMs(v.suggested_start_wall_ms);
       v.suggested_start_offset_ms = checkToStartMs;
     }
   }

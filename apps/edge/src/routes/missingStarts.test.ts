@@ -224,3 +224,123 @@ describe('missing starts (02.1-14 Task 15)', () => {
     assert.equal((await apply([])).statusCode, 400);
   });
 });
+
+// Codex third review of #51, finding 3. 2026-03-29: the clocks go 02:00 →
+// 03:00, SI stations don't. Check 01:59, no start, finish 02:30, read at
+// 03:35 on the laptop: the suggestion is station time 02:00:54 (check +
+// 1:54), a wall time with no instant of its own. As epoch ms it came back
+// as 03:00:54 — after the finish — and the applied runner had no time.
+describe('missing start suggested in the skipped spring hour', () => {
+  const SPRING = '2026-03-29';
+  let ctx: Ctx;
+  beforeEach(async () => {
+    const handle = openDatabase(':memory:');
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 0,
+    });
+    ctx = { app, handle, nodeId };
+    handle.sqlite
+      .prepare(
+        `INSERT INTO competitions (id, name, date, receipt_template, auto_print, created_at_ms, race_started_at_ms)
+         VALUES (?, 'Natt', ?, 'classic', 0, 0, 0)`
+      )
+      .run(COMP, SPRING);
+    handle.db.insert(classes).values({ id: 'cls', competitionId: COMP, name: 'H21' }).run();
+    addRunner(ctx, 'x', 'Xenia', 1);
+    const readAt = localToEpochMs(SPRING, 3 * 3600 + 35 * 60);
+    handle.db
+      .insert(events)
+      .values({
+        nodeId,
+        localSeq: 1,
+        competitionId: COMP,
+        eventType: 'card_read',
+        eventTimeMs: readAt,
+        recordedAtMs: readAt,
+        payload: {
+          event_type: 'card_read',
+          card_number: 1,
+          card_type: 'SI10',
+          start: null,
+          finish: hd(2 * 3600 + 30 * 60),
+          check: hd(3600 + 59 * 60),
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('the listed station-clock suggestion, applied, times the runner', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${COMP}/missing-starts`,
+    });
+    const item = (res.json() as { items: Array<Record<string, unknown>> }).items[0]!;
+    assert.equal(item['suggested_start_wall'], `${SPRING}T02:00:54`);
+    assert.equal(item['check_wall'], `${SPRING}T01:59:00`);
+    assert.equal(item['finish_wall'], `${SPRING}T02:30:00`);
+
+    const applied = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${COMP}/missing-starts/apply`,
+      payload: { items: [{ competitor_id: 'x', start_wall: item['suggested_start_wall'] }] },
+    });
+    assert.equal(applied.statusCode, 200, applied.body);
+    const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
+    assert.equal(x.status, 'OK');
+    assert.equal(x.missing_start, false);
+    assert.equal(x.elapsed_time_ms, (29 * 60 + 6) * 1000);
+  });
+
+  test('PATCH start-time takes a wall-clock start too', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${COMP}/competitors/x/start-time`,
+      payload: { start_wall: `${SPRING}T02:10:00` },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
+    assert.equal(x.elapsed_time_ms, 20 * 60 * 1000);
+    // Not a wall-clock time → 400; both fields at once → 400.
+    for (const payload of [
+      { start_wall: `${SPRING} 02:10:00` },
+      { start_wall: `${SPRING}T25:10:00` },
+      { start_wall: `${SPRING}T02:10:00`, start_time_ms: localToEpochMs(SPRING, 3600) },
+    ]) {
+      const bad = await ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/competitions/${COMP}/competitors/x/start-time`,
+        payload,
+      });
+      assert.equal(bad.statusCode, 400, JSON.stringify(payload));
+    }
+  });
+
+  test('an epoch start written later replaces the wall-clock one', async () => {
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${COMP}/competitors/x/start-time`,
+      payload: { start_wall: `${SPRING}T02:10:00` },
+    });
+    // Any other writer of start_time_ms (draw, import) leaves start_wall_ms
+    // stale; it must no longer count.
+    ctx.handle.db
+      .update(competitors)
+      .set({ startTimeMs: localToEpochMs(SPRING, 3600 + 50 * 60) })
+      .where(eq(competitors.id, 'x'))
+      .run();
+    const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
+    assert.equal(x.elapsed_time_ms, 40 * 60 * 1000);
+  });
+});

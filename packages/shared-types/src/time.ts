@@ -122,3 +122,25 @@ export function formatLocalTime(epochMs: number, tz: string = COMPETITION_TZ): s
   const pad = (n: number): string => String(n).padStart(2, '0');
   return `${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)}`;
 }
+
+/** A wall-clock ms (epochToWallClockMs's scale) as 'YYYY-MM-DDTHH:MM:SS'
+ * local, no offset ('.sss' appended when not a whole second). The wire form
+ * of a wall-clock time: unlike epoch ms it can name a time in the hour
+ * skipped when DST starts — where SI stations, which never switch, still
+ * stamp punches. */
+export function formatWallClock(wallMs: number): string {
+  return new Date(wallMs).toISOString().slice(0, wallMs % 1000 === 0 ? 19 : 23);
+}
+
+const WALL_CLOCK_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?$/;
+
+/** 'YYYY-MM-DDTHH:MM:SS[.sss]' local → wall-clock ms; null when not that
+ * shape or not a real calendar date and time (formatWallClock's inverse). */
+export function parseWallClock(text: string): number | null {
+  if (!WALL_CLOCK_RE.test(text)) return null;
+  const ms = Date.parse(`${text}Z`);
+  if (Number.isNaN(ms)) return null;
+  // Date.parse rolls 2026-02-30 over to March and T24:00 to the next day;
+  // the round trip catches both.
+  return new Date(ms).toISOString().slice(0, 19) === text.slice(0, 19) ? ms : null;
+}

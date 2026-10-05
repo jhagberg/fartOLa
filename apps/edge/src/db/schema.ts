@@ -392,6 +392,12 @@ export const competitors = sqliteTable(
     /** Phase 2.1 D-05 — assigned start time as epoch ms. NULL = not drawn
      * (walk-up or late entry without a start slot). */
     startTimeMs: integer('start_time_ms'),
+    /** The start as a local wall-clock time (ms on epochToWallClockMs's
+     * scale) when it was set as one; NULL otherwise. Lets a start in the
+     * skipped spring-DST hour keep its station-clock value. Valid only while
+     * start_time_ms is still its epoch (dnfMp.drawnStartWallMs). Migration
+     * 0015. */
+    startWallMs: integer('start_wall_ms'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two

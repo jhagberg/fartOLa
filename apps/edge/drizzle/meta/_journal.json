@@ -99,6 +99,13 @@
       "when": 1791331200000,
       "tag": "0014_classes_start_method",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1791417600000,
+      "tag": "0015_competitors_start_wall",
+      "breakpoints": true
     }
   ]
 }
