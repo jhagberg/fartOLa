@@ -40,16 +40,17 @@
 // - REQ-EVT-CMP-005 (auto-attach card → competitor)
 // - REQ-EVT-CMP-006 (DNF/MP from event log)
 
+import type { HalfDayClock } from '@fartola/sportident';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import {
   detectStatus,
-  startMs,
+  startWallMs,
   startPunchWarning,
   type ControlAlternatives,
   type StartMethod,
 } from './dnfMp.ts';
-import { cardClocksToEpochMs } from './halfDayClockMath.ts';
+import { cardClockToWallMs, wallMsToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
@@ -221,8 +222,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   }
   const pendingUnknownCards = new Set<number>();
   let lastEventSeq = 0;
-  // 02.1-14 Task 13: per competitor, the latest read's check punch (epoch ms)
-  // and, for in-race reads with a check and a start punch, check → start.
+  // 02.1-14 Task 13: per competitor, the latest read's check punch (local
+  // wall-clock ms, like every card clock — halfDayClockMath) and, for in-race
+  // reads with a check and a start punch, check → start.
   const checkMsByCompetitor = new Map<string, number | null>();
   const checkToStartMsByCompetitor = new Map<string, number>();
   // Phase 2.1 race-phase gate. Seeded from the loader (competitions.
@@ -271,11 +273,13 @@ export function reduce(input: ReduceInput): CompetitionState {
         // applied later still win in the same way. `undefined` here
         // means the caller (Phase-1 tests) opted out of the gate.
         const inRacePhase = inRacePhaseAt(e.eventTimeMs);
-        const cardMs = cardClocksToEpochMs(payload, payload.card_type, e.eventTimeMs);
-        const checkMs = cardMs.check;
+        const wallMs = (c: HalfDayClock | null): number | null =>
+          c === null ? null : cardClockToWallMs(c, payload.card_type, e.eventTimeMs);
+        const checkMs = wallMs(payload.check);
+        const startPunchMs = wallMs(payload.start);
         checkMsByCompetitor.set(competitor.id, checkMs);
-        if (inRacePhase && checkMs !== null && cardMs.start !== null) {
-          checkToStartMsByCompetitor.set(competitor.id, cardMs.start - checkMs);
+        if (inRacePhase && checkMs !== null && startPunchMs !== null) {
+          checkToStartMsByCompetitor.set(competitor.id, startPunchMs - checkMs);
         } else {
           checkToStartMsByCompetitor.delete(competitor.id);
         }
@@ -585,8 +589,6 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (latest === undefined || v.status === 'PEND') continue;
     const startInput = {
       start: latest.start,
-      punches: latest.punches,
-      finish: latest.finish,
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
@@ -599,14 +601,15 @@ export function reduce(input: ReduceInput): CompetitionState {
       v.manual_status !== null ||
       (v.status !== 'OK' && v.status !== 'MP') ||
       latest.finish === null ||
-      startMs(startInput) !== null
+      startWallMs(startInput) !== null
     ) {
       continue;
     }
     v.missing_start = true;
     const checkMs = checkMsByCompetitor.get(v.id) ?? null;
     if (checkMs !== null) {
-      v.suggested_start_ms = checkMs + checkToStartMs;
+      // Leaves the system as a start time (epoch ms).
+      v.suggested_start_ms = wallMsToEpochMs(checkMs + checkToStartMs);
       v.suggested_start_offset_ms = checkToStartMs;
     }
   }

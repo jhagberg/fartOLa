@@ -17,7 +17,7 @@ import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { classes, competitions } from '../db/schema.ts';
-import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { cardClockToWallMs, wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { StartTimeMs, setCompetitorStartTime } from './competitors.ts';
 
@@ -77,7 +77,9 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
             check_ms: suggested !== null && offset !== null ? suggested - offset : null,
             suggested_start_ms: suggested,
             // missing_start implies a finish on the latest read.
-            finish_ms: cardClockToEpochMs(read.finish!, read.card_type, read.event_time_ms),
+            finish_ms: wallMsToEpochMs(
+              cardClockToWallMs(read.finish!, read.card_type, read.event_time_ms)
+            ),
           };
         })
         .sort((a, b) => a.class_name.localeCompare(b.class_name) || a.name.localeCompare(b.name));

@@ -16,10 +16,11 @@
 //     contains only control-station punches — the decoder layer already
 //     separates start/finish/check at the storage→raceResult boundary.
 //
-//   - Elapsed time = absolute finish − start, where start follows the
-//     class's start method (startMs below, 02.1-14 Task 14);
-//     card clocks are placed in time by cardClockToEpochMs
-//     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3).
+//   - Elapsed time = finish − start on the local wall-clock timeline, where
+//     start follows the class's start method (startWallMs below, 02.1-14
+//     Task 14); card clocks are placed on that timeline by cardClockToWallMs
+//     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3), a
+//     drawn start by epochToWallClockMs. No DST arithmetic, like MeOS.
 //     Null when there is no finish or no start of either kind.
 //
 // Per CONTEXT D-12 (punch-only DNF, no time-auto-DNF in Phase 1) and
@@ -36,7 +37,8 @@
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Class } from '../db/types.ts';
-import { cardClocksToEpochMs } from './halfDayClockMath.ts';
+import { epochToWallClockMs } from '../time/competitionClock.ts';
+import { cardClockToWallMs } from './halfDayClockMath.ts';
 
 /** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
 export type StartMethod = Class['startMethod'];
@@ -167,22 +169,22 @@ export function detectStatus(
   };
 }
 
-/** What the start is resolved from. The card's later clocks are needed to
- * place a start punch in the hour repeated as DST ends (halfDayClockMath). */
+/** What the start is resolved from. */
 type StartInput = Pick<
   DetectInput,
-  'start' | 'punches' | 'finish' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'
+  'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'startMethod'
 >;
 
-/** The start punch as epoch ms, resolved together with the rest of the card. */
-function startPunchMs(input: StartInput): number | null {
+/** The start punch on the local wall-clock timeline. */
+function startPunchWallMs(input: StartInput): number | null {
   return input.start === null
     ? null
-    : cardClocksToEpochMs(input, input.cardType, input.readAtMs).start;
+    : cardClockToWallMs(input.start, input.cardType, input.readAtMs);
 }
 
-/** The start a running time is measured from (epoch ms), by the class's
- * start method (02.1-14 Task 14). Null when there is none (missing start).
+/** The start a running time is measured from, on the local wall-clock
+ * timeline (epochToWallClockMs's scale), by the class's start method
+ * (02.1-14 Task 14). Null when there is none (missing start).
  *   - start_time:  the runner's start time; the punch is ignored. A late
  *                  runner keeps the original start time (SOFT TR 4.18.9
  *                  (2026-07-01)); the secretariat sets a new one for the
@@ -192,15 +194,16 @@ function startPunchMs(input: StartInput): number | null {
  *   - auto:        start_time when the runner has a start time, else the
  *                  punch (fri starttid in open classes, SOFT TR 7.4.3
  *                  (2026-07-01)). */
-export function startMs(input: StartInput): number | null {
-  const punch = startPunchMs(input);
+export function startWallMs(input: StartInput): number | null {
+  const punch = startPunchWallMs(input);
+  const drawn = input.drawnStartMs === null ? null : epochToWallClockMs(input.drawnStartMs);
   switch (input.startMethod) {
     case 'start_time':
-      return input.drawnStartMs;
+      return drawn;
     case 'start_punch':
-      return punch ?? input.drawnStartMs;
+      return punch ?? drawn;
     case 'auto':
-      return input.drawnStartMs ?? punch;
+      return drawn ?? punch;
   }
 }
 
@@ -219,19 +222,19 @@ export function startPunchWarning(input: StartInput): {
   if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
     return none;
   }
-  const diff = startPunchMs(input)! - input.drawnStartMs;
+  const diff = startPunchWallMs(input)! - epochToWallClockMs(input.drawnStartMs);
   if (diff > LATE_START_GRACE_MS) return { late_start_ms: diff, early_start_ms: null };
   if (diff < 0) return { late_start_ms: null, early_start_ms: -diff };
   return none;
 }
 
-/** Running time = finish − start, both absolute (02.1-14 Task 3); start per
- * startMs above. Null without a finish or any start. */
+/** Running time = finish − start on the local wall-clock timeline (02.1-14
+ * Task 3); start per startWallMs above. Null without a finish or any start. */
 function elapsedMs(input: DetectInput): number | null {
   if (input.finish === null) return null;
-  const start = startMs(input);
+  const start = startWallMs(input);
   if (start === null) return null;
-  const elapsed = cardClocksToEpochMs(input, input.cardType, input.readAtMs).finish! - start;
+  const elapsed = cardClockToWallMs(input.finish, input.cardType, input.readAtMs) - start;
   // A finish before the start (wrong day / wrong drawn time) is no time,
   // not a winning negative one.
   return elapsed >= 0 ? elapsed : null;
