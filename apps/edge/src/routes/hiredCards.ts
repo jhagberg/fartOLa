@@ -30,8 +30,10 @@
 //     `hired_card_returned` envelope on readoutChannel(competition_id)
 //     (PATTERNS S-4). Return 200 with the new timestamp.
 //
-// D-MIP-1 / D-MOP-4 posture: no auth (closed club LAN); same posture as
-// Phase 1 walk-up route.
+// Was the D-MIP-1 / D-MOP-4 "no auth, closed club LAN" posture. Those were
+// revised on 2026-10-05 (MeOS password, integrations/meos/access.ts); the
+// PATCH here goes through the server.ts event-code write gate like every
+// competition write.
 //
 // Locked by:
 // - .planning/phases/02-4-klubbs-mvp/02-05-PLAN.md task 1

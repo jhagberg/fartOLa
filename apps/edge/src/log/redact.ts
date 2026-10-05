@@ -78,6 +78,11 @@ export const LOGGER_REDACT_PATHS: readonly string[] = [
   'req.body.code',
   'request.body.code',
   'body.event_code',
+  // MeOS integration password — PUT /api/settings/meos (2026-10-05)
+  'body.meos_password',
+  '*.body.meos_password',
+  'req.body.meos_password',
+  'request.body.meos_password',
   '*.body.event_code',
 ];
 

@@ -15,7 +15,11 @@
 //     (NAME equality between meos_classes and classes) prevents importing
 //     into unknown classes. WS broadcast `meos_merge` envelope AFTER the
 //     transaction commits (PATTERNS S-4 broadcast-after-commit).
-//   - D-MOP-4: no auth, always-on. `pwd` is accepted but silently ignored.
+//   - D-MOP-4 (revised 2026-10-05): was "no auth, always-on, `pwd`
+//     ignored". /mop adds runners, so it now takes the MeOS password (`pwd`)
+//     when one is set, else only this machine unless the operator explicitly
+//     allows MeOS without a password (meosAccessHook, access.ts, checked
+//     before the body is read).
 //
 // Mount path: `/mop` at the ROOT (NOT under `/api/*`) — MeOS hard-codes its
 // POST URL and won't add a prefix. Same posture as `/mip`.
@@ -51,6 +55,7 @@ import {
 } from '../../db/schema.ts';
 import { readoutChannel } from '@fartola/shared-types';
 import { toArray, asInt, asString, asBool } from './shared.ts';
+import { meosAccessHook } from './access.ts';
 
 /** 50 MB cap per RESEARCH "Plan 4 — MOP route" + plan 02-04 must_haves. MeOS
  * exports of a busy O-ringen-sized event can be ~10 MB; 50 MB gives the
@@ -106,7 +111,7 @@ export default async function registerMopRoute(app: FastifyInstance): Promise<vo
     removeNSPrefix: true,
   });
 
-  app.post('/mop', async (req, reply) => {
+  app.post('/mop', { onRequest: meosAccessHook(app) }, async (req, reply) => {
     const body = req.body;
 
     // (1) Pre-flight: empty body. MeOS occasionally sends heartbeat POSTs;
