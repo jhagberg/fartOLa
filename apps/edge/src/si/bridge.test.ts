@@ -554,7 +554,11 @@ async function replayWithAutoPrint(
   ctx: AutoPrintCtx,
   slug: string,
   competitionId: string | null,
-  getCompetition: NonNullable<BridgeOpts['getCompetition']>
+  getCompetition: NonNullable<BridgeOpts['getCompetition']>,
+  // Positive tests pass true: wait for the print itself rather than a fixed
+  // sleep, which loses the race on a loaded machine. Negative tests cannot
+  // wait for an absence, so they keep the short settle delay.
+  expectPrint = false
 ): Promise<void> {
   const raw = fs.readFileSync(path.join(FIXTURE_DIR, `${slug}-jonas-001.bytes.hex`), 'utf8');
   const steps = parseTranscript(raw);
@@ -585,8 +589,15 @@ async function replayWithAutoPrint(
     await transport.open();
     await station.readCards();
     await transport.pumpRemaining();
-    // Give pending auto-print setTimeout(...0) callbacks a tick to fire.
-    await new Promise((r) => setTimeout(r, 50));
+    if (expectPrint) {
+      const deadline = Date.now() + 10_000;
+      while (ctx.printed.length === 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    } else {
+      // Give pending auto-print setTimeout(...0) callbacks a tick to fire.
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await station.close();
   } finally {
     attached.detach();
@@ -611,13 +622,19 @@ describe('SI bridge — plan 15 auto-print wiring', () => {
            VALUES ('cmp-anna', 'comp-auto', 'Anna', 'OK Test', 'cls-1', 7501853, 0, 'explicit', NULL)`
         )
         .run();
-      await replayWithAutoPrint(ctx, 'si10', 'comp-auto', () => ({
-        id: 'comp-auto',
-        name: 'Auto',
-        date: '2026-01-01',
-        receipt_template: 'classic',
-        auto_print: true,
-      }));
+      await replayWithAutoPrint(
+        ctx,
+        'si10',
+        'comp-auto',
+        () => ({
+          id: 'comp-auto',
+          name: 'Auto',
+          date: '2026-01-01',
+          receipt_template: 'classic',
+          auto_print: true,
+        }),
+        true
+      );
       assert.equal(ctx.printed.length, 1, 'one auto-print envelope must fire');
       const envelope = ctx.printed[0]!;
       assert.equal(envelope.competition_id, 'comp-auto');
