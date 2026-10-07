@@ -89,6 +89,31 @@ For native ROC input in fartOLa:
 - Watchdog: per sender, the delivery delay (ROC's "Leveranstid från ROC"
   was ≈18h50m for the bad sender vs ≈0.5 s for LivePunch) and silence.
 
+## More field lessons (October 2026)
+
+- Radio reception into MeOS from a jSh receiver broke when the operator
+  switched to another SportIdent function in MeOS. fartOLa should
+  receive radio in its own process, independent of any screen.
+- jSh transmitters and receivers need the antenna mounted vertically.
+- SportIdent SRR radio controls must be programmed to send the last punch
+  for SIAC Air+ to work touch-free: with touch-free the unit stores no
+  punch, the card sends it, so contact and touch-free paths need separate
+  tests.
+- **Watch per physical unit, not only per control code.** Several units
+  can share one code (e.g. two finish units). Each card punch and each
+  radio punch carries the unit number (MeOS `@unit` / `oPunch.Unit`), and
+  on day 1 one of two finish units delivered only 41 % while the other
+  delivered 86 %. The watchdog should report coverage per unit ("mål,
+  enhet 20: 2 av 21 senaste kvarten") so the faulty box can be found.
+- **…and per card type.** That unit forwarded contact punches (87 %) but
+  almost no SIAC punches (4 %) for two hours, until its setting was
+  changed; then SIAC came through 18/18. A unit that forwards ordinary
+  cards but not SIAC is a configuration error (touch-free not forwarded).
+  The watchdog can flag it from read-out cards: card type comes from the
+  card number range (`cardTypeFromNumber`).
+- A club-owned radio set would let all of this be tested without
+  race-day pressure.
+
 ## Open questions
 
 - Exact gateway model and protocol (SH Radio Gateway → SIRAP / TCP?
