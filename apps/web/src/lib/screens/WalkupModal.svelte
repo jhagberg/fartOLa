@@ -483,13 +483,19 @@
         <div class="alternatives-picker" data-testid="walkup-alternatives-picker" role="listbox" aria-label={t('walk.alternatives.picker.title')}>
           <p class="alternatives-picker-title">{t('walk.alternatives.picker.title')}</p>
           {#each alternativesCandidates as candidate (candidate.person_id)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class="alternatives-candidate"
               data-testid="walkup-alternative-{candidate.person_id}"
               role="option"
               aria-selected={false}
+              tabindex="0"
               onclick={() => onAlternativePick(candidate)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onAlternativePick(candidate);
+                }
+              }}
             >
               <span class="alt-name">{candidate.family_name}, {candidate.given_name}</span>
               {#if candidate.club_name}

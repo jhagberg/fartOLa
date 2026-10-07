@@ -26,7 +26,7 @@
     SKOGIS_INK,
     SKOGIS_PAPER,
   } from '#lib/skogis/skogis.ts';
-  import type { ReceiptTemplateProps } from './types.ts';
+  import type { ReceiptPunch, ReceiptTemplateProps } from './types.ts';
   import PunchCode from './PunchCode.svelte';
   import { punchNo } from './punchLabels.ts';
 
@@ -72,9 +72,9 @@
 
   // Pair-up the punches into 2-column rows for the kids splits layout.
   const punchPairs = $derived.by(() => {
-    const rows: Array<typeof read.punches> = [];
+    const rows: Array<[ReceiptPunch, ReceiptPunch | undefined]> = [];
     for (let i = 0; i < read.punches.length; i += 2) {
-      rows.push(read.punches.slice(i, i + 2));
+      rows.push([read.punches[i]!, read.punches[i + 1]]);
     }
     return rows;
   });

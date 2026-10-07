@@ -14,7 +14,7 @@
 
   interface Props {
     open: boolean;
-    onClose?: () => void;
+    onClose?: (() => void) | undefined;
     head?: Snippet;
     body?: Snippet;
     foot?: Snippet;

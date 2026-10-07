@@ -21,7 +21,7 @@
   type WsStatus = 'open' | 'connecting' | 'closed';
 
   interface Props {
-    crumb?: Snippet;
+    crumb?: Snippet | undefined;
     wsStatus?: WsStatus;
     showWs?: boolean;
     /** Mobile drawer trigger. When provided, a hamburger renders at the
