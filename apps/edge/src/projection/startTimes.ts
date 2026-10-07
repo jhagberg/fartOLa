@@ -9,16 +9,20 @@
 import type { EventPayload } from '../db/schema.ts';
 import type { Competitor, Event } from '../db/types.ts';
 
-/** `competitors` with startTimeMs replaced by the folded value. `events`
- * must already be in log order (reduce's sortedEvents). */
+/** `competitors` with startTimeMs replaced by the folded value (events in
+ * write order, local_seq; any input order works). */
 export function withEventStartTimes(
   competitors: readonly Competitor[],
   events: readonly Event[],
   competitionId: string
 ): Competitor[] {
   const start = new Map<string, number | null>();
-  for (const e of events) {
-    if (e.competitionId !== competitionId) continue;
+  // Write order (local_seq), not event time: the cache is written in write
+  // order, and a laptop clock set back must not reorder start-time edits.
+  const sets = events
+    .filter((e) => e.competitionId === competitionId && e.eventType === 'start_times_set')
+    .sort((a, b) => a.localSeq - b.localSeq || a.nodeId.localeCompare(b.nodeId));
+  for (const e of sets) {
     const p = e.payload as EventPayload;
     if (p.event_type !== 'start_times_set') continue;
     for (const c of p.changes) start.set(c.competitor_id, c.start_time_ms);
