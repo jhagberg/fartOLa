@@ -1,6 +1,6 @@
 ---
 created: 2026-10-05T11:30:00+02:00
-title: A cheap kit clubs can buy (Raspberry Pi), then Mac/Windows support
+title: A cheap kit clubs can buy (Raspberry Pi), a Bun spike on it, then Mac/Windows
 area: platform
 files:
   - apps/edge/src/print/cups-sink.ts
@@ -36,7 +36,26 @@ Mac and Windows support is wanted but not a priority. What blocks it now:
    - Write a parts list (Pi 5, power/UPS, case, storage, BSM8-USB reader,
      receipt printer, router if needed) and an install path (an image or
      a one-line script), then put the kit on the site.
-2. **Mac and Windows (later).**
+2. **Bun spike on the same Pi (time-boxed, ½–1 day, on a throwaway
+   branch).** ADR-0006 (2026-10-07 matrix) keeps Node because serialport
+   and SQLite on Bun are unproven; Bun's one real gain is a single
+   executable for the club kit (`bun build --compile` embeds `.node`
+   files, linux-arm64 supported). Three steps, each answers one question:
+   - Run today's built edge with `bun` instead of `node` and replay DM
+     dag 1 / Tuna Ting dag 2 (expect 633/634 and 608/609). Does
+     `better-sqlite3` load, or is `bun:sqlite` (`drizzle-orm/bun-sqlite`,
+     touches `db/index.ts` and `db/migrate.ts`) needed?
+   - BSM8-USB on Linux, then on the Pi 5: read SI5/SI10/SIAC cards and
+     print a receipt (Skogis bitmap too). Do `serialport` and `sharp`
+     work? Run long enough to see reconnects after unplugging.
+   - `bun build --compile` for linux-arm64 with the XSD and wasm assets
+     embedded; run the single file on a clean Pi.
+
+   Not in the spike: moving the 102 `node:test` files. Write down how
+   much of `node:test` Bun runs as is. If all three steps pass, re-score
+   the ADR-0006 matrix (hardware modules, club install) and decide; if one
+   fails, record why in ADR-0006 and stop.
+3. **Mac and Windows (later).**
    - Find the SI reader by USB vendor/product id (Silicon Labs CP210x) on
      every OS instead of a fixed path.
    - A printer sink without CUPS for Windows: raw ESC/POS over TCP 9100
