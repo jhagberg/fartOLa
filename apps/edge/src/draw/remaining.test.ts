@@ -15,6 +15,16 @@ function startList(clubs: string[]): StartedRunner[] {
     c === '' ? [] : [{ id: `e${k}`, club: c, startTimeMs: T0 + k * 2 * MIN }]
   );
 }
+function mulberryRng(seed: number) {
+  let a = seed >>> 0;
+  return (min: number, max: number): number => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return min + Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * (max - min));
+  };
+}
 function seq(...values: number[]) {
   let i = 0;
   return (min: number, max: number) => Math.min(max - 1, min + (values[i++ % values.length] ?? 0));
@@ -79,6 +89,38 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
       before.map((a) => a.id),
       ['y', 'x']
     );
+  });
+
+  test('SOFT TR 7.5.1: both block ends from the boundary club → the block is reordered, not just reversed', () => {
+    const existing = startList(['B', 'C', 'A']);
+    const late = ['A', 'B', 'C', 'B', 'A'].map((club, i) => ({ id: `l${i}`, club }));
+    const byId = new Map(late.map((r) => [r.id, r.club]));
+    for (const placement of ['Before', 'After'] as const) {
+      const flipped = placement === 'Before' ? startList(['A', 'B', 'C']) : existing;
+      for (let seed = 1; seed <= 20; seed++) {
+        const got = placeBeforeOrAfter(flipped, late, placement, 2 * MIN, mulberryRng(seed));
+        const clubs = got.map((a) => byId.get(a.id)!);
+        const all = placement === 'Before' ? [...clubs, 'A'] : ['A', ...clubs];
+        for (let i = 1; i < all.length; i++)
+          assert.notEqual(all[i], all[i - 1], `${placement} seed ${seed}: ${all.join('')}`);
+      }
+    }
+  });
+
+  test('SOFT TR 7.5.8: a hand-edited off-grid start occupies its place; a late entrant never lands before it', () => {
+    const existing: StartedRunner[] = [
+      { id: 'a', club: 'A', startTimeMs: T0 + 30_000 },
+      { id: 'b', club: 'B', startTimeMs: T0 + 2 * MIN },
+    ];
+    for (let seed = 0; seed < 10; seed++) {
+      const [got] = fillVacancies(
+        existing,
+        [{ id: 'x', club: 'C' }],
+        { firstStartMs: T0, intervalMs: MIN },
+        seq(seed % 2)
+      );
+      assert.equal(got!.startTimeMs, T0 + MIN, `seed ${seed}`);
+    }
   });
 
   test('no start list yet → DrawError no_start_list (MeOS would use 01:00)', () => {

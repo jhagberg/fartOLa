@@ -232,7 +232,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
 
       let plan: DrawPlan;
       try {
-        if ((body.drawType ?? 'All') !== 'All') plan = drawLateEntrants(body, classRow, named);
+        if ((body.drawType ?? 'All') !== 'All') plan = drawLateEntrants(body, classRow, all);
         else if (isPursuit(body.mode)) plan = drawPursuitClass(body, named);
         else plan = drawWholeClass(body, named);
       } catch (e) {
@@ -384,15 +384,16 @@ function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
 function drawLateEntrants(
   body: LottningBody,
   classRow: { firstStartMs: number | null; startIntervalSec: number | null },
-  named: Row[]
+  all: Row[]
 ): DrawPlan {
-  if (named.every((r) => r.startTimeMs === null))
+  if (all.every((r) => r.startTimeMs === null))
     throw new DrawError('no_start_list', 'The class has no start times yet; draw the whole class.');
-  const existing = named.flatMap((r) =>
+  // Every runner with a start occupies a place, named or not.
+  const existing = all.flatMap((r) =>
     r.startTimeMs === null ? [] : [{ id: r.id, club: r.club, startTimeMs: r.startTimeMs }]
   );
-  const late: DrawRunner[] = named
-    .filter((r) => r.startTimeMs === null)
+  const late: DrawRunner[] = all
+    .filter((r) => r.name.trim().length > 0 && r.startTimeMs === null)
     .map((r) => ({ id: r.id, club: r.club }));
   // The class interval (TR 7.5.3: one interval through the class), else the
   // smallest gap (MeOS), else the body's intervalSec.
