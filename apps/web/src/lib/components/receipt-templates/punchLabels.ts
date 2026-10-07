@@ -24,9 +24,9 @@ export function punchNo(punches: readonly ReceiptPunch[], i: number): string {
   return `${punches.slice(0, i + 1).filter((q) => q.kind === undefined).length}.`;
 }
 
-/** ok / total over the tiles someone has to punch (and the finish); struck
- * controls and extra punches count in neither. */
+/** ok / total over the tiles someone has to punch and the finish (a finish
+ * punch counts as ok); struck controls and extra punches count in neither. */
 export function punchProgress(punches: readonly ReceiptPunch[]): { ok: number; total: number } {
   const counted = punches.filter((p) => p.kind === undefined);
-  return { ok: counted.filter((p) => p.ok).length, total: counted.length };
+  return { ok: counted.filter((p) => p.ok || p.finish).length, total: counted.length };
 }
