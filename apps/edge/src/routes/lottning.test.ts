@@ -638,6 +638,25 @@ describe('lottning route', () => {
     assert.equal(timesOf().get(x), t0 + 5 * 120_000);
   });
 
+  test('SOFT TR 7.5.8: an unnamed runner with a start still occupies its place', async () => {
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: crypto.randomUUID(),
+        competitionId: ctx.competitionId,
+        name: '',
+        club: null,
+        classId: ctx.classId,
+        startTimeMs: firstStartMs + 5 * 60_000,
+      })
+      .run();
+    const x = addRunner('Late X', 'Gamma');
+    assert.equal((await post({ mode: 'SOFT', drawType: 'RemainingAfter' })).statusCode, 201);
+    assert.equal(timesOf().get(x), firstStartMs + 6 * 60_000);
+  });
+
   test('a second late-entrant draw with nobody new is a no-op', async () => {
     assert.equal(
       (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,

@@ -16,6 +16,8 @@
 // into free places of the class's start grid (TR 7.5.8: "vakanta
 // platser", not in elite classes; the route checks the class kind).
 
+import crypto from 'node:crypto';
+
 import type { DrawRunner, RngFn } from './types.ts';
 import { DrawError } from './types.ts';
 
@@ -52,7 +54,8 @@ export function placeBeforeOrAfter(
   existing: readonly StartedRunner[],
   order: readonly DrawRunner[],
   placement: 'Before' | 'After',
-  intervalMs: number
+  intervalMs: number,
+  rng: RngFn = (min, max) => crypto.randomInt(min, max)
 ): Assignment[] {
   if (order.length === 0) return [];
   if (existing.length === 0)
@@ -60,11 +63,40 @@ export function placeBeforeOrAfter(
   const byTime = [...existing].sort((a, b) => a.startTimeMs - b.startTimeMs);
   const first = byTime[0]!;
   const last = byTime[byTime.length - 1]!;
+  // Same-club neighbours in a candidate block, counting the seam to the
+  // existing list (before → block's last meets the first start; after →
+  // block's first meets the last).
+  const clashes = (b: readonly DrawRunner[]): number => {
+    let n = 0;
+    for (let i = 1; i < b.length; i++) if (sameClub(b[i - 1], b[i])) n++;
+    const seam = placement === 'Before' ? sameClub(b[b.length - 1], first) : sameClub(b[0], last);
+    return n + (seam ? 1 : 0);
+  };
+  // The drawn order first, then its reverse, then random orders (rejection
+  // sampling keeps every clash-free order equally likely, TR 7.5.2). Reversal
+  // alone cannot help when both ends are from the boundary runner's club.
   let block = [...order];
-  // The seam: before → block's last meets the first start; after → block's first meets the last.
-  const clash = (b: DrawRunner[]) =>
-    placement === 'Before' ? sameClub(b[b.length - 1], first) : sameClub(b[0], last);
-  if (clash(block) && !clash([...block].reverse())) block = block.reverse();
+  let best = clashes(block);
+  const candidates = function* (): Generator<DrawRunner[]> {
+    yield [...order].reverse();
+    for (let k = 0; k < 300; k++) {
+      const c = [...order];
+      for (let i = c.length - 1; i > 0; i--) {
+        const j = rng(0, i + 1);
+        [c[i], c[j]] = [c[j]!, c[i]!];
+      }
+      yield c;
+    }
+  };
+  if (best > 0)
+    for (const c of candidates()) {
+      const n = clashes(c);
+      if (n < best) {
+        block = c;
+        best = n;
+        if (best === 0) break;
+      }
+    }
   const start =
     placement === 'Before'
       ? first.startTimeMs - block.length * intervalMs
@@ -86,7 +118,9 @@ export function fillVacancies(
   if (late.length === 0) return [];
   if (existing.length === 0)
     throw new DrawError('no_start_list', 'The class has no start times yet; draw the whole class.');
-  const slotOf = (t: number) => Math.round((t - grid.firstStartMs) / grid.intervalMs);
+  // floor: a hand-edited off-grid start occupies the place it falls in, so a
+  // late entrant never lands before it.
+  const slotOf = (t: number) => Math.floor((t - grid.firstStartMs) / grid.intervalMs);
   const taken = new Map<number, string | null>();
   for (const r of existing) taken.set(slotOf(r.startTimeMs), r.club);
   const lastSlot = Math.max(...taken.keys());
