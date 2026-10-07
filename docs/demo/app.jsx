@@ -55,13 +55,13 @@ function App() {
   // Simulated card-read queue
   const simRef = useRef(0);
   const simulateRead = () => {
+    // Every demo read in turn (the first is already on screen), with one walk-up unknown card
+    // inserted after the third.
+    const reads = window.MOCK_READS.slice(1);
     const candidates = [
-      window.MOCK_READS[1], // Anna — D21 OK
-      window.MOCK_READS[2], // Mikael — H45 MP
-      // walk-up unknown card
+      ...reads.slice(0, 3),
       { cardNumber: 9128344, unknown: true, readTime: clock, status: 'PEND' },
-      window.MOCK_READS[3], // Karin
-      window.MOCK_READS[4], // Johan
+      ...reads.slice(3),
     ];
     const next = candidates[simRef.current % candidates.length];
     simRef.current += 1;

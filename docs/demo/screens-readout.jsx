@@ -69,6 +69,9 @@ function ReadoutView({ t, density, currentRead, history, pendingUnknown, onSimul
         .punch.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok); }
         .punch.ok .split { color: color-mix(in srgb, var(--ok) 80%, var(--fg)); }
         .punch.miss { background: var(--dnf-soft); border-color: color-mix(in srgb, var(--dnf) 40%, transparent); color: var(--dnf); border-style: dashed; }
+        .punch.extra { background: var(--bg-sunken); border-style: dashed; color: var(--fg-muted); }
+        .punch.struck { background: var(--bg-sunken); border-style: dotted; color: var(--fg-muted); }
+        .punch.extra .split, .punch.struck .split { font-size: 9px; font-weight: 600; color: var(--fg-muted); }
         .punch.finish { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); font-weight: 600; }
         .punch .idx {
           position: absolute; top: 2px; left: 4px;
@@ -288,11 +291,13 @@ function ReadoutView({ t, density, currentRead, history, pendingUnknown, onSimul
                     <span>{t('ro.class')} <b>{currentRead.cls}</b></span>
                     <span>{t('ro.club')} <b>{currentRead.club}</b></span>
                     <span>{t('ro.start')} <b className="mono">{currentRead.startTime}</b></span>
+                    {currentRead.cardType && <span>{t('ro.card')} <b className="mono">{currentRead.cardType}</b></span>}
                   </div>
                 </div>
                 <div className="ro-result">
                   <div className="time">{currentRead.elapsed}</div>
                   <div className="place">
+                    {currentRead.untimed ? (<>{t('ro.untimed')} · </>) : null}
                     {currentRead.place ? (<>{t('ro.place')} <b className="mono">{currentRead.place}</b> · </>) : null}
                     <StatusPill status={currentRead.status} t={t} />
                   </div>
@@ -304,17 +309,17 @@ function ReadoutView({ t, density, currentRead, history, pendingUnknown, onSimul
                   <div style={{marginTop: 22, marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 12}}>
                     <h2 className="h2">{t('ro.course')}</h2>
                     <span className="muted" style={{fontSize: 12, fontFamily: 'var(--font-mono)'}}>
-                      {currentRead.punches.filter(p => p.ok).length}/{currentRead.punches.length}
+                      {punchProgress(currentRead).ok}/{punchProgress(currentRead).total}
                     </span>
                   </div>
 
                   {!isDense && (
                     <div className="punch-grid">
                       {currentRead.punches.map((p, i) => (
-                        <div key={i} className={'punch ' + (p.finish ? 'finish' : p.ok ? 'ok' : 'miss')}>
-                          <span className="idx mono">{i+1}</span>
-                          <span className="code mono">{p.finish ? 'M' : p.code}</span>
-                          <span className="split mono">{p.split}</span>
+                        <div key={i} className={'punch ' + (p.finish ? 'finish' : p.struck ? 'struck' : p.extra ? 'extra' : p.ok ? 'ok' : 'miss')}>
+                          <span className="idx mono">{p.extra || p.struck || p.finish ? '' : punchNo(currentRead.punches, i).replace('.', '')}</span>
+                          <span className="code mono">{p.finish ? 'M' : p.struck ? <s>{p.code}</s> : p.code}</span>
+                          <span className="split mono">{punchLabel(p, t) || p.split}</span>
                         </div>
                       ))}
                     </div>
@@ -331,8 +336,8 @@ function ReadoutView({ t, density, currentRead, history, pendingUnknown, onSimul
                       <tbody>
                         {currentRead.punches.map((p, i) => (
                           <tr key={i} className={p.finish ? 'finish-row' : ''}>
-                            <td>{i+1}</td>
-                            <td>{p.finish ? 'M (mål)' : p.code}</td>
+                            <td>{punchNo(currentRead.punches, i).replace('.', '')}</td>
+                            <td>{p.finish ? 'M (mål)' : punchCode(p, t)}</td>
                             <td>{p.split}</td>
                             <td>{p.time}</td>
                           </tr>
@@ -483,6 +488,37 @@ function ReadoutView({ t, density, currentRead, history, pendingUnknown, onSimul
       </div>
     </div>
   );
+}
+
+// Punch presentation helpers. Struck (voided) controls and extra punches are
+// labelled with text, not colour alone.
+function punchLabel(p, t) {
+  if (p.struck) return t('ro.struck');
+  if (p.extra) return p.kind === 'order' ? t('ro.order') : t('ro.extra');
+  return null;
+}
+
+function punchCode(p, t) {
+  if (p.finish) return 'M';
+  if (p.struck) return <><s>{p.code}</s> {t('ro.struck')}</>;
+  if (p.extra) return p.code + ' (' + punchLabel(p, t) + ')';
+  return p.code;
+}
+
+// Running number for real course controls; extras get '+', struck controls '–'.
+function punchNo(punches, i) {
+  const p = punches[i];
+  if (p.struck) return '–';
+  if (p.extra) return '+';
+  return punches.slice(0, i + 1).filter(q => !q.extra && !q.struck).length + '.';
+}
+
+// ok/total over controls someone has to punch (plus finish); extras and struck excluded.
+function punchProgress(read) {
+  const counted = read.punches.filter(p => !p.extra && !p.struck);
+  const course = window.MOCK_COURSES && window.MOCK_COURSES[read.cls];
+  const total = course ? course.controls.length - course.voided.length + 1 : counted.length;
+  return { ok: counted.filter(p => p.ok).length, total };
 }
 
 function StatusPill({ status, t, small }) {
@@ -825,8 +861,8 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           <tbody>
             {read.punches.map((p, i) => (
               <tr key={i}>
-                <td>{i+1}.</td>
-                <td>{p.finish ? 'M' : p.code}</td>
+                <td>{punchNo(read.punches, i)}</td>
+                <td>{punchCode(p, t)}</td>
                 <td>{p.split}</td>
                 <td>{p.time}</td>
               </tr>
@@ -885,8 +921,8 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           <tbody>
             {read.punches.map((p, i) => (
               <tr key={i}>
-                <td>{i+1}.</td>
-                <td>{p.finish ? 'M' : p.code}</td>
+                <td>{punchNo(read.punches, i)}</td>
+                <td>{punchCode(p, t)}</td>
                 <td>{p.split}</td>
                 <td>{p.time}</td>
               </tr>
@@ -916,8 +952,8 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           <tbody>
             {read.punches.map((p, i) => (
               <tr key={i} style={p.finish ? {fontWeight: 700} : null}>
-                <td>{i+1}.</td>
-                <td>{p.finish ? 'M' : p.code}</td>
+                <td>{punchNo(read.punches, i)}</td>
+                <td>{punchCode(p, t)}</td>
                 <td style={{textAlign:'right'}}>{p.split}</td>
                 <td style={{textAlign:'right', color: p.legRank === 1 ? '#0a7a2a' : '#444'}}>{p.legRank || '—'}</td>
                 <td style={{textAlign:'right', color: p.lost === '+0:00' ? '#0a7a2a' : '#a64c00'}}>{p.lost || '—'}</td>
@@ -1079,9 +1115,9 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
               return rows;
             }, []).map((pair, i) => (
               <tr key={i}>
-                <td>{i*2+1}. {pair[0].finish ? 'M' : pair[0].code}</td>
+                <td>{i*2+1}. {punchCode(pair[0], t)}</td>
                 <td className="t">{pair[0].split}</td>
-                <td>{pair[1] ? ((i*2+2) + '. ' + (pair[1].finish ? 'M' : pair[1].code)) : ''}</td>
+                <td>{pair[1] ? <>{i*2+2}. {punchCode(pair[1], t)}</> : ''}</td>
                 <td className="t">{pair[1] ? pair[1].split : ''}</td>
               </tr>
             ))}
