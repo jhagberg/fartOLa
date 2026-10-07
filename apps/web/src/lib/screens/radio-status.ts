@@ -75,3 +75,15 @@ export function rocLinkProblem(status: RadioStatus): string | null {
     ? (status.poll.last_error ?? 'error')
     : null;
 }
+
+/** Out-of-order guard for async responses: `begin()` returns a check that is
+ * true only while no later `begin()` has happened. A response for the
+ * competition the operator has since left is then ignored instead of
+ * overwriting (and later being saved into) the current one. */
+export function latestOnly(): () => () => boolean {
+  let latest = 0;
+  return () => {
+    const mine = ++latest;
+    return () => mine === latest;
+  };
+}

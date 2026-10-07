@@ -57,7 +57,7 @@
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
-  import { baselineKey } from '#lib/screens/radio-status.ts';
+  import { baselineKey, latestOnly } from '#lib/screens/radio-status.ts';
   import type { RadioStatus } from '@fartola/shared-types';
 
   // Per-row UI state. Keyed by integration key so we can find a row
@@ -357,19 +357,34 @@
     radioBaseline = baselineKey(r);
   }
 
+  /** One token per load/switch/save: only the latest response may touch the form. */
+  const radioRequest = latestOnly();
+
   async function loadRadio(): Promise<void> {
+    const isCurrent = radioRequest();
     radioMsg = null;
     radioErr = null;
-    if (!currentCompId) return;
+    // Blank the form first, so nothing of the previous competition can be saved
+    // into this one while its settings are loading.
+    radioEnabled = false;
+    radioId = DEFAULT_ROC_ID;
+    radioStartId = '';
+    radioStartIdLoaded = '';
+    radioControls = '';
+    radioBaseline = null;
+    const id = currentCompId;
+    if (!id) return;
     try {
-      applyRadio(await getRadioStatus(currentCompId));
+      const r = await getRadioStatus(id);
+      if (isCurrent()) applyRadio(r);
     } catch {
       // soft fail — section shows the defaults
     }
   }
 
   async function saveRadio(): Promise<void> {
-    if (!currentCompId || radioBusy) return;
+    const id = currentCompId;
+    if (!id || radioBusy) return;
     const codes = radioControls
       .split(/[,\s]+/)
       .filter((x) => x !== '')
@@ -384,12 +399,12 @@
       radioMsg = null;
       return;
     }
+    const isCurrent = radioRequest();
     radioBusy = true;
     radioErr = null;
     radioMsg = null;
     try {
-      applyRadio(
-        await setRadioSettings(currentCompId, {
+      const r = await setRadioSettings(id, {
           enabled: radioEnabled,
           roc_competition_id: radioId.trim(),
           radio_controls: codes,
@@ -397,11 +412,13 @@
           ...(startText !== radioStartIdLoaded
             ? { start_id: startText === '' ? null : Number(startText) }
             : {}),
-        })
-      );
-      radioMsg = t('settings.radio.saved');
+      });
+      if (isCurrent()) {
+        applyRadio(r);
+        radioMsg = t('settings.radio.saved');
+      }
     } catch {
-      radioErr = t('settings.radio.saveError');
+      if (isCurrent()) radioErr = t('settings.radio.saveError');
     } finally {
       radioBusy = false;
     }

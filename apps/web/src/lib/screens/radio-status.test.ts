@@ -9,6 +9,7 @@ import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
 import {
   baselineKey,
   formatDelay,
+  latestOnly,
   radioControlView,
   rocLinkProblem,
   sortedRadioViews,
@@ -114,6 +115,25 @@ describe('radio view extras', () => {
     const pending = status([]);
     pending.settings.start_id = null;
     expect(baselineKey(pending).key).toBe('radio.baseline.pending');
+  });
+});
+
+describe('latestOnly', () => {
+  it('ignores the response of a request that a later one has replaced', async () => {
+    const begin = latestOnly();
+    const applied: string[] = [];
+    const load = async (comp: string, ms: number): Promise<void> => {
+      const isCurrent = begin();
+      await new Promise((r) => setTimeout(r, ms));
+      if (isCurrent()) applied.push(comp);
+    };
+    // A is requested first and answers last; the operator has moved to B.
+    await Promise.all([load('A', 30), load('B', 5)]);
+    expect(applied).toEqual(['B']);
+  });
+  it('lets the only request through', () => {
+    const begin = latestOnly();
+    expect(begin()()).toBe(true);
   });
 });
 
