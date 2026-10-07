@@ -21,6 +21,7 @@ function HomeView({ t, competitions, onOpenWizard, onOpenCompetition }) {
         .comp-card .meta { display: flex; gap: 18px; font-size: 13px; color: var(--fg-muted); margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
         .comp-card .meta b { color: var(--fg); font-weight: 600; font-family: var(--font-mono); }
 
+        .comp-card .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; background: var(--ok-soft); color: var(--ok); }
         .progress-bar { height: 6px; background: var(--bg-sunken); border-radius: 999px; overflow: hidden; }
         .progress-bar div { height: 100%; background: var(--accent); border-radius: 999px; }
 
@@ -50,9 +51,9 @@ function HomeView({ t, competitions, onOpenWizard, onOpenCompetition }) {
       <div className="hero">
         <div>
           <h1>{t('home.title')}</h1>
-          <p>Stora Tuna OK · 2026-05-13</p>
+          <p>StorTuna OK</p>
         </div>
-        <button className="btn primary lg" onClick={onOpenWizard}>+ {t('home.new')}</button>
+        <button className="btn primary lg" onClick={onOpenWizard}>{t('home.new')}</button>
       </div>
 
       <div className="comp-grid">
@@ -63,13 +64,12 @@ function HomeView({ t, competitions, onOpenWizard, onOpenCompetition }) {
                 <h3>{c.name}</h3>
                 <div className="date">{c.date}</div>
               </div>
-              <StatusPill status={c.status === 'live' ? 'OK' : 'PEND'} t={t} small />
+              <span className="pill">{t('home.status.live')}</span>
             </div>
-            <div className="progress-bar"><div style={{width: (c.finished/c.starters*100) + '%'}}></div></div>
+            <div className="progress-bar"><div style={{width: '0%'}}></div></div>
             <div className="meta">
-              <span>{t('home.starters')} <b>{c.starters}</b></span>
-              <span>{t('home.finished')} <b>{c.finished}</b></span>
-              <span style={{marginLeft: 'auto'}}>{c.status === 'live' ? t('home.status.live') : t('home.status.done')}</span>
+              <span>{t('home.starters')} <b>—</b></span>
+              <span>{t('home.finished')} <b>—</b></span>
             </div>
           </div>
         ))}
@@ -95,13 +95,7 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
   }, [step, detected]);
 
   const importFakeFile = () => {
-    setImported({
-      filename: 'onsdag-bana-v20.xml',
-      format: 'Purple Pen',
-      classes: 6,
-      controls: 47,
-      total: 6.4,
-    });
+    setImported({ filename: 'onsdag-bana-v20.xml' });
   };
 
   return (
@@ -176,16 +170,6 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
         }
         .detect-light .ok-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--ok); }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        .class-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-        .class-chip {
-          font-family: var(--font-mono);
-          font-size: 12px;
-          padding: 4px 10px;
-          background: var(--bg-elev);
-          border: 1px solid var(--border);
-          border-radius: 999px;
-        }
       `}</style>
 
       <div className="modal" onClick={e => e.stopPropagation()} style={{width: 'min(720px, 100%)'}}>
@@ -216,9 +200,13 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
               </div>
               <div className="field">
                 <label>{t('wiz.date')}</label>
-                <input className="input mono" type="text" inputMode="numeric"
-                  pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"
-                  value={date} onChange={e => setDate(e.target.value)} />
+                <div style={{display: 'flex', gap: 8}}>
+                  <input className="input mono" type="text" inputMode="numeric" style={{flex: 1}}
+                    pattern="\d{4}-\d{2}-\d{2}" placeholder={t('wiz.date.placeholder')} maxLength={10}
+                    value={date} onChange={e => setDate(e.target.value)} />
+                  <button type="button" className="btn ghost" onClick={() => setDate('2026-05-13')}>{t('wiz.date.today')}</button>
+                </div>
+                <small className="muted" style={{fontSize: 12}}>{t('wiz.date.helper')}</small>
               </div>
             </div>
           )}
@@ -226,7 +214,7 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
           {step === 2 && (
             <div style={{display: 'grid', gap: 16}}>
               <p className="muted" style={{margin: 0}}>{t('wiz.step2.desc')}</p>
-              <div className={'drop-zone ' + (imported ? 'has-file' : '')} onClick={!imported ? importFakeFile : undefined}>
+              <div className={'drop-zone ' + (imported ? 'has-file' : '')} onClick={importFakeFile}>
                 {!imported ? (
                   <>
                     <div className="icon">↓ XML</div>
@@ -237,20 +225,15 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
                   <>
                     <div className="icon">✓</div>
                     <div style={{fontSize: 15, fontWeight: 600}}>{t('wiz.imported')}: {imported.filename}</div>
-                    <div className="mono" style={{fontSize: 12, marginTop: 6, color: 'var(--ok)'}}>
-                      {imported.format} · {imported.classes} {t('wiz.classes')} · {imported.controls} {t('wiz.controls')}
-                    </div>
+                    <div style={{fontSize: 12, marginTop: 6}}>Klicka för att byta fil</div>
                   </>
                 )}
               </div>
               {imported && (
-                <div>
-                  <div className="muted" style={{fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6}}>Skapade klasser</div>
-                  <div className="class-chips">
-                    {(window.MOCK_CLASSES || []).map(c => (
-                      <span key={c.id} className="class-chip">{c.name}</span>
-                    ))}
-                  </div>
+                <div style={{padding: '10px 14px', background: 'var(--bg-sunken)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13}}>
+                  <div style={{fontWeight: 600}}>Purple Pen / IOF CourseData</div>
+                  <div className="mono">{imported.filename}</div>
+                  <div className="muted" style={{fontSize: 12, marginTop: 4}}>Klassantal + kontrollantal verifieras serverside i steg 3.</div>
                 </div>
               )}
             </div>
@@ -274,12 +257,18 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
                     <>
                       <div style={{fontWeight: 600, fontSize: 15, color: 'var(--ok)'}}>✓ {t('wiz.detected')} · {t('wiz.handshake')}</div>
                       <div className="muted mono" style={{fontSize: 12, marginTop: 4}}>
-                        BSM7-USB · /dev/ttyUSB0 · {t('wiz.station')} 593656 · 38400 baud
+                        BSM7-USB · /dev/ttyUSB0 · 38400 baud
                       </div>
                     </>
                   )}
                 </div>
               </div>
+              <button className="btn primary lg"
+                disabled={!detected}
+                onClick={() => onComplete({ name, date })}
+                style={!detected ? {opacity: 0.5, cursor: 'not-allowed'} : null}>
+                ▶ {t('wiz.start')}
+              </button>
             </div>
           )}
         </div>
@@ -294,14 +283,6 @@ function NewCompetitionWizard({ t, onCancel, onComplete }) {
               onClick={() => setStep(step + 1)}
               style={step === 2 && !imported ? {opacity: 0.5, cursor: 'not-allowed'} : null}>
               {t('wiz.next')} →
-            </button>
-          )}
-          {step === 3 && (
-            <button className="btn primary lg"
-              disabled={!detected}
-              onClick={() => onComplete({ name, date })}
-              style={!detected ? {opacity: 0.5, cursor: 'not-allowed'} : null}>
-              ▶ {t('wiz.start')}
             </button>
           )}
         </div>
