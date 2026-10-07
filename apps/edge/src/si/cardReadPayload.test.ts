@@ -286,7 +286,9 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
       seconds_in_half_day: 591,
       half_day: 1,
       weekday: null,
-      code: 629, // station code of the finish unit: CN 117 + PTD bits 6-7 (= 2) * 256
+      // PTD bit 7: a touch-free (Air+) finish. Its station code sits in block 1,
+      // which this capture never read, so there is no code.
+      touch_free: true,
     });
     const halves = payload.punches.map((p) => p.half_day);
     assert.equal(halves[0], 0, 'first punch 11:29 is AM');

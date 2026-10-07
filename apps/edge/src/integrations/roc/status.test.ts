@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import { openDatabase } from '../../db/index.ts';
 import type { DbHandle } from '../../db/index.ts';
+import { cardTypeFromNumber } from '../../si/cardType.ts';
 import { insertEvent } from '../../si/eventInserter.ts';
 import { localToEpochMs } from '../../time/competitionClock.ts';
 import { createRocPoller } from './poller.ts';
@@ -32,17 +33,18 @@ function setup(
   return handle;
 }
 
-const clock = (sec: number, code?: number) => ({
+const clock = (sec: number, code?: number, touchFree?: boolean) => ({
   half_day: (sec >= 43200 ? 1 : 0) as 0 | 1,
   seconds_in_half_day: sec % 43200,
   weekday: null,
   ...(code === undefined ? {} : { code }),
+  ...(touchFree === true ? { touch_free: true as const } : {}),
 });
 
 /** A start/finish/check time of day, optionally stamped by unit `unit`. */
-type Stamp = number | [sec: number, unit: number];
+type Stamp = number | [sec: number, unit: number] | [sec: number, unit: number, touchFree: boolean];
 const stamp = (t: Stamp | undefined) =>
-  t === undefined ? null : typeof t === 'number' ? clock(t) : clock(t[0], t[1]);
+  t === undefined ? null : typeof t === 'number' ? clock(t) : clock(t[0], t[1], t[2]);
 
 /** A card read at `readAtMs` with the given times of day (seconds). */
 function cardRead(
@@ -59,7 +61,7 @@ function cardRead(
     {
       event_type: 'card_read',
       card_number: card,
-      card_type: 'SI10',
+      card_type: cardTypeFromNumber(card),
       start: stamp(t.start),
       finish: stamp(t.finish),
       check: stamp(t.check),
@@ -145,14 +147,14 @@ describe('buildRadioStatus — start, finish and check units', () => {
     let id = 1;
     const n10 = 12; // SIAC cards through unit 10: 11 forwarded
     for (let n = 1; n <= n10; n++) {
-      cardRead(handle, 8_000_000 + n, now - 60_000, { finish: [T + n, 10] });
+      cardRead(handle, 8_000_000 + n, now - 60_000, { finish: [T + n, 10, true] });
       if (n <= 11) rows.push(finishRow(id++, 10, 8_000_000 + n, T + n));
     }
     for (let n = 1; n <= 8; n++) {
       // unit 20: ordinary cards forwarded, SIAC (1 of 8) not
       cardRead(handle, 9_000_000 + n, now - 60_000, { finish: [T + 300 + n, 20] });
       rows.push(finishRow(id++, 20, 9_000_000 + n, T + 300 + n));
-      cardRead(handle, 8_000_100 + n, now - 60_000, { finish: [T + 400 + n, 20] });
+      cardRead(handle, 8_000_100 + n, now - 60_000, { finish: [T + 400 + n, 20, true] });
       if (n === 1) rows.push(finishRow(id++, 20, 8_000_101, T + 401));
     }
     await deliver(handle, now - 30_000, rows);
@@ -167,6 +169,32 @@ describe('buildRadioStatus — start, finish and check units', () => {
     const siacAll = u10.siac_card_punches + u20.siac_card_punches;
     const siacHit = u10.siac_matched + u20.siac_matched;
     assert.ok(siacHit / siacAll > 0.5, `${siacHit}/${siacAll}`);
+  });
+
+  test('touch-free flag, not card number: unit 20 drops Air+ punches, a SIAC used in contact counts as contact', async () => {
+    const handle = setup(DATE, null, { finish: '10,20' });
+    const rows: string[] = [];
+    let id = 1;
+    // Unit 20: contact punches (ordinary SI10 numbers AND SIAC cards used in
+    // contact) all forwarded, touch-free (SI10 numbers here) 1 of 8.
+    for (let n = 1; n <= 8; n++) {
+      cardRead(handle, 7_000_000 + n, now - 60_000, { finish: [T + n, 20] });
+      rows.push(finishRow(id++, 20, 7_000_000 + n, T + n));
+      cardRead(handle, 8_000_000 + n, now - 60_000, { finish: [T + 100 + n, 20] });
+      rows.push(finishRow(id++, 20, 8_000_000 + n, T + 100 + n));
+      cardRead(handle, 7_100_000 + n, now - 60_000, { finish: [T + 200 + n, 20, true] });
+      if (n === 1) rows.push(finishRow(id++, 20, 7_100_001, T + 201));
+    }
+    await deliver(handle, now - 30_000, rows);
+    const u20 = buildRadioStatus(handle, COMP, now, null)!.controls.find(
+      (x) => x.role === 'finish' && x.control_code === 20
+    )!;
+    // Contact: 16 (8 SI10 + 8 SIAC in contact) all through; touch-free: 1 of 8.
+    assert.equal(u20.other_card_punches, 16);
+    assert.equal(u20.other_matched, 16);
+    assert.equal(u20.siac_card_punches, 8);
+    assert.equal(u20.siac_matched, 1);
+    assert.equal(u20.siac_problem, true);
   });
 
   test('cards without a unit code (SI5) count as the unknown unit of the role', async () => {

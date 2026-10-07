@@ -11,7 +11,7 @@
 //   - Stripped lodash; no console warnings (decoders are pure).
 //   - Test-only `_decodeFromStorage(bytes)` like the other card types.
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN byte next to each PTD, plus PTD bits 6-7 as code bits 8-9, so codes above 255) read into startCode/finishCode/checkCode.
+//   - Start/finish/check station codes (CN plus PTD bit 6) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';

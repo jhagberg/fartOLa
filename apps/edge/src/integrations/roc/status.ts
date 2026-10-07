@@ -22,6 +22,8 @@ import {
   type RadioPunchIn,
 } from './watchdog.ts';
 
+const HAS_TOUCH_FREE = new Set(['SI8', 'SI9', 'SI10', 'SI11', 'SIAC']);
+
 /** '52,78,100' → [52, 78, 100]; anything that is not a code is dropped. */
 export function parseRocControls(text: string | null): number[] {
   if (!text) return [];
@@ -114,7 +116,14 @@ export function buildRadioStatus(
       const timeMs = cardClockToEpochMs(clock, p.card_type, e.eventTimeMs, offsetMin);
       card.push({
         code,
-        ...(role ? { role, unit: clock.code ?? null } : {}),
+        ...(role
+          ? {
+              role,
+              unit: clock.code ?? null,
+              // SI8 and newer record touch-free; SI5/SI6 never are.
+              ...(HAS_TOUCH_FREE.has(p.card_type) ? { touchFree: clock.touch_free === true } : {}),
+            }
+          : {}),
         card: p.card_number,
         timeMs,
         siac,

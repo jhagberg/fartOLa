@@ -23,6 +23,9 @@ interface Decodable {
     startCode?: number;
     finishCode?: number;
     checkCode?: number;
+    startTouchFree?: boolean;
+    finishTouchFree?: boolean;
+    checkTouchFree?: boolean;
   };
 }
 
@@ -74,6 +77,46 @@ describe('station codes of start, finish and check', () => {
     const card6: Decodable = new SiCard6(0);
     card6._decodeFromStorage(six);
     assert.equal(card6.raceResult.startCode, 259);
+  });
+
+  test('PTD bit 7 is not a code bit: 0xC1 with CN 3 and no block 1 has no code, only touch_free', () => {
+    const bytes: (number | undefined)[] = si10.storageData.map((b) => b ?? 0xee);
+    bytes.splice(0x10, 4, 0xc1, 3, 0x0e, 0x10);
+    bytes[0xa9] = undefined; // block 1 not read
+    const card: Decodable = new SiCard10(0);
+    card._decodeFromStorage(bytes);
+    assert.equal(card.raceResult.finishTouchFree, true);
+    // Block 1 (0xa9) unread: the code is unknown rather than a wrong 3 or 771.
+    assert.equal(card.raceResult.finishCode, undefined);
+  });
+
+  test('a touch-free start/finish/check takes its code from block 1 (0xa5 / 0xa9 / 0xa1)', () => {
+    const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
+    bytes.splice(0x0c, 4, 0x81, 3, 0x0e, 0x10); // start: touch-free, CN ignored
+    bytes.splice(0x10, 4, 0x81, 10, 0x0e, 0x10); // finish
+    bytes.splice(0x08, 4, 0x01, 2, 0x0e, 0x10); // check: contact, own CN
+    bytes[0xa5] = 13;
+    bytes[0xa9] = 20;
+    bytes[0xa1] = 99; // ignored: check is not touch-free
+    const card: Decodable = new SiCard10(0);
+    card._decodeFromStorage(bytes);
+    assert.deepEqual(
+      [card.raceResult.startCode, card.raceResult.finishCode, card.raceResult.checkCode],
+      [13, 20, 2]
+    );
+    assert.deepEqual(
+      [
+        card.raceResult.startTouchFree,
+        card.raceResult.finishTouchFree,
+        card.raceResult.checkTouchFree,
+      ],
+      [true, true, undefined]
+    );
+  });
+
+  test('toHalfDayClock carries touch_free only when true', () => {
+    assert.equal(toHalfDayClock(100, 20, true)?.touch_free, true);
+    assert.equal('touch_free' in (toHalfDayClock(100, 20, false) ?? {}), false);
   });
 
   test('a missing time carries no code', () => {

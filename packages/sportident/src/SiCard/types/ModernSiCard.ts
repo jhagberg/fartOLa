@@ -18,11 +18,17 @@
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN byte next to each PTD, plus PTD bits 6-7 as code bits 8-9, so codes above 255) read into startCode/finishCode/checkCode.
+//   - Start/finish/check station codes (CN plus PTD bit 6; touch-free records read it from block 1) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
-import { SiTime, arr2cardNumber, siPunchCode } from '../../siProtocol.ts';
+import {
+  SiTime,
+  arr2cardNumber,
+  siPunchCode,
+  siStationCode,
+  siTouchFree,
+} from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
 import { SiDict } from '../../storage/SiDict.ts';
@@ -130,9 +136,14 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
-  startCode: siPunchCode(0x0c),
-  finishCode: siPunchCode(0x10),
-  checkCode: siPunchCode(0x08),
+  // Station codes; a touch-free (PTD bit 7) record keeps its code in block 1
+  // (0xa5 / 0xa9 / 0xa1), see siStationCode.
+  startCode: siStationCode(0x0c, 0xa5),
+  finishCode: siStationCode(0x10, 0xa9),
+  checkCode: siStationCode(0x08, 0xa1),
+  startTouchFree: siTouchFree(0x0c),
+  finishTouchFree: siTouchFree(0x10),
+  checkTouchFree: siTouchFree(0x08),
   punchCount: new SiInt([[0x16]]),
   punches: new SiModified(
     new SiArray(
@@ -273,14 +284,20 @@ export class ModernSiCard extends BaseSiCard {
     if (startTime !== undefined) this.raceResult.startTime = startTime;
     const startCode = this.storage.get('startCode')?.value;
     if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
+    if (this.storage.get('startTouchFree')?.value === true && startTime != null)
+      this.raceResult.startTouchFree = true;
     const finishTime = this.storage.get('finishTime')?.value;
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
     const finishCode = this.storage.get('finishCode')?.value;
     if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
+    if (this.storage.get('finishTouchFree')?.value === true && finishTime != null)
+      this.raceResult.finishTouchFree = true;
     const checkTime = this.storage.get('checkTime')?.value;
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
     if (checkTime != null && checkCode !== undefined) this.raceResult.checkCode = checkCode;
+    if (this.storage.get('checkTouchFree')?.value === true && checkTime != null)
+      this.raceResult.checkTouchFree = true;
     const punches = this.storage.get('punches')?.value;
     if (punches !== undefined) this.raceResult.punches = punches as IPunch[];
     const cardHolder = this.storage.get('cardHolder')?.value;

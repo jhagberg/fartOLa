@@ -67,6 +67,9 @@ export interface HalfDayClock {
   /** Station code (CN) of the unit that stamped this time. Start, finish and
    * check on SI6 and newer only; absent otherwise. */
   code?: number;
+  /** The punch was touch-free (SIAC Air+): PTD bit 7 of its record. Start,
+   * finish and check on SI8 and newer; absent when not touch-free. */
+  touch_free?: true;
 }
 
 export interface NdjsonPunch {
@@ -171,7 +174,8 @@ const snakeCaseKeys = (obj: Record<string, unknown>): Record<string, unknown> =>
 // pre-existing Phase 0 callers are unaffected.
 export const toHalfDayClock = (
   raw: number | null | undefined,
-  code?: number | null
+  code?: number | null,
+  touchFree?: boolean
 ): HalfDayClock | null => {
   if (raw === null || raw === undefined) return null;
   const half_day = raw >= SI_TIME_CUTOFF ? 1 : 0;
@@ -179,6 +183,7 @@ export const toHalfDayClock = (
   const clock: HalfDayClock = { seconds_in_half_day, half_day, weekday: null };
   // Only start/finish/check from SI6 and newer carry a station code.
   if (typeof code === 'number') clock.code = code;
+  if (touchFree === true) clock.touch_free = true;
   return clock;
 };
 
@@ -269,9 +274,13 @@ export class NdjsonEmitter {
       ...this._base('card_read'),
       card_type,
       card_number: raceResult.cardNumber ?? card.cardNumber,
-      start: toHalfDayClock(raceResult.startTime, raceResult.startCode),
-      finish: toHalfDayClock(raceResult.finishTime, raceResult.finishCode),
-      check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode),
+      start: toHalfDayClock(raceResult.startTime, raceResult.startCode, raceResult.startTouchFree),
+      finish: toHalfDayClock(
+        raceResult.finishTime,
+        raceResult.finishCode,
+        raceResult.finishTouchFree
+      ),
+      check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode, raceResult.checkTouchFree),
       clear: toHalfDayClock(raceResult.clearTime),
       punch_count: c.punchCount ?? punches.length,
       punches,

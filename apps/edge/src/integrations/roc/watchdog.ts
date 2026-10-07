@@ -56,8 +56,12 @@ export interface CardPunchIn {
   card: number;
   /** The punch's own time, epoch ms. */
   timeMs: number;
-  /** SIAC card (touch-free punching). */
+  /** SIAC card (touch-free capable). The fallback for touch-free below. */
   siac?: boolean;
+  /** This punch was touch-free (Air+), as the card's start/finish/check record
+   * says (PTD bit 7). Set (true/false) when the card type records it; absent
+   * for ordinary punches and older cards, which fall back to `siac`. */
+  touchFree?: boolean;
 }
 
 export interface WatchdogParams {
@@ -198,8 +202,8 @@ export function evaluateRadioWatchdog(
     const isMatched = (c: CardPunchIn): boolean =>
       punches.some((r) => r.card === c.card && Math.abs(r.timeMs - c.timeMs) <= tol);
     const matched = inWindow.filter(isMatched);
-    const siacIn = inWindow.filter((p) => p.siac === true);
-    const otherIn = inWindow.filter((p) => p.siac !== true);
+    const siacIn = inWindow.filter((p) => (p.touchFree ?? p.siac) === true);
+    const otherIn = inWindow.filter((p) => (p.touchFree ?? p.siac) !== true);
     const siacMatched = siacIn.filter(isMatched).length;
     const otherMatched = otherIn.filter(isMatched).length;
     const siacProblem =

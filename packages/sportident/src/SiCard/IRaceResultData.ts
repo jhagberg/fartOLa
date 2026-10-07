@@ -18,6 +18,10 @@ export interface IRaceResultData {
   startCode?: number;
   finishCode?: number;
   checkCode?: number;
+  /** The record was a touch-free (Air+) punch: PTD bit 7. SI8 and newer only. */
+  startTouchFree?: boolean;
+  finishTouchFree?: boolean;
+  checkTouchFree?: boolean;
   punches?: IPunch[];
 }
 
