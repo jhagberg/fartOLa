@@ -38,7 +38,7 @@ interface CountRow {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EXPECTED_MIGRATION_COUNT = 17;
+const EXPECTED_MIGRATION_COUNT = 18;
 
 interface JournalEntry {
   idx: number;
@@ -77,7 +77,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     const handle = openDatabase(':memory:');
     try {
       // openDatabase already ran the migrator once. The current journal has
-      // 17 entries: 0000..0007 plus 0009..0017 (0008 is intentionally absent).
+      // 18 entries: 0000..0007 plus 0009..0018 (0008 is intentionally absent).
       const initialCount = handle.sqlite
         .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
         .get();
@@ -85,7 +85,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
       assert.equal(
         initialCount.count,
         EXPECTED_MIGRATION_COUNT,
-        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0017, excluding 0008), got ${initialCount.count}`
+        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0018, excluding 0008), got ${initialCount.count}`
       );
 
       // Call again — should be a no-op.
@@ -100,7 +100,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     }
   });
 
-  test('test 2 (C-H1): 0000..0017 applied with distinct hashes; triggers present', () => {
+  test('test 2 (C-H1): 0000..0018 applied with distinct hashes; triggers present', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
@@ -390,6 +390,45 @@ describe('migrator: idempotency + cold-start coverage', () => {
         .prepare("SELECT 1 FROM pragma_table_info('classes') WHERE name = 'ignore_start_punch'")
         .get();
       assert.equal(old, undefined, 'ignore_start_punch dropped');
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  test('0018 drops competitors.start_wall_ms, keeps the epochs, adds clock_offset_min', () => {
+    const sqlite = new Database(':memory:');
+    try {
+      migrateWithOldJournal(sqlite, (entries) => entries.filter((e) => e.idx <= 17));
+      // A start set in the skipped spring hour under 0015: both columns.
+      const epoch = Date.parse('2026-03-29T01:00:54Z');
+      sqlite.exec(`
+        INSERT INTO competitions (id, name, date, created_at_ms) VALUES ('comp', 'C', '2026-03-29', 0);
+        INSERT INTO classes (id, competition_id, name) VALUES ('cls', 'comp', 'H21');
+        INSERT INTO competitors (id, competition_id, name, class_id, start_time_ms, start_wall_ms) VALUES
+          ('a', 'comp', 'A', 'cls', ${epoch}, ${Date.parse('2026-03-29T02:00:54Z')}),
+          ('b', 'comp', 'B', 'cls', NULL, NULL);
+      `);
+
+      runMigrations(sqlite);
+      const column = (table: string, name: string): unknown =>
+        sqlite.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(name);
+      assert.equal(column('competitors', 'start_wall_ms'), undefined, 'start_wall_ms dropped');
+      assert.ok(column('competitions', 'clock_offset_min'), 'clock_offset_min added');
+      const rows = sqlite
+        .prepare<unknown[], { id: string; start_time_ms: number | null }>(
+          'SELECT id, start_time_ms FROM competitors ORDER BY id'
+        )
+        .all();
+      assert.deepEqual(rows, [
+        { id: 'a', start_time_ms: epoch },
+        { id: 'b', start_time_ms: null },
+      ]);
+      const comp = sqlite
+        .prepare<unknown[], { clock_offset_min: number | null }>(
+          'SELECT clock_offset_min FROM competitions'
+        )
+        .get();
+      assert.equal(comp?.clock_offset_min, null, 'no override: the date default applies');
     } finally {
       sqlite.close();
     }

@@ -9,8 +9,8 @@
 //
 // MOP time semantics (RESEARCH Pitfall 5):
 //   - All times are in tenths of a second (1/10 s), NOT milliseconds.
-//   - start (base @st): epoch UTC in tenths. Math.round(epoch_ms / 100).
-//     The liveresultat server interprets this relative to competition date.
+//   - start (base @st): tenths since midnight on the competition clock
+//     (epoch + the competition's fixed offset, ADR-0012).
 //   - rt (running time, base @rt): elapsed in tenths. Math.round(elapsed_ms / 100).
 //
 // MOP status codes: MeOS, the reference MOP sender, writes its RunnerStatus
@@ -26,7 +26,7 @@
 
 import { XMLBuilder } from 'fast-xml-parser';
 import type { CompetitionState, PunchStatus } from '../../projection/types.ts';
-import { epochToLocalSeconds } from '../../time/competitionClock.ts';
+import { epochToClockSeconds } from '../../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -37,6 +37,8 @@ export interface MopCompetition {
   name: string;
   /** YYYY-MM-DD */
   date: string;
+  /** The competition clock's UTC offset in minutes (ADR-0012). */
+  clockOffsetMin: number;
 }
 
 export interface MopClass {
@@ -152,10 +154,12 @@ export function buildMopXml(input: MopBuildInput): string {
     if (orgId !== null) {
       baseAttrs['@_org'] = orgId;
     }
-    // Start time in tenths of a second since local midnight (MOP `st`);
-    // start_time_ms is epoch ms.
+    // Start time in tenths of a second since midnight on the competition
+    // clock (MOP `st`); start_time_ms is epoch ms.
     if (cv.start_time_ms !== null) {
-      baseAttrs['@_st'] = Math.round(epochToLocalSeconds(cv.start_time_ms) * 10);
+      baseAttrs['@_st'] = Math.round(
+        epochToClockSeconds(cv.start_time_ms, competition.clockOffsetMin) * 10
+      );
     }
     // Running time in tenths. 02.1-14 Task 9: none for an untimed class
     // (MeOS infoserver.cpp sends rt=0 for StatusNoTiming).

@@ -49,6 +49,7 @@ import { insertEvent } from '../si/eventInserter.ts';
 import { readoutChannel } from '@fartola/shared-types';
 import { z } from 'zod';
 import { maxTimeLocked } from './_maxTime.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 const MaxTimeInput = z.object({ max_time_sec: z.number().int().positive().nullable() }).strict();
 
@@ -90,6 +91,7 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     // Plan 11 — expose Eventor linkage; null when not linked.
     eventor_event_id: row.eventorEventId ?? null,
     max_time_sec: row.maxTimeSec ?? null,
+    clock_offset_min: competitionClockOffsetMin(row.date, row.clockOffsetMin),
   };
 }
 
@@ -136,6 +138,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       eventorEventId: parsed.data.eventor_event_id ?? null,
       timingFormat: 'seconds',
       maxTimeSec: null,
+      clockOffsetMin: null,
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
     return reply.code(201).send(competitionRowToDTO(row));
@@ -202,11 +205,19 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     // Plan 11 — null explicitly unlinks; positive integer links a new event.
     if ('eventor_event_id' in parsed.data)
       patch.eventorEventId = parsed.data.eventor_event_id ?? null;
+    // ADR-0012 — null clears the override (back to the date's default).
+    if (parsed.data.clock_offset_min !== undefined)
+      patch.clockOffsetMin = parsed.data.clock_offset_min;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.
     if (Object.keys(patch).length > 0) {
       app.fartolaDb.db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
+      // The date and the override set the competition clock card times are
+      // placed on: re-score.
+      if (patch.date !== undefined || patch.clockOffsetMin !== undefined) {
+        app.projectionStore.markDirty(id);
+      }
     }
 
     const updated = app.fartolaDb.db

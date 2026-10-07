@@ -71,6 +71,8 @@ export interface PushQueueConfig {
   competitionName: string;
   /** Competition date (YYYY-MM-DD) for MOP XML metadata. */
   competitionDate: string;
+  /** The competition clock's UTC offset in minutes (ADR-0012), for `st`. */
+  clockOffsetMin: number;
 }
 
 export interface PushQueueOpts {
@@ -159,6 +161,7 @@ export function createPushQueue(opts: PushQueueOpts): PushQueueHandle {
         id: config.liveresultatId,
         name: config.competitionName,
         date: config.competitionDate,
+        clockOffsetMin: config.clockOffsetMin,
       },
       classes: meta.classes,
       clubs: meta.clubs,

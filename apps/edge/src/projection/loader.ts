@@ -30,6 +30,7 @@ import {
   courseReplacements,
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { ReduceInput, CourseWithControlCodes } from './reduce.ts';
 
 /**
@@ -43,6 +44,8 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
       id: competitions.id,
       raceStartedAtMs: competitions.raceStartedAtMs,
       maxTimeSec: competitions.maxTimeSec,
+      date: competitions.date,
+      clockOffsetMin: competitions.clockOffsetMin,
     })
     .from(competitions)
     .where(eq(competitions.id, competitionId))
@@ -116,6 +119,7 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
     competition_id: competitionId,
     race_started_at_ms: competition.raceStartedAtMs,
     max_time_sec: competition.maxTimeSec,
+    clock_offset_min: competitionClockOffsetMin(competition.date, competition.clockOffsetMin),
     events: eventsRows,
     competitors: competitorsRows,
     classes: classesRows,

@@ -50,7 +50,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { tweaks } from '#lib/stores/tweaks.svelte.ts';
   import { bridgeStatus } from '#lib/stores/bridgeStatus.svelte.ts';
-  import { resultsChannel, formatLocalTime } from '@fartola/shared-types';
+  import { resultsChannel, formatClockTime } from '@fartola/shared-types';
   import { createCardSubscription } from '#lib/services/cardSubscription.ts';
   import type {
     CompetitionDTO,
@@ -240,16 +240,17 @@
     return history[0] ?? null;
   });
 
-  /** Format a start_time_ms value (epoch ms) as HH:MM:SS competition local time. */
-  function formatStartTimeMs(ms: number | null | undefined): string {
+  /** Format a start_time_ms value (epoch ms) as HH:MM:SS on the competition clock. */
+  function formatStartTimeMs(ms: number | null | undefined, clockOffsetMin: number): string {
     if (ms == null) return '—';
-    return formatLocalTime(ms);
+    return formatClockTime(ms, clockOffsetMin);
   }
 
   /** Build the LatestReadCard input. */
   const latestReadProp = $derived.by(() => {
     const row = currentRow;
-    if (!row) return null;
+    if (!row || !competition) return null;
+    const clockOffsetMin = competition.clock_offset_min;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
     return {
@@ -257,17 +258,18 @@
       name: row.competitor_name,
       cls: cls?.name ?? '—',
       club: competitor?.club ?? null,
-      startTime: formatStartTimeMs(competitor?.start_time_ms),
+      startTime: formatStartTimeMs(competitor?.start_time_ms, clockOffsetMin),
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: (() => {
         const elapsedMs = readElapsedMs(
           row,
           competitor?.start_time_ms ?? null,
+          clockOffsetMin,
           cls?.start_method ?? 'auto'
         );
         // 02.1-14 Task 9: no running time for a class without timing.
         if (elapsedMs === null || cls?.no_timing) return '—';
-        return competition?.timing_format === 'tenths'
+        return competition.timing_format === 'tenths'
           ? formatElapsedTenths(elapsedMs)
           : formatElapsed(elapsedMs);
       })(),
@@ -280,7 +282,7 @@
       competitorId: row.competitor_id,
       // 02.1-14 Task 13: "Saknar starttid" + suggestion.
       missingStart: row.missing_start,
-      missingStartHint: missingStartHint(row),
+      missingStartHint: missingStartHint(row, clockOffsetMin),
       // 02.1-14 Task 14: late / early start punch (jury warning).
       startWarning: startWarning(row),
     };
@@ -290,7 +292,7 @@
    * toReceiptRead from the raw card data on the history row. */
   const receiptRead = $derived.by(() => {
     const row = currentRow;
-    if (!row || row.unmatched) return null;
+    if (!row || row.unmatched || !competition) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
     // Elapsed: finish − start per the class's start method, like the
@@ -298,6 +300,7 @@
     const elapsedMs = readElapsedMs(
       row,
       competitor?.start_time_ms ?? null,
+      competition.clock_offset_min,
       cls?.start_method ?? 'auto'
     );
     return toReceiptRead({
@@ -658,12 +661,18 @@
   }
 
   // 02.1-14 Task 13: "Sätt starttid" on a read without a start. The time is
-  // placed on the card's wall clock, before the read's finish.
+  // read on the competition clock, before the read's finish.
   async function onSetStartTimeHandler(competitorId: string, text: string): Promise<void> {
     const row = currentRow;
-    if (!row) return;
+    if (!row || !competition) return;
     try {
-      const result = await setStartFromInput(competitionId, competitorId, text, row.finish_wall);
+      const result = await setStartFromInput(
+        competitionId,
+        competitorId,
+        text,
+        row.finish_ms,
+        competition.clock_offset_min
+      );
       if (result !== 'ok') {
         toast(t(result === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime'));
         return;

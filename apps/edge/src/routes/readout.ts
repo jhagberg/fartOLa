@@ -41,8 +41,8 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 
-import { formatWallClock } from '@fartola/shared-types';
 import {
+  competitions,
   events,
   competitors as competitorsTable,
   config,
@@ -51,7 +51,8 @@ import {
   courseControls,
   controls,
 } from '../db/schema.ts';
-import { cardClockToWallMs } from '../projection/halfDayClockMath.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 
@@ -120,12 +121,10 @@ interface HistoryRow {
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
-  /** The suggestion and this read's finish as local wall-clock strings
-   * 'YYYY-MM-DDTHH:MM:SS' (the card's clock, the scale the running time is
-   * computed on): the UI resolves an edited start before the finish on it,
-   * also in the hour skipped when DST starts. */
-  suggested_start_wall: string | null;
-  finish_wall: string | null;
+  /** This read's finish as epoch ms (the card clock on the competition
+   * clock, as the running time is computed): the UI resolves an edited
+   * start before it. Null without a finish. */
+  finish_ms: number | null;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -195,6 +194,13 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
       // and `pending_unknown_cards` is the canonical unknown-card source.
       let projection = app.projectionStore.get(id);
       if (projection === null) projection = app.projectionStore.recomputeNow(id);
+      const comp = app.fartolaDb.db
+        .select({ date: competitions.date, clockOffsetMin: competitions.clockOffsetMin })
+        .from(competitions)
+        .where(eq(competitions.id, id))
+        .get();
+      const clockOffsetMin =
+        comp === undefined ? null : competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
 
       // Phase 2.1 — build a class_id → expected_codes index so each
       // history row can carry the course's expected control list. Two
@@ -307,15 +313,14 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
-          suggested_start_wall:
-            view?.suggested_start_wall_ms == null
+          finish_ms:
+            payload.finish === null || clockOffsetMin === null
               ? null
-              : formatWallClock(view.suggested_start_wall_ms),
-          finish_wall:
-            payload.finish === null
-              ? null
-              : formatWallClock(
-                  cardClockToWallMs(payload.finish, payload.card_type, e.eventTimeMs)
+              : cardClockToEpochMs(
+                  payload.finish,
+                  payload.card_type,
+                  e.eventTimeMs,
+                  clockOffsetMin
                 ),
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,

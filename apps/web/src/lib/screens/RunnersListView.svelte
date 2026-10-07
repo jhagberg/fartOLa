@@ -23,12 +23,13 @@
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
   import {
+    getCompetition,
     listCompetitors,
     listClasses,
     listHiredCards,
   } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
-  import { formatLocalTime } from '@fartola/shared-types';
+  import { formatClockTime } from '@fartola/shared-types';
   import Button from '#lib/ui/Button.svelte';
   import Input from '#lib/ui/Input.svelte';
   import Icon from '#lib/ui/Icon.svelte';
@@ -70,15 +71,20 @@
     importSheetOpen = importParamOpen;
   });
 
+  /** The competition clock's UTC offset (ADR-0012): start times are shown on it. */
+  let clockOffsetMin = $state<number | null>(null);
+
   async function loadAll(): Promise<void> {
     loading = true;
     loadError = null;
     try {
-      const [compRes, classRes, hiredRes] = await Promise.all([
+      const [compRes, classRes, hiredRes, competitionRes] = await Promise.all([
         listCompetitors(competitionId),
         listClasses(competitionId),
         listHiredCards(competitionId),
+        getCompetition(competitionId),
       ]);
+      clockOffsetMin = competitionRes.competition.clock_offset_min;
       competitors = compRes.competitors;
       classes = classRes.classes;
       hiredCardSet = new Set(hiredRes.open.map((c) => c.card_number));
@@ -152,9 +158,9 @@
     competitors = competitors.map((c) => (c.id === updated.id ? updated : c));
   }
 
-  /** Format epoch ms as HH:MM:SS (competition local time) for start-time display. */
+  /** Format epoch ms as HH:MM:SS on the competition clock for start-time display. */
   function formatStartTime(ms: number): string {
-    return formatLocalTime(ms);
+    return clockOffsetMin === null ? '—' : formatClockTime(ms, clockOffsetMin);
   }
 
   function openAdd(): void {

@@ -53,7 +53,6 @@ function makeCompetitorView(overrides: Partial<CompetitorView> = {}): Competitor
     no_timing: false,
     missing_start: false,
     suggested_start_ms: null,
-    suggested_start_wall_ms: null,
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,
@@ -114,7 +113,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test Race', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test Race', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [
         { id: 'cls-1', name: 'H21' },
         { id: 'cls-2', name: 'D21' },
@@ -167,7 +166,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     };
@@ -198,7 +197,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     };
@@ -224,7 +223,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     };
@@ -267,7 +266,7 @@ describe('buildMopXml', () => {
     );
     const xml = buildMopXml({
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'Inskolning' }],
       clubs: [],
     });
@@ -295,7 +294,7 @@ describe('buildMopXml', () => {
     );
     const xml = buildMopXml({
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     });

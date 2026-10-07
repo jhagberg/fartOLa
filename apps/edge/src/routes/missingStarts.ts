@@ -6,38 +6,28 @@
 //
 //   - GET  /api/competitions/:id/missing-starts — every competitor flagged
 //     missing_start, with check time, suggested start (check + the day's
-//     check → start offset), finish, and the day's n / median / mean.
+//     check → start offset), finish (epoch ms), the day's n / median / mean,
+//     and the competition clock's offset the UI shows them with (ADR-0012).
 //   - POST /api/competitions/:id/missing-starts/apply
-//     { items: [{ competitor_id, start_time_ms } | { competitor_id,
-//     start_wall }] } — sets each start time with the PATCH start-time
-//     route's validation, in one transaction: any bad item → nothing is
-//     written.
-//
-// Check, suggestion and finish are also listed as local wall-clock times
-// ('YYYY-MM-DDTHH:MM:SS', *_wall): the card's own clock, the scale the
-// running time is computed on. A suggestion in the hour skipped when DST
-// starts exists only there; applying `start_wall` keeps it.
+//     { items: [{ competitor_id, start_time_ms }] } — sets each start time
+//     with the PATCH start-time route's validation, in one transaction: any
+//     bad item → nothing is written.
 
 import type { FastifyInstance } from 'fastify';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { formatWallClock } from '@fartola/shared-types';
 import { classes, competitions } from '../db/schema.ts';
-import { cardClockToWallMs, wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { issuesToErrors } from './_zod-errors.ts';
-import { StartTimeMs, StartWall, setCompetitorStartTime, startColumns } from './competitors.ts';
+import { StartTimeMs, setCompetitorStartTime } from './competitors.ts';
 
 const CompetitorId = z.string().min(1);
 const ApplyInput = z
   .object({
     items: z
-      .array(
-        z.union([
-          z.object({ competitor_id: CompetitorId, start_time_ms: StartTimeMs }).strict(),
-          z.object({ competitor_id: CompetitorId, start_wall: StartWall }).strict(),
-        ])
-      )
+      .array(z.object({ competitor_id: CompetitorId, start_time_ms: StartTimeMs }).strict())
       .min(1),
   })
   .strict();
@@ -56,7 +46,11 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
     async (req, reply) => {
       const { id } = req.params;
       const comp = app.fartolaDb.db
-        .select({ id: competitions.id })
+        .select({
+          id: competitions.id,
+          date: competitions.date,
+          clockOffsetMin: competitions.clockOffsetMin,
+        })
         .from(competitions)
         .where(eq(competitions.id, id))
         .get();
@@ -64,6 +58,7 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
       // Fresh projection: the listing follows a batch apply immediately.
       const state = app.projectionStore.recomputeNow(id);
       if (state === null) return reply.code(404).send({ error: 'competition not found' });
+      const clockOffsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
 
       const classNames = new Map(
         app.fartolaDb.db
@@ -78,10 +73,7 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
         .filter((v) => v.missing_start)
         .map((v) => {
           const read = v.card_read_history[v.card_read_history.length - 1]!;
-          const { suggested_start_wall_ms: suggested, suggested_start_offset_ms: offset } = v;
-          const checkWall = suggested !== null && offset !== null ? suggested - offset : null;
-          // missing_start implies a finish on the latest read.
-          const finishWall = cardClockToWallMs(read.finish!, read.card_type, read.event_time_ms);
+          const { suggested_start_ms: suggested, suggested_start_offset_ms: offset } = v;
           return {
             competitor_id: v.id,
             name: v.name,
@@ -90,16 +82,19 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
             class_name: classNames.get(v.class_id) ?? '',
             card_number: v.card_number,
             status: v.status,
-            check_ms: checkWall === null ? null : wallMsToEpochMs(checkWall),
-            suggested_start_ms: v.suggested_start_ms,
-            finish_ms: wallMsToEpochMs(finishWall),
-            check_wall: checkWall === null ? null : formatWallClock(checkWall),
-            suggested_start_wall: suggested === null ? null : formatWallClock(suggested),
-            finish_wall: formatWallClock(finishWall),
+            check_ms: suggested !== null && offset !== null ? suggested - offset : null,
+            suggested_start_ms: suggested,
+            // missing_start implies a finish on the latest read.
+            finish_ms: cardClockToEpochMs(
+              read.finish!,
+              read.card_type,
+              read.event_time_ms,
+              clockOffsetMin
+            ),
           };
         })
         .sort((a, b) => a.class_name.localeCompare(b.class_name) || a.name.localeCompare(b.name));
-      return { ...state.check_to_start, items };
+      return { ...state.check_to_start, clock_offset_min: clockOffsetMin, items };
     }
   );
 
@@ -117,7 +112,7 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
               app.fartolaDb.db,
               id,
               item.competitor_id,
-              startColumns(item)
+              item.start_time_ms
             );
             if (!row) throw new CompetitorNotFound(item.competitor_id);
           }

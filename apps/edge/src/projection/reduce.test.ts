@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
 import type { Event, Competitor, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
-import { reduce, type CourseWithControlCodes } from './reduce.ts';
+import { reduce as reduceOn, type CourseWithControlCodes, type ReduceInput } from './reduce.ts';
 import type { StartMethod } from './dnfMp.ts';
 import type { CompetitorView } from './types.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
@@ -27,6 +27,11 @@ import { localToEpochMs } from '../time/competitionClock.ts';
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
+
+/** The reducer on a CEST competition clock (+120, the default for the
+ * 2026-10-03 fixtures) unless a test passes its own clock_offset_min. */
+const reduce = (input: Omit<ReduceInput, 'clock_offset_min'> & { clock_offset_min?: number }) =>
+  reduceOn({ clock_offset_min: 120, ...input });
 
 function hd(totalSeconds: number): HalfDayClock {
   const wrapped = ((totalSeconds % (24 * 3600)) + 24 * 3600) % (24 * 3600);

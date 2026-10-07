@@ -66,6 +66,7 @@ import {
 import { parseIofXml } from '../xml/parse.ts';
 import { validateXml } from '../xml/validate.ts';
 import { importStartList } from '../xml/iofImport.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
@@ -171,7 +172,11 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       const competitionId = req.params.id;
 
       const comp = app.fartolaDb.db
-        .select({ id: competitions.id })
+        .select({
+          id: competitions.id,
+          date: competitions.date,
+          clockOffsetMin: competitions.clockOffsetMin,
+        })
         .from(competitions)
         .where(eq(competitions.id, competitionId))
         .get();
@@ -222,7 +227,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
       let entries;
       try {
-        entries = importStartList(xmlSource);
+        entries = importStartList(
+          xmlSource,
+          competitionClockOffsetMin(comp.date, comp.clockOffsetMin)
+        );
       } catch (e) {
         return reply.code(400).send({
           error: 'parse_failed',

@@ -16,7 +16,7 @@
     applyMissingStartRows,
     initialStartText,
     resultingTimeMs,
-    wallText,
+    clockText,
     statsLabel,
     type MissingStartItem,
     type MissingStartsResponse,
@@ -41,7 +41,8 @@
       // Keep what the operator typed for runners still listed.
       const nextTexts: Record<string, string> = {};
       for (const item of next.items) {
-        nextTexts[item.competitor_id] = texts[item.competitor_id] ?? initialStartText(item);
+        nextTexts[item.competitor_id] =
+          texts[item.competitor_id] ?? initialStartText(item, next.clock_offset_min);
       }
       texts = nextTexts;
       data = next;
@@ -56,13 +57,14 @@
     void load();
   });
 
-  async function apply(items: MissingStartItem[]): Promise<void> {
+  async function apply(items: MissingStartItem[], clockOffsetMin: number): Promise<void> {
     busy = true;
     error = null;
     try {
       const res = await applyMissingStartRows(
         competitionId,
-        items.map((item) => ({ item, text: texts[item.competitor_id] ?? '' }))
+        items.map((item) => ({ item, text: texts[item.competitor_id] ?? '' })),
+        clockOffsetMin
       );
       if (!res.ok) {
         error = t(res.error === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime');
@@ -91,7 +93,7 @@
         class="btn primary"
         disabled={busy}
         data-testid="missing-starts-set-all"
-        onclick={() => data && void apply(data.items)}
+        onclick={() => data && void apply(data.items, data.clock_offset_min)}
       >
         {t('ms.setAll')}
       </button>
@@ -115,7 +117,7 @@
           <tr data-testid="missing-start-row">
             <td>{item.name}</td>
             <td>{item.class_name}</td>
-            <td class="mono">{wallText(item.check_wall) || '—'}</td>
+            <td class="mono">{clockText(item.check_ms, data.clock_offset_min) || '—'}</td>
             <td>
               <input
                 type="text"
@@ -127,7 +129,9 @@
             </td>
             <td class="mono">
               {item.status === 'OK'
-                ? formatElapsed(resultingTimeMs(item, texts[item.competitor_id] ?? ''))
+                ? formatElapsed(
+                    resultingTimeMs(item, texts[item.competitor_id] ?? '', data.clock_offset_min)
+                  )
                 : item.status}
             </td>
             <td>
@@ -135,7 +139,7 @@
                 type="button"
                 class="btn"
                 disabled={busy}
-                onclick={() => void apply([item])}
+                onclick={() => data && void apply([item], data.clock_offset_min)}
               >
                 {t('ms.set')}
               </button>

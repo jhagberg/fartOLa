@@ -25,7 +25,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import * as schema from './schema.ts';
-import { localToEpochMs } from '../time/competitionClock.ts';
+import { clockToEpochMs, competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,22 +49,27 @@ export function runMigrations(sqlite: Database.Database): void {
 const LOCAL_MS_LIMIT = 7 * 86_400_000;
 
 /** Data migration: convert legacy local ms-since-midnight start times
- * (competitors.start_time_ms, classes.first_start_ms) to epoch ms using the
- * competition's date in COMPETITION_TZ; a value past midnight lands on the
- * following day(s). Runs in JS rather than a .sql file because SQLite cannot
- * do time-zone/DST conversion, and it is idempotent by construction:
- * converted values are far above LOCAL_MS_LIMIT. */
+ * (competitors.start_time_ms, classes.first_start_ms) to epoch ms on the
+ * competition clock (its date + fixed offset, ADR-0012); a value past
+ * midnight lands on the following day(s). Runs in JS rather than a .sql file
+ * because the default offset needs the time-zone rules, and it is
+ * idempotent by construction: converted values are far above
+ * LOCAL_MS_LIMIT. */
 function migrateStartTimesToEpoch(sqlite: Database.Database): void {
   const convert = (table: 'competitors' | 'classes', column: string): void => {
     const rows = sqlite
-      .prepare<[number], { id: string; ms: number; date: string }>(
-        `SELECT t.id AS id, t.${column} AS ms, c.date AS date FROM ${table} t
+      .prepare<[number], { id: string; ms: number; date: string; offsetMin: number | null }>(
+        `SELECT t.id AS id, t.${column} AS ms, c.date AS date, c.clock_offset_min AS offsetMin
+         FROM ${table} t
          JOIN competitions c ON c.id = t.competition_id
          WHERE t.${column} IS NOT NULL AND t.${column} < ?`
       )
       .all(LOCAL_MS_LIMIT);
     const update = sqlite.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`);
-    for (const r of rows) update.run(localToEpochMs(r.date, r.ms / 1000), r.id);
+    for (const r of rows) {
+      const offsetMin = competitionClockOffsetMin(r.date, r.offsetMin);
+      update.run(clockToEpochMs(r.date, r.ms / 1000, offsetMin), r.id);
+    }
   };
   sqlite.transaction(() => {
     convert('competitors', 'start_time_ms');

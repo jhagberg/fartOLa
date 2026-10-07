@@ -15,7 +15,7 @@
 
 import { XMLParser } from 'fast-xml-parser';
 
-import { localToEpochMs } from '../time/competitionClock.ts';
+import { clockToEpochMs } from '../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Safe parser instance — same config as parse.ts (T-FILE-IMPORT parity).
@@ -56,20 +56,20 @@ function asInt(x: unknown): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
-/** xs:dateTime without Z/offset: date, then local wall-clock time. */
+/** xs:dateTime without Z/offset: date, then a time of day. */
 const LOCAL_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$/;
 
 /** Parse an ISO 8601 dateTime string to epoch ms. One without Z/offset is
- * local time in COMPETITION_TZ — not the host's zone, which Date.parse would
- * use. Returns null when parsing fails so the caller can report the entry
- * rather than crash. */
-function parseDateTimeMs(raw: unknown): number | null {
+ * on the competition clock (`clockOffsetMin`, ADR-0012) — not the host's
+ * zone, which Date.parse would use. Returns null when parsing fails so the
+ * caller can report the entry rather than crash. */
+function parseDateTimeMs(raw: unknown, clockOffsetMin: number): number | null {
   const s = asString(raw);
   if (s === null) return null;
   const local = LOCAL_DATE_TIME.exec(s);
   if (local !== null) {
     const [, date, h, m, sec] = local;
-    return localToEpochMs(date!, Number(h) * 3600 + Number(m) * 60 + Number(sec));
+    return clockToEpochMs(date!, Number(h) * 3600 + Number(m) * 60 + Number(sec), clockOffsetMin);
   }
   const ms = Date.parse(s);
   return Number.isFinite(ms) ? ms : null;
@@ -90,7 +90,7 @@ export interface ImportedStartEntry {
   /** <Organisation><Name>, or null if absent. */
   club: string | null;
   /** Epoch ms parsed from the StartList's StartTime element (an offset-free
-   * time is COMPETITION_TZ local time); null when missing or unparseable (the
+   * time is on the competition clock); null when missing or unparseable (the
    * route reports the row as skipped). */
   startTimeMs: number | null;
   /** SI card number from PersonRaceStart > ControlCard, if present. */
@@ -107,10 +107,12 @@ export interface ImportedStartEntry {
 /** Parse an IOF XML 3.0 StartList document and return an array of structured
  * start entries, one per named PersonStart (02.1-14 Task 6: nothing is
  * dropped silently; entries without a StartTime have startTimeMs=null).
+ * A StartTime without Z/offset is read on the competition clock,
+ * `clockOffsetMin` minutes from UTC.
  *
  * This function is pure: no IO. The caller is responsible for the DOCTYPE
  * pre-flight and body size cap (import route). */
-export function importStartList(xmlSource: string): ImportedStartEntry[] {
+export function importStartList(xmlSource: string, clockOffsetMin: number): ImportedStartEntry[] {
   let raw: Record<string, unknown>;
   try {
     raw = parser.parse(xmlSource) as Record<string, unknown>;
@@ -172,7 +174,7 @@ export function importStartList(xmlSource: string): ImportedStartEntry[] {
       const startNodes = toArray(ps['Start'] as RawNode | RawNode[]);
       const startNode = (startNodes[0] ?? {}) as RawNode;
 
-      const startTimeMs = parseDateTimeMs(startNode?.['StartTime']);
+      const startTimeMs = parseDateTimeMs(startNode?.['StartTime'], clockOffsetMin);
       const club = asString(((ps['Organisation'] ?? {}) as RawNode)?.['Name']);
 
       // BibNumber

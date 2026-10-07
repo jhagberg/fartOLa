@@ -140,6 +140,7 @@ describe('reduce — idempotency (REQ-EVT-004)', () => {
     ];
     const input = {
       competition_id: 'comp-1',
+      clock_offset_min: 120,
       events,
       competitors: [
         comp({ id: 'c-anna', name: 'Anna', cardNumber: 1 }),
@@ -174,6 +175,7 @@ describe('reduce — idempotency (REQ-EVT-004)', () => {
     const shuffled = [events[2]!, events[0]!, events[1]!];
     const input = {
       competition_id: 'comp-1',
+      clock_offset_min: 120,
       competitors: [
         comp({ id: 'c-anna', name: 'Anna', cardNumber: 1 }),
         comp({ id: 'c-bo', name: 'Bo', cardNumber: 2 }),
@@ -221,6 +223,7 @@ describe('reduce — idempotency (REQ-EVT-004)', () => {
 
     const input = {
       competition_id: 'comp-1',
+      clock_offset_min: 120,
       events,
       competitors,
       classes: [cls('cls-H21')],
