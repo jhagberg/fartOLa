@@ -37,7 +37,7 @@ import { classes, competitions, competitors } from '../db/schema.ts';
 import { drawRandom } from '../draw/random.ts';
 import { kindProblem, pursuitBanned } from '../draw/classKind.ts';
 import { drawPursuit } from '../draw/pursuit.ts';
-import { fillVacancies, placeBeforeOrAfter, smallestGapMs } from '../draw/remaining.ts';
+import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../draw/remaining.ts';
 import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
@@ -404,9 +404,13 @@ function drawLateEntrants(
         ((body.intervalSec ?? 0) > 0 ? body.intervalSec! * 1000 : null));
   if (intervalMs === null)
     throw new DrawError('interval_unknown', 'The class has no start interval; give intervalSec.');
-  const order = (body.mode === 'SOFT' ? drawSOFT(late) : drawRandom(late)).order.filter(
-    (s): s is DrawRunner => s !== null
-  );
+  // Before/After: the SOFT block counts the seam to the existing list
+  // (TR 7.5.1); Random ignores clubs, as in a whole-class draw.
+  const placement = body.drawType === 'RemainingBefore' ? 'Before' : 'After';
+  const boundary = body.drawType === 'RemainingVacant' ? {} : seamClubs(existing, placement);
+  const order = (
+    body.mode === 'SOFT' ? drawSOFT(late, { boundary }) : drawRandom(late)
+  ).order.filter((s): s is DrawRunner => s !== null);
   if (body.drawType === 'RemainingVacant') {
     const firstStartMs = classRow.firstStartMs ?? Math.min(...existing.map((r) => r.startTimeMs));
     const assignments = fillVacancies(existing, order, { firstStartMs, intervalMs }, (min, max) =>
@@ -414,7 +418,6 @@ function drawLateEntrants(
     );
     return { assignments, wholeClass: false };
   }
-  const placement = body.drawType === 'RemainingBefore' ? 'Before' : 'After';
   const assignments = placeBeforeOrAfter(existing, order, placement, intervalMs);
   return {
     assignments,
