@@ -653,6 +653,22 @@ describe('lottning route', () => {
     }
   });
 
+  test('SOFT TR 7.5.1: two hand-edited starts in one grid place — the later one is the seam for late entrants after the class', async () => {
+    // Alpha×3/Beta×2 draws A B A B A at 10:00–10:04.
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    // Both in the 10:05 place: Alpha at 10:05:30 (stored first), Beta at 10:05:00.
+    addRunner('Hand A', 'Alpha', at(10, 5) + 30_000);
+    addRunner('Hand B', 'Beta', at(10, 5));
+    const a = addRunner('Late A', 'Alpha');
+    const b = addRunner('Late B', 'Beta');
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+    assert.equal(res.statusCode, 201, res.body);
+    const times = timesOf();
+    // B A | B A: Beta follows the 10:05:30 Alpha, then Alpha.
+    assert.deepEqual([times.get(b), times.get(a)], [at(10, 6), at(10, 7)]);
+  });
+
   test('late entrants without a start list → 409 no_start_list, nothing written', async () => {
     const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
     assert.equal(res.statusCode, 409, res.body);

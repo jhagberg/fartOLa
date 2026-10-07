@@ -81,18 +81,23 @@ export function placeBeforeOrAfter(
   return order.map((r, i) => ({ id: r.id, startTimeMs: start + i * intervalMs }));
 }
 
-/** Work (about one BigInt product per unit) placeFewest may do before it
- * falls back. Measured (Node 26, random clubs, remaining.test.ts): exact for
- * 20 free places and 10 late entrants in 10 clubs (20–50 ms), 10 places
- * and 20 late entrants in 15 clubs (45–50 ms) and 5 places and 30 late
- * entrants (120–350 ms); 20 places and 30 late entrants in 15 clubs, and
- * 40 places and 50 late entrants in 25 clubs, fall back (about 0.2 s). An
- * exact count for every size is not to be had: one late entrant per club
- * into single free places is already a permanent with forbidden places. */
+/** Work (about one BigInt product or one search step per unit) placeFewest
+ * may do while counting before it falls back. Measured (Node 26, random
+ * clubs, remaining.test.ts): exact for 20 free places and 10 late entrants
+ * in 10 clubs (30–85 ms) and 10 places and 20 late entrants in 15 clubs
+ * (75–90 ms); 5 places and 30 late entrants in 15 clubs take the split
+ * (110 ms); 20 places and 30 late entrants in 15 clubs, 40 places and 50
+ * in 25 clubs, and 28 single places for 20 clubs of one fall back to the
+ * preference (0.2–0.3 s, no memory to speak of). An exact count for every
+ * size is not to be had: one late entrant per club into single free places
+ * is already a permanent with forbidden places. */
 export const PLACE_FEWEST_BUDGET = 1_000_000;
 
 /** Too much work for placeFewest (PLACE_FEWEST_BUDGET). */
 class TooLarge extends Error {}
+
+/** Occupied places of the grid: the clubs of their first and last start. */
+type Cells = Map<number, { first: string | null; last: string | null }>;
 
 /** Late entrants into free places of the start grid first + k·interval,
  * k from 0 to the last start; those beyond the free places start right
@@ -102,11 +107,14 @@ class TooLarge extends Error {}
  * with the fewest same-club neighbours in the whole start list
  * (placeFewest, TR 7.5.1, TR 7.5.2). Beyond `budget` work (no realistic
  * class; see PLACE_FEWEST_BUDGET) it falls back, reporting `onFallback`:
- * 'split' — a random min(late, free places) of the late entrants take the
- *   free places and the rest start after the last start, each part drawn
- *   exactly (the fewest neighbours given that split);
- * 'preference' — when that is too large as well, or there is no overflow:
- *   the rule below, with the overflow drawn with the seam.
+ * 'split' — when some start after the last start: the free places are
+ *   filled with the fewest neighbours among them (placeFewest, uniformly,
+ *   who goes where included) and the rest start after the last start,
+ *   drawn with its seam; the fewest neighbours given that split;
+ * 'preference' — when that is too large as well: the rule below, with the
+ *   overflow drawn with its seam. Weaker: no minimum is guaranteed.
+ * The choice depends only on the input: counting, which uses no random
+ * numbers, decides it, and drawing afterwards does no budgeted work.
  * Otherwise (Random) each takes a random free place, preferring one where
  * neither nearest starter is from the same club, and the rest follow in
  * order. */
@@ -124,50 +132,44 @@ export function fillVacancies(
   // floor: a hand-edited off-grid start occupies the place it falls in, so a
   // late entrant never lands before it.
   const slotOf = (t: number) => Math.floor((t - grid.firstStartMs) / grid.intervalMs);
-  const taken = new Map<number, string | null>();
-  for (const r of existing) taken.set(slotOf(r.startTimeMs), r.club);
+  // A place's neighbours are the starters nearest in time: the last start
+  // in the place before, the first in the place after (several hand-edited
+  // starts can share a place).
+  const taken: Cells = new Map();
+  for (const r of [...existing].sort((a, b) => a.startTimeMs - b.startTimeMs)) {
+    const k = slotOf(r.startTimeMs);
+    taken.set(k, { first: taken.get(k)?.first ?? r.club, last: r.club });
+  }
   const lastSlot = Math.max(...taken.keys());
   const free: number[] = [];
   for (let k = 0; k <= lastSlot; k++) if (!taken.has(k)) free.push(k);
   const at = (slot: number) => grid.firstStartMs + slot * grid.intervalMs;
   const budget = limits.budget ?? PLACE_FEWEST_BUDGET;
-  const shuffled = [...late];
   if (separateClubs) {
-    try {
-      return placeFewest(taken, lastSlot, free, late, rng, budget)
-        .map((p) => ({ id: p.id, startTimeMs: at(p.slot) }))
-        .sort((a, b) => a.startTimeMs - b.startTimeMs);
-    } catch (e) {
-      if (!(e instanceof TooLarge)) throw e;
-    }
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = rng(0, i + 1);
-      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
-    }
-    if (late.length > free.length)
+    // Counting decides exact or fallback before any random choice.
+    for (const mode of ['exact', 'split'] as const) {
+      if (mode === 'split' && late.length <= free.length) break;
+      let draw: ((rng: RngFn) => Array<{ id: string; slot: number }>) | null = null;
       try {
-        const placed = placeFewest(
-          taken,
-          lastSlot,
-          free,
-          shuffled.slice(0, free.length),
-          rng,
-          budget
-        );
-        limits.onFallback?.('split');
-        return [
-          ...placed.map((p) => ({ id: p.id, startTimeMs: at(p.slot) })),
-          ...overflow(shuffled.slice(free.length)),
-        ].sort((a, b) => a.startTimeMs - b.startTimeMs);
+        draw = placeFewest(taken, lastSlot, free, late, budget, mode === 'split');
       } catch (e) {
         if (!(e instanceof TooLarge)) throw e;
       }
+      if (draw === null) continue;
+      if (mode === 'split') limits.onFallback?.('split');
+      const placed = draw(rng);
+      const inPlaces = new Set(placed.map((p) => p.id));
+      return [
+        ...placed.map((p) => ({ id: p.id, startTimeMs: at(p.slot) })),
+        ...overflow(late.filter((r) => !inPlaces.has(r.id))),
+      ].sort((a, b) => a.startTimeMs - b.startTimeMs);
+    }
     limits.onFallback?.('preference');
   }
   // After the last start; SOFT draws the block with its seam to the last starter.
   function overflow(rest: readonly DrawRunner[]): Assignment[] {
     const block = separateClubs
-      ? (drawSOFT([...rest], { boundary: { before: taken.get(lastSlot) ?? null }, rngFn: rng })
+      ? (drawSOFT([...rest], { boundary: { before: taken.get(lastSlot)!.last }, rngFn: rng })
           .order as DrawRunner[])
       : rest;
     return block.map((r, i) => ({ id: r.id, startTimeMs: at(lastSlot + 1 + i) }));
@@ -181,16 +183,21 @@ export function fillVacancies(
     for (const dir of [-1, 1])
       for (let s = k + dir; s >= 0 && s <= lastSlot; s += dir)
         if (taken.has(s)) {
-          out.push(taken.get(s)!);
+          out.push(dir < 0 ? taken.get(s)!.last : taken.get(s)!.first);
           break;
         }
     return out;
   };
-  const order = separateClubs ? shuffled : late;
+  const order = [...late];
+  if (separateClubs)
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = rng(0, i + 1);
+      [order[i], order[j]] = [order[j]!, order[i]!];
+    }
   const placed = order.slice(0, free.length).map((r) => {
     const pick = free.findIndex((f) => r.club === null || !neighbourClubs(f).includes(r.club));
     const k = free.splice(pick === -1 ? 0 : pick, 1)[0]!;
-    taken.set(k, r.club);
+    taken.set(k, { first: r.club, last: r.club });
     return { id: r.id, startTimeMs: at(k) };
   });
   return [...placed, ...overflow(order.slice(placed.length))];
@@ -216,15 +223,21 @@ export function fillVacancies(
  * proportion to the counts, which clubs give the runners uniformly, the
  * places uniformly, and the word with samplePattern: every placement with
  * the fewest neighbours is equally likely, as in soft.ts.
+ *
+ * Counting runs here, charged against `budget` (TooLarge when it runs
+ * out), and uses no random numbers; the returned function draws, revisiting
+ * only what counting built. With `split` the block after the last start is
+ * left out: the free places are filled with the fewest neighbours among
+ * them and the caller draws the rest.
  */
 function placeFewest(
-  taken: ReadonlyMap<number, string | null>,
+  taken: Cells,
   lastSlot: number,
   free: readonly number[],
   late: readonly DrawRunner[],
-  rng: RngFn,
-  budget: number
-): Array<{ id: string; slot: number }> {
+  budget: number,
+  split = false
+): (rng: RngFn) => Array<{ id: string; slot: number }> {
   // Clubs by index: late clubs first, then starters' clubs with no late entrant.
   const index = new Map<string, number>();
   const runnersOf: DrawRunner[][] = [];
@@ -247,15 +260,21 @@ function placeFewest(
     const h = holes.at(-1);
     if (h !== undefined && h.slots.at(-1) === k - 1) h.slots.push(k);
     else
-      holes.push({ slots: [k], X: k > 0 ? clubIndex(taken.get(k - 1)) : -1, Y: -1, full: false });
+      holes.push({
+        slots: [k],
+        X: k > 0 ? clubIndex(taken.get(k - 1)!.last) : -1,
+        Y: -1,
+        full: false,
+      });
   }
-  for (const h of holes) h.Y = clubIndex(taken.get(h.slots.at(-1)! + 1));
+  for (const h of holes) h.Y = clubIndex(taken.get(h.slots.at(-1)! + 1)!.first);
   const full = late.length >= free.length;
   for (const h of holes) h.full = full;
-  if (late.length > free.length)
+  // split: who starts after the class is left to the caller.
+  if (late.length > free.length && !split)
     holes.push({
       slots: Array.from({ length: late.length - free.length }, (_, i) => lastSlot + 1 + i),
-      X: clubIndex(taken.get(lastSlot)),
+      X: clubIndex(taken.get(lastSlot)!.last),
       Y: -1,
       full: true,
     });
@@ -300,45 +319,51 @@ function placeFewest(
     return f;
   };
 
-  /** Every way to take between lo and hi runners from the state. */
-  const takes = (s: State, lo: number, hi: number): Take[] => {
-    const out: Take[] = [];
+  /** Every way to take between lo and hi runners from the state, one at a
+   * time; each step of the search is charged as work. */
+  function* takes(s: State, lo: number, hi: number): Generator<Take> {
     const sp = new Array<number>(special.length).fill(0);
     const pl: Array<{ c: number; t: number; n: number }> = [];
     // Class c (clubs with c left): n_t clubs give t each, chosen in
     // m! / ((m − Σn)! · ∏ n_t!) ways.
-    const plainPart = (
+    function* plainPart(
       c: number,
       t: number,
       used: number,
       den: bigint,
       j: number,
       ways: bigint
-    ): void => {
+    ): Generator<Take> {
+      spend(1);
       if (c > maxCount) {
-        if (j >= lo) out.push({ sp: [...sp], plain: [...pl], j, ways });
+        if (j >= lo) yield { sp: [...sp], plain: [...pl], j, ways };
         return;
       }
       const m = s.hist[c]!;
-      if (t > c || used === m)
-        return plainPart(c + 1, 1, 0, 1n, j, (ways * fact(m)) / (fact(m - used) * den));
+      if (t > c || used === m) {
+        yield* plainPart(c + 1, 1, 0, 1n, j, (ways * fact(m)) / (fact(m - used) * den));
+        return;
+      }
       for (let n = 0; used + n <= m && j + n * t <= hi; n++) {
         if (n > 0) pl.push({ c, t, n });
-        plainPart(c, t + 1, used + n, den * fact(n), j + n * t, ways);
+        yield* plainPart(c, t + 1, used + n, den * fact(n), j + n * t, ways);
         if (n > 0) pl.pop();
       }
-    };
-    const specialPart = (i: number, j: number): void => {
-      if (i === special.length) return plainPart(1, 1, 0, 1n, j, 1n);
+    }
+    function* specialPart(i: number, j: number): Generator<Take> {
+      spend(1);
+      if (i === special.length) {
+        yield* plainPart(1, 1, 0, 1n, j, 1n);
+        return;
+      }
       for (let t = 0; t <= s.sp[i]! && j + t <= hi; t++) {
         sp[i] = t;
-        specialPart(i + 1, j + t);
+        yield* specialPart(i + 1, j + t);
       }
       sp[i] = 0;
-    };
-    specialPart(0, 0);
-    return out;
-  };
+    }
+    yield* specialPart(0, 0);
+  }
   const after = (s: State, t: Take): State => {
     const hist = [...s.hist];
     for (const { c, t: k, n } of t.plain) {
@@ -377,14 +402,17 @@ function placeFewest(
     return h.full ? [h.slots.length, h.slots.length] : [0, Math.min(h.slots.length, left)];
   };
   const memo = holes.map(() => new Map<string, bigint[]>());
+  // Counting is charged; drawing afterwards only revisits what counting
+  // built, so it is not (and never gives up).
   let work = 0;
-  const spend = (units: number) => {
+  let counting = true;
+  function spend(units: number) {
     work += units;
-    if (work > budget) throw new TooLarge();
-  };
+    if (counting && work > budget) throw new TooLarge();
+  }
   const G = (i: number, s: State): bigint[] => {
     if (i === holes.length)
-      return s.sp.every((v) => v === 0) && s.hist.every((n) => n === 0) ? [1n] : [];
+      return split || (s.sp.every((v) => v === 0) && s.hist.every((n) => n === 0)) ? [1n] : [];
     const key = keyOf(i, s);
     const hit = memo[i]!.get(key);
     if (hit !== undefined) return hit;
@@ -405,68 +433,73 @@ function placeFewest(
     return out;
   };
 
-  let D = G(0, start).findIndex((v) => v !== undefined && v > 0n);
-  // Clubs not in `special` by how many runners they have left.
-  const leftOf = runnersOf.map((r) => r.length);
-  let s = start;
-  const clubAt = new Map<number, number>();
-  holes.forEach((h, i) => {
-    const options: Array<{ t: Take; d: number; w: bigint }> = [];
-    for (const t of takes(s, ...bounds(i, s))) {
-      const rest = G(i + 1, after(s, t));
-      const tb = holeTable(i, t);
-      const w = t.ways * binom(h.slots.length, t.j);
-      for (let d = 0; d <= D && d < tb.length; d++) {
-        const x = w * tb[d]! * (rest[D - d] ?? 0n);
-        if (x > 0n) options.push({ t, d, w: x });
-      }
-    }
-    let r = randomBelow(
-      options.reduce((a, o) => a + o.w, 0n),
-      rng
-    );
-    let pick = options[0]!;
-    for (const o of options) {
-      pick = o;
-      if (r < o.w) break;
-      r -= o.w;
-    }
-    const { t, d } = pick;
-    // Which clubs give the runners: uniformly among `ways`.
-    const counts = new Array<number>(N).fill(0);
-    special.forEach((c, k) => (counts[c] = t.sp[k]!));
-    const byLeft = new Map<number, number[]>();
-    for (const c of plain)
-      if (leftOf[c]! > 0) byLeft.set(leftOf[c]!, [...(byLeft.get(leftOf[c]!) ?? []), c]);
-    for (const [c, clubs] of byLeft) {
-      for (let a = clubs.length - 1; a > 0; a--) {
-        const b = rng(0, a + 1);
-        [clubs[a], clubs[b]] = [clubs[b]!, clubs[a]!];
-      }
-      let next = 0;
-      for (const p of t.plain.filter((p) => p.c === c))
-        for (let k = 0; k < p.n; k++) counts[clubs[next++]!] = p.t;
-    }
-    const word = samplePattern(counts, h.X, h.Y, rng, d);
-    // Which places: uniformly.
-    const places = [...h.slots];
-    for (let a = 0; a < word.length; a++) {
-      const b = rng(a, places.length);
-      [places[a], places[b]] = [places[b]!, places[a]!];
-    }
-    const chosen = places.slice(0, word.length).sort((a, b) => a - b);
-    word.forEach((c, k) => {
-      clubAt.set(chosen[k]!, c);
-      leftOf[c]!--;
-    });
-    s = after(s, t);
-    D -= d;
-  });
+  const fewest = G(0, start).findIndex((v) => v !== undefined && v > 0n);
+  counting = false;
 
-  for (const list of runnersOf)
-    for (let a = list.length - 1; a > 0; a--) {
-      const b = rng(0, a + 1);
-      [list[a], list[b]] = [list[b]!, list[a]!];
-    }
-  return [...clubAt].map(([slot, c]) => ({ id: runnersOf[c]!.pop()!.id, slot }));
+  return (rng: RngFn) => {
+    let D = fewest;
+    const leftOf = runnersOf.map((r) => r.length);
+    let s = start;
+    const clubAt = new Map<number, number>();
+    holes.forEach((h, i) => {
+      const options: Array<{ t: Take; d: number; w: bigint }> = [];
+      for (const t of takes(s, ...bounds(i, s))) {
+        const rest = G(i + 1, after(s, t));
+        if (rest.length === 0) continue; // as counting: no table for a dead end
+        const tb = holeTable(i, t);
+        const w = t.ways * binom(h.slots.length, t.j);
+        for (let d = 0; d <= D && d < tb.length; d++) {
+          const x = w * tb[d]! * (rest[D - d] ?? 0n);
+          if (x > 0n) options.push({ t, d, w: x });
+        }
+      }
+      let r = randomBelow(
+        options.reduce((a, o) => a + o.w, 0n),
+        rng
+      );
+      let pick = options[0]!;
+      for (const o of options) {
+        pick = o;
+        if (r < o.w) break;
+        r -= o.w;
+      }
+      const { t, d } = pick;
+      // Which clubs give the runners: uniformly among `ways`.
+      const counts = new Array<number>(N).fill(0);
+      special.forEach((c, k) => (counts[c] = t.sp[k]!));
+      const byLeft = new Map<number, number[]>();
+      for (const c of plain)
+        if (leftOf[c]! > 0) byLeft.set(leftOf[c]!, [...(byLeft.get(leftOf[c]!) ?? []), c]);
+      for (const [c, clubs] of byLeft) {
+        for (let a = clubs.length - 1; a > 0; a--) {
+          const b = rng(0, a + 1);
+          [clubs[a], clubs[b]] = [clubs[b]!, clubs[a]!];
+        }
+        let next = 0;
+        for (const p of t.plain.filter((p) => p.c === c))
+          for (let k = 0; k < p.n; k++) counts[clubs[next++]!] = p.t;
+      }
+      const word = samplePattern(counts, h.X, h.Y, rng, d);
+      // Which places: uniformly.
+      const places = [...h.slots];
+      for (let a = 0; a < word.length; a++) {
+        const b = rng(a, places.length);
+        [places[a], places[b]] = [places[b]!, places[a]!];
+      }
+      const chosen = places.slice(0, word.length).sort((a, b) => a - b);
+      word.forEach((c, k) => {
+        clubAt.set(chosen[k]!, c);
+        leftOf[c]!--;
+      });
+      s = after(s, t);
+      D -= d;
+    });
+
+    for (const list of runnersOf)
+      for (let a = list.length - 1; a > 0; a--) {
+        const b = rng(0, a + 1);
+        [list[a], list[b]] = [list[b]!, list[a]!];
+      }
+    return [...clubAt].map(([slot, c]) => ({ id: runnersOf[c]!.pop()!.id, slot }));
+  };
 }
