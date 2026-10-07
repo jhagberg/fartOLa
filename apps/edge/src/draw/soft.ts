@@ -131,7 +131,7 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
 
 /** Rows of Pascal's triangle as BigInts, grown on demand. */
 const pascal: bigint[][] = [[1n]];
-function binom(n: number, k: number): bigint {
+export function binom(n: number, k: number): bigint {
   if (k < 0 || k > n) return 0n;
   while (pascal.length <= n) {
     const prev = pascal[pascal.length - 1]!;

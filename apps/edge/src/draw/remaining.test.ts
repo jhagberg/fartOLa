@@ -115,6 +115,210 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
     }
   });
 
+  test('SOFT TR 7.5.1/7.5.2: late entrants into vacant places and after the last start → every placement with the fewest neighbours in the whole list, uniformly (chi-square, p = 0.001)', () => {
+    // Places: a club letter is a starter ('-' without a club), '' a vacant
+    // place. Late entrants: club letters, '-' without a club.
+    const pairs = (seq: string[]) => {
+      const real = seq.filter((c) => c !== '.');
+      return real.reduce((n, c, i) => n + (i > 0 && c !== '-' && c === real[i - 1] ? 1 : 0), 0);
+    };
+    /** Brute force: every placement with the fewest neighbours, as the
+     * club in every place ('.' = empty). */
+    const fewestPlacements = (list: string[], late: string[]): string[] => {
+      const free = list.flatMap((c, k) => (c === '' ? [k] : []));
+      const over = Math.max(0, late.length - free.length);
+      const places = [...list.map((c) => (c === '' ? '.' : c)), ...Array<string>(over).fill('.')];
+      const slots = [...free, ...Array.from({ length: over }, (_, i) => list.length + i)];
+      const left = new Map<string, number>();
+      for (const c of late) left.set(c, (left.get(c) ?? 0) + 1);
+      let fewest = Number.POSITIVE_INFINITY;
+      let out: string[] = [];
+      const walk = (i: number, placed: number) => {
+        if (i === slots.length) {
+          if (placed < late.length) return;
+          const n = pairs(places);
+          if (n < fewest) [fewest, out] = [n, []];
+          if (n === fewest) out.push(places.join(''));
+          return;
+        }
+        if (late.length - placed < slots.length - i && slots[i]! < list.length) walk(i + 1, placed);
+        for (const [c, n] of left)
+          if (n > 0) {
+            left.set(c, n - 1);
+            places[slots[i]!] = c;
+            walk(i + 1, placed + 1);
+            places[slots[i]!] = '.';
+            left.set(c, n);
+          }
+      };
+      walk(0, 0);
+      return out;
+    };
+    const cases: Array<[string[], string[]]> = [
+      [
+        ['B', '', 'C', 'A'],
+        ['A', 'B'],
+      ], // only B A C A B has no pair
+      [
+        ['A', '', '', 'A', 'B', '', 'A'],
+        ['A', 'A', 'B'],
+      ],
+      [
+        ['', 'A', '', 'B', 'A'],
+        ['A', 'B', 'C'],
+      ], // a place before the first start, one after
+      [
+        ['A', '', '', 'B', '', 'A'],
+        ['A', 'B'],
+      ], // a vacant place stays empty
+      [
+        ['A', '', 'B', 'A'],
+        ['A', 'A', 'B', 'C'],
+      ],
+      [
+        ['A', '', 'A'],
+        ['A', 'A'],
+      ], // pairs unavoidable
+      [
+        ['-', '', 'A', '', '-'],
+        ['-', 'A', '-'],
+      ], // runners without a club
+      [
+        ['A', 'B', 'A'],
+        ['A', 'B', 'A'],
+      ], // no vacant place
+    ];
+    const chiCritical = (df: number) =>
+      df * Math.pow(1 - 2 / (9 * df) + 3.09 * Math.sqrt(2 / (9 * df)), 3);
+    for (const [list, lateClubs] of cases) {
+      const words = fewestPlacements(list, lateClubs);
+      const existing: StartedRunner[] = list.flatMap((c, k) =>
+        c === '' ? [] : [{ id: `e${k}`, club: c === '-' ? null : c, startTimeMs: T0 + k * 2 * MIN }]
+      );
+      const late = lateClubs.map((c, i) => ({ id: `l${i}`, club: c === '-' ? null : c }));
+      const per = words.length === 2 ? 500 : 100;
+      const rng = mulberryRng(4711);
+      const seen = new Map<string, number>();
+      const what = `${list.map((c) => c || '.').join('')} + ${lateClubs.join('')}`;
+      for (let k = 0; k < per * words.length; k++) {
+        const got = fillVacancies(
+          existing,
+          late,
+          { firstStartMs: T0, intervalMs: 2 * MIN },
+          rng,
+          true,
+          { onFallback: () => assert.fail(`${what}: not exact`) }
+        );
+        const places = list.map((c) => (c === '' ? '.' : c));
+        for (const a of got)
+          places[(a.startTimeMs - T0) / (2 * MIN)] = lateClubs[Number(a.id.slice(1))]!;
+        const p = Array.from(
+          { length: Math.max(places.length, words[0]!.length) },
+          (_, i) => places[i] ?? '.'
+        ).join('');
+        seen.set(p, (seen.get(p) ?? 0) + 1);
+      }
+      assert.deepEqual(
+        [...seen.keys()].sort(),
+        [...words].sort(),
+        `${what}: every placement, no other`
+      );
+      if (words.length === 1) continue;
+      const chi = words.reduce((x, p) => x + ((seen.get(p) ?? 0) - per) ** 2 / per, 0);
+      const critical = chiCritical(words.length - 1);
+      assert.ok(chi < critical, `${what}: chi-square ${chi.toFixed(1)} ≥ ${critical.toFixed(1)}`);
+    }
+    // The open case from review: A takes the place between B and C, B starts last.
+    assert.deepEqual(fewestPlacements(['B', '', 'C', 'A'], ['A', 'B']), ['BACAB']);
+  });
+
+  test('SOFT TR 7.5.1: vacant places beyond the work budget — exact up to it, then a split, then the preference, the overflow always drawn with its seam', () => {
+    // Random classes as measured for PLACE_FEWEST_BUDGET.
+    let seed = 7;
+    const rnd = (a: number, b: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return a + Math.floor((seed / 2147483648) * (b - a));
+    };
+    const shape = (n: number, vac: number, lateN: number, clubs: number) => {
+      const holes = new Set<number>();
+      while (holes.size < vac) holes.add(rnd(1, n + vac - 1));
+      const existing: StartedRunner[] = [];
+      for (let k = 0; k < n + vac; k++)
+        if (!holes.has(k))
+          existing.push({ id: `e${k}`, club: `K${rnd(0, clubs)}`, startTimeMs: T0 + k * MIN });
+      const late = Array.from({ length: lateN }, (_, i) => ({
+        id: `l${i}`,
+        club: i % 7 === 0 ? null : `K${rnd(0, clubs)}`,
+      }));
+      return { existing, late };
+    };
+    const modeOf = (
+      existing: StartedRunner[],
+      late: DrawRunner[],
+      budget?: number,
+      intervalMs = MIN
+    ) => {
+      let mode = 'exact';
+      const got = fillVacancies(
+        existing,
+        late,
+        { firstStartMs: T0, intervalMs },
+        mulberryRng(1),
+        true,
+        {
+          ...(budget !== undefined ? { budget } : {}),
+          onFallback: (m) => (mode = m),
+        }
+      );
+      assert.equal(
+        new Set(got.map((a) => a.startTimeMs)).size,
+        late.length,
+        'one runner per place'
+      );
+      return { mode, got };
+    };
+    const modes = (
+      [
+        [100, 3, 3, 8],
+        [100, 5, 8, 10],
+        [100, 20, 10, 10],
+        [150, 10, 20, 15],
+        [150, 5, 30, 15],
+        [150, 20, 30, 15],
+      ] as const
+    ).map(([n, vac, lateN, clubs]) => {
+      const { existing, late } = shape(n, vac, lateN, clubs);
+      return `${vac}/${lateN}: ${modeOf(existing, late).mode}`;
+    });
+    assert.deepEqual(modes, [
+      '3/3: exact',
+      '5/8: exact',
+      '20/10: exact',
+      '10/20: exact',
+      '5/30: exact',
+      '20/30: preference',
+    ]);
+
+    // Budget 0: no vacant place → the split (everyone after the last start), drawn with its seam.
+    const late = [
+      { id: 'a', club: 'A' },
+      { id: 'b', club: 'B' },
+    ];
+    const split = modeOf(startList(['B', 'A']), late, 0, 2 * MIN);
+    assert.equal(split.mode, 'split');
+    assert.deepEqual(
+      split.got.map((a) => a.id),
+      ['b', 'a']
+    );
+    // Budget 0 with a vacant place → the preference rule, every runner placed.
+    const pref = modeOf(startList(['B', '', 'C', 'A']), late, 0, 2 * MIN);
+    assert.equal(pref.mode, 'preference');
+    assert.deepEqual(
+      pref.got.map((a) => a.startTimeMs),
+      [T0 + 2 * MIN, T0 + 8 * MIN]
+    );
+  });
+
   test('SOFT TR 7.5.8: a hand-edited off-grid start occupies its place; a late entrant never lands before it', () => {
     const existing: StartedRunner[] = [
       { id: 'a', club: 'A', startTimeMs: T0 + 30_000 },
