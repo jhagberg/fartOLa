@@ -9,7 +9,7 @@
 //
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H1
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';

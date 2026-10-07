@@ -15,7 +15,7 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-07-PLAN.md
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09 D-11 D-12
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md
 // - REQ-EVT-003 / REQ-EVT-004 (reducer is pure + idempotent)
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';

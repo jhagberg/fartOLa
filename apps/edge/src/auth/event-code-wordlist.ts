@@ -11,7 +11,7 @@
 // LOCKED: removing or adding entries requires a plan revision (entropy
 // + brute-force math is keyed to length 35). See:
 //   - .planning/phases/02-4-klubbs-mvp/02-08-PLAN.md §Code format + entropy
-//   - .planning/adr/0010-event-admin-codes-trust-model.md
+//   - docs/decisions/0010-event-admin-codes-trust-model.md
 //
 // Locked by:
 //   - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md

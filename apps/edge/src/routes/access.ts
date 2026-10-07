@@ -27,7 +27,7 @@
 //
 // Locked by:
 //   - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md task 2
-//   - .planning/adr/0010-event-admin-codes-trust-model.md
+//   - docs/decisions/0010-event-admin-codes-trust-model.md
 //   - T-02.1-24 (rate limit — brute force mitigation)
 //   - T-02.1-25 (cookie signing — HMAC-SHA256 timingSafeEqual)
 //   - T-02.1-25b (competition-scoped cookie)

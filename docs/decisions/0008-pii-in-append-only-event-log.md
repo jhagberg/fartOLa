@@ -1,12 +1,35 @@
 ---
 status: accepted
-date: 2026-05-16
+date: 2026-10-05
 decision-makers: [Jonas Hagberg]
-consulted: [gemini-code-assist code review on PR #3]
+consulted: ['gemini-code-assist code review on PR #3']
 informed: []
 ---
 
 # PII in append-only event log: scrub the competitor row, not the event payload
+
+## Update 2026-10-05
+
+The decision of 2026-05-16 (option B) stands. Facts that have changed since:
+
+- **The scrub list grew.** `privacy/retention.ts` now also clears
+  `hired_cards.contact_name`, `contact_phone`, `contact_email` and `note`
+  (Phase 2.0, D-HB-1/D-HB-3). The trade-off comment is in lines 24–28, not 14–21.
+- **A PII store that is not scrubbed:** `meos_competitors` (names, cards and
+  times received from MeOS via MOP) is not part of the retention scrub. It is
+  replaced only when MeOS sends a new full set. Decide whether to add it to the
+  scrub list. Until then, it is residual exposure on the same terms as
+  `card_holder`.
+- **Mitigation 2 ("no remote access by default") holds only for the default
+  bind.** With `--allow-lan` (Phase 2.0+; `scripts/run-local.sh` uses it by
+  default), every `GET` route answers the LAN without authentication, including
+  competitor lists and results. Only writes are gated (ADR-0010). `/mip`, which
+  serves every entry, now needs a password or the operator machine (ADR-0013).
+- **New personal data outside the repo:** real-competition replay fixtures are
+  anonymised before they are written and live in a private repo (ADR-0014).
+- The "Phase 2 backlog item" (per-event payload redaction) is still open.
+
+The original text below is kept as recorded.
 
 ## Context and Problem Statement
 
@@ -92,17 +115,21 @@ The residual `card_holder` string in `card_read` payloads is mitigated by:
 
 ### Confirmation
 
-- `apps/edge/src/privacy/retention.ts` comment block in lines 14-21
-  documents the trade-off at the implementation site.
+- `apps/edge/src/privacy/retention.ts` comment block (lines 24–28 as of
+  2026-10-05) documents the trade-off at the implementation site.
 - `apps/edge/README.md` carries the disk-encryption advice for
   operators.
 - This ADR is the cross-reference target from REQ-PRIV-002.
 
 ## More Information
 
-- REQ-EVT-002 (append-only events) — `.planning/REQUIREMENTS.md`
-- REQ-PRIV-002 (30-day PII retention) — `.planning/REQUIREMENTS.md`
-- Implementation: `apps/edge/src/privacy/retention.ts`
+- REQ-EVT-002 (append-only events) and REQ-PRIV-002 (30-day PII retention):
+  [REQUIREMENTS.md](../../.planning/REQUIREMENTS.md)
+- Implementation: [retention.ts](../../apps/edge/src/privacy/retention.ts)
 - Originating review comment: PR #3 inline comment on
   `.planning/phases/01-single-laptop-training-mvp/01-02-PLAN.md:166`
   by gemini-code-assist, 2026-05-15.
+- Related: [ADR-0009](0009-eventor-runner-cache.md),
+  [ADR-0010](0010-event-admin-codes-trust-model.md),
+  [ADR-0013](0013-meos-integration-requires-password.md),
+  [ADR-0014](0014-replay-real-competitions-as-acceptance-test.md).

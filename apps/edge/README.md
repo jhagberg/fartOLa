@@ -162,7 +162,7 @@ preserves the `card_holder` string (the name the SI card owner
 programmed onto the card itself at issuance time) in `card_read`
 payloads, even after the 30-day scrub anonymises the competitor row.
 This residual exposure is documented in
-[ADR-0008](../../.planning/adr/0008-pii-in-append-only-event-log.md).
+[ADR-0008](../../docs/decisions/0008-pii-in-append-only-event-log.md).
 Full-disk encryption (LUKS on Linux, FileVault on macOS, BitLocker on
 Windows) is the correct mitigation for the "laptop lost / stolen /
 borrowed" threat model that Phase 1 targets.

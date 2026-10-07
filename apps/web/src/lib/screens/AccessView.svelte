@@ -15,7 +15,7 @@
   Locked by:
     - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md task 3
     - apps/edge/src/routes/access.ts (the REST endpoint)
-    - .planning/adr/0010-event-admin-codes-trust-model.md
+    - docs/decisions/0010-event-admin-codes-trust-model.md
 -->
 <script lang="ts">
   import { onMount } from 'svelte';

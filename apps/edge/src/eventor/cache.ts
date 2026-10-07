@@ -36,7 +36,7 @@
 //   ingestEventorCache template)
 // - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-EV-2 (7-day staleness
 //   gate reads the config marker this function writes)
-// - .planning/adr/0009-eventor-runner-cache.md (PII trade-off)
+// - docs/decisions/0009-eventor-runner-cache.md (PII trade-off)
 
 import { sql } from 'drizzle-orm';
 

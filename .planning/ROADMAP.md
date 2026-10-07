@@ -209,7 +209,7 @@ Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup)
 These must be respected throughout, not deferred to a phase:
 
 - Tests run on real hardware before any release tag.
-- ADRs (`.planning/adr/NNNN-title.md`, MADR 4.0.0 format) for non-obvious decisions.
+- ADRs (`docs/decisions/NNNN-title.md`, MADR 4.0.0 format) for non-obvious decisions.
 - README, PROJECT.md, research notes stay current.
 - Swedish-first UI strings. Plain language over jargon.
 - Backwards compatibility with SI5 cards and IOF XML 2.0.3.

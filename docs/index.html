@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>fartOLa — plattformsoberoende, offline-först orienteringstävlingssystem</title>
-  <meta name="description" content="fartOLa är ett plattformsoberoende, offline-först tävlingssystem för orientering. Ersätter och kompletterar MeOS, OLA och SportSoftware för svenska orienteringsklubbar." />
+  <title>fartOLa – tävlingssystem för orientering som klarar sig utan nät</title>
+  <meta name="description" content="fartOLa är ett tävlingssystem för orientering med öppen källkod. Det körs i webbläsaren, klarar sig utan internet och kan köras parallellt med MeOS." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -296,6 +296,7 @@
     }
     .phase .crit span::before { content: '· '; color: var(--border-strong); margin-right: 2px; }
     .phase .crit span:first-child::before { display: none; }
+    .phase .phase-note { margin-top: 10px; font-size: 13px; color: var(--fg-faint); }
     .pill {
       font-family: var(--font-mono); font-size: 11px;
       padding: 4px 10px; border-radius: 999px; font-weight: 600;
@@ -503,6 +504,27 @@
     }
     .step h4 { margin: 0 0 2px; font-size: 16px; font-weight: 600; letter-spacing: -0.005em; }
     .step p { margin: 0; color: var(--fg-muted); font-size: 14.5px; line-height: 1.5; }
+    /* ---------- status / replay ---------- */
+    .sub-head { margin: 36px 0 10px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+    .body-text { margin: 0 0 18px; color: var(--fg-muted); font-size: 16px; }
+    .replay-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .replay-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px 20px; }
+    .replay-num { font-family: var(--font-mono); font-size: 26px; font-weight: 600; color: var(--accent-strong); letter-spacing: -0.02em; }
+    .replay-card h4 { margin: 4px 0 8px; font-size: 15.5px; font-weight: 600; }
+    .replay-card p { margin: 0; color: var(--fg-muted); font-size: 14.5px; line-height: 1.55; }
+    /* ---------- rulebook compliance ---------- */
+    .cmp-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+    .cmp-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin-top: 8px; }
+    @media (max-width: 880px) { .cmp-top, .cmp-cols { grid-template-columns: minmax(0, 1fr); } }
+    .cmp-table { width: 100%; border-collapse: collapse; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; font-size: 14.5px; }
+    .cmp-table th, .cmp-table td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+    .cmp-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; }
+    .cmp-table td + td, .cmp-table th + th { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+    .cmp-table tr.total td { font-weight: 600; border-bottom: none; }
+    .cmp-notes p { margin: 0 0 12px; color: var(--fg-muted); font-size: 14.5px; }
+    .cmp-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--fg-muted); font-size: 14.5px; line-height: 1.55; }
+    .cmp-list b { color: var(--fg); font-weight: 600; }
+    .small { font-size: 13px; color: var(--fg-faint); margin-top: 14px; }
   </style>
 </head>
 <body>
@@ -522,11 +544,11 @@
       </a>
       <nav id="topnav">
         <a href="#hur">Hur</a>
-        <a href="#vision">Vision</a>
-        <a href="#diff">Design</a>
+        <a href="#lage">Läget</a>
+        <a href="#regelverk">Regelverk</a>
         <a href="#roadmap">Roadmap</a>
-        <a href="adr.html">ADR</a>
-        <a href="#tech">Standarder</a>
+        <a href="#diff">Design</a>
+        <a href="https://github.com/jhagberg/fartOLa/tree/main/docs/decisions" target="_blank" rel="noopener">Beslut (ADR)</a>
         <a href="#om">Om</a>
         <a href="https://github.com/jhagberg/fartOLa" target="_blank" rel="noopener">GitHub</a>
       </nav>
@@ -541,14 +563,14 @@
   <section class="hero">
     <div class="wrap hero-inner">
       <div>
-        <span class="eyebrow">● Phase 2.0 · 4-klubbs MVP · MeOS-bridge · PR #20 i landning</span>
+        <span class="eyebrow">● Phase 2.1 klar · PR #51–#53 öppna · oktober 2026</span>
         <h1>Tidtagning för orientering, byggd för <span class="accent">klubben och skogen</span>.</h1>
-        <p class="hero-tagline">Full fart från start till mål — eller slipp skit i resultatlistan.</p>
+        <p class="hero-tagline">Full fart från start till mål – eller slipp skit i resultatlistan.</p>
         <p class="lede">
-          <i>fartOLa</i> är ett tävlingssystem som funkar i webbläsaren på Linux, Mac, Windows och Android. Varje SI-stämpling sparas som en händelse i en lokal logg<sup>*</sup>, så resultaten kan räknas fram (och räknas om) när som helst. <b>Phase 2 lägger till MeOS-bryggan</b> (MIP/MOP) så klubbar kan köra <i>fartOLa</i> parallellt med en befintlig MeOS-installation, plus Eventor-cache för 252 000+ löpare med FTS5-sökning, statusmodell i linje med IOF/Eventor (OK · MP · DNF · DNS · DQ · MAX) och tävlingsfas-grind (Förtävling → Tävling pågår) så ingen registrerar löpare när målet redan är öppet.
+          <i>fartOLa</i> är ett tävlingssystem för orientering. En liten server läser SI-brickorna, och sekretariatet arbetar i webbläsaren på dator, platta eller telefon. Varje stämpling sparas som en händelse i en lokal logg<sup>*</sup>, så resultaten kan räknas fram och räknas om när som helst. <b>Läget nu:</b> vi har spelat upp två riktiga tävlingsdagar i <i>fartOLa</i>. Resultaten blev desamma som i den officiella listan för alla löpare utom en per dag, och båda skillnaderna är förklarade. Som huvudsystem på en tävling har <i>fartOLa</i> ännu inte använts.
         </p>
         <p class="hero-foot">
-          <b>*Tekniskt:</b> append-only event log med idempotenta händelser — samma stämpling kan skickas in tio gånger utan att räknas dubbelt.
+          <b>*Tekniskt:</b> en append-only-logg med idempotenta händelser, så samma stämpling kan skickas in tio gånger utan att räknas dubbelt.
         </p>
         <div class="hero-ctas">
           <a href="demo/index.html" class="btn primary">Öppna klickbar demo <span class="arrow">→</span></a>
@@ -585,10 +607,6 @@
         <!-- Phase 2: external integrations status strip -->
         <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); display: grid; gap: 4px; font-size: 10.5px;">
           <div class="row">
-            <span style="color: var(--fg-faint);">MeOS-brygga</span>
-            <span style="color: var(--ok);">● MIP/MOP · senast 5s</span>
-          </div>
-          <div class="row">
             <span style="color: var(--fg-faint);">Eventor-cache</span>
             <span style="color: var(--ok);">● 252919 löpare · 3d gammal</span>
           </div>
@@ -607,50 +625,62 @@
       <div class="sec-head">
         <div class="sec-eyebrow">Så funkar det</div>
         <h2>Så kör du en tävling med <i>fartOLa</i>.</h2>
-        <p>Sju steg från banfil till liveresultat. Samma flöde finns klickbart i demon.</p>
+        <p>Nio steg från banfil till resultat i Eventor. Lottning och kvar i skogen finns bara i appen, inte i den klickbara demon.</p>
       </div>
 
       <div class="steps">
         <div class="step">
           <div>
             <h4>Importera banorna</h4>
-            <p>Exportera från Condes som IOF XML 3.0 och dra in filen. Funkar lika bra för Purple Pen, OCAD eller OE — alla banprogram som kan spara IOF XML. Klasserna skapas automatiskt.</p>
+            <p>Exportera från Condes, Purple Pen, OCAD eller annat banprogram som IOF XML 3.0 och dra in filen. Klasserna skapas från filen, och flera klasser kan dela samma bana.</p>
           </div>
         </div>
         <div class="step">
           <div>
             <h4>Lägg upp deltagarna</h4>
-            <p>Startlista i förväg från Eventor eller IOF XML — eller walk-up på plats.</p>
+            <p>Hämta anmälningarna från Eventor, läs in en IOF XML-fil eller ta direktanmälningar på plats. Rader som inte går att läsa in redovisas med orsak.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h4>Lotta starttider</h4>
+            <p>SOFT-lottning (så få från samma förening i rad som möjligt), slumpad lottning eller gemensam start. Startlistan kan exporteras som IOF XML och laddas upp till Eventor.</p>
           </div>
         </div>
         <div class="step">
           <div>
             <h4>Koppla in SI-läsaren</h4>
-            <p>BSM7 eller BSM8 i USB-porten. Edge-bridgen hittar den.</p>
+            <p>BSM7 eller BSM8 i USB-porten på laptopen. Flera läsare kan vara inkopplade samtidigt.</p>
           </div>
         </div>
         <div class="step">
           <div>
-            <h4>Stämpla i mål</h4>
-            <p>Varje pinne läses, resultaten räknas fram live från händelseloggen.</p>
+            <h4>Läs av brickorna i mål</h4>
+            <p>Status och tid räknas fram direkt från händelseloggen. Saknar en löpare starttid varnar <i>fartOLa</i> och föreslår en.</p>
           </div>
         </div>
         <div class="step">
           <div>
             <h4>Skriv ut kvitto</h4>
-            <p>Sex mallar att välja på, inklusive ”Skogis” för barnen.</p>
+            <p>Sex mallar att välja på, bland annat ”Skogis” för barnen.</p>
           </div>
         </div>
         <div class="step">
           <div>
-            <h4>Visa liveresultat</h4>
-            <p>Per klass, i helskärm för publiken eller på en skärm i målfållan.</p>
+            <h4>Visa resultat</h4>
+            <p>Per klass på en skärm vid målet, och till liveresultat.orientering.se om tävlingen är upplagd där. Pushen är ännu inte provad mot den riktiga tjänsten.</p>
           </div>
         </div>
         <div class="step">
           <div>
-            <h4>Exportera</h4>
-            <p>IOF XML 3.0 till Eventor när tävlingsdagen är slut.</p>
+            <h4>Kontrollera vilka som är kvar i skogen</h4>
+            <p>Läs ut minnet i check-enheten vid start. Den som har checkat men inte lästs av i mål står kvar på listan.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div>
+            <h4>Ladda upp resultatet</h4>
+            <p>Resultatlistan exporteras som IOF XML 3.0 eller laddas upp direkt till Eventor. Uppladdningen till Eventor, både av start- och resultatlistor, är ännu inte provad mot den riktiga tjänsten.</p>
           </div>
         </div>
       </div>
@@ -664,16 +694,132 @@
         <div class="sec-eyebrow">Varför</div>
         <h2>Tidtagning som inte ramlar ihop när 4G:n gör det.</h2>
         <p style="margin: 0 auto;">
-          <i>fartOLa</i> bygger på en lokal append-only-logg där varje SI-stämpling är en händelse. Resultaten räknas fram från loggen i stället för att skrivas in i en delad databas. Det gör att flera sekretariat kan jobba samtidigt, att klienter funkar offline, och att en nätdipp inte slutar i att någon måste återskapa läget under press.
+          <i>fartOLa</i> bygger på en lokal logg där varje SI-stämpling är en händelse som aldrig skrivs över. Resultaten räknas fram från loggen i stället för att skrivas in i en delad databas. Därför kan flera i sekretariatet arbeta samtidigt utan internet, så länge datorerna når varandra i det lokala nätet, och ett fel i resultatberäkningen kan rättas i efterhand genom att allt räknas om.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- STATUS ---------- -->
+  <section id="lage">
+    <div class="wrap-narrow">
+      <div class="sec-head">
+        <div class="sec-eyebrow">Läget · oktober 2026</div>
+        <h2>Phase 2.1 är klar. Nu ska koden in i main.</h2>
+        <p>
+          Phase 2.1 (grunden för sanktionerade tävlingar) ligger i tre pull requests som slås ihop tillsammans:
+          <a href="https://github.com/jhagberg/fartOLa/pull/51" target="_blank" rel="noopener">#51</a> (Phase 2.1 med rättningar efter granskningen),
+          <a href="https://github.com/jhagberg/fartOLa/pull/52" target="_blank" rel="noopener">#52</a> (alla beroenden uppgraderade) och
+          <a href="https://github.com/jhagberg/fartOLa/pull/53" target="_blank" rel="noopener">#53</a> (fler regler i SOFT:s regelverk uppfyllda, och regelmatrisen).
         </p>
       </div>
 
-      <div class="callout" style="margin-top: 8px;">
+      <div class="callout">
         <span class="callout-icon">!</span>
         <div>
-          <b>Var det står:</b> Phase 2.0 (4-klubbs MVP) testas mot en riktig träning hos Stora Tuna OK <b>onsdag 2026-05-20</b>. Bryggan mot MeOS (MIP/MOP), Eventor-cachen (cachedcompetitors + startlista-import), Hyrbricka-flödet, FTS5-smartsök, race-phase-grind, utökad statusmodell och Inställningar-UI är klara — Gemini-review #20 igenom, bench-smoke kör grönt. Kommer det inte i mål till onsdag kör vi MeOS — kvalitet före datum.
+          <b><i>fartOLa</i> har ännu inte varit huvudsystem på en tävling.</b> Phase 2.0 siktade på 4-klubbsträningen hos Stora Tuna OK 2026-05-20, men den kördes på MeOS. Det saknades startlista, lottning, starttider och en lista över vilka som är kvar i skogen. De luckorna stängdes i Phase 2.1.
         </div>
       </div>
+
+      <h3 class="sub-head">Uppspelning av riktiga tävlingar</h3>
+      <p class="body-text">
+        I stället för att vänta på nästa tävling spelar vi upp tävlingar som redan är avgjorda. Banor, anmälningar och startlista läses in på samma sätt som inför en tävling, och varje avläsning matas in med sitt klockslag från tävlingsdagen. Sedan jämförs status och tid för varje löpare med den officiella resultatlistan, som är gjord i MeOS.
+      </p>
+      <div class="replay-grid">
+        <div class="replay-card">
+          <div class="replay-num">633 / 634</div>
+          <h4>DM lång (Dalarna) och Tuna Ting 2026, dag 1</h4>
+          <p>Den enda skillnaden är avsiktlig. En löpare startade sent, och <i>fartOLa</i> räknar tiden från starttiden, som SOFT:s regel TR 4.18.9 kräver. MeOS räknade från startstämpeln.</p>
+        </div>
+        <div class="replay-card">
+          <div class="replay-num">608 / 609</div>
+          <h4>Tuna Ting 2026, dag 2</h4>
+          <p>Den som skiljer har varken starttid eller startstämpel. MeOS räknade tiden från tävlingens nolltid. <i>fartOLa</i> varnar ”Saknar starttid” och föreslår en: checkstämpeln plus dagens median mellan check och start.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- RULEBOOK COMPLIANCE ---------- -->
+  <section id="regelverk" class="tinted">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-eyebrow">SOFT:s regelverk</div>
+        <h2>Vilka regler <i>fartOLa</i> klarar, och vilka som saknas.</h2>
+        <p>Vi har gått igenom Regelverk för OL, version 20260701_2 (gäller från 2026-07-01), och tagit ut de 75 regler och anvisningar som ett tävlingsprogram måste stödja. Varje regel har en status för <i>fartOLa</i>. Samma regler är också bedömda för MeOS 5.0 U3 utifrån källkoden.</p>
+      </div>
+
+      <div class="callout" style="margin-bottom: 28px;">
+        <span class="callout-icon">!</span>
+        <div>
+          <b><i>fartOLa</i> är inte godkänt av SOFT.</b> På en sanktionerad tävling ska ett tidtagningsprogram som SOFT godkänt användas (TR 7.1.2), och lottningen ska göras med en godkänd metod eller programvara (TR 7.5.2). Därför kan <i>fartOLa</i> i dag inte vara huvudsystem på en sanktionerad tävling, oavsett hur många regler som är uppfyllda.
+        </div>
+      </div>
+
+      <div class="cmp-top">
+        <table class="cmp-table">
+          <thead>
+            <tr><th>Status</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Uppfylld</td><td>26</td><td>36</td></tr>
+            <tr><td>Delvis</td><td>20</td><td>26</td></tr>
+            <tr><td>Saknas</td><td>24</td><td>7</td></tr>
+            <tr><td>Ej tillämplig (sköts i Eventor eller av SOFT)</td><td>5</td><td>6</td></tr>
+            <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
+          </tbody>
+        </table>
+        <div class="cmp-notes">
+          <p>En regel räknas som uppfylld i <i>fartOLa</i> bara om den pekar på ett namngivet test som fallerar när beteendet går sönder. Testerna körs i CI, och CI stoppar om ett test som matrisen pekar på saknas eller om siffrorna i sammanfattningen inte stämmer.</p>
+          <p>MeOS-kolumnen bygger på en genomgång av källkoden. Programmet har inte byggts eller körts för jämförelsen.</p>
+          <p>
+            <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Hela regelmatrisen</a> ·
+            <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/meos-jamforelse.md" target="_blank" rel="noopener">Jämförelsen med MeOS</a>
+          </p>
+          <p class="small">Filerna hamnar i main när PR #51–#53 slås ihop. Till dess finns de i <a href="https://github.com/jhagberg/fartOLa/pull/53/files" target="_blank" rel="noopener">PR #53</a>.</p>
+        </div>
+      </div>
+
+      <div class="cmp-cols">
+        <div>
+          <h3 class="sub-head">Här ligger <i>fartOLa</i> före MeOS (9 regler)</h3>
+          <ul class="cmp-list">
+            <li><b>Sen start</b> (TR 4.18.9): tiden räknas från starttiden, och sen start flaggas. MeOS gör så bara om ”Ej startstämpling” är påslaget i varje klass.</li>
+            <li><b>Hela banans tid</b> (TR 4.20.10): <i>fartOLa</i> drar aldrig av sträcktider. MeOS kan göra det med kontrollstatus ”Utan tidtagning” eller ”Försvunnen”.</li>
+            <li><b>Hela sekunder</b> (TR 4.20.7): den officiella tiden avrundas till hel sekund. MeOS klipper av när tiondelar är påslagna.</li>
+            <li><b>Maxtid</b> (TR 4.21.1, 4.21.2): en maxtid för alla klasser, låst vid första start. I MeOS kan en klass få ett eget värde, och maxtiden kan ändras när som helst.</li>
+            <li><b>Anmälan utan namn</b> (TR 7.5.1) lottas inte. I MeOS hittades ingen sådan kontroll.</li>
+            <li><b>Resultatlistan</b> (TR 7.8.2) visar klass, bana och banlängd. MeOS standardlista saknar banlängd.</li>
+            <li><b>Statusrader</b> (TA till TR 7.8.2) med SOFT:s ord: ”Ej godkänd”, ”Diskad”, ”Ej start”, ”Deltagit”. MeOS skriver ”Felst.”, ”Utg.” och ”Disk.”.</li>
+            <li><b>Manuell status</b> (TR 10.1.2, 10.1.3) sparas med en motivering. MeOS har ingen motivering.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="sub-head">Här ligger MeOS före (27 regler, plus godkännandet)</h3>
+          <ul class="cmp-list">
+            <li><b>Tävlingsformer:</b> stafett, patrull, etapper, distrikt och mästerskap (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3 m.fl.).</li>
+            <li><b>Deltagaruppgifter:</b> utan tidtagning per deltagare (TR 3.4.8), födelseår och åldersklass (TR 3.4.4), avgifter (TR 4.12.4, 4.12.6).</li>
+            <li><b>Rättning i sekretariatet:</b> tidstillägg (TR 4.18.14, 10.4.2), måltid för hand (TR 4.20.6), manuella stämplar (TR 8.1.4), anteckning om ny starttid (TA till TR 4.18.9) och rättning av resultatlistan (TR 10.4.10).</li>
+            <li><b>Listor:</b> startlistor att anslå (TR 4.16.1, 7.5.4) och kontroll att alla kommit i mål (TR 4.22.1).</li>
+            <li><b>Störda klasser:</b> ogiltigförklarad klass och avkortad bana (TR 4.23.1, 4.23.3).</li>
+            <li><b>Lottning:</b> vakanser, efteranmälda utan omlottning, ranking och seedning, jaktstart, startplanering över klasser, kval och final (TA till TR 6.5.1, TR 7.3.2–7.5.9).</li>
+          </ul>
+          <p class="small">Lika för 38 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel stängningstid för målet (TR 4.16.3), ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
+        </div>
+      </div>
+
+      <h3 class="sub-head">De största luckorna</h3>
+      <ol class="cmp-list">
+        <li><i>fartOLa</i> är inte godkänt som tidtagnings- eller lottningsprogram (TR 7.1.2, 7.5.2).</li>
+        <li>Stängningstiden för målet (sista start plus maxtid) räknas inte fram. Arrangören får räkna ut den själv (TR 4.16.3, 4.22.1).</li>
+        <li>Det går inte att ge tidstillägg, mata in måltid för hand eller lägga till manuella stämplar (TR 4.18.14, 10.4.2, 4.20.6, 8.1.4).</li>
+        <li>”Deltagit” utan tidtagning går bara att välja för en hel klass, inte för en enskild deltagare (TR 3.4.8, 4.21.3).</li>
+        <li>Klasstyp och födelseår saknas. Därför finns ingen spärr mot direktanmälan i elitklass eller fri starttid i åldersklass, och ingen ålderskontroll (TR 3.4.2, 3.4.4, 4.14.1, 7.4.2).</li>
+        <li>Ingen kontroll av klasser med samma bana som startar samtidigt, och ingen seedning eller reservlista (TR 7.5.3, 7.4.5, 7.5.6).</li>
+        <li>Startlistan saknar banlängd, startplats och startnummer (TR 7.5.4, 4.16.1).</li>
+        <li>Pushen till liveresultat och uppladdningen till Eventor är testade mot ersatta nätanrop, inte mot de riktiga tjänsterna (TR 7.7.1, 4.21.4).</li>
+        <li>Efteranmälda kan inte läggas in utan att hela klassen lottas om, och vakanser går inte att boka (TR 7.5.7, 7.5.8, 7.3.2).</li>
+      </ol>
     </div>
   </section>
 
@@ -683,39 +829,39 @@
       <div class="sec-head">
         <div class="sec-eyebrow">Sex tekniska val</div>
         <h2>Hur <i>fartOLa</i> är designat.</h2>
-        <p>Varje punkt är ett konkret val, inte en säljpitch.</p>
       </div>
 
       <div class="diff-grid">
         <div class="diff-card">
           <span class="diff-num">01 · PLATTFORM</span>
-          <h3>Kör där man helst öppnar Chrome</h3>
-          <p>Linux-laptop, Mac, Windows, Android-platta. Inga drivrutiner låsta till en plattform, ingen flotta att underhålla.</p>
+          <h3>Webbläsaren är gränssnittet</h3>
+          <p>Sekretariatet arbetar i Chrome eller Edge på Linux, Mac, Windows eller en Android-platta. Servern som läser SI-brickorna är byggd för att gå på Linux, Mac, Windows och Raspberry Pi, men än så länge är den bara provad på Linux. Klienterna behöver ingen installation, bara en webbläsare.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">02 · ARKITEKTUR</span>
-          <h3>Autonoma edge-noder</h3>
-          <p>Varje nod äger sin egen händelselogg. När en nod tappar nätet hänger den inte upp resten — sekretariatet jobbar vidare lokalt och synkar när nätet kommer tillbaka.</p>
+          <h3>Ingen huvuddator att vara beroende av</h3>
+          <p>Målet är att varje nod har sin egen händelselogg, så att en nod som tappar nätet inte stoppar de andra. I dag körs en server per tävling med flera webbklienter i det lokala nätet. Synk mellan flera servrar kommer i Phase 4.</p>
+          <p>Servern ska inte kräva att man lånar ihop laptops. Förslaget är en liten låda som klubben köper en gång och har i tävlingslådan: en Raspberry Pi 5 med batteribackup, en SI-läsare och en kvittoskrivare. Den är inte provad på en Pi än; det är nästa steg.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">03 · SAMARBETE</span>
           <h3>Parallellt med befintliga system</h3>
-          <p>Phase 2 talar MeOS Input Protocol (MIP) och MeOS Online Protocol (MOP) över LAN. En klubb kan låta MeOS-sekretariatet vara kvar och köra <i>fartOLa</i> på sidan — bricka i <i>fartOLa</i>, mål i MeOS, och bryggan håller dem synkroniserade.</p>
+          <p><i>fartOLa</i> talar MeOS Input Protocol (MIP) och MeOS Online Protocol (MOP) i det lokala nätet. En klubb kan behålla MeOS som huvudsystem och köra <i>fartOLa</i> bredvid. Direktanmälningar i <i>fartOLa</i> skickas till MeOS, och det som registreras i MeOS kommer tillbaka till <i>fartOLa</i>.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">04 · DATA</span>
           <h3>Buggar är reparerbara</h3>
-          <p>Stämplingarna ligger som händelser, inte som muterad state. Ändra reducern, räkna om — inget korrupt resultatregister att laga på plats.</p>
+          <p>Stämplingarna sparas som händelser och skrivs aldrig över. Hittar vi ett fel i resultatberäkningen rättar vi koden och räknar om allt. Det finns inget trasigt resultatregister att laga för hand mitt under tävlingen.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">05 · BARN</span>
           <h3>Målgång för 9-åringar</h3>
-          <p>Animerad målskärm, ljud, namnuppläsning och ett samlingsbart "Skogis"-kvitto. Rekryteringsverktyg från Phase 3 — inte något vi skjuter på till "sen".</p>
+          <p>Kvittot ”Skogis” för barnen finns i en första version. En ny version finns redan som ett separat verktyg till MeOS: 15 tecknade Skogisar och två korta meningar att läsa högt, utan ett ord om tid, placering eller felstämpling. Den ska in i <i>fartOLa</i>. En animerad målskärm med ljud och namnuppläsning är nästa fas (Phase 3). Barnens målgång ska få nya orienterare att komma tillbaka.</p>
         </div>
         <div class="diff-card">
           <span class="diff-num">06 · STANDARDER</span>
           <h3>Pratar med det som redan finns</h3>
-          <p>IOF XML 3.0, Eventor REST (<code>cachedcompetitors</code>), MeOS MIP v3.0 + MOP v2.0 över LAN, ROC och SIRAP planerade. En klubb kan köra ett befintligt system primärt och <i>fartOLa</i> parallellt under en eventuell övergång.</p>
+          <p>IOF XML 3.0, Eventor (anmälningar, löpardatabas, uppladdning av start- och resultatlistor), liveresultat (MOP 2.0) samt MeOS MIP 3.0 och MOP 2.0. ROC och SIRAP för radiokontroller är planerade. En klubb kan köra sitt nuvarande system som huvudsystem och <i>fartOLa</i> bredvid under en övergång.</p>
         </div>
       </div>
     </div>
@@ -727,29 +873,25 @@
       <div class="demo-card">
         <div>
           <span class="eyebrow" style="background: rgba(255,255,255,0.08); color: #fff;">Klickbar demo</span>
-          <h2 style="margin-top: 16px;">Hela operatörsflödet i webbläsaren.</h2>
-          <p>Demon är en designprototyp av hela Phase 1-flödet, helt på klientsidan — ingen backend, ingen hårdvara. Tryck på <b>Simulera avläsning</b> i sidopanelen för att låta deltagare komma i mål. Prototypen var designen som Phase 1 byggdes efter; eventuell drift mellan demo och shipped app är feedback i sig.</p>
+          <h2 style="margin-top: 16px;">Klicka dig igenom sekretariatets vyer.</h2>
+          <p>Demon är designprototypen som Phase 1 byggdes efter, med några vyer från Phase 2.0. Den körs helt i webbläsaren, utan server och utan SI-läsare. Tryck på <b>Simulera avläsning</b> i sidopanelen så kommer deltagare i mål. Lottning, kvar i skogen och liveresultat finns inte i demon, och appen ser i dag inte exakt ut som prototypen. Säg gärna till om något i demon känns fel.</p>
           <div style="display: flex; gap: 12px; flex-wrap: wrap;">
             <a href="demo/index.html" class="btn">Öppna demo <span class="arrow">→</span></a>
             <a href="https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bdemo%5D" class="btn secondary" target="_blank" rel="noopener">Lämna feedback</a>
           </div>
         </div>
         <ul class="demo-bullets">
-          <li>3-klicks tävlingsguide · <b>importera IOF XML (Condes, Purple Pen, OCAD)</b></li>
-          <li>Live-avläsning · <b>simulera SI-kort</b> · auto-print-toggle</li>
-          <li>Walk-up med <b>FTS5 smart-sök</b> över Eventor-cache · diakritik-tolerant</li>
-          <li><b>Hyrbricka-flöde</b> · kontaktuppgifter · återlämnings-toast · 30d PII-scrub</li>
-          <li>Registreringsdisk · <b>kö av bricka-pipningar</b> · auto-advance</li>
-          <li><b>Race-phase-grind</b> · Förtävling → Tävling pågår · ingen registrering efter start</li>
-          <li>Utökad statusmodell · <b>OK · MP · DNF · DNS · DQ · CANCEL · MAX</b> (IOF/Eventor-konvention)</li>
-          <li>Workspace-switcher · sticky aktiv tävling · flera arrangemang på samma laptop</li>
-          <li><b>Mobil-vänlig</b> · flera volontärer registrerar parallellt från telefonen</li>
-          <li>MeOS-brygga · <b>MIP/MOP-statusremsa</b> · parallell drift · transactional snapshots</li>
-          <li>Inställningar-UI · maskerade API-nycklar · 512 B-tak · env > config-precedens</li>
+          <li>Tävlingsguide i tre steg · <b>importera IOF XML (Condes, Purple Pen, OCAD)</b></li>
+          <li>Avläsning · <b>simulera SI-brickor</b> · automatisk utskrift av och på</li>
+          <li>Direktanmälan · namn och klubb fylls i från <b>Eventors löpardatabas</b></li>
+          <li><b>Hyrbrickor</b> · kontaktuppgift · påminnelse om återlämning vid avläsning</li>
+          <li>Registreringsdisk · <b>kö av avlästa brickor</b> · går vidare automatiskt</li>
+          <li>Status OK · MP · DNF · DNS · DQ · MAX</li>
+          <li>Statusremsa för <b>MeOS-bryggan</b> och Eventor</li>
           <li>Sex kvittomallar · Klassisk · <b>Skogis</b> för barn</li>
-          <li>Liveresultat per klass · helskärmsläge · per-position grön/röd punch-grid</li>
-          <li>IOF XML 3.0 export · <b>XSD-validerad</b> · PKZIP-säkrad import (path-traversal-skydd)</li>
-          <li>Sv/En · täthet · accentfärg · hög kontrast</li>
+          <li>Resultat per klass · helskärmsläge · stämplingar per kontroll i grönt och rött</li>
+          <li>Export som <b>IOF XML 3.0</b></li>
+          <li>Svenska/engelska · täthet · accentfärg · hög kontrast</li>
         </ul>
       </div>
     </div>
@@ -760,8 +902,8 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="sec-eyebrow">Roadmap</div>
-        <h2>Sex faser. En riktig användare per fas.</h2>
-        <p>Vi går inte vidare förrän nuvarande fas använts av en riktig orienterare på ett riktigt arrangemang. Träning räknas.</p>
+        <h2>Faserna, och vad som faktiskt hände.</h2>
+        <p>Tanken är att varje fas ska prövas på ett riktigt arrangemang innan nästa börjar. Så har det inte blivit än: ingen fas har varit huvudsystem på en tävling eller träning. Phase 2.1 prövades i stället genom att spela upp två riktiga tävlingsdagar.</p>
       </div>
 
       <div class="phases">
@@ -769,11 +911,10 @@
           <span class="ord">Phase 0</span>
           <div>
             <h4>Hårdvarubevis</h4>
-            <p>Node-skript som läser SI-kort via BSM7/BSM8 på Linux och loggar JSON. CRC16-CCITT-validering, SI5/8/9/10/SIAC.</p>
+            <p>Node-skript som läser SI-brickor via BSM7/BSM8 på Linux och loggar JSON. CRC-kontroll av varje meddelande. Provat på bänken med SI5, SI9, SI10 och SIAC.</p>
             <div class="crit">
               <span>BSM7/8 @ /dev/ttyUSB0</span>
               <span>38400 baud handskakning</span>
-              <span>5 korttyper</span>
               <span>v0.0.1-handshake</span>
             </div>
           </div>
@@ -783,82 +924,89 @@
         <div class="phase done">
           <span class="ord">Phase 1</span>
           <div>
-            <h4>Single-laptop training MVP</h4>
-            <p>Kör en klubbträning från start till mål på en Linux-laptop. Inget internet behövs. Purple Pen-import, walk-up, DNF/MP-detektering, ESC/POS-kvitto, IOF XML 3.0 export.</p>
+            <h4>Klubbträning på en laptop</h4>
+            <p>Kör en klubbträning från start till mål på en Linux-laptop utan internet: banimport, direktanmälan, DNF/MP, kvitto på termoskrivare och export som IOF XML 3.0. Koden är klar och testad, men provet på en riktig träning är inte gjort.</p>
             <div class="crit">
-              <span>SvelteKit PWA</span>
+              <span>SvelteKit</span>
               <span>Fastify + SQLite</span>
-              <span>WebSocket live-feed</span>
-              <span>18 av 18 planer i mål</span>
+              <span>WebSocket</span>
+              <span>18 av 18 planer</span>
+              <span>Prov på träning: ej gjort</span>
+            </div>
+          </div>
+          <span class="pill done">✓ Kod klar · 2026-05-16</span>
+        </div>
+
+        <div class="phase done">
+          <span class="ord">Phase 1.5</span>
+          <div>
+            <h4>Publik demo och den här sidan</h4>
+            <p>GitHub Pages med klickbar demo och en knapp för feedback. Demon körs helt i webbläsaren, utan hårdvara och utan server.</p>
+            <div class="crit">
+              <span>fartola.lindan.se</span>
+              <span>Förifyllt GitHub-ärende</span>
+              <span>actions/deploy-pages</span>
             </div>
           </div>
           <span class="pill done">✓ Klar · 2026-05-15</span>
         </div>
 
         <div class="phase done">
-          <span class="ord">Phase 1.5</span>
+          <span class="ord">Phase 2.0</span>
           <div>
-            <h4>Publik demo + landningssida</h4>
-            <p>Det här. GitHub Pages med klickbar demo och en feedback-knapp innan Phase 2 börjar. Hela flödet i webbläsaren — ingen hårdvara, ingen backend.</p>
+            <h4>4-klubbs: parallellt med MeOS</h4>
+            <p>Målet var att köra 4-klubbsträningen 2026-05-20 med <i>fartOLa</i> som huvudsystem och MeOS som reserv. Träningen kördes på MeOS, eftersom startlista, lottning och en lista över vilka som är kvar i skogen saknades. Det som byggdes finns kvar: MeOS-bryggan (MIP/MOP), Eventors löpardatabas för sökning utan nät, hyrbrickor, registreringsdisk med kö, statusarna OK, MP, DNF, DNS, DQ, CANCEL och MAX, och inställningar för API-nycklar. Koden slogs ihop i PR #20 2026-05-22.</p>
             <div class="crit">
-              <span>jhagberg.github.io/fartOLa</span>
-              <span>Pre-fylld GitHub-issue</span>
-              <span>actions/deploy-pages</span>
+              <span>MeOS MIP 3.0 + MOP 2.0</span>
+              <span>Eventors löpardatabas</span>
+              <span>Hyrbrickor</span>
+              <span>Registreringsdisk</span>
+              <span>Mobil registrering</span>
             </div>
           </div>
-          <span class="pill done">✓ Klar · 2026-05-16</span>
+          <span class="pill done">Kod klar · träningen kördes på MeOS</span>
         </div>
 
         <div class="phase live">
-          <span class="ord">Phase 2.0</span>
+          <span class="ord">Phase 2.1</span>
           <div>
-            <h4>4-klubbs MVP — parallell med MeOS</h4>
-            <p>Klubben kör befintlig MeOS-installation och <i>fartOLa</i> parallellt över LAN. MIP (<i>fartOLa</i> → MeOS) skickar walk-ups + bricka-bindningar; MOP (MeOS → <i>fartOLa</i>) tar emot mål-event och resultat. Eventor-cachen ger 252 000+ deltagare offline med FTS5-smartsök (diakritik-tolerant, klubb-scope). Eventor startlista-import (REST) lägger upp anmälda i förväg. Hyrbricka-flödet håller koll på 200+ uthyrda SI-kort med kontaktinfo + retur + 30 d PII-scrub. Registreringsdisken pipar in barn i en kö och advancerar automatiskt. Race-phase-grind (Förtävling → Tävling pågår) hindrar registrering efter start. Statusmodellen är utökad till OK · MP · DNF · DNS · DQ · CANCEL · MAX i linje med IOF/Eventor.</p>
+            <h4>Grunden för sanktionerade tävlingar</h4>
+            <p>Stänger luckorna från 4-klubbs och lägger till det en sanktionerad tävling behöver. Sedan kom uppspelningen av riktiga tävlingar, där resultaten ska bli desamma som i den officiella listan, och genomgången mot SOFT:s regelverk. Koden ligger i PR #51–#53, som slås ihop tillsammans.</p>
             <div class="crit">
-              <span>MeOS MIP v3.0 + MOP v2.0</span>
-              <span>Eventor cachedcompetitors + startlista-import</span>
-              <span>FTS5 smart-sök · diakritik-tolerant</span>
-              <span>Hyrbricka + 30d retention scrub</span>
-              <span>Race-phase-grind · pre-race/race-started</span>
-              <span>Statusmodell · OK/MP/DNF/DNS/DQ/CANCEL/MAX</span>
-              <span>Registreringsdisk-kö · auto-advance</span>
-              <span>Workspace-switcher · sticky tävling</span>
-              <span>Course-only fallback (Condes)</span>
-              <span>Mobil registrering · flera telefoner parallellt</span>
-              <span>Inställningar UI · 512 B-tak · env > config</span>
-              <span>Bridge: aldrig-ge-upp-reconnect</span>
-              <span>10 planer i mål + Gemini PR #20 ✓</span>
+              <span>Lottning: SOFT, slump, gemensam start</span>
+              <span>Startlista in och ut (IOF XML)</span>
+              <span>Starttid eller startstämpel per klass</span>
+              <span>Kvar i skogen från check-enheten</span>
+              <span>Flera SI-läsare</span>
+              <span>Liveresultat</span>
+              <span>Start- och resultatlista till Eventor</span>
+              <span>Inloggningskoder för sekretariatet</span>
+              <span>Uppspelning av riktiga tävlingar</span>
+              <span>Regelmatris mot SOFT 2026</span>
             </div>
+            <p class="phase-note">Flyttat från 2.1, ännu inte schemalagt: samredigering med Yjs och en resultatsida för publiken på arenans wifi. Synk mellan flera servrar ingår i Phase 4.</p>
           </div>
-          <span class="pill live">▶ Onsdag 2026-05-20</span>
+          <span class="pill live">✓ Klar · PR #51–#53 öppna</span>
         </div>
 
         <div class="phase">
-          <span class="ord">Phase 2.1</span>
+          <span class="ord">Nästa</span>
           <div>
-            <h4>Sanktionerad tävling — flera operatörer</h4>
-            <p>100–200 startande på en sanktionerad tävling. Eventor results push, tre+ samtidiga sekretariat med Yjs-CRDT samredigering, åskådar-resultatsida på arena-WiFi, bridge överlever process-kill, race-reset + tävlingsinfo-modal + course-compare. Bygger på MIP/MOP-substratet, Eventor entries och Inställningar-UI:n från 2.0.</p>
-            <div class="crit">
-              <span>Eventor results push (REST)</span>
-              <span>Race-reset · tävlingsinfo · course-compare</span>
-              <span>Yjs CRDT samredigering</span>
-              <span>3+ klienter</span>
-              <span>Spectator-sida arena-WiFi</span>
-              <span>Bridge: process-kill recovery</span>
-            </div>
+            <h4>Luckorna mot regelverket</h4>
+            <p>Innan <i>fartOLa</i> kan vara huvudsystem behövs bland annat manuell inmatning i sekretariatet (måltid, stämplar, tidstillägg), utskrivbara listor och efteranmälda utan omlottning. Hela listan finns under <a href="#regelverk">Regelverk</a> ovan. Det här är ingen egen fas i roadmapen.</p>
           </div>
-          <span class="pill next">↗ Påbörjad</span>
+          <span class="pill next">↗ Nästa</span>
         </div>
 
         <div class="phase">
           <span class="ord">Phase 3</span>
           <div>
-            <h4>Barnmål + publik</h4>
-            <p>Det synliga UX-språnget. Animerad målskärm med TTS, SMS till föräldrar, inbäddningsbar live-widget för klubbens hemsida, speaker-dashboard.</p>
+            <h4>Barnens målgång och publiken</h4>
+            <p>Animerad målskärm med namnuppläsning, sms till föräldrar, en resultatruta att bädda in på klubbens hemsida och en vy för speakern.</p>
             <div class="crit">
-              <span>HDMI big-screen</span>
+              <span>Storbildsskärm via HDMI</span>
               <span>46elks / Twilio</span>
-              <span>Klubbteman</span>
+              <span>Klubbens färger och logga</span>
             </div>
           </div>
           <span class="pill planned">Planerad</span>
@@ -867,14 +1015,14 @@
         <div class="phase">
           <span class="ord">Phase 4</span>
           <div>
-            <h4>Multi-arena + radio-kontroller</h4>
-            <p>ROC-protokollmottagning, SIRAP TCP-gateway, peer-to-peer sync mellan edge-noder under simulerad partition, Yjs CRDT för samtidig redigering över flera noder.</p>
+            <h4>Flera arenor och radiokontroller</h4>
+            <p>Stämplingar från radiokontroller (ROC), SIRAP-gateway, synk mellan servrar även när nätet delas upp, stafett och poängorientering.</p>
             <div class="crit">
               <span>ROC / Pi+4G</span>
               <span>SIRAP</span>
-              <span>SI-Master clock sync</span>
-              <span>Yjs CRDT-sync</span>
-              <span>Relä-stöd</span>
+              <span>Klocksynk mot SI-master</span>
+              <span>Yjs CRDT-synk</span>
+              <span>Stafett</span>
             </div>
           </div>
           <span class="pill planned">Planerad</span>
@@ -884,12 +1032,12 @@
           <span class="ord">Phase 5</span>
           <div>
             <h4>O-Ringen-skala</h4>
-            <p>Mål-kapacitet för femdagars med 25 000+ startande. Partitionerad Postgres per etapp, CDN-tier för 30 000 samtidiga tittare, 4G/5G + Starlink-uplink-playbook.</p>
+            <p>Kapacitet för en femdagarstävling med 25 000+ startande. Postgres uppdelad per etapp, CDN för 30 000 samtidiga tittare och en plan för uppkoppling via 4G/5G och Starlink.</p>
             <div class="crit">
               <span>Partitionerad Postgres</span>
               <span>Cloudflare CDN</span>
               <span>Livelox API</span>
-              <span>IOF-feed-compliance</span>
+              <span>IOF-resultatflöde</span>
             </div>
           </div>
           <span class="pill planned">Vision</span>
@@ -904,7 +1052,6 @@
       <div class="sec-head">
         <div class="sec-eyebrow">Principer</div>
         <h2>Vad som styr designen.</h2>
-        <p>Ingen av punkterna nedan är en preferens. De kommer från användarna och federationen.</p>
       </div>
 
       <div class="principles">
@@ -918,19 +1065,23 @@
         </div>
         <div class="principle">
           <h4>SI5 överges aldrig</h4>
-          <p>Klubbar äger SI5-kort. Legacy-stöd är inte förhandlingsbart. Samma gäller IOF XML 2.0.3 för äldre banverktyg.</p>
+          <p>Klubbarna har kvar sina SI5-brickor, så stödet för dem tas inte bort. Filer i IOF XML 2.0.3 från äldre banprogram ska också gå att läsa in, men det är inte byggt än.</p>
         </div>
         <div class="principle">
           <h4>Stora träffytor</h4>
-          <p>Operatörer jobbar i stress, i solljus, på 13"-laptop. Inga 12px-grå-på-vita texter. 44px minsta träffyta, högkontrast-läge.</p>
+          <p>Sekretariatet arbetar under stress, i solljus och på 13-tumsskärmar. Ingen liten grå text på vit botten, knappar på minst 44 px och ett läge med hög kontrast.</p>
         </div>
         <div class="principle">
           <h4>Dataminimering</h4>
-          <p>Federationen (Eventor) äger deltagar-PII — vi cachar bara person-id + namn för matchning. Hyrbricka-kontakter (REQ-PRIV-002) scrubbas efter 30 dagar. GDPR art. 20/17 i Phase 4.</p>
+          <p>Förbundet (Eventor) äger uppgifterna om löparna. Kopian av Eventors löpardatabas innehåller bara det som behövs för att känna igen en löpare: person-id, namn, födelseår, kön, klubb och bricknummer. Kontaktuppgifter för hyrbrickor raderas efter 30 dagar. Rätten att få ut och radera sina uppgifter (GDPR art. 20 och 17) kommer i Phase 4.</p>
+        </div>
+        <div class="principle">
+          <h4>Regelverket före vanan</h4>
+          <p>Där SOFT:s regelverk och MeOS gör olika följer <i>fartOLa</i> regelverket. Exempel: den som kommer för sent till start får sin tid räknad från starttiden, inte från startstämpeln (TR 4.18.9).</p>
         </div>
         <div class="principle">
           <h4>Öppen källkod</h4>
-          <p>Appen är AGPL-3.0. <code>packages/sportident</code> är MIT — samma licens som uppströmsbiblioteket vi portar från.</p>
+          <p>Appen är AGPL-3.0. <code>packages/sportident</code> är MIT, samma licens som biblioteket koden är portad från.</p>
         </div>
       </div>
     </div>
@@ -961,31 +1112,32 @@
             <li><b>SvelteKit</b><span>adapter-static</span></li>
             <li><b>Svelte 5</b><span>runes</span></li>
             <li><b>i18next</b><span>sv → en</span></li>
-            <li><b>Vitest + Playwright</b><span>tests + e2e</span></li>
+            <li><b>node:test, Vitest, Playwright</b><span>test + e2e</span></li>
             <li><b>Yjs</b><span>Phase 4</span></li>
           </ul>
         </div>
         <div class="tech-col">
           <h4>Standarder</h4>
           <ul>
-            <li><b>IOF XML 3.0</b><span>im/export</span></li>
-            <li><b>MeOS MIP v3.0</b><span>✓ Phase 2</span></li>
-            <li><b>MeOS MOP v2.0</b><span>✓ Phase 2</span></li>
-            <li><b>Eventor REST</b><span>✓ cachedcompetitors</span></li>
+            <li><b>IOF XML 3.0</b><span>import och export</span></li>
+            <li><b>MeOS MIP 3.0</b><span>✓ Phase 2.0</span></li>
+            <li><b>MeOS MOP 2.0</b><span>✓ Phase 2.0</span></li>
+            <li><b>Eventor</b><span>✓ anmälningar, uppladdning</span></li>
+            <li><b>Liveresultat (MOP 2.0)</b><span>✓ Phase 2.1</span></li>
             <li><b>Purple Pen / Condes</b><span>banimport</span></li>
             <li><b>ROC / SIRAP</b><span>Phase 4</span></li>
-            <li><b>SportIdent</b><span>BSM7/8, SI5/8/9/10/SIAC</span></li>
+            <li><b>SportIdent</b><span>BSM7/8, SI5/6/8/9/10/11, SIAC</span></li>
           </ul>
         </div>
         <div class="tech-col">
           <h4>Hårdvara</h4>
           <ul>
+            <li><b>Raspberry Pi 5</b><span>server i klubblådan · ej provad än</span></li>
             <li><b>BSM7/8-USB</b><span>läsare</span></li>
             <li><b>SRR-dongel</b><span>Phase 4</span></li>
-            <li><b>BSF8/9</b><span>punch-mode</span></li>
-            <li><b>Star TSP143</b><span>kvittoskrivare</span></li>
-            <li><b>Epson TM-T20</b><span>kvittoskrivare</span></li>
-            <li><b>Brother PJ-7</b><span>mobil kvittoskrivare</span></li>
+            <li><b>BSF8/9</b><span>check-enhet, backupminne</span></li>
+            <li><b>Star TSP143</b><span>kvittoskrivare · provad på Linux</span></li>
+            <li><b>Epson TM-T20IV</b><span>kvittoskrivare · provad över nätverk med Skogis-kvitton</span></li>
           </ul>
         </div>
       </div>
@@ -1006,13 +1158,13 @@
             <b>Jonas Hagberg</b>, senior systemutvecklare och certifierad IT-arkitekt på <a href="https://github.com/NBISweden" target="_blank" rel="noopener">@NBISweden</a> till vardags. Springer för <b>Stora Tuna OK</b> och började faktiskt orientera först på <b>Ösa-träffen 2023</b>, så jag är nybörjare i skogen.
           </p>
           <p>
-            Det som driver mig är tekniskt: göra något modernt och busenkelt att sätta igång, som funkar på Linux, Mac och Android — inte bara Windows, och som kan rulla en hel tävlingsdag på batteri med billig och stabil hårdvara.
+            Det som driver mig är tekniskt: göra något modernt och busenkelt att sätta igång, som funkar på Linux, Mac och Android och inte bara Windows, och som kan rulla en hel tävlingsdag på batteri med billig och stabil hårdvara.
           </p>
           <p>
             <i>fartOLa</i> byggs på lediga kvällar och helger, tillsammans med Claude, Codex och Gemini. Och SI-protokollet visade sig vara mer spännande att gräva i än jag trodde.
           </p>
           <p class="muted">
-            Projektet är pengafritt, AGPL-3.0-licensierat och utan exit-mål. Säg hej via <a href="https://github.com/jhagberg" target="_blank" rel="noopener">GitHub</a>, öppna en <a href="https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bdemo%5D" target="_blank" rel="noopener">issue</a> eller maila <a href="mailto:fartola@lindan.se">fartola@lindan.se</a>. Feedback från riktiga sekretariat och löpare är det enda som styr roadmapen.
+            Projektet är pengafritt, AGPL-3.0-licensierat och utan exit-mål. Säg hej via <a href="https://github.com/jhagberg" target="_blank" rel="noopener">GitHub</a>, öppna en <a href="https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bdemo%5D" target="_blank" rel="noopener">issue</a> eller maila <a href="mailto:fartola@lindan.se">fartola@lindan.se</a>. Feedback från sekretariat och löpare styr, tillsammans med regelverket, vad som byggs härnäst.
           </p>
         </div>
       </div>
@@ -1025,7 +1177,7 @@
       <div class="sec-eyebrow">Hjälp oss</div>
       <h2 style="font-size: 32px; margin: 10px 0 14px; letter-spacing: -0.015em; font-weight: 600;">Vad funkar? Vad saknas? Vad är fel?</h2>
       <p style="color: var(--fg-muted); margin: 0 0 28px; font-size: 17px;">
-        <i>fartOLa</i> byggs av och för svenska orienteringsklubbar. Är du operatör, deltagare eller bara nyfiken — prova demon och säg vad du tänker. Det är enklare nu än när Phase 2 är byggd.
+        <i>fartOLa</i> byggs för svenska orienteringsklubbar. Sitter du i sekretariat, springer du eller är du bara nyfiken? Prova demon och säg vad du tycker.
       </p>
       <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
         <a href="demo/index.html" class="btn primary">Öppna demo</a>
@@ -1045,7 +1197,8 @@
       </div>
       <div class="links">
         <a href="https://github.com/jhagberg/fartOLa" target="_blank" rel="noopener">GitHub</a>
-        <a href="adr.html">ADR (7)</a>
+        <a href="https://github.com/jhagberg/fartOLa/tree/main/docs/decisions" target="_blank" rel="noopener">Beslut (ADR)</a>
+        <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Regelmatris</a>
         <a href="https://github.com/jhagberg/fartOLa/tree/main/.planning" target="_blank" rel="noopener">Planning docs</a>
         <a href="https://github.com/jhagberg/fartOLa/blob/main/LICENSE" target="_blank" rel="noopener">Licens</a>
         <a href="demo/index.html">Demo</a>
