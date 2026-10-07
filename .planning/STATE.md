@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.0.1
 milestone_name: milestone
-status: Phase 2.2 M1 in progress
-stopped_at: Phase 2.1 merged 2026-10-07; draw package M1 on feat/draw-m1
+status: Phase 2.2 M1 merged; UI and M2 next
+stopped_at: Phase 2.2 M1 (draw package) merged 2026-10-08 (#77)
 last_updated: "2026-10-08T00:00:00.000Z"
 progress:
   total_phases: 8
@@ -26,7 +26,7 @@ not duplicated here.
 
 Supersedes "Current position" below, which is a May 2026 snapshot kept for history.
 
-**Status:** Phase 2.1 is complete and merged (2026-10-07). Phase 2.2 (SOFT-compliant draw and class model) is in progress: M1 on branch `feat/draw-m1`. fartOLa has not yet been the main system at a real competition; acceptance is by replay of real competitions (ADR-0014): DM lång 2026 dag 1 633/634 (one intended difference, SOFT TR 4.18.9), Tuna Ting 2026 dag 2 608/609 (the one left has no start time; fartOLa warns). Phase 2.0's 2026-05-20 training ran on MeOS. SOFT compliance matrix: 26 UPPFYLLD, 20 DELVIS, 24 SAKNAS, 5 EJ TILLÄMPLIG of 75 rules. See `.planning/ROADMAP.md`.
+**Status:** Phase 2.1 is complete and merged (2026-10-07). Phase 2.2 (SOFT-compliant draw and class model) is in progress: M1, the draw package, merged 2026-10-08 (#77, backend only); its UI and M2 come next. fartOLa has not yet been the main system at a real competition; acceptance is by replay of real competitions (ADR-0014): DM lång 2026 dag 1 633/634 (one intended difference, SOFT TR 4.18.9), Tuna Ting 2026 dag 2 608/609 (the one left has no start time; fartOLa warns). Phase 2.0's 2026-05-20 training ran on MeOS. SOFT compliance matrix: 28 UPPFYLLD, 20 DELVIS, 22 SAKNAS, 5 EJ TILLÄMPLIG of 75 rules (after M1). See `.planning/ROADMAP.md`.
 
 ### Merged in October 2026 (all 2026-10-07)
 
@@ -57,11 +57,11 @@ Supersedes "Current position" below, which is a May 2026 snapshot kept for histo
 - [ADR-0015](../docs/decisions/0015-helper-tools-in-private-repo.md): helper tools live in a private repo.
 - [ADR-0016](../docs/decisions/0016-simple-clear-ui-not-meos-parity.md): own simple UI, not MeOS parity.
 - [ADR-0017](../docs/decisions/0017-fixed-offset-competition-clock.md): one fixed-offset clock per competition.
-- Draw plan decisions (MeOS port plan, Part D, 2026-10-08), recorded as ADRs when M1 lands: nivå 4 is its own competition level; a rule that would refuse an action needs an operator-confirmed class kind (Eventor `ClassTypeId` counts as confirmed); ROC lands before M1.
+- Draw plan decisions (MeOS port plan, Part D, 2026-10-08), applied in M1 (#77): nivå 4 is its own competition level; a rule that would refuse an action needs an operator-confirmed class kind (Eventor `ClassTypeId` counts as confirmed); ROC lands before M1.
 
 ### In progress
 
-- **Phase 2.2 M1, draw package** (branch `feat/draw-m1`, migrations 0021-0023): class kind + competition level, MeOS attribution lint, start times as events with undo, vacancy positions, proof of the SOFT draw against MeOS, late entrants, seeded draw, ResultList import, pursuit and reverse pursuit with ban in inskolning and D/H10-12.
+- **Phase 2.2 M1, draw package — merged 2026-10-08 (#77, migrations 0020-0022); UI not built yet:** class kind + competition level, MeOS attribution lint, start times as events with undo, vacancy positions, proof of the SOFT draw against MeOS, late entrants, seeded draw, ResultList import, pursuit and reverse pursuit with ban in inskolning and D/H10-12.
 
 ### Known gaps
 
@@ -74,7 +74,7 @@ Supersedes "Current position" below, which is a May 2026 snapshot kept for histo
 
 ### Next steps
 
-1. Land M1 (merge order clock -> readout labels -> ROC -> M1, all but M1 done), then M2.
+1. Build the M1 UI (class-kind confirmation, competition level, LottningView modes, undo with history, ResultList upload), then M2.
 2. Owner confirms the todo grouping into Phases 2.2, 2.3, 3 and 4 in the roadmap.
 3. Block 1 bench capture with a touch-free SIAC Air+ finish.
 4. Use fartOLa as main system at a real, low-stakes event with MeOS as backup.

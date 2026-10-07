@@ -14,7 +14,7 @@ orienteer at a real event (training counts).
 - [x] **Phase 1.5: Public demo + landing page** — GitHub Pages site with a clickable mock so anyone can test the UI and leave feedback. (Merged to main 2026-05-15.)
 - [x] **Phase 2.0: 4-klubbs MVP (parallel with MeOS)** — Code complete and merged 2026-05-22 (PR #20). The 4-klubbs training on 2026-05-20 ran on MeOS, so the "fartOLa as primary" criterion was not met; replay of real competitions (Phase 2.1) took over as the acceptance test.
 - [x] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, replay of real competitions as acceptance test, SOFT compliance gate, competition clock, ROC radio + watchdog, readout labels. (Merged 2026-10-07, PR #51 and follow-ups.)
-- [ ] **Phase 2.2: SOFT-compliant draw and class model** — Class kind and competition level, start times as events, SOFT-proven draw, vacancies, late entrants, seeding, pursuit; then fees/bibs, start distribution, loop courses, rogaining. In progress (M1 on `feat/draw-m1`).
+- [ ] **Phase 2.2: SOFT-compliant draw and class model** — Class kind and competition level, start times as events, SOFT-proven draw, vacancies, late entrants, seeding, pursuit; then fees/bibs, start distribution, loop courses, rogaining. M1 merged 2026-10-08 (#77); M2 next.
 - [ ] **Phase 2.3: Race-day operations** — Rental-card inventory, unknown-card rebind, competition-leader decisions, checklist, backup, desk corrections. Planned; scope to be confirmed.
 - [ ] **Phase 3: Children's finish, public engagement** — Kids' finish screen, parent notifications, embeddable live widget.
 - [ ] **Phase 4: Multi-arena, radio controls** — Radio controls feeding live punches, multiple WiFi cells, peer-to-peer sync.
@@ -187,14 +187,14 @@ Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup)
   1. M1: every class has a kind (ungdom/junior/senior/veteran/elit/öppen/inskolning plus D/H age) decided from Eventor `ClassTypeId`, else SOFT name patterns, and confirmed by the operator; a rule that would refuse an action on an unconfirmed kind asks for confirmation instead of guessing.
   2. M1: the competition has a level (nivå 1-4 or träning); level-scoped rules apply to nivå 1-3 only.
   3. M1: start times are events. Draws, hand edits and missing starts can be undone all or nothing, and the screen says why an undo is refused. `competitors.start_time_ms` is a guarded cache rebuilt at startup.
-  4. M1: the SOFT draw is proved by property tests (TR 7.5.1: same-club neighbours avoided whenever possible) and benchmarked against MeOS; vacancy positions (mixed/first/last), late entrants (before, after, on vacant places) and seeding groups (TR 7.4.5, refused outside nivå 1 elite classes and trainings) work through LottningView.
+  4. M1: the SOFT draw samples exactly uniformly among start orders with the fewest same-club neighbours, proved by exhaustive brute-force tests (TR 7.5.1, 7.5.2) and benchmarked against MeOS; vacancy positions (mixed/first/last), late entrants (before, after, on vacant places) and seeding groups (TR 7.4.5, refused outside nivå 1 elite classes and trainings) work through LottningView.
   5. M1: an IOF XML 3.0 ResultList can be imported (prefers `OverallResult`, one stage) and drives pursuit and reverse pursuit; both are refused in inskolning and D/H10-12.
   6. M2: class type drives fees and caps (TR 4.12.4, 4.12.6), bibs (TR 7.5.4), a pre-race check with card table, closing time and default start interval (TR 4.16.3, 4.22.1).
   7. M3a: a multi-class planning screen warns before drawing on start-distribution problems (TR 7.5.3, 7.5.5). M3b: courses with a shared loop or butterfly control are scored correctly (voided legs and replacements by course position).
   8. M4: a rogaining class (variable points, time reduction) scores correctly end to end.
   9. Compliance matrix rows move as listed in the plan; `pnpm lint` stays green; both real-competition replays unchanged (633/634, 608/609).
 **Plans**: milestone-based, plan files to be created
-  - [ ] M1 — Draw package (in progress, branch `feat/draw-m1`, migrations 0021-0023): class kind + competition level; MeOS attribution lint check; start times as events with undo; vacancy positions; proof of the SOFT draw; late entrants; seeded draw with stored groups; ResultList import; pursuit and reverse pursuit with ban
+  - [x] M1 — Draw package (merged 2026-10-08, PR #77, migrations 0020-0022; UI still to build): class kind + competition level; MeOS attribution lint check; start times as events with undo; vacancy positions; proof of the SOFT draw; late entrants; seeded draw with stored groups; ResultList import; pursuit and reverse pursuit with ban
   - [ ] M2 — Class type fees (4b), bibs (4c), pre-race check + card table (4d), closing time + default interval + class-kind rules (4e)
   - [ ] M3a — Start distribution across classes (warnings first, optimiser later)
   - [ ] M3b — Loop/butterfly courses (`getAdapetedCourse` equivalent)
@@ -311,7 +311,7 @@ These must be respected throughout, not deferred to a phase:
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
 | 2.0. 4-klubbs MVP (parallel with MeOS) | 7/7 | Code complete (training ran on MeOS) | 2026-05-22 |
 | 2.1. Sanctioned-competition foundations | 14/14 | Complete | 2026-10-07 |
-| 2.2. SOFT-compliant draw and class model | 0/5 milestones | In progress (M1) | - |
+| 2.2. SOFT-compliant draw and class model | 1/5 milestones | In progress (M1 done, UI + M2 next) | - |
 | 2.3. Race-day operations | 0/TBD | Planned | - |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
