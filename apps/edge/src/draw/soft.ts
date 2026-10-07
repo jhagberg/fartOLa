@@ -153,7 +153,7 @@ function fisherYatesShuffle<T>(arr: T[], rng: RngFn): void {
 }
 
 /** Count adjacent pairs in the slot sequence where both runners share a club. */
-function countAdjacencies(slots: DrawSlot[]): number {
+export function countAdjacencies(slots: DrawSlot[]): number {
   let count = 0;
   const real = slots.filter((s): s is DrawRunner => s !== null);
   for (let i = 0; i < real.length - 1; i++) {

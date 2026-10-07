@@ -15,6 +15,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { eq, asc } from 'drizzle-orm';
 
+import type { ClassKind, CompetitionLevel } from '@fartola/shared-types';
+
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
@@ -669,5 +671,87 @@ describe('lottning route', () => {
       .run();
     const none = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
     assert.equal((none.json() as { error: string }).error, 'class_kind_unknown');
+  });
+
+  const setKind = (classKind: ClassKind | null, ageClass: number | null = null) =>
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind, ageClass })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+  const setLevel = (level: CompetitionLevel | null) =>
+    ctx.handle.db
+      .update(competitions)
+      .set({ level })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+  const putSeeding = (groups: string[][]) =>
+    ctx.app.inject({
+      method: 'PUT',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}/seeding`,
+      payload: { groups },
+    });
+
+  test('SOFT TR 7.4.5: Seeded — stored seeding groups start last, and a redraw reuses them', async () => {
+    setKind('elit', 21);
+    setLevel('niva1');
+    const seededIds = [...timesOf().keys()].slice(0, 2);
+    assert.equal((await putSeeding([seededIds])).statusCode, 200);
+    for (const firstStartMs of [at(10), at(11)]) {
+      const res = await post({ mode: 'Seeded', firstStartMs, intervalSec: 60 });
+      assert.equal(res.statusCode, 201, res.body);
+      const lastTwo = [...timesOf().entries()]
+        .sort((a, b) => a[1]! - b[1]!)
+        .slice(3)
+        .map(([id]) => id);
+      assert.deepEqual(lastTwo.sort(), [...seededIds].sort());
+    }
+  });
+
+  test('SOFT TR 7.4.5: seeding in elite classes at nivå 1 and in any class at a training, refused otherwise (422)', async () => {
+    const body = { mode: 'Seeded', firstStartMs: at(10), intervalSec: 60 };
+    assert.equal((await putSeeding([[...timesOf().keys()].slice(0, 2)])).statusCode, 200);
+    const cases: Array<[CompetitionLevel, ClassKind, number]> = [
+      ['niva1', 'elit', 201],
+      ['niva1', 'senior', 422],
+      ['niva2', 'elit', 422],
+      ['niva3', 'elit', 422],
+      ['niva4', 'senior', 201],
+      ['traning', 'senior', 201],
+    ];
+    for (const [level, kind, status] of cases) {
+      setLevel(level);
+      setKind(kind, 21);
+      const res = await post(body);
+      assert.equal(res.statusCode, status, `${level} ${kind}: ${res.body}`);
+      if (status === 422)
+        assert.deepEqual(res.json(), { error: 'seeding_not_allowed', rule: 'SOFT TR 7.4.5' });
+    }
+    // A refusing rule needs a confirmed kind: a name suggestion is not enough.
+    setLevel('niva1');
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'elit', classKindSource: 'name' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const guessed = await post(body);
+    assert.equal(guessed.statusCode, 409, guessed.body);
+    assert.equal((guessed.json() as { error: string }).error, 'class_kind_unconfirmed');
+    setLevel(null);
+    const unknown = await post(body);
+    assert.equal(unknown.statusCode, 409);
+    assert.equal((unknown.json() as { error: string }).error, 'competition_level_unknown');
+  });
+
+  test('Seeded: bad groups → 400; one group → 409', async () => {
+    setKind('elit', 21);
+    setLevel('niva1');
+    assert.equal((await putSeeding([['nope']])).statusCode, 400);
+    const id = [...timesOf().keys()][0]!;
+    assert.equal((await putSeeding([[id], [id]])).statusCode, 400);
+    assert.equal((await putSeeding([[...timesOf().keys()]])).statusCode, 200);
+    const one = await post({ mode: 'Seeded', firstStartMs: at(10), intervalSec: 60 });
+    assert.equal(one.statusCode, 409, one.body);
+    assert.equal((one.json() as { error: string }).error, 'one_seeding_group');
   });
 });

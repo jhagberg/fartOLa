@@ -493,6 +493,9 @@ export const competitors = sqliteTable(
      * import (Person/Id). The ResultList export writes it back so Eventor
      * links the result to the person. NULL = unknown. */
     eventorPersonId: integer('eventor_person_id'),
+    /** SOFT TR 7.4.5 — seeding group in an elite class, 1 = strongest; NULL =
+     * not seeded. Set by PUT …/lottning/:classId/seeding. Migration 0021. */
+    seedGroup: integer('seed_group'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
