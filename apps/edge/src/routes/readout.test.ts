@@ -111,7 +111,8 @@ function insertCardRead(
     seconds_in_half_day: 9 * 3600,
     weekday: null,
   },
-  check: HalfDayClock | null = null
+  check: HalfDayClock | null = null,
+  finish: HalfDayClock = { half_day: 0, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null }
 ): void {
   handle.db
     .insert(events)
@@ -127,7 +128,7 @@ function insertCardRead(
         card_number: cardNumber,
         card_type: 'SI10',
         start,
-        finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null },
+        finish,
         check,
         clear: null,
         punch_count: punches.length,
@@ -298,6 +299,46 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.equal(body.clock_offset_min, 60);
     assert.equal(formatClockTime(body.history[0]!.start_time_ms!, 60), '09:00:00');
     assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
+  });
+
+  // Codex follow-up review: every history row carried the latest read's
+  // running time, so selecting an older read paired its finish with
+  // another read's time.
+  test("test 2e: each history row has its own read's running time", async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2e');
+    const DAY = '2026-05-14'; // default +120
+    ctx.handle.db
+      .update(competitors)
+      .set({ startTimeMs: clockToEpochMs(DAY, 9 * 3600, 120) })
+      .where(eq(competitors.id, competitorId))
+      .run();
+    const finishAt = (min: number): HalfDayClock => ({
+      half_day: 0,
+      seconds_in_half_day: 9 * 3600 + min * 60,
+      weekday: null,
+    });
+    // No start punch: both reads time from the 09:00 start time.
+    const read = (seq: number, finishMin: number, readMin: number): void =>
+      insertCardRead(
+        ctx.handle,
+        ctx.nodeId,
+        'comp-2e',
+        7501853,
+        clockToEpochMs(DAY, 9 * 3600 + readMin * 60, 120),
+        seq,
+        [31],
+        null,
+        null,
+        finishAt(finishMin)
+      );
+    read(1, 30, 35);
+    read(2, 45, 50);
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2e/readout' });
+    const rows = (res.json() as { history: Array<{ elapsed_time_ms: number | null }> }).history;
+    assert.deepEqual(
+      rows.map((r) => r.elapsed_time_ms),
+      [45 * 60 * 1000, 30 * 60 * 1000]
+    );
   });
 
   // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).

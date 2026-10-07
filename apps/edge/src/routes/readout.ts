@@ -42,6 +42,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 
 import {
+  classes,
   competitions,
   events,
   competitors as competitorsTable,
@@ -52,6 +53,7 @@ import {
   controls,
 } from '../db/schema.ts';
 import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { officialMs, rawElapsedMs } from '../projection/dnfMp.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
@@ -115,10 +117,11 @@ interface HistoryRow {
    * The UI uses this to distinguish auto-DNF (no clear button) from
    * manual-DNF (clear button visible). */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
-  /** Mirrors CompetitorView.start_time_ms / elapsed_time_ms: the drawn start
-   * (epoch ms) and the official running time as scoring resolved them, so
-   * the UI shows the backend's timing instead of recomputing it. Like
-   * `status`, they are the competitor's (latest read). */
+  /** The competitor's drawn start (CompetitorView.start_time_ms, epoch ms)
+   * and this read's official running time as scoring computes it: the
+   * projection's for the competitor's latest read, the same helper on this
+   * read's own card for an older one. The UI shows these and never
+   * recomputes timing. */
   start_time_ms: number | null;
   elapsed_time_ms: number | null;
   /** 02.1-14 Task 13 — mirrors CompetitorView.missing_start /
@@ -211,6 +214,14 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         .get();
       const clockOffsetMin =
         comp === undefined ? null : competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
+      const startMethodByClass = new Map(
+        app.fartolaDb.db
+          .select({ id: classes.id, startMethod: classes.startMethod })
+          .from(classes)
+          .where(eq(classes.competitionId, id))
+          .all()
+          .map((c) => [c.id, c.startMethod])
+      );
 
       // Phase 2.1 — build a class_id → expected_codes index so each
       // history row can carry the course's expected control list. Two
@@ -282,6 +293,30 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         const payload = e.payload as Extract<EventPayload, { event_type: 'card_read' }>;
         const competitor = byCard.get(payload.card_number);
         const view = competitor && projection ? projection.competitors.get(competitor.id) : null;
+        // This read's running time: the projection's for the competitor's
+        // latest read (manual status, voided legs, MAX included), else the
+        // same scoring helper on this read's own card.
+        const readElapsedMs = (): number | null => {
+          if (!view || !competitor || clockOffsetMin === null) return null;
+          const latest = view.card_read_history[view.card_read_history.length - 1];
+          if (
+            latest?.event_time_ms === e.eventTimeMs &&
+            latest.card_number === payload.card_number
+          ) {
+            return view.elapsed_time_ms;
+          }
+          const raw = rawElapsedMs({
+            start: payload.start,
+            finish: payload.finish,
+            punches: payload.punches,
+            cardType: payload.card_type,
+            readAtMs: e.eventTimeMs,
+            drawnStartMs: view.start_time_ms,
+            clockOffsetMin,
+            startMethod: startMethodByClass.get(competitor.classId) ?? 'auto',
+          });
+          return raw === null ? null : officialMs(raw);
+        };
         return {
           event_time_ms: e.eventTimeMs,
           local_seq: e.localSeq,
@@ -321,7 +356,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           // (manual_status='DNF'). Null for unmatched / pre-read cards.
           manual_status: view?.manual_status ?? null,
           start_time_ms: view?.start_time_ms ?? null,
-          elapsed_time_ms: view?.elapsed_time_ms ?? null,
+          elapsed_time_ms: readElapsedMs(),
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
