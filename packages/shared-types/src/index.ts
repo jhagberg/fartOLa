@@ -105,16 +105,17 @@ export type {
 export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
 export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
 
-// --- Competition clock (epoch ms ↔ local wall clock) ----------------------
+// --- Competition clock (epoch ms ↔ one fixed offset per competition) -----
 export {
   COMPETITION_TZ,
   localToEpochMs,
-  epochToLocalSeconds,
-  epochToWallClockMs,
-  wallClockToEpochMs,
-  formatLocalTime,
-  formatWallClock,
-  parseWallClock,
+  zoneOffsetMs,
+  defaultClockOffsetMin,
+  competitionClockOffsetMin,
+  clockToEpochMs,
+  epochToClockSeconds,
+  formatClockTime,
+  formatClockDateTime,
   parseTimeOfDay,
-  startBeforeFinishWallMs,
+  startBeforeFinishMs,
 } from './time.ts';

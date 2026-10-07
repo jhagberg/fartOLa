@@ -911,23 +911,8 @@ export function patchCompetitorStartTime(
   );
 }
 
-/** PATCH …/start-time with a local wall-clock start 'YYYY-MM-DDTHH:MM:SS'
- * — the card's clock, which epoch ms cannot hold in the hour skipped when
- * DST starts (missing-start editing). */
-export function patchCompetitorStartWall(
-  competitionId: string,
-  competitorId: string,
-  startWall: string
-): Promise<CompetitorDTO> {
-  return apiFetch(
-    `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}/start-time`,
-    { method: 'PATCH', body: { start_wall: startWall } }
-  );
-}
-
 /** 02.1-14 Task 15 — one runner without a start (GET …/missing-starts).
- * The *_wall fields are the same times as local wall-clock strings
- * 'YYYY-MM-DDTHH:MM:SS', the scale the running time is computed on. */
+ * Times are epoch ms; shown on the competition clock (clock_offset_min). */
 export interface MissingStartItem {
   competitor_id: string;
   name: string;
@@ -939,9 +924,6 @@ export interface MissingStartItem {
   check_ms: number | null;
   suggested_start_ms: number | null;
   finish_ms: number;
-  check_wall: string | null;
-  suggested_start_wall: string | null;
-  finish_wall: string;
 }
 
 /** The day's check → start numbers + the runners without a start. */
@@ -950,6 +932,8 @@ export interface MissingStartsResponse {
   median_ms: number | null;
   mean_ms: number | null;
   offset_ms: number;
+  /** The competition clock's UTC offset in minutes (ADR-0012). */
+  clock_offset_min: number;
   items: MissingStartItem[];
 }
 
@@ -961,7 +945,7 @@ export function listMissingStarts(competitionId: string): Promise<MissingStartsR
 /** POST /api/competitions/:id/missing-starts/apply — all or nothing. */
 export function applyMissingStarts(
   competitionId: string,
-  items: Array<{ competitor_id: string; start_wall: string }>
+  items: Array<{ competitor_id: string; start_time_ms: number }>
 ): Promise<{ updated: number }> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/missing-starts/apply`, {
     method: 'POST',

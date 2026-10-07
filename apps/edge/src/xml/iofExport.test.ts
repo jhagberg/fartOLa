@@ -68,6 +68,7 @@ function makeCompetition(): CompetitionDTO {
     created_at_ms: 1_716_120_000_000,
     race_started_at_ms: null,
     timing_format: 'seconds',
+    clock_offset_min: 120,
   };
 }
 
@@ -123,7 +124,6 @@ function makeCompetitorView(
     no_timing: false,
     missing_start: false,
     suggested_start_ms: null,
-    suggested_start_wall_ms: null,
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,
@@ -490,7 +490,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     // Start and finish as xsd:dateTime.
     assert.match(
       xml,
-      /<StartTime>2026-05-19T08:00:00.000Z<\/StartTime>\s*<FinishTime>2026-05-19T08:12:00.000Z<\/FinishTime>\s*<Time>720<\/Time>/
+      /<StartTime>2026-05-19T10:00:00\+02:00<\/StartTime>\s*<FinishTime>2026-05-19T10:12:00\+02:00<\/FinishTime>\s*<Time>720<\/Time>/
     );
   });
 
@@ -609,6 +609,7 @@ function makeStartListInput(overrides: Partial<StartListInput> = {}): StartListI
       created_at_ms: 1_716_120_000_000,
       race_started_at_ms: null,
       timing_format: 'seconds',
+      clock_offset_min: 120,
     },
     classes: [
       {
@@ -669,7 +670,7 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
     assert.ok(xml.includes('PersonStart'), 'must have PersonStart elements');
   });
 
-  test('test 2: StartTime values end with Z suffix (UTC ISO format)', () => {
+  test('test 2: StartTime values carry the competition clock offset (ADR-0012)', () => {
     const { xml } = buildStartListXml(makeStartListInput());
     // Extract all StartTime values from the XML
     const startTimeRegex = /<StartTime>([^<]+)<\/StartTime>/g;
@@ -677,7 +678,7 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
     assert.ok(matches.length > 0, 'must have at least one StartTime element');
     for (const match of matches) {
       const val = match[1]!;
-      assert.ok(val.endsWith('Z'), `StartTime "${val}" must end with Z suffix`);
+      assert.ok(val.endsWith('+02:00'), `StartTime "${val}" must end with +02:00`);
     }
   });
 

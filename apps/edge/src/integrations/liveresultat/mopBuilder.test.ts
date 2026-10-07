@@ -53,7 +53,6 @@ function makeCompetitorView(overrides: Partial<CompetitorView> = {}): Competitor
     no_timing: false,
     missing_start: false,
     suggested_start_ms: null,
-    suggested_start_wall_ms: null,
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,
@@ -114,7 +113,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test Race', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test Race', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [
         { id: 'cls-1', name: 'H21' },
         { id: 'cls-2', name: 'D21' },
@@ -149,39 +148,44 @@ describe('buildMopXml', () => {
     assert.equal(cmp.length, 6, 'Expected 6 cmp elements');
   });
 
-  // 02.1-14 Task 1: start_time_ms is epoch ms; MOP `st` is tenths since local
-  // midnight. The old expectation (360000 ms → st=3600) encoded the
-  // ms-since-midnight base this plan removes.
-  it('Test 2: start 10:00 CEST on 2026-10-03 produces st="360000" (tenths since local midnight)', () => {
-    const competitors = new Map<string, CompetitorView>();
-    competitors.set(
-      'c1',
-      makeCompetitorView({
-        id: 'c1',
-        name: 'Runner',
-        class_id: 'cls-1',
-        start_time_ms: Date.parse('2026-10-03T08:00:00Z'),
-        status: 'PEND',
-      })
-    );
+  // 02.1-14 Task 1: start_time_ms is epoch ms; MOP `st` is tenths since
+  // midnight of the competition date on the competition clock (mop.xsd),
+  // not wrapped at 24 h. The old expectation (360000 ms → st=3600) encoded
+  // the ms-since-midnight base this plan removes.
+  for (const [label, startIso, st] of [
+    ['10:00 CEST on 2026-10-03', '2026-10-03T08:00:00Z', 360000],
+    ['00:05 CEST the next day', '2026-10-03T22:05:00Z', 867000],
+  ] as const) {
+    it(`Test 2: start ${label} produces st="${st}" (competition 2026-10-03, +02:00)`, () => {
+      const competitors = new Map<string, CompetitorView>();
+      competitors.set(
+        'c1',
+        makeCompetitorView({
+          id: 'c1',
+          name: 'Runner',
+          class_id: 'cls-1',
+          start_time_ms: Date.parse(startIso),
+          status: 'PEND',
+        })
+      );
 
-    const input: MopBuildInput = {
-      state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
-      classes: [{ id: 'cls-1', name: 'H21' }],
-      clubs: [],
-    };
+      const input: MopBuildInput = {
+        state: makeState({ competitors }),
+        competition: { id: 'comp-id-1', name: 'Test', date: '2026-10-03', clockOffsetMin: 120 },
+        classes: [{ id: 'cls-1', name: 'H21' }],
+        clubs: [],
+      };
 
-    const xml = buildMopXml(input);
-    const parsed = parseXml(xml);
-    const root = parsed['MOPComplete'] as Record<string, unknown>;
-    const cmpRaw = root['cmp'];
-    const cmp = (Array.isArray(cmpRaw) ? cmpRaw : [cmpRaw]) as Array<Record<string, unknown>>;
-    assert.equal(cmp.length, 1);
-    const base = cmp[0]!['base'] as Record<string, unknown>;
-    // 10:00:00 local = 36000 s = 360000 tenths
-    assert.equal(base['@_st'], 360000, `Expected st=360000, got ${base['@_st']}`);
-  });
+      const xml = buildMopXml(input);
+      const parsed = parseXml(xml);
+      const root = parsed['MOPComplete'] as Record<string, unknown>;
+      const cmpRaw = root['cmp'];
+      const cmp = (Array.isArray(cmpRaw) ? cmpRaw : [cmpRaw]) as Array<Record<string, unknown>>;
+      assert.equal(cmp.length, 1);
+      const base = cmp[0]!['base'] as Record<string, unknown>;
+      assert.equal(base['@_st'], st, `Expected st=${st}, got ${base['@_st']}`);
+    });
+  }
 
   it('Test 3: elapsed_time_ms=1234567 produces rt="12346" (Math.round(1234567/100))', () => {
     const competitors = new Map<string, CompetitorView>();
@@ -198,7 +202,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     };
@@ -224,7 +228,7 @@ describe('buildMopXml', () => {
 
     const input: MopBuildInput = {
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     };
@@ -267,7 +271,7 @@ describe('buildMopXml', () => {
     );
     const xml = buildMopXml({
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'Inskolning' }],
       clubs: [],
     });
@@ -295,7 +299,7 @@ describe('buildMopXml', () => {
     );
     const xml = buildMopXml({
       state: makeState({ competitors }),
-      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24', clockOffsetMin: 120 },
       classes: [{ id: 'cls-1', name: 'H21' }],
       clubs: [],
     });

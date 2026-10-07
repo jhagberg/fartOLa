@@ -26,7 +26,10 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDatabase } from './index.ts';
 import { MIGRATIONS_FOLDER, runMigrations } from './migrate.ts';
 import { ensureNodeId } from './node-id.ts';
-import { localToEpochMs } from '../time/competitionClock.ts';
+import { formatClockTime, localToEpochMs } from '../time/competitionClock.ts';
+import { events } from './schema.ts';
+import { loadCompetitionInputs } from '../projection/loader.ts';
+import { reduce } from '../projection/reduce.ts';
 
 interface MigrationRow {
   id: number;
@@ -38,7 +41,7 @@ interface CountRow {
 }
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const EXPECTED_MIGRATION_COUNT = 17;
+const EXPECTED_MIGRATION_COUNT = 18;
 
 interface JournalEntry {
   idx: number;
@@ -77,7 +80,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     const handle = openDatabase(':memory:');
     try {
       // openDatabase already ran the migrator once. The current journal has
-      // 17 entries: 0000..0007 plus 0009..0017 (0008 is intentionally absent).
+      // 18 entries: 0000..0007 plus 0009..0018 (0008 is intentionally absent).
       const initialCount = handle.sqlite
         .prepare<unknown[], CountRow>('SELECT count(*) as count FROM __drizzle_migrations')
         .get();
@@ -85,7 +88,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
       assert.equal(
         initialCount.count,
         EXPECTED_MIGRATION_COUNT,
-        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0017, excluding 0008), got ${initialCount.count}`
+        `expected ${EXPECTED_MIGRATION_COUNT} migrations applied (0000..0018, excluding 0008), got ${initialCount.count}`
       );
 
       // Call again — should be a no-op.
@@ -100,7 +103,7 @@ describe('migrator: idempotency + cold-start coverage', () => {
     }
   });
 
-  test('test 2 (C-H1): 0000..0017 applied with distinct hashes; triggers present', () => {
+  test('test 2 (C-H1): 0000..0018 applied with distinct hashes; triggers present', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
@@ -392,6 +395,103 @@ describe('migrator: idempotency + cold-start coverage', () => {
       assert.equal(old, undefined, 'ignore_start_punch dropped');
     } finally {
       sqlite.close();
+    }
+  });
+
+  // ADR-0017: 0018 moves stored starts from the old civil clock (and the
+  // 0015 start_wall_ms override) onto the fixed-offset clock, keeping the
+  // station time scoring used, and drops start_wall_ms.
+  test('0018 keeps every running time: starts move onto the fixed clock', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'fartola-clock-test-'));
+    const dbPath = path.join(dir, `${crypto.randomUUID()}.db`);
+    const SPRING = '2026-03-29'; // default offset +120 (CEST at noon)
+    try {
+      const old = new Database(dbPath);
+      migrateWithOldJournal(old, (entries) => entries.filter((e) => e.idx <= 17));
+      // a: missing start set as station time 02:00:54 in the skipped hour —
+      //    epoch 01:00:54Z (reads back as civil 03:00:54) + the wall value.
+      // b: an ordinary drawn start at civil 01:50 CET (00:50Z).
+      // c: a start_wall_ms made stale by a later writer of start_time_ms.
+      old.exec(`
+        INSERT INTO competitions (id, name, date, created_at_ms, race_started_at_ms)
+          VALUES ('comp', 'Natt', '${SPRING}', 0, 0);
+        INSERT INTO classes (id, competition_id, name, first_start_ms)
+          VALUES ('cls', 'comp', 'H21', ${Date.parse('2026-03-29T00:50:00Z')});
+        INSERT INTO competitors (id, competition_id, name, class_id, card_number, start_time_ms, start_wall_ms) VALUES
+          ('a', 'comp', 'A', 'cls', 1, ${Date.parse('2026-03-29T01:00:54Z')}, ${Date.parse('2026-03-29T02:00:54Z')}),
+          ('b', 'comp', 'B', 'cls', 2, ${Date.parse('2026-03-29T00:50:00Z')}, NULL),
+          ('c', 'comp', 'C', 'cls', 3, ${Date.parse('2026-03-29T00:50:00Z')}, ${Date.parse('2026-03-29T02:00:54Z')});
+      `);
+      old.close();
+
+      for (let i = 0; i < 2; i++) {
+        // Twice: the step runs once (the dropped column is its marker).
+        const h = openDatabase(dbPath);
+        try {
+          const column = h.sqlite
+            .prepare("SELECT 1 FROM pragma_table_info('competitors') WHERE name = 'start_wall_ms'")
+            .get();
+          assert.equal(column, undefined, 'start_wall_ms dropped');
+          const start = (id: string): string => {
+            const row = h.sqlite
+              .prepare<[string], { ms: number }>(
+                'SELECT start_time_ms AS ms FROM competitors WHERE id = ?'
+              )
+              .get(id)!;
+            return formatClockTime(row.ms, 120);
+          };
+          assert.equal(start('a'), '02:00:54');
+          assert.equal(start('b'), '01:50:00');
+          assert.equal(start('c'), '01:50:00', 'a stale start_wall_ms does not count');
+          const first = h.sqlite
+            .prepare<[], { ms: number }>('SELECT first_start_ms AS ms FROM classes')
+            .get()!;
+          assert.equal(formatClockTime(first.ms, 120), '01:50:00');
+        } finally {
+          h.close();
+        }
+      }
+
+      // The running times scoring gave before the migration.
+      const h = openDatabase(dbPath);
+      try {
+        const nodeId = ensureNodeId(h);
+        const read = (seq: number, card: number, finish: number, readIso: string): void => {
+          const at = Date.parse(readIso);
+          h.db
+            .insert(events)
+            .values({
+              nodeId,
+              localSeq: seq,
+              competitionId: 'comp',
+              eventType: 'card_read',
+              eventTimeMs: at,
+              recordedAtMs: at,
+              payload: {
+                event_type: 'card_read',
+                card_number: card,
+                card_type: 'SI10',
+                start: null,
+                finish: { seconds_in_half_day: finish, half_day: 0, weekday: null },
+                check: null,
+                clear: null,
+                punch_count: 0,
+                punches: [],
+                card_holder: null,
+              },
+            })
+            .run();
+        };
+        read(1, 1, 2 * 3600 + 30 * 60, '2026-03-29T01:35:00Z'); // finish 02:30, read 03:35 CEST
+        read(2, 2, 3 * 3600 + 10 * 60, '2026-03-29T01:20:00Z'); // finish 03:10, read 03:20 CEST
+        const state = reduce(loadCompetitionInputs(h, 'comp')!);
+        assert.equal(state.competitors.get('a')!.elapsed_time_ms, (29 * 60 + 6) * 1000);
+        assert.equal(state.competitors.get('b')!.elapsed_time_ms, 80 * 60 * 1000);
+      } finally {
+        h.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

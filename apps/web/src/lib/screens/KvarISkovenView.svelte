@@ -25,9 +25,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
-  import { postCheckunitSnapshot, listCompetitors, listClasses } from '#lib/api/client.ts';
+  import {
+    getCompetition,
+    postCheckunitSnapshot,
+    listCompetitors,
+    listClasses,
+  } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
-  import { formatLocalTime } from '@fartola/shared-types';
+  import { formatClockTime } from '@fartola/shared-types';
 
   interface Props {
     competitionId: string;
@@ -49,6 +54,8 @@
   let competitors = $state<CompetitorDTO[]>([]);
   /** Classes map for class name lookup. */
   let classesMap = $state<Map<string, string>>(new Map());
+  /** The competition clock's UTC offset (ADR-0012): start times are shown on it. */
+  let clockOffsetMin = $state<number | null>(null);
   /** Card numbers the operator has manually confirmed safe.
    * Persisted to sessionStorage so safety-critical state survives page refresh. */
   let confirmedSafe = $state<Set<number>>((() => {
@@ -183,6 +190,18 @@
     }
   }
 
+  async function loadClock(): Promise<void> {
+    try {
+      clockOffsetMin = (await getCompetition(competitionId)).competition.clock_offset_min;
+    } catch {
+      // Non-fatal — start times show as '—'.
+    }
+  }
+
+  function startText(ms: number | null): string {
+    return ms == null || clockOffsetMin === null ? '—' : formatClockTime(ms, clockOffsetMin);
+  }
+
   function markSafe(cardNumber: number): void {
     const next = new Set(confirmedSafe);
     next.add(cardNumber);
@@ -206,6 +225,7 @@
   onMount(() => {
     void loadCompetitors();
     void loadClasses();
+    void loadClock();
   });
 </script>
 
@@ -291,7 +311,7 @@
                 <td class="name">{competitor.name}</td>
                 <td>{competitor.club ?? '—'}</td>
                 <td>{className(competitor.class_id)}</td>
-                <td>{competitor.start_time_ms == null ? '—' : formatLocalTime(competitor.start_time_ms)}</td>
+                <td>{startText(competitor.start_time_ms)}</td>
                 <td>{elapsed(competitor.start_time_ms)}</td>
                 <td>
                   <button

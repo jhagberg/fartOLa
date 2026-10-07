@@ -56,6 +56,7 @@ import {
 } from '../xml/iofExport.ts';
 import type { CompetitionDTO, ClassDTO, StartMethod } from '@fartola/shared-types';
 import { resultListInputs } from './_resultListInputs.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 function parseStatus(raw: unknown): ExportStatus {
   // C-L1: default to 'Final' when absent / unknown. The query layer is
@@ -84,6 +85,7 @@ interface CompetitionRow {
   createdAtMs: number;
   raceStartedAtMs: number | null;
   timingFormat: string | null;
+  clockOffsetMin: number | null;
 }
 
 interface ClassRow {
@@ -109,6 +111,7 @@ function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
     created_at_ms: row.createdAtMs,
     race_started_at_ms: row.raceStartedAtMs,
     timing_format: row.timingFormat === 'tenths' ? 'tenths' : 'seconds',
+    clock_offset_min: competitionClockOffsetMin(row.date, row.clockOffsetMin),
   };
 }
 

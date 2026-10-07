@@ -18,7 +18,7 @@ import { softStatus, SOFT_STATUS_SV } from '@fartola/shared-types';
 
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
 import type { CompetitorView, ResultView } from '../projection/types.ts';
-import { formatLocalTime } from '../time/competitionClock.ts';
+import { formatClockTime } from '../time/competitionClock.ts';
 
 import classic from './templates/classic.ts';
 import standing from './templates/standing.ts';
@@ -151,10 +151,10 @@ export interface StartListEntry {
   bibNumber?: string | null;
 }
 
-/** Format epoch ms as HH:MM:SS on the competition's local wall clock
- * (COMPETITION_TZ), independent of the server's own time zone. */
-export function formatStartTime(epochMs: number): string {
-  return formatLocalTime(epochMs);
+/** Format epoch ms as HH:MM:SS on the competition clock (`clockOffsetMin`
+ * from UTC, ADR-0012), independent of the server's own time zone. */
+export function formatStartTime(epochMs: number, clockOffsetMin: number): string {
+  return formatClockTime(epochMs, clockOffsetMin);
 }
 
 /** Render a class start list to the thermal printer. Pure: no I/O. */
@@ -162,6 +162,7 @@ export async function renderStartListTemplate(
   printer: ThermalPrinterLike,
   className: string,
   date: string,
+  clockOffsetMin: number,
   entries: StartListEntry[]
 ): Promise<void> {
   printer.alignCenter();
@@ -175,7 +176,7 @@ export async function renderStartListTemplate(
   // Sort by start time ascending.
   const sorted = [...entries].sort((a, b) => a.startTimeMs - b.startTimeMs);
   for (const entry of sorted) {
-    const time = formatStartTime(entry.startTimeMs);
+    const time = formatStartTime(entry.startTimeMs, clockOffsetMin);
     const bib = entry.bibNumber != null && entry.bibNumber.length > 0 ? entry.bibNumber : '—';
     const club = entry.club != null && entry.club.length > 0 ? entry.club : '';
     printer.leftRight(`${bib} ${entry.name}`, time);

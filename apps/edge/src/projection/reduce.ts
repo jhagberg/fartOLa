@@ -46,12 +46,12 @@ import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import {
   detectStatus,
-  startWallMs,
+  startMs,
   startPunchWarning,
   type ControlAlternatives,
   type StartMethod,
 } from './dnfMp.ts';
-import { cardClockToWallMs, wallMsToEpochMs } from './halfDayClockMath.ts';
+import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
@@ -82,6 +82,9 @@ export interface ReduceInput {
    * class (a class's own max_time_sec only applies when this is unset).
    * Omitted / null = none. */
   max_time_sec?: number | null;
+  /** ADR-0012 — the competition clock's UTC offset in minutes
+   * (competitionClockOffsetMin): card clocks are placed with it. */
+  clock_offset_min: number;
   events: readonly Event[];
   competitors: readonly Competitor[];
   classes: readonly Class[];
@@ -143,7 +146,6 @@ export function reduce(input: ReduceInput): CompetitionState {
   // comparisons to ~1000 Map.get() calls. Externally-visible behavior is
   // identical to the plan-07 linear scan — same fixture, same output.
   const cardIndex = buildCardIndex(competitorsByCompetition);
-  const competitorById = new Map(competitorsByCompetition.map((c) => [c.id, c]));
 
   // 02.1-14 Task 5: course-wide voided controls are dropped from every
   // course before scoring. The final void/unvoid state applies to every read
@@ -223,7 +225,6 @@ export function reduce(input: ReduceInput): CompetitionState {
       no_timing: noTimingClasses.has(c.classId),
       missing_start: false,
       suggested_start_ms: null,
-      suggested_start_wall_ms: null,
       suggested_start_offset_ms: null,
       late_start_ms: null,
       early_start_ms: null,
@@ -231,8 +232,8 @@ export function reduce(input: ReduceInput): CompetitionState {
   }
   const pendingUnknownCards = new Set<number>();
   let lastEventSeq = 0;
-  // 02.1-14 Task 13: per competitor, the latest read's check punch (local
-  // wall-clock ms, like every card clock — halfDayClockMath) and, for in-race
+  // 02.1-14 Task 13: per competitor, the latest read's check punch (epoch
+  // ms, like every card clock — halfDayClockMath) and, for in-race
   // reads with a check and a start punch, check → start.
   const checkMsByCompetitor = new Map<string, number | null>();
   const checkToStartMsByCompetitor = new Map<string, number>();
@@ -285,10 +286,12 @@ export function reduce(input: ReduceInput): CompetitionState {
         // applied later still win in the same way. `undefined` here
         // means the caller (Phase-1 tests) opted out of the gate.
         const inRacePhase = inRacePhaseAt(e.eventTimeMs);
-        const wallMs = (c: HalfDayClock | null): number | null =>
-          c === null ? null : cardClockToWallMs(c, payload.card_type, e.eventTimeMs);
-        const checkMs = wallMs(payload.check);
-        const startPunchMs = wallMs(payload.start);
+        const cardMs = (c: HalfDayClock | null): number | null =>
+          c === null
+            ? null
+            : cardClockToEpochMs(c, payload.card_type, e.eventTimeMs, input.clock_offset_min);
+        const checkMs = cardMs(payload.check);
+        const startPunchMs = cardMs(payload.start);
         checkMsByCompetitor.set(competitor.id, checkMs);
         if (inRacePhase && checkMs !== null && startPunchMs !== null) {
           checkToStartMsByCompetitor.set(competitor.id, startPunchMs - checkMs);
@@ -317,7 +320,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               cardType: payload.card_type,
               readAtMs: e.eventTimeMs,
               drawnStartMs: competitor.startTimeMs,
-              drawnStartWallMs: competitor.startWallMs,
+              clockOffsetMin: input.clock_offset_min,
               startMethod: startMethodOf(competitor.classId),
             },
             resolvedExpected,
@@ -473,7 +476,7 @@ export function reduce(input: ReduceInput): CompetitionState {
                 cardType: latestRead?.card_type ?? '',
                 readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
                 drawnStartMs: competitor?.startTimeMs ?? null,
-                drawnStartWallMs: competitor?.startWallMs ?? null,
+                clockOffsetMin: input.clock_offset_min,
                 startMethod: startMethodOf(competitor?.classId),
               },
               resolvedExpected,
@@ -564,7 +567,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         cardType: latestRead.card_type,
         readAtMs: latestRead.event_time_ms,
         drawnStartMs: competitor?.startTimeMs ?? null,
-        drawnStartWallMs: competitor?.startWallMs ?? null,
+        clockOffsetMin: input.clock_offset_min,
         startMethod: startMethodOf(competitor?.classId),
       },
       filterVoidedLegs(expected, view.voided_legs),
@@ -611,7 +614,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       cardType: latest.card_type,
       readAtMs: latest.event_time_ms,
       drawnStartMs: v.start_time_ms,
-      drawnStartWallMs: competitorById.get(v.id)?.startWallMs ?? null,
+      clockOffsetMin: input.clock_offset_min,
       startMethod: startMethodOf(v.class_id),
     };
     const warning = startPunchWarning(startInput);
@@ -621,17 +624,14 @@ export function reduce(input: ReduceInput): CompetitionState {
       v.manual_status !== null ||
       (v.status !== 'OK' && v.status !== 'MP') ||
       latest.finish === null ||
-      startWallMs(startInput) !== null
+      startMs(startInput) !== null
     ) {
       continue;
     }
     v.missing_start = true;
     const checkMs = checkMsByCompetitor.get(v.id) ?? null;
     if (checkMs !== null) {
-      // Station clock, kept as is for "Fastställ saknade starttider" (a
-      // time in the skipped spring-DST hour has no epoch ms of its own).
-      v.suggested_start_wall_ms = checkMs + checkToStartMs;
-      v.suggested_start_ms = wallMsToEpochMs(v.suggested_start_wall_ms);
+      v.suggested_start_ms = checkMs + checkToStartMs;
       v.suggested_start_offset_ms = checkToStartMs;
     }
   }

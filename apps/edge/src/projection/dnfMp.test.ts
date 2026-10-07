@@ -14,8 +14,12 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { detectStatus, startWallMs, type StartMethod } from './dnfMp.ts';
-import { epochToWallClockMs, localToEpochMs } from '../time/competitionClock.ts';
+import { detectStatus, startMs, type StartMethod } from './dnfMp.ts';
+import {
+  clockToEpochMs,
+  competitionClockOffsetMin,
+  localToEpochMs,
+} from '../time/competitionClock.ts';
 
 /** Build a HalfDayClock from a "seconds since the day's midnight" scalar.
  * Wraps modulo 24h. */
@@ -42,6 +46,7 @@ const CTX = {
   cardType: 'SIAC',
   readAtMs: localToEpochMs(DAY, 13 * 3600),
   drawnStartMs: null as number | null,
+  clockOffsetMin: 120, // CEST, DAY's default
   startMethod: 'auto' as StartMethod,
 };
 
@@ -359,13 +364,15 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
     assert.equal(mp.elapsed_time_ms, null);
   });
 
-  // Running time on the local wall clock, like MeOS (oEvent::convertTimes):
-  // SI stations don't switch DST, so the times on the card are what count.
+  // Running time on the competition clock (one fixed offset), like MeOS
+  // (oEvent::convertTimes): SI stations don't switch DST, so the times on
+  // the card are what count.
   const onCard = (startSec: number, finishSec: number, readIso: string): number | null =>
     detectStatus(
       {
         ...CTX,
         readAtMs: Date.parse(readIso),
+        clockOffsetMin: competitionClockOffsetMin(readIso.slice(0, 10), null),
         start: hd(startSec),
         finish: hd(finishSec),
         punches: RUN,
@@ -390,11 +397,13 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
 
   for (const day of ['2026-10-03', '2026-10-25', '2026-03-29']) {
     test(`${day}: drawn start 10:00 + finish 10:45 → 45 min`, () => {
+      const offset = competitionClockOffsetMin(day, null);
       const result = detectStatus(
         {
           ...CTX,
-          readAtMs: localToEpochMs(day, 10 * 3600 + 50 * 60),
-          drawnStartMs: localToEpochMs(day, 10 * 3600),
+          clockOffsetMin: offset,
+          readAtMs: clockToEpochMs(day, 10 * 3600 + 50 * 60, offset),
+          drawnStartMs: clockToEpochMs(day, 10 * 3600, offset),
           start: null,
           finish: hd(10 * 3600 + 45 * 60),
           punches: RUN,
@@ -428,17 +437,16 @@ describe('detectStatus — OK / MP / DNF + elapsed', () => {
 
 // 02.1-14 Task 14: the three start methods × {start time, punch, both,
 // neither}. Start time 10:00:00, punch 10:00:30 (SIAC, read at 13:00).
-// The start is on the local wall-clock timeline (epochToWallClockMs's scale).
-describe('startWallMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () => {
-  const DRAWN_EPOCH = localToEpochMs(DAY, 10 * 3600);
-  const DRAWN = epochToWallClockMs(DRAWN_EPOCH);
+describe('startMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () => {
+  const DRAWN = clockToEpochMs(DAY, 10 * 3600, CTX.clockOffsetMin);
   const PUNCH = DRAWN + 30_000;
   const at = (startMethod: StartMethod, drawn: boolean, punch: boolean): number | null =>
-    startWallMs({
+    startMs({
       cardType: 'SIAC',
       readAtMs: CTX.readAtMs,
+      clockOffsetMin: CTX.clockOffsetMin,
       startMethod,
-      drawnStartMs: drawn ? DRAWN_EPOCH : null,
+      drawnStartMs: drawn ? DRAWN : null,
       start: punch ? hd(10 * 3600 + 30) : null,
     });
   const cases: Array<[StartMethod, boolean, boolean, number | null]> = [

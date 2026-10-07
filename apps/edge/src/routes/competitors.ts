@@ -70,16 +70,10 @@ import crypto from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import {
-  CompetitorCreateInput,
-  type CompetitorDTO,
-  parseWallClock,
-  readoutChannel,
-} from '@fartola/shared-types';
+import { CompetitorCreateInput, type CompetitorDTO, readoutChannel } from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
 import type { DrizzleDb } from '../db/index.ts';
 import type { Competitor } from '../db/types.ts';
-import { wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 // C-M4 — PATCH /api/competitors/:id consent-confirmation body schema.
@@ -110,26 +104,7 @@ const PatchProfileSchema = z
 // > 1e12 floor rejects the old local ms-since-midnight base. Shared with
 // the missing-starts batch (Task 15, routes/missingStarts.ts).
 export const StartTimeMs = z.number().int().gt(1e12).nullable();
-/** …or as a local wall-clock time 'YYYY-MM-DDTHH:MM:SS' (no offset), on the
- * timeline card clocks are scored on: the only form that can name a station
- * time in the hour skipped when DST starts (Codex third review of #51). */
-export const StartWall = z
-  .string()
-  .refine((s) => parseWallClock(s) !== null, 'expected local YYYY-MM-DDTHH:MM:SS');
-const PatchStartTimeSchema = z.union([
-  z.object({ start_time_ms: StartTimeMs }).strict(),
-  z.object({ start_wall: StartWall }).strict(),
-]);
-
-/** A validated { start_time_ms } or { start_wall } as the two columns. */
-export function startColumns(input: { start_time_ms: number | null } | { start_wall: string }): {
-  startTimeMs: number | null;
-  startWallMs: number | null;
-} {
-  if ('start_time_ms' in input) return { startTimeMs: input.start_time_ms, startWallMs: null };
-  const startWallMs = parseWallClock(input.start_wall)!;
-  return { startTimeMs: wallMsToEpochMs(startWallMs), startWallMs };
-}
+const PatchStartTimeSchema = z.object({ start_time_ms: StartTimeMs }).strict();
 
 /** Set one runner's start time; undefined when the competitor is not in
  * this competition. The caller marks the projection dirty. */
@@ -137,11 +112,11 @@ export function setCompetitorStartTime(
   db: DrizzleDb,
   competitionId: string,
   competitorId: string,
-  start: { startTimeMs: number | null; startWallMs: number | null }
+  startTimeMs: number | null
 ): Competitor | undefined {
   return db
     .update(competitors)
-    .set(start)
+    .set({ startTimeMs })
     .where(and(eq(competitors.competitionId, competitionId), eq(competitors.id, competitorId)))
     .returning()
     .get();
@@ -782,7 +757,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         app.fartolaDb.db,
         id,
         competitorId,
-        startColumns(parsed.data)
+        parsed.data.start_time_ms
       );
       if (!row) return reply.code(404).send({ error: 'competitor_not_found' });
       app.projectionStore.markDirty(id);

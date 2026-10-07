@@ -41,8 +41,9 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 
-import { formatWallClock } from '@fartola/shared-types';
 import {
+  classes,
+  competitions,
   events,
   competitors as competitorsTable,
   config,
@@ -51,7 +52,9 @@ import {
   courseControls,
   controls,
 } from '../db/schema.ts';
-import { cardClockToWallMs } from '../projection/halfDayClockMath.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { officialMs, rawElapsedMs } from '../projection/dnfMp.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 
@@ -114,18 +117,23 @@ interface HistoryRow {
    * The UI uses this to distinguish auto-DNF (no clear button) from
    * manual-DNF (clear button visible). */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** The competitor's drawn start (CompetitorView.start_time_ms, epoch ms)
+   * and this read's official running time as scoring computes it: the
+   * projection's for the competitor's latest read, the same helper on this
+   * read's own card for an older one. The UI shows these and never
+   * recomputes timing. */
+  start_time_ms: number | null;
+  elapsed_time_ms: number | null;
   /** 02.1-14 Task 13 — mirrors CompetitorView.missing_start /
    * suggested_start_ms / suggested_start_offset_ms: the competitor's latest
    * read has no start of either kind; the suggestion is check + offset. */
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
-  /** The suggestion and this read's finish as local wall-clock strings
-   * 'YYYY-MM-DDTHH:MM:SS' (the card's clock, the scale the running time is
-   * computed on): the UI resolves an edited start before the finish on it,
-   * also in the hour skipped when DST starts. */
-  suggested_start_wall: string | null;
-  finish_wall: string | null;
+  /** This read's finish as epoch ms (the card clock on the competition
+   * clock, as the running time is computed): the UI resolves an edited
+   * start before it. Null without a finish. */
+  finish_ms: number | null;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -154,6 +162,10 @@ interface ReadoutResponse {
   current_read: HistoryRow | null;
   history: HistoryRow[];
   pending_unknown_cards: number[];
+  /** ADR-0017 — the competition clock's UTC offset in minutes, with the
+   * data it formats: a corrected offset reaches open read-out views on
+   * their next refetch. Null for an unknown competition. */
+  clock_offset_min: number | null;
 }
 
 const HISTORY_CAP = 12;
@@ -195,6 +207,21 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
       // and `pending_unknown_cards` is the canonical unknown-card source.
       let projection = app.projectionStore.get(id);
       if (projection === null) projection = app.projectionStore.recomputeNow(id);
+      const comp = app.fartolaDb.db
+        .select({ date: competitions.date, clockOffsetMin: competitions.clockOffsetMin })
+        .from(competitions)
+        .where(eq(competitions.id, id))
+        .get();
+      const clockOffsetMin =
+        comp === undefined ? null : competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
+      const startMethodByClass = new Map(
+        app.fartolaDb.db
+          .select({ id: classes.id, startMethod: classes.startMethod })
+          .from(classes)
+          .where(eq(classes.competitionId, id))
+          .all()
+          .map((c) => [c.id, c.startMethod])
+      );
 
       // Phase 2.1 — build a class_id → expected_codes index so each
       // history row can carry the course's expected control list. Two
@@ -266,6 +293,30 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         const payload = e.payload as Extract<EventPayload, { event_type: 'card_read' }>;
         const competitor = byCard.get(payload.card_number);
         const view = competitor && projection ? projection.competitors.get(competitor.id) : null;
+        // This read's running time: the projection's for the competitor's
+        // latest read (manual status, voided legs, MAX included), else the
+        // same scoring helper on this read's own card.
+        const readElapsedMs = (): number | null => {
+          if (!view || !competitor || clockOffsetMin === null) return null;
+          const latest = view.card_read_history[view.card_read_history.length - 1];
+          if (
+            latest?.event_time_ms === e.eventTimeMs &&
+            latest.card_number === payload.card_number
+          ) {
+            return view.elapsed_time_ms;
+          }
+          const raw = rawElapsedMs({
+            start: payload.start,
+            finish: payload.finish,
+            punches: payload.punches,
+            cardType: payload.card_type,
+            readAtMs: e.eventTimeMs,
+            drawnStartMs: view.start_time_ms,
+            clockOffsetMin,
+            startMethod: startMethodByClass.get(competitor.classId) ?? 'auto',
+          });
+          return raw === null ? null : officialMs(raw);
+        };
         return {
           event_time_ms: e.eventTimeMs,
           local_seq: e.localSeq,
@@ -304,18 +355,19 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           // distinguish auto-DNF (manual_status=null) from operator-set DNF
           // (manual_status='DNF'). Null for unmatched / pre-read cards.
           manual_status: view?.manual_status ?? null,
+          start_time_ms: view?.start_time_ms ?? null,
+          elapsed_time_ms: readElapsedMs(),
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
-          suggested_start_wall:
-            view?.suggested_start_wall_ms == null
+          finish_ms:
+            payload.finish === null || clockOffsetMin === null
               ? null
-              : formatWallClock(view.suggested_start_wall_ms),
-          finish_wall:
-            payload.finish === null
-              ? null
-              : formatWallClock(
-                  cardClockToWallMs(payload.finish, payload.card_type, e.eventTimeMs)
+              : cardClockToEpochMs(
+                  payload.finish,
+                  payload.card_type,
+                  e.eventTimeMs,
+                  clockOffsetMin
                 ),
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
@@ -345,6 +397,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         current_read: currentRead,
         history,
         pending_unknown_cards: pendingUnknownCards,
+        clock_offset_min: clockOffsetMin,
       };
       void reply.code(200);
       return response;
