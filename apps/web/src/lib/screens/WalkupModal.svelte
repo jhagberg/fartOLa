@@ -31,16 +31,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createCompetitor, lookupEventorBySiCard } from '$lib/api/client.ts';
-  import { t } from '$lib/i18n/index.ts';
-  import Button from '$lib/ui/Button.svelte';
-  import Field from '$lib/ui/Field.svelte';
-  import Input from '$lib/ui/Input.svelte';
-  import Select from '$lib/ui/Select.svelte';
-  import SmartRunnerSearch from '$lib/components/SmartRunnerSearch.svelte';
-  import SmartClubSearch from '$lib/components/SmartClubSearch.svelte';
+  import { createCompetitor, lookupEventorBySiCard } from '#lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/Button.svelte';
+  import Field from '#lib/ui/Field.svelte';
+  import Input from '#lib/ui/Input.svelte';
+  import Select from '#lib/ui/Select.svelte';
+  import SmartRunnerSearch from '#lib/components/SmartRunnerSearch.svelte';
+  import SmartClubSearch from '#lib/components/SmartClubSearch.svelte';
   import type { EventorClubSuggestion } from '@fartola/shared-types';
-  import { ApiError } from '$lib/api/client.ts';
+  import { ApiError } from '#lib/api/client.ts';
   import type {
     ClassDTO,
     EventorLookupHit,

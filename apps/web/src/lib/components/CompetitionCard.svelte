@@ -20,7 +20,7 @@
 -->
 <script lang="ts">
   import type { CompetitionDTO } from '@fartola/shared-types';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   interface Props {
     competition: CompetitionDTO;

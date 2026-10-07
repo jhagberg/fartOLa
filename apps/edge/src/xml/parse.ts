@@ -93,8 +93,7 @@ export interface ParsedEntryList {
 }
 
 export type ParsedXml =
-  | { kind: 'CourseData'; data: ParsedCourseData }
-  | { kind: 'EntryList'; data: ParsedEntryList };
+  { kind: 'CourseData'; data: ParsedCourseData } | { kind: 'EntryList'; data: ParsedEntryList };
 
 // ---------------------------------------------------------------------------
 // Parser instance — safe-by-default for untrusted input. Configured once at

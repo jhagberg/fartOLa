@@ -29,9 +29,9 @@
   - .planning/state/2026-05-17 Jonas wizard usability feedback
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import { getEventorEvent } from '$lib/api/client.ts';
-  import { ApiError } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { getEventorEvent } from '#lib/api/client.ts';
+  import { ApiError } from '#lib/api/client.ts';
 
   interface PreviewMeta {
     filename: string;

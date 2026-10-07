@@ -104,10 +104,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          MigrationRow
-        >('SELECT id, hash FROM __drizzle_migrations ORDER BY id ASC')
+        .prepare<unknown[], MigrationRow>(
+          'SELECT id, hash FROM __drizzle_migrations ORDER BY id ASC'
+        )
         .all();
       assert.equal(
         rows.length,
@@ -121,10 +120,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
       // Idempotent re-application.
       runMigrations(handle.sqlite);
       const after = handle.sqlite
-        .prepare<
-          unknown[],
-          MigrationRow
-        >('SELECT id, hash FROM __drizzle_migrations ORDER BY id ASC')
+        .prepare<unknown[], MigrationRow>(
+          'SELECT id, hash FROM __drizzle_migrations ORDER BY id ASC'
+        )
         .all();
       assert.equal(
         after.length,
@@ -134,10 +132,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
 
       // Triggers from 0001 (2 append-only) + 0004 (4 FTS sync) + 0006 (2 FTS update) = 8 total.
       const triggers = handle.sqlite
-        .prepare<
-          unknown[],
-          CountRow
-        >("SELECT count(*) as count FROM sqlite_master WHERE type='trigger'")
+        .prepare<unknown[], CountRow>(
+          "SELECT count(*) as count FROM sqlite_master WHERE type='trigger'"
+        )
         .get();
       assert.ok(triggers);
       assert.equal(
@@ -172,10 +169,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
           'reopening must NOT replay migrations (idempotent on disk)'
         );
         const triggers = h2.sqlite
-          .prepare<
-            unknown[],
-            CountRow
-          >("SELECT count(*) as count FROM sqlite_master WHERE type='trigger'")
+          .prepare<unknown[], CountRow>(
+            "SELECT count(*) as count FROM sqlite_master WHERE type='trigger'"
+          )
           .get();
         assert.equal(triggers?.count, 8, 'triggers persist across reopen');
       } finally {
@@ -215,10 +211,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
     const handle = openDatabase(':memory:');
     try {
       const indexes = handle.sqlite
-        .prepare<
-          unknown[],
-          IndexRow
-        >("SELECT name, [unique] FROM pragma_index_list('eventor_competitors')")
+        .prepare<unknown[], IndexRow>(
+          "SELECT name, [unique] FROM pragma_index_list('eventor_competitors')"
+        )
         .all();
       const names = new Set(indexes.map((r) => r.name));
       assert.ok(
@@ -258,10 +253,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
         const h = openDatabase(dbPath);
         try {
           const rows = h.sqlite
-            .prepare<
-              unknown[],
-              { id: string; start_time_ms: number | null }
-            >('SELECT id, start_time_ms FROM competitors ORDER BY id')
+            .prepare<unknown[], { id: string; start_time_ms: number | null }>(
+              'SELECT id, start_time_ms FROM competitors ORDER BY id'
+            )
             .all();
           assert.deepEqual(rows, [
             { id: 'a', start_time_ms: localToEpochMs('2026-10-03', 10 * 3600) },
@@ -301,10 +295,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
         const h = openDatabase(dbPath);
         try {
           const rows = h.sqlite
-            .prepare<
-              unknown[],
-              { id: string; start_time_ms: number }
-            >('SELECT id, start_time_ms FROM competitors ORDER BY id')
+            .prepare<unknown[], { id: string; start_time_ms: number }>(
+              'SELECT id, start_time_ms FROM competitors ORDER BY id'
+            )
             .all();
           assert.deepEqual(rows, [
             { id: 'a', start_time_ms: localToEpochMs('2026-10-03', 23 * 3600 + 59 * 60) },
@@ -385,10 +378,9 @@ describe('migrator: idempotency + cold-start coverage', () => {
 
       runMigrations(sqlite);
       const rows = sqlite
-        .prepare<
-          unknown[],
-          { id: string; start_method: string }
-        >('SELECT id, start_method FROM classes ORDER BY id')
+        .prepare<unknown[], { id: string; start_method: string }>(
+          'SELECT id, start_method FROM classes ORDER BY id'
+        )
         .all();
       assert.deepEqual(rows, [
         { id: 'ign', start_method: 'start_time' },

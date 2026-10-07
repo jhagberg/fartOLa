@@ -12,7 +12,7 @@
   - 01-UI-SPEC.md §"Walk-up modal" — free-text + autocomplete from past entries
 -->
 <script lang="ts">
-  import { listClubs } from '$lib/api/client.ts';
+  import { listClubs } from '#lib/api/client.ts';
 
   interface Props {
     value: string;

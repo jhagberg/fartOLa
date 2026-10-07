@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import ActiveHyrbrickorView from '$lib/screens/ActiveHyrbrickorView.svelte';
+  import ActiveHyrbrickorView from '#lib/screens/ActiveHyrbrickorView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

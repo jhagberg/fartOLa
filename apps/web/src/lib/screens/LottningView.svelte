@@ -14,7 +14,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     listClasses,
     postLottning,
@@ -23,11 +23,11 @@
     patchCompetitorStartTime,
     getCompetition,
     type LottningBody,
-  } from '$lib/api/client.ts';
-  import Field from '$lib/ui/Field.svelte';
-  import Select from '$lib/ui/Select.svelte';
-  import Input from '$lib/ui/Input.svelte';
-  import Button from '$lib/ui/Button.svelte';
+  } from '#lib/api/client.ts';
+  import Field from '#lib/ui/Field.svelte';
+  import Select from '#lib/ui/Select.svelte';
+  import Input from '#lib/ui/Input.svelte';
+  import Button from '#lib/ui/Button.svelte';
   import type { ClassDTO, StartMethod } from '@fartola/shared-types';
   import { localToEpochMs, formatLocalTime } from '@fartola/shared-types';
 

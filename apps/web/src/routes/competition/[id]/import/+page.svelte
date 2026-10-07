@@ -18,7 +18,7 @@
 
   onMount(() => {
     if (competitionId) {
-      void goto(`/competition/${competitionId}/runners?import=1`, { replaceState: true });
+      void goto(`/competition/${competitionId}/runners?import=1`, { replace: true });
     }
   });
 </script>

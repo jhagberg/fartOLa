@@ -10,7 +10,7 @@
     - apps/edge/src/routes/access.ts
 -->
 <script lang="ts">
-  import AccessView from '$lib/screens/AccessView.svelte';
+  import AccessView from '#lib/screens/AccessView.svelte';
 </script>
 
 <AccessView />

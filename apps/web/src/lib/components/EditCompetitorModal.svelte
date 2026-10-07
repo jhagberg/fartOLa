@@ -18,13 +18,13 @@
   gap noticed during live training-event testing.
 -->
 <script lang="ts">
-  import Modal from '$lib/ui/Modal.svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import Modal from '#lib/ui/Modal.svelte';
+  import { t } from '#lib/i18n/index.ts';
   import {
     editCompetitorProfile,
     setManualStatus,
     type CompetitorProfilePatch,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
 
   interface Props {

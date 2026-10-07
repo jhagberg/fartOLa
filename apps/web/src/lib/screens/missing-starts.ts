@@ -11,7 +11,7 @@ import {
   applyMissingStarts,
   type MissingStartItem,
   type MissingStartsResponse,
-} from '$lib/api/client.ts';
+} from '#lib/api/client.ts';
 import {
   formatElapsed,
   resolveStartInput,

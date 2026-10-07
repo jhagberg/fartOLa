@@ -11,7 +11,7 @@
   - 01-UI-SPEC.md §HomeView
 -->
 <script lang="ts">
-  import HomeView from '$lib/screens/HomeView.svelte';
+  import HomeView from '#lib/screens/HomeView.svelte';
 </script>
 
 <HomeView />

@@ -81,10 +81,9 @@ describe('schema: cold-start table inventory', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          SqliteMasterRow
-        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         .all();
       const names = rows.map((r) => r.name).filter((n) => !n.startsWith('sqlite_'));
       // __drizzle_migrations is created by the migrator; assert it exists separately.
@@ -163,10 +162,9 @@ describe('schema: competitors.consent_status (C-M4)', () => {
         )
         .run();
       const row = handle.sqlite
-        .prepare<
-          unknown[],
-          CompetitorRow
-        >('SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?')
+        .prepare<unknown[], CompetitorRow>(
+          'SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?'
+        )
         .get('comp1');
       assert.ok(row, 'expected row for comp1');
       assert.equal(row.consent_status, 'explicit');
@@ -194,10 +192,9 @@ describe('schema: competitors.consent_status (C-M4)', () => {
         )
         .run();
       const row = handle.sqlite
-        .prepare<
-          unknown[],
-          CompetitorRow
-        >('SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?')
+        .prepare<unknown[], CompetitorRow>(
+          'SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?'
+        )
         .get('comp2');
       assert.ok(row);
       assert.equal(row.consent_status, 'pending_first_read');
@@ -239,10 +236,9 @@ describe('schema (phase 2): six new tables present after migration', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          SqliteMasterRow
-        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         .all();
       const names = rows.map((r) => r.name);
       for (const expected of PHASE2_TABLES) {
@@ -305,10 +301,9 @@ describe('schema (phase 2): competitors.source column', () => {
         )
         .run();
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          { id: string; source: string }
-        >('SELECT id, source FROM competitors WHERE id IN (?, ?) ORDER BY id')
+        .prepare<unknown[], { id: string; source: string }>(
+          'SELECT id, source FROM competitors WHERE id IN (?, ?) ORDER BY id'
+        )
         .all('p2-comp2', 'p2-comp3');
       assert.equal(rows.length, 2);
       assert.equal(rows[0]?.source, 'entrylist');
@@ -345,10 +340,9 @@ describe('schema (phase 2): hired_cards compound PK', () => {
         )
         .run('c2', 12345, 2);
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          { competition_id: string }
-        >('SELECT competition_id FROM hired_cards ORDER BY competition_id')
+        .prepare<unknown[], { competition_id: string }>(
+          'SELECT competition_id FROM hired_cards ORDER BY competition_id'
+        )
         .all();
       assert.equal(rows.length, 2);
     } finally {
@@ -429,10 +423,9 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          SqliteMasterRow
-        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         .all();
       const names = rows.map((r) => r.name);
       assert.ok(

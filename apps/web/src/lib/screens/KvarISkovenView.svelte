@@ -24,8 +24,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { postCheckunitSnapshot, listCompetitors, listClasses } from '$lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { postCheckunitSnapshot, listCompetitors, listClasses } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
   import { formatLocalTime } from '@fartola/shared-types';
 

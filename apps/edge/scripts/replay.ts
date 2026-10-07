@@ -48,8 +48,7 @@ export interface Expected {
 
 /** One line of manual.ndjson: a secretariat action in MeOS, with its time. */
 type ManualAction = { ts_ms: number; card: number | null } & (
-  | { action?: 'status'; status: ManualStatus }
-  | { action: 'start_time'; start: string | null }
+  { action?: 'status'; status: ManualStatus } | { action: 'start_time'; start: string | null }
 );
 
 export interface Mismatch {

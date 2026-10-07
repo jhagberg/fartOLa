@@ -35,7 +35,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     listIntegrations,
     setIntegration,
@@ -48,9 +48,9 @@
     generateEventCode,
     revokeEventCode,
     type EventCodeSummary,
-  } from '$lib/api/client.ts';
-  import { activeCompetition } from '$lib/stores/activeCompetition.svelte.ts';
-  import Button from '$lib/ui/Button.svelte';
+  } from '#lib/api/client.ts';
+  import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
+  import Button from '#lib/ui/Button.svelte';
 
   // Per-row UI state. Keyed by integration key so we can find a row
   // fast on save and so adding a Phase-3 key needs no extra wiring.

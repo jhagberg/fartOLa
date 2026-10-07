@@ -3,7 +3,10 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: ['src/index.ts', 'src/bin/fartola-readout.ts', 'src/bin/fartola-trainer.ts'],
   format: ['esm', 'cjs'],
-  dts: true,
+  // TypeScript 6 deprecates baseUrl, and tsup 8.5.1 (the last release)
+  // always injects baseUrl into its dts build. Scoped to tsup only;
+  // typecheck still reports deprecations.
+  dts: { compilerOptions: { ignoreDeprecations: '6.0' } },
   sourcemap: true,
   clean: true,
   target: 'node24',

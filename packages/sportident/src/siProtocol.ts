@@ -165,11 +165,7 @@ export const CRC16 = (str: number[]): [number, number] => {
  * without intercepting stdout/stderr.
  */
 export type FrameErrorCode =
-  | 'crc_mismatch'
-  | 'bad_etx'
-  | 'bad_stx'
-  | 'truncated'
-  | 'buffer_overflow';
+  'crc_mismatch' | 'bad_etx' | 'bad_stx' | 'truncated' | 'buffer_overflow';
 
 export interface FrameError {
   error_code: FrameErrorCode;

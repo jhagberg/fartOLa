@@ -12,7 +12,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import RegistrationView from '$lib/screens/RegistrationView.svelte';
+  import RegistrationView from '#lib/screens/RegistrationView.svelte';
 
   interface Props {
     data?: { competitionId?: string };

@@ -27,14 +27,14 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { WsClient } from '$lib/ws/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { WsClient } from '#lib/ws/client.ts';
   import { resultsChannel, type WsEnvelope } from '@fartola/shared-types';
   import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
-  import { getCompetition, getResults } from '$lib/api/client.ts';
-  import ClassTabs from '$lib/components/ClassTabs.svelte';
-  import ResultsTable from '$lib/components/ResultsTable.svelte';
-  import MissingStartsPanel from '$lib/components/MissingStartsPanel.svelte';
+  import { getCompetition, getResults } from '#lib/api/client.ts';
+  import ClassTabs from '#lib/components/ClassTabs.svelte';
+  import ResultsTable from '#lib/components/ResultsTable.svelte';
+  import MissingStartsPanel from '#lib/components/MissingStartsPanel.svelte';
 
   interface ResultRow {
     competitor_id: string;

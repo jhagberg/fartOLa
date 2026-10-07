@@ -294,14 +294,12 @@ export default async function registerExportRoutes(app: FastifyInstance): Promis
         const classCompetitors = byClass.get(cls.id) ?? [];
         return {
           name: cls.name,
-          competitors: classCompetitors.map(
-            (c): StartListCompetitor => ({
-              name: c.name,
-              club: c.club,
-              startTimeMs: c.startTimeMs,
-              // No bibNumber on this path — bib allocation is a future plan.
-            })
-          ),
+          competitors: classCompetitors.map((c): StartListCompetitor => ({
+            name: c.name,
+            club: c.club,
+            startTimeMs: c.startTimeMs,
+            // No bibNumber on this path — bib allocation is a future plan.
+          })),
         };
       });
 

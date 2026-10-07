@@ -84,8 +84,7 @@ export interface BuildResult {
 }
 
 export type ValidatedBuildResult =
-  | { valid: true; build: BuildResult }
-  | { valid: false; errors: XsdError[] };
+  { valid: true; build: BuildResult } | { valid: false; errors: XsdError[] };
 
 // ---------------------------------------------------------------------------
 // StartList public types (Plan 02.1-03).
@@ -131,8 +130,7 @@ export interface StartListBuildResult {
 }
 
 export type ValidatedStartListBuildResult =
-  | { valid: true; build: StartListBuildResult }
-  | { valid: false; errors: XsdError[] };
+  { valid: true; build: StartListBuildResult } | { valid: false; errors: XsdError[] };
 
 // ---------------------------------------------------------------------------
 // Helpers.

@@ -22,11 +22,11 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     searchEventorCompetitors,
     lookupEventorBySiCard,
-  } from '$lib/api/client.ts';
+  } from '#lib/api/client.ts';
   import type { EventorNameSuggestion } from '@fartola/shared-types';
 
   interface Props {

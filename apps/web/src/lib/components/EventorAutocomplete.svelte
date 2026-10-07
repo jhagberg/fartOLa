@@ -21,7 +21,7 @@
     Hyrbricka extension" (minLength 2 gate; debounced fetch)
 -->
 <script lang="ts">
-  import { lookupEventorByPrefix } from '$lib/api/client.ts';
+  import { lookupEventorByPrefix } from '#lib/api/client.ts';
   import type { EventorNameSuggestion } from '@fartola/shared-types';
 
   interface Props {

@@ -30,19 +30,19 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { cardQueue, type QueuedCard } from '$lib/stores/cardQueue.svelte.ts';
-  import { createCardSubscription } from '$lib/services/cardSubscription.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { cardQueue, type QueuedCard } from '#lib/stores/cardQueue.svelte.ts';
+  import { createCardSubscription } from '#lib/services/cardSubscription.ts';
   import {
     getCompetition,
     lookupEventorBySiCard,
     lookupCompetitorByCard,
     setManualStatus,
     setActiveCompetition,
-  } from '$lib/api/client.ts';
-  import WalkupModal from '$lib/screens/WalkupModal.svelte';
-  import AddRunnerSheet from '$lib/components/AddRunnerSheet.svelte';
-  import Icon from '$lib/ui/Icon.svelte';
+  } from '#lib/api/client.ts';
+  import WalkupModal from '#lib/screens/WalkupModal.svelte';
+  import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
   import type { ClassDTO, EventorLookupHit, EventorLookupMany, CompetitorDTO } from '@fartola/shared-types';
 
   interface Props {

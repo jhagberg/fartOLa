@@ -27,8 +27,8 @@
   - 01-12-PLAN.md task 2
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import DropZone from '$lib/components/DropZone.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import DropZone from '#lib/components/DropZone.svelte';
 
   interface PreviewMeta {
     filename: string;

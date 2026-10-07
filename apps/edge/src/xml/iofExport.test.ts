@@ -711,8 +711,7 @@ describe('buildResultListXml — class without timing (02.1-14 Task 9)', () => {
         ClassResult: Array<{
           Class: { Name: string; '@_resultListMode'?: string };
           PersonResult:
-            | { Result: Record<string, unknown> }
-            | Array<{ Result: Record<string, unknown> }>;
+            { Result: Record<string, unknown> } | Array<{ Result: Record<string, unknown> }>;
         }>;
       };
     };

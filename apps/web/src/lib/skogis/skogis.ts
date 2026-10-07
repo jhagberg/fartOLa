@@ -6,7 +6,7 @@
 // MOVED to packages/shared-types/src/skogis.ts in plan 15 Task 2a so the
 // apps/edge ESC/POS kids template can consume the same generator. This file
 // is now a thin re-export to preserve plan-13's import path:
-// `$lib/skogis/skogis.ts` still resolves for Kids.svelte + the determinism
+// `#lib/skogis/skogis.ts` still resolves for Kids.svelte + the determinism
 // tests (skogis.test.ts), no source changes needed there.
 //
 // Consumers that need the type system entry point should prefer importing

@@ -227,10 +227,9 @@ describe('lookupBySiCard — tri-state with context-aware disambiguation', () =>
     try {
       // Read Beta's modifyDateMs from the seeded DB.
       const betaRow = handle.sqlite
-        .prepare<
-          [],
-          { v: number }
-        >(`SELECT modify_date_ms AS v FROM eventor_competitors WHERE given_name = 'Beta'`)
+        .prepare<[], { v: number }>(
+          `SELECT modify_date_ms AS v FROM eventor_competitors WHERE given_name = 'Beta'`
+        )
         .get();
       const betaMs = betaRow?.v ?? 0;
 

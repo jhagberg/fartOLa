@@ -9,9 +9,9 @@
   in screens/missing-starts.ts.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import { listMissingStarts } from '$lib/api/client.ts';
-  import { formatElapsed } from '$lib/screens/readout-types.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { listMissingStarts } from '#lib/api/client.ts';
+  import { formatElapsed } from '#lib/screens/readout-types.ts';
   import {
     applyMissingStartRows,
     initialStartText,
@@ -20,7 +20,7 @@
     statsLabel,
     type MissingStartItem,
     type MissingStartsResponse,
-  } from '$lib/screens/missing-starts.ts';
+  } from '#lib/screens/missing-starts.ts';
 
   interface Props {
     competitionId: string;

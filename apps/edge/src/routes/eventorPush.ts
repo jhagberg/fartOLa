@@ -214,13 +214,11 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
         competition: competitionRowToDTO(compRow),
         classes: classRows.map((cls) => ({
           name: cls.name,
-          competitors: (byClass.get(cls.id) ?? []).map(
-            (c): StartListCompetitor => ({
-              name: c.name,
-              club: c.club,
-              startTimeMs: c.startTimeMs,
-            })
-          ),
+          competitors: (byClass.get(cls.id) ?? []).map((c): StartListCompetitor => ({
+            name: c.name,
+            club: c.club,
+            startTimeMs: c.startTimeMs,
+          })),
         })),
       });
 

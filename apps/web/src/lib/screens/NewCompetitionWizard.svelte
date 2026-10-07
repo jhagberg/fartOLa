@@ -32,8 +32,8 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { t } from '$lib/i18n/index.ts';
-  import Icon from '$lib/ui/Icon.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import WizardStep1 from './WizardStep1.svelte';
   import WizardStep2 from './WizardStep2.svelte';
   import WizardStep3 from './WizardStep3.svelte';
