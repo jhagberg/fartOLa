@@ -16,7 +16,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { competitors, events, type EventPayload } from '../db/schema.ts';
+import { classes, competitors, events, type EventPayload } from '../db/schema.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 
@@ -32,7 +32,7 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
       .select()
       .from(events)
       .where(and(eq(events.competitionId, competitionId), eq(events.eventType, 'start_times_set')))
-      .orderBy(desc(events.eventTimeMs), desc(events.localSeq))
+      .orderBy(desc(events.localSeq), desc(events.nodeId))
       .all()
       .map((e) => ({ ...e, payload: e.payload as StartTimesSet }));
 
@@ -93,6 +93,21 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
         return reply.code(409).send({ error: 'start_changed_since', competitor_ids: moved });
 
       const grid = target.payload.class_grid;
+      // The class grid must still be the one this event set: a later draw,
+      // late-entrant placement or import changed it otherwise, and undo
+      // would overwrite that decision.
+      if (grid !== undefined && target.payload.class_id !== null) {
+        const cur = app.fartolaDb.db
+          .select({ first: classes.firstStartMs, interval: classes.startIntervalSec })
+          .from(classes)
+          .where(eq(classes.id, target.payload.class_id))
+          .get();
+        if (
+          cur !== undefined &&
+          (cur.first !== grid.first_start_ms || cur.interval !== grid.interval_sec)
+        )
+          return reply.code(409).send({ error: 'grid_changed_since' });
+      }
       const written = writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
         cause: 'undo',
         classId: target.payload.class_id,
