@@ -295,7 +295,7 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
       '5/8: exact',
       '20/10: exact',
       '10/20: exact',
-      '5/30: exact',
+      '5/30: split',
       '20/30: preference',
     ]);
 
@@ -317,6 +317,73 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
       pref.got.map((a) => a.startTimeMs),
       [T0 + 2 * MIN, T0 + 8 * MIN]
     );
+  });
+
+  test('SOFT TR 7.5.1: the work budget stops the search early — 28 single places for 20 clubs of one fall back fast', () => {
+    const existing: StartedRunner[] = [
+      { id: 'k0', club: 'K0', startTimeMs: T0 },
+      { id: 'k1', club: 'K1', startTimeMs: T0 + 11 * MIN },
+      ...Array.from({ length: 18 }, (_, i) => ({
+        id: `k${i + 2}`,
+        club: `K${i + 2}`,
+        startTimeMs: T0 + (13 + 2 * i) * MIN,
+      })),
+    ];
+    const late = Array.from({ length: 20 }, (_, i) => ({ id: `l${i}`, club: `K${i}` }));
+    for (const budget of [0, undefined]) {
+      let mode = 'exact';
+      const heap = process.memoryUsage().heapUsed;
+      const t = performance.now();
+      const got = fillVacancies(
+        existing,
+        late,
+        { firstStartMs: T0, intervalMs: MIN },
+        mulberryRng(1),
+        true,
+        {
+          ...(budget !== undefined ? { budget } : {}),
+          onFallback: (m) => (mode = m),
+        }
+      );
+      const ms = performance.now() - t;
+      assert.equal(mode, 'preference', `budget ${budget}`);
+      assert.equal(got.length, 20);
+      // Budget 0 stops at the first step; the default budget within its work.
+      assert.ok(ms < (budget === 0 ? 300 : 5000), `budget ${budget}: ${ms.toFixed(0)} ms`);
+      assert.ok(process.memoryUsage().heapUsed - heap < 64 * 2 ** 20, `budget ${budget}: heap`);
+    }
+  });
+
+  test('SOFT TR 7.5.1/7.5.2: exact or fallback depends on the input only — the same for every seed, and an exact draw is the unbudgeted one', () => {
+    // _ A _ _ _ B _ C with late A, B, C, D.
+    const existing = startList(['', 'A', '', '', '', 'B', '', 'C']);
+    const late = ['A', 'B', 'C', 'D'].map((club) => ({ id: club.toLowerCase(), club }));
+    const grid = { firstStartMs: T0, intervalMs: 2 * MIN };
+    const draw = (seed: number, budget: number) => {
+      let mode = 'exact';
+      const got = fillVacancies(existing, late, grid, mulberryRng(seed), true, {
+        budget,
+        onFallback: (m) => (mode = m),
+      });
+      return { mode, got };
+    };
+    const modes = new Set<string>();
+    for (let budget = 0; budget <= 3000; budget += 20) {
+      const seen = new Set<string>();
+      for (let seed = 1; seed <= 8; seed++) {
+        const { mode, got } = draw(seed, budget);
+        seen.add(mode);
+        if (mode === 'exact')
+          assert.deepEqual(
+            got,
+            draw(seed, Number.POSITIVE_INFINITY).got,
+            `budget ${budget} seed ${seed}`
+          );
+      }
+      assert.equal(seen.size, 1, `budget ${budget}: ${[...seen].join(', ')}`);
+      modes.add([...seen][0]!);
+    }
+    assert.deepEqual([...modes].sort(), ['exact', 'preference']);
   });
 
   test('SOFT TR 7.5.8: a hand-edited off-grid start occupies its place; a late entrant never lands before it', () => {
