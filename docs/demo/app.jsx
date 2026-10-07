@@ -22,7 +22,7 @@ function App() {
   const t = useT(tw.locale);
 
   // Routing state
-  const [route, setRoute] = useState('readout'); // home | readout | results | export | hyrbrickor | registration
+  const [route, setRoute] = useState('readout'); // home | readout | registration | results | export | hyrbrickor
   const [wizardOpen, setWizardOpen] = useState(false);
   const [walkupOpen, setWalkupOpen] = useState(false);
   const [walkupCard, setWalkupCard] = useState(null);
@@ -35,7 +35,6 @@ function App() {
   const [pendingUnknown, setPendingUnknown] = useState(window.MOCK_PENDING_UNKNOWN || []);
   const [flashKey, setFlashKey] = useState(0);
   const [printedToast, setPrintedToast] = useState(false);
-  const [savedToast, setSavedToast] = useState(false);
   const [clock, setClock] = useState('14:32:11');
   const [autoPrint, setAutoPrint] = useState(false);
   const [defaultTpl, setDefaultTpl] = useState('classic');
@@ -81,11 +80,6 @@ function App() {
     setTimeout(() => setPrintedToast(false), 2000);
   };
 
-  const showSavedToast = () => {
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 1800);
-  };
-
   const onWalkupSave = ({ name, club, cls, card }) => {
     const parsedCard = parseInt(card, 10);
     const completed = {
@@ -102,7 +96,6 @@ function App() {
     setPendingUnknown(p => p.filter(c => c !== completed.cardNumber));
     setWalkupOpen(false);
     setWalkupCard(null);
-    showSavedToast();
   };
 
   const onEdit = (read) => {
@@ -114,21 +107,18 @@ function App() {
     setHistory(h => h.map(r => r.cardNumber === updated.cardNumber ? { ...r, ...updated } : r));
     setCurrentRead(r => r && r.cardNumber === updated.cardNumber ? { ...r, ...updated } : r);
     setEditingCompetitor(null);
-    showSavedToast();
   };
 
   const onManualDnf = (read, reason) => {
     const patch = { status: 'DNF', dnfReason: reason, place: null };
     setHistory(h => h.map(r => r.cardNumber === read.cardNumber ? { ...r, ...patch } : r));
     setCurrentRead(r => r && r.cardNumber === read.cardNumber ? { ...r, ...patch } : r);
-    showSavedToast();
   };
 
   const onUnDnf = (read) => {
     const patch = { status: 'OK', dnfReason: null };
     setHistory(h => h.map(r => r.cardNumber === read.cardNumber ? { ...r, ...patch } : r));
     setCurrentRead(r => r && r.cardNumber === read.cardNumber ? { ...r, ...patch } : r);
-    showSavedToast();
   };
 
   const onPickPending = (cardNumber) => {
@@ -164,7 +154,9 @@ function App() {
         </button>
         <button className={'nav-item ' + (route === 'readout' ? 'active' : '')} onClick={() => setRoute('readout')}>
           <span className="dot"></span> {t('nav.readout')}
-          <span className="badge">{history.length}</span>
+        </button>
+        <button className={'nav-item ' + (route === 'registration' ? 'active' : '')} onClick={() => setRoute('registration')}>
+          <span style={{width: 16, textAlign: 'center'}}>⌗</span> {t('nav.registration')}
         </button>
         <button className={'nav-item ' + (route === 'results' ? 'active' : '')} onClick={() => setRoute('results')}>
           <span style={{width: 16, textAlign: 'center'}}>≣</span> {t('nav.results')}
@@ -173,23 +165,19 @@ function App() {
           <span style={{width: 16, textAlign: 'center'}}>↗</span> {t('nav.export')}
           <span className="badge" style={{fontSize: 9}}>IOF 3.0</span>
         </button>
-
-        {/* Phase 2.0 — separator + parallel-MeOS surfaces */}
-        <div style={{margin: '14px 8px 6px', padding: '0 8px', fontSize: 9, color: 'var(--fg-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, fontFamily: 'var(--font-mono)'}}>Phase 2 · 4-klubbs</div>
-        <button className={'nav-item ' + (route === 'registration' ? 'active' : '')} onClick={() => setRoute('registration')}>
-          <span style={{width: 16, textAlign: 'center'}}>⌗</span> Registreringsdisk
-          <span className="badge" style={{fontSize: 9}}>{(window.MOCK_PHASE2.registrationQueue || []).length} i kö</span>
-        </button>
         <button className={'nav-item ' + (route === 'hyrbrickor' ? 'active' : '')} onClick={() => setRoute('hyrbrickor')}>
-          <span style={{width: 16, textAlign: 'center'}}>⌬</span> Hyrbrickor
-          <span className="badge" style={{fontSize: 9}}>{(window.MOCK_PHASE2.hyrbrickor || []).filter(h => !h.returnedAt).length} öppna</span>
+          <span style={{width: 16, textAlign: 'center'}}>⌬</span> {t('nav.hyrbrickor')}
+        </button>
+        {/* Opens the tweaks panel, as in the app. The panel listens for this message. */}
+        <button className="nav-item" onClick={() => window.postMessage({ type: '__activate_edit_mode' }, '*')}>
+          <span style={{width: 16, textAlign: 'center'}}>⚙</span> {t('nav.settings')}
         </button>
 
         <div className="sidebar-footer">
           <div className="station-card">
             <div className="row"><b style={{fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--fg-muted)'}}>{t('ro.station')}</b></div>
             <div className="row"><span className="pulse-dot"></span><b className="mono" style={{fontSize: 12}}>BSM7-USB</b></div>
-            <div className="row" style={{justifyContent: 'space-between'}}><span className="mono faint">593656</span><span style={{color: 'var(--ok)', fontSize: 11}}>● {t('ro.online')}</span></div>
+            <div className="row" style={{justifyContent: 'space-between'}}><span className="mono faint">—</span><span style={{color: 'var(--ok)', fontSize: 11}}>● {t('ro.online')}</span></div>
             <div className="row" style={{justifyContent: 'space-between', fontSize: 11}}><span className="faint">/dev/ttyUSB0</span><span className="mono faint">38400</span></div>
           </div>
           <div style={{fontSize: 11, color: 'var(--fg-faint)', fontFamily: 'var(--font-mono)'}}>v0.1.0-phase1 · localhost</div>
@@ -198,25 +186,13 @@ function App() {
 
       <main className="main">
         <div className="topbar">
-          <div className="crumb">
-            {route === 'home' && <>fartOLa / <strong>{t('nav.competitions')}</strong></>}
-            {route === 'readout' && <>fartOLa / 4-klubbs 2026-05-20 / <strong>{t('nav.readout')}</strong></>}
-            {route === 'results' && <>fartOLa / 4-klubbs 2026-05-20 / <strong>{t('nav.results')}</strong></>}
-            {route === 'export' && <>fartOLa / 4-klubbs 2026-05-20 / <strong>{t('nav.export')}</strong></>}
-            {route === 'registration' && <>fartOLa / 4-klubbs 2026-05-20 / <strong>Registreringsdisk</strong></>}
-            {route === 'hyrbrickor' && <>fartOLa / 4-klubbs 2026-05-20 / <strong>Hyrbrickor</strong></>}
-          </div>
           <div className="spacer"></div>
-          <Phase2StatusStrip phase2={window.MOCK_PHASE2} />
-          {route === 'readout' && (
-            <div className="row" style={{fontSize: 13}}>
-              <span className="pulse-dot"></span>
-              <span style={{color: 'var(--ok)', fontWeight: 500}}>{t('ro.online')}</span>
-              <span className="muted mono" style={{fontSize: 12}}>· {t('ro.heartbeat')} 0.4s</span>
-            </div>
-          )}
-          <div className="clock mono" title="Lokal tid · synkad mot bryggans klocka">
-            <span style={{fontSize: 10, color: 'var(--fg-muted)', marginRight: 6, fontFamily: 'var(--font-ui)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500}}>Tid</span>
+          <div className="row" style={{fontSize: 13}}>
+            <span className="pulse-dot"></span>
+            <span style={{color: 'var(--ok)', fontWeight: 500}}>{t('ro.online')}</span>
+          </div>
+          <div className="clock mono" title="Lokal tid · TID">
+            <span style={{fontSize: 10, color: 'var(--fg-muted)', marginRight: 6, fontFamily: 'var(--font-ui)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500}}>TID</span>
             {clock}
           </div>
         </div>
@@ -259,10 +235,10 @@ function App() {
             <ExportView t={t} />
           )}
           {route === 'registration' && (
-            <RegistrationDeskView t={t} queue={window.MOCK_PHASE2.registrationQueue} classes={window.MOCK_CLASSES} onSaved={() => { showSavedToast(); setRoute('readout'); }} />
+            <RegistrationDeskView t={t} queue={window.MOCK_PHASE2.registrationQueue} classes={window.MOCK_CLASSES} />
           )}
           {route === 'hyrbrickor' && (
-            <HyrbrickorView t={t} rows={window.MOCK_PHASE2.hyrbrickor} onReturn={() => showSavedToast()} />
+            <HyrbrickorView t={t} rows={window.MOCK_PHASE2.hyrbrickor} />
           )}
         </div>
       </main>
@@ -297,28 +273,21 @@ function App() {
 
       {printedToast && (
         <div style={{position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--fg)', color: 'var(--bg)', padding: '12px 20px', borderRadius: 8, fontSize: 14, boxShadow: 'var(--shadow-lg)', zIndex: 90, fontWeight: 500}}>
-          🖨  {t('ro.printed')} · Star TSP143
+          {t('ro.printed')}
         </div>
       )}
 
-      {savedToast && !printedToast && (
-        <div style={{position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--ok)', color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 13, boxShadow: 'var(--shadow-lg)', zIndex: 90, fontWeight: 500}}>
-          ✓ Sparat
-        </div>
-      )}
-
-      <TweaksPanel>
-        <TweakSection label={t('tw.title')} />
+      <TweaksPanel title={t('tw.title')}>
         <TweakRadio
           label={t('tw.locale')}
           value={tw.locale}
-          options={['sv', 'en']}
+          options={[{ value: 'sv', label: 'Svenska' }, { value: 'en', label: 'English' }]}
           onChange={v => setTweak('locale', v)}
         />
         <TweakRadio
           label={t('tw.density')}
           value={tw.density}
-          options={['low', 'med', 'high']}
+          options={['low', 'med', 'high'].map(d => ({ value: d, label: t('tw.density.' + d) }))}
           onChange={v => setTweak('density', v)}
         />
         <TweakColor
@@ -343,16 +312,12 @@ function App() {
         <TweakSelect
           label={t('tw.font')}
           value={tw.font}
-          options={[
-            { value: 'plex', label: 'IBM Plex Sans / Mono' },
-            { value: 'geist', label: 'Geist / Geist Mono' },
-            { value: 'source', label: 'Source Sans 3 / JetBrains' },
-            { value: 'atkinson', label: 'Atkinson Hyperlegible / JB' },
-          ]}
+          options={['plex', 'geist', 'source', 'atkinson']}
           onChange={v => setTweak('font', v)}
         />
-        <TweakSection label={t('tw.sim')} />
-        <TweakButton label={t('tw.sim.fire') + ' →'} onClick={simulateRead} />
+        <TweakRow label={t('tweaks.eventor.title')}>
+          <span style={{color: 'var(--ok)'}}>●</span> {t('tweaks.eventor.ready', { days: window.MOCK_PHASE2.integrations.eventor.cacheAgeDays })}
+        </TweakRow>
       </TweaksPanel>
     </div>
   );
