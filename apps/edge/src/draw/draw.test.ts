@@ -9,7 +9,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { drawSOFT } from './soft.ts';
+import { drawSOFT, fewestPatterns } from './soft.ts';
 import { drawRandom } from './random.ts';
 import { placeVacancies } from './vacancies.ts';
 import { drawSimultaneous } from './simultaneous.ts';
@@ -333,34 +333,161 @@ describe('draw algorithms', () => {
         }
     });
 
-    test('SOFT TR 7.5.2: small classes → every valid order is drawn, equally often (chi-square, p = 0.001)', () => {
-      for (const sizes of [
-        { A: 3, B: 2, C: 2 },
-        { A: 4, B: 2, C: 2 },
-        { A: 5, B: 3, C: 2 },
-        { A: 3, B: 1, C: 1, D: 1 },
-      ]) {
-        const valid = validPatterns(sizes);
-        const N = 40 * valid.length;
-        const rng = makeMulberryRng(4711);
-        const seen = new Map<string, number>();
-        for (let k = 0; k < N; k++) {
-          const p = pattern(drawSOFT(classOf(sizes), { rngFn: rng }).order);
-          seen.set(p, (seen.get(p) ?? 0) + 1);
+    /** Brute force: every club pattern of the class ('-' = no club, never a
+     * neighbour) with the fewest same-club neighbours, the seams to the
+     * clubs `before` / `after` counted. */
+    const fewestWords = (
+      sizes: Record<string, number>,
+      clubless = 0,
+      before: string | null = null,
+      after: string | null = null
+    ): { fewest: number; words: string[] } => {
+      const left: Record<string, number> = { ...sizes, ...(clubless ? { '-': clubless } : {}) };
+      const n = Object.values(left).reduce((a, b) => a + b, 0);
+      const pair = (a: string | null, b: string | null) => a !== null && a !== '-' && a === b;
+      let fewest = Number.POSITIVE_INFINITY;
+      let words: string[] = [];
+      const walk = (s: string, last: string | null, cost: number): void => {
+        if (cost > fewest) return;
+        if (s.length === n) {
+          const total = cost + (pair(last, after) ? 1 : 0);
+          if (total < fewest) [fewest, words] = [total, []];
+          if (total === fewest) words.push(s);
+          return;
         }
-        const shape = JSON.stringify(sizes);
-        assert.deepEqual(
-          [...seen.keys()].sort(),
-          [...valid].sort(),
-          `${shape}: every valid order, no other`
-        );
-        const expected = N / valid.length;
-        const chi = valid.reduce((x, p) => x + ((seen.get(p) ?? 0) - expected) ** 2 / expected, 0);
-        const critical = chiCritical(valid.length - 1);
-        assert.ok(
-          chi < critical,
-          `${shape}: chi-square ${chi.toFixed(1)} ≥ ${critical.toFixed(1)}`
-        );
+        for (const c of Object.keys(left))
+          if (left[c]! > 0) {
+            left[c]!--;
+            walk(s + c, c, cost + (pair(last, c) ? 1 : 0));
+            left[c]!++;
+          }
+      };
+      walk('', before, 0);
+      return { fewest, words };
+    };
+    /** Draw N = perPattern × patterns times; every pattern appears, no
+     * other, and the counts pass chi-square against uniform (p = 0.001). */
+    const assertUniform = (
+      sizes: Record<string, number>,
+      clubless: number,
+      boundary: { before?: string | null; after?: string | null },
+      seed: number,
+      perPattern = 100
+    ) => {
+      const { words } = fewestWords(sizes, clubless, boundary.before, boundary.after);
+      const N = perPattern * words.length;
+      const rng = makeMulberryRng(seed);
+      const seen = new Map<string, number>();
+      for (let k = 0; k < N; k++) {
+        const p = pattern(drawSOFT(classOf(sizes, clubless), { boundary, rngFn: rng }).order);
+        seen.set(p, (seen.get(p) ?? 0) + 1);
+      }
+      const shape = `${JSON.stringify(sizes)}+${clubless} ${JSON.stringify(boundary)} seed ${seed}`;
+      assert.deepEqual(
+        [...seen.keys()].sort(),
+        [...words].sort(),
+        `${shape}: every pattern, no other`
+      );
+      const chi = words.reduce(
+        (x, p) => x + ((seen.get(p) ?? 0) - perPattern) ** 2 / perPattern,
+        0
+      );
+      if (words.length === 1) return; // one pattern: nothing to compare
+      const critical = chiCritical(words.length - 1);
+      assert.ok(chi < critical, `${shape}: chi-square ${chi.toFixed(1)} ≥ ${critical.toFixed(1)}`);
+    };
+
+    test('SOFT TR 7.5.2: exhaustive — every fewest-neighbour club pattern is drawn, uniformly (chi-square, p = 0.001)', () => {
+      // A×10/B×9/C×1: the Codex counterexample to the swap chain (38
+      // patterns, 3800 draws, seeds 4711, 99 and 2026).
+      for (const seed of [4711, 99, 2026]) assertUniform({ A: 10, B: 9, C: 1 }, 0, {}, seed);
+      const shapes: Array<[Record<string, number>, number]> = [
+        [{ A: 4, B: 4, C: 2 }, 0],
+        [{ A: 5, B: 3, C: 2 }, 0],
+        [{ A: 3, B: 2, C: 2 }, 0],
+        [{ A: 3, B: 1, C: 1, D: 1 }, 0],
+        [{ A: 5, B: 1, C: 1 }, 0], // A > n/2: 2 neighbours at best
+        [{ A: 6, B: 2 }, 0], // 3 neighbours at best
+        [{ A: 3 }, 3], // runners without a club
+        [{ A: 3, B: 2 }, 2],
+        [{ A: 5, B: 1 }, 2],
+      ];
+      for (const [sizes, clubless] of shapes) assertUniform(sizes, clubless, {}, 4711);
+    });
+
+    test('SOFT TR 7.5.1/7.5.2: fixed clubs before and after the block → every fewest-neighbour pattern, seams counted, uniformly (chi-square, p = 0.001)', () => {
+      const cases: Array<[Record<string, number>, number, { before?: string; after?: string }]> = [
+        [{ A: 4, B: 4, C: 2 }, 0, { before: 'A' }],
+        [{ A: 4, B: 4, C: 2 }, 0, { after: 'A' }],
+        [{ A: 4, B: 4, C: 2 }, 0, { before: 'A', after: 'B' }],
+        [{ A: 4, B: 4, C: 2 }, 0, { before: 'C', after: 'C' }],
+        [{ A: 5, B: 3, C: 2 }, 0, { before: 'A', after: 'A' }], // A must touch a seam
+        [{ A: 3, B: 2, C: 2 }, 0, { before: 'B', after: 'C' }],
+        [{ A: 10, B: 9, C: 1 }, 0, { before: 'B' }],
+        [{ A: 4, B: 1 }, 0, { before: 'A', after: 'A' }], // A > n/2 and both seams A
+        [{ A: 2, B: 2 }, 1, { before: 'Z', after: 'B' }], // Z runs nobody here
+        [{ A: 2 }, 0, { before: 'A', after: 'A' }], // nothing but the seam club
+      ];
+      for (const [sizes, clubless, boundary] of cases)
+        assertUniform(sizes, clubless, boundary, 4711);
+    });
+
+    test('SOFT TR 7.5.1: the pattern count and the fewest neighbours equal brute force — every shape up to 10 runners in ≤ 4 clubs, every boundary', () => {
+      const shapes: number[][] = [];
+      const grow = (sizes: number[]) => {
+        if (sizes.length > 0) shapes.push(sizes);
+        if (sizes.length === 4) return;
+        const used = sizes.reduce((a, b) => a + b, 0);
+        for (let n = 1; n <= Math.min(sizes.at(-1) ?? 10, 10 - used); n++) grow([...sizes, n]);
+      };
+      grow([]);
+      const letter = (i: number) => (i < 0 ? null : 'ABCDZ'[i]!);
+      let checked = 0;
+      for (const sizes of shapes) {
+        const named = Object.fromEntries(sizes.map((n, i) => [letter(i)!, n]));
+        // -1: no fixed starter; 4: a club with no runner in the block.
+        for (let b = -1; b <= 4; b++)
+          for (let a = -1; a <= 4; a++) {
+            if ((b >= sizes.length && b < 4) || (a >= sizes.length && a < 4)) continue;
+            const brute = fewestWords(named, 0, letter(b), letter(a));
+            const counted = fewestPatterns(sizes, b, a);
+            const what = `${sizes} before ${letter(b)} after ${letter(a)}`;
+            assert.equal(counted.fewest, brute.fewest, what);
+            assert.equal(counted.count, BigInt(brute.words.length), what);
+            checked++;
+          }
+      }
+      assert.ok(checked > 1500, `${checked} cases`);
+    });
+
+    test('SOFT TR 7.5.1: property — random shapes and boundaries → the drawn order has the fewest neighbours, seams counted', () => {
+      const pick = makeMulberryRng(2718);
+      for (let i = 0; i < 300; i++) {
+        const sizes: Record<string, number> = {};
+        for (let c = pick(1, 8); c > 0; c--) sizes[`K${c}`] = pick(1, 12);
+        const clubless = pick(0, 4);
+        const clubs = [...Object.keys(sizes), 'Other', null];
+        const boundary = {
+          before: clubs[pick(0, clubs.length)] ?? null,
+          after: clubs[pick(0, clubs.length)] ?? null,
+        };
+        const input = classOf(sizes, clubless);
+        const order = drawSOFT(input, { boundary, rngFn: pick }).order as DrawRunner[];
+        const keys = Object.keys(sizes);
+        const index = (c: string | null) => (c === null ? -1 : keys.indexOf(c));
+        const counts = [...Object.values(sizes), ...Array<number>(clubless).fill(1)];
+        const { fewest } = fewestPatterns(counts, index(boundary.before), index(boundary.after));
+        const all = [{ club: boundary.before }, ...order, { club: boundary.after }];
+        let got = 0;
+        for (let k = 1; k < all.length; k++)
+          if (all[k]!.club !== null && all[k]!.club === all[k - 1]!.club) got++;
+        const what = `${JSON.stringify(sizes)}+${clubless} ${JSON.stringify(boundary)}: ${pattern(order)}`;
+        assert.deepEqual(order.map((r) => r.id).sort(), input.map((r) => r.id).sort(), what);
+        assert.equal(got, fewest, what);
+        if (boundary.before === null && boundary.after === null) {
+          const n = input.length;
+          assert.equal(fewest, Math.max(0, 2 * Math.max(...Object.values(sizes)) - n - 1), what);
+        }
       }
     });
 
