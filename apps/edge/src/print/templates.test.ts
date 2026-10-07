@@ -189,3 +189,20 @@ test('a punch of a struck control is not printed as extra', async () => {
   assert.equal(text.match(/struken/g)?.length, 1);
   assert.doesNotMatch(text, /extra|fel ordn\./);
 });
+
+test('"Plats x av y i mål" counts runners with a place, not the whole class', async () => {
+  const data = receiptData({ no_timing: false });
+  const row = (id: string, place: number | null) => ({
+    ...data.placeContext.class_rows[0]!,
+    competitor_id: id,
+    place,
+  });
+  data.placeContext = {
+    ...data.placeContext,
+    place: 1,
+    class_rows: [row('c1', 1), row('c2', 2), row('c3', null)],
+  };
+  for (const name of ['classic', 'detailed', 'standing', 'minimal', 'kids'] as const) {
+    assert.match(await printed(name, data), /[Pp][Ll][Aa][Tt][Ss] 1 av 2\b/i, name);
+  }
+});

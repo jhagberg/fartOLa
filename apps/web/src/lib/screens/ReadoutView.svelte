@@ -278,7 +278,7 @@
       // Phase 2.1 (plan 13): pass manual_status through so LatestReadCard
       // can distinguish auto-DNF (no clear button) from operator override.
       manual_status: row.manual_status,
-      place: null,
+      place: row.class_place ?? null,
       untimed: cls?.no_timing ?? false,
       unknown: row.unmatched,
       competitorId: row.competitor_id,
@@ -312,7 +312,6 @@
       competitionName: competition?.name ?? '',
       competitionDate: competition?.date ?? '',
       elapsedMs,
-      place: null,
       noTiming: cls?.no_timing ?? false,
       voidedCodes,
     });

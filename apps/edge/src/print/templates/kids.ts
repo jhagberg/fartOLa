@@ -15,7 +15,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed, receiptTime } from '../templates.ts';
+import { finishedInClass, formatElapsed, receiptTime } from '../templates.ts';
 import { generateKidsBitmap } from '../kids-svg-to-bitmap.ts';
 
 export default async function kids(printer: ThermalPrinterLike, data: ReceiptData): Promise<void> {
@@ -77,7 +77,7 @@ export default async function kids(printer: ThermalPrinterLike, data: ReceiptDat
       : receiptTime(data.competitor)
   );
   if (data.placeContext.place !== null) {
-    printer.println(`Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length}`);
+    printer.println(`Plats ${data.placeContext.place} av ${finishedInClass(data)}`);
   }
   printer.println('Spara kvittot — skogisen är din!');
 }

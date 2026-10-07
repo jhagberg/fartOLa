@@ -13,6 +13,7 @@ import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
 import {
   controlRows,
+  finishedInClass,
   formatElapsed,
   formatGap,
   halfDayClockGapMs,
@@ -62,9 +63,7 @@ export default async function detailed(
   printer.bold(false);
 
   if (data.placeContext.place !== null) {
-    printer.println(
-      `Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length} i mål`
-    );
+    printer.println(`Plats ${data.placeContext.place} av ${finishedInClass(data)} i mål`);
   }
   const gap = formatGap(data.placeContext.behind_leader_ms);
   if (gap.length > 0) printer.println(gap);

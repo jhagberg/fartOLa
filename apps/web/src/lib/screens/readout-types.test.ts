@@ -11,6 +11,7 @@ import {
   readElapsedMs,
   rawPunchesToReceipt,
   classifyPunches,
+  classBehind,
   toReceiptRead,
   softStatusLabel,
   resultRowCells,
@@ -391,5 +392,49 @@ describe('toReceiptRead untimed', () => {
   it('flags a class without timing', () => {
     expect(toReceiptRead({ ...base, noTiming: true }).untimed).toBe(true);
     expect(toReceiptRead(base).untimed).toBe(false);
+  });
+});
+
+describe('class standing on the receipt read', () => {
+  const standing = {
+    class_place: 2,
+    class_behind_leader_ms: 34_000,
+    class_finished_count: 5,
+    class_starters_count: 8,
+  };
+  const base = {
+    className: 'D21',
+    classId: 'c',
+    club: null,
+    competitionName: 'T',
+    competitionDate: '2026-10-03',
+  };
+
+  it('carries place, time behind and class progress', () => {
+    const r = toReceiptRead({ ...base, row: row(standing) });
+    expect(r.place).toBe(2);
+    expect(r.progress).toMatchObject({
+      place: 2,
+      behind: '+0:34',
+      finishedInClass: 5,
+      startersInClass: 8,
+    });
+  });
+
+  it('the leader has a place but no "behind"', () => {
+    const r = toReceiptRead({
+      ...base,
+      row: row({ ...standing, class_place: 1, class_behind_leader_ms: 0 }),
+    });
+    expect(r.place).toBe(1);
+    expect(r.progress.behind).toBeNull();
+  });
+
+  it('MP / untimed / unplaced runners have no place or behind', () => {
+    const none = { class_place: null, class_behind_leader_ms: null };
+    const r = toReceiptRead({ ...base, row: row({ ...standing, ...none }) });
+    expect(r.place).toBeNull();
+    expect(r.progress.behind).toBeNull();
+    expect(classBehind(row({ ...standing, ...none }))).toBeNull();
   });
 });

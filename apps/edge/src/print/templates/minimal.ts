@@ -8,7 +8,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatGap, receiptTime } from '../templates.ts';
+import { finishedInClass, formatGap, receiptTime } from '../templates.ts';
 
 export default async function minimal(
   printer: ThermalPrinterLike,
@@ -31,7 +31,7 @@ export default async function minimal(
   printer.setTextNormal();
 
   if (data.placeContext.place !== null) {
-    printer.println(`Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length}`);
+    printer.println(`Plats ${data.placeContext.place} av ${finishedInClass(data)}`);
   }
   const gap = formatGap(data.placeContext.behind_leader_ms);
   if (gap.length > 0) printer.println(gap);

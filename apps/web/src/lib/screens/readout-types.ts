@@ -92,6 +92,13 @@ export interface ReadoutHistoryRow {
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** The runner's current standing in the class (projection results rows):
+   * place and ms behind the leader are null for MP/DNF/untimed/unplaced;
+   * finished = runners with a place, starters = all in the class. */
+  class_place: number | null;
+  class_behind_leader_ms: number | null;
+  class_finished_count: number;
+  class_starters_count: number;
 }
 
 export interface ReadoutResponse {
@@ -384,6 +391,17 @@ export function classifyPunches(
   return out;
 }
 
+/** "+0:34" behind the class leader for the receipts; null for the leader,
+ * and for a runner without a place. */
+export function classBehind(
+  row: Pick<ReadoutHistoryRow, 'class_place' | 'class_behind_leader_ms'>
+): string | null {
+  const ms = row.class_behind_leader_ms ?? null;
+  return row.class_place == null || row.class_place === 1 || ms === null || ms <= 0
+    ? null
+    : `+${formatElapsed(ms)}`;
+}
+
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
 /** The label a published surface (results screen, receipts) shows for a
@@ -435,6 +453,7 @@ export function toReceiptRead(input: {
       input.row.expected_codes,
       input.voidedCodes
     );
+  const place = input.place ?? input.row.class_place ?? null;
   const punches = input.noTiming
     ? allPunches.map((p) => ({ ...p, split: '—', time: '—' }))
     : allPunches;
@@ -451,14 +470,14 @@ export function toReceiptRead(input: {
     statusLabel: softStatusLabel(
       softStatus(input.row.status, { noTiming: input.noTiming === true })
     ),
-    place: input.place ?? null,
+    place,
     untimed: input.noTiming === true,
     punches,
     progress: {
-      place: input.place ?? null,
-      finishedInClass: 1,
-      startersInClass: 1,
-      behind: null,
+      place,
+      finishedInClass: input.row.class_finished_count ?? 0,
+      startersInClass: input.row.class_starters_count ?? 0,
+      behind: classBehind(input.row),
     },
     competitionName: input.competitionName,
     competitionDate: input.competitionDate,

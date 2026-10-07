@@ -162,6 +162,11 @@ export function controlRows(data: ReceiptData): ControlRow[] {
   return rows;
 }
 
+/** Runners in the class with a place: the "y" of "Plats x av y i mål". */
+export function finishedInClass(data: ReceiptData): number {
+  return data.placeContext.class_rows.filter((r) => r.place !== null).length;
+}
+
 /** Format the +M:SS leader-gap suffix used by every template's place line. */
 export function formatGap(behindMs: number | null): string {
   if (behindMs === null) return '';
