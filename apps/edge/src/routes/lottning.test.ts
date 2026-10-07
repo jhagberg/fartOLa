@@ -615,6 +615,21 @@ describe('lottning route', () => {
     assert.equal((elite.json() as { error: string }).error, 'vacancies_not_offered_in_elite');
   });
 
+  test('SOFT TR 7.5.1: late entrants beyond the vacant places keep clear of the last starter’s club', async () => {
+    // Alpha×3/Beta×2 draws A B A B A: the class ends with Alpha, no vacancy.
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    for (let k = 0; k < 20; k++) {
+      const a = addRunner(`Late A${k}`, 'Alpha');
+      const g = addRunner(`Late G${k}`, 'Gamma');
+      const res = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+      assert.equal(res.statusCode, 201, res.body);
+      const times = timesOf();
+      // Gamma right after the last Alpha, then Alpha.
+      assert.ok(times.get(g)! < times.get(a)!, `round ${k}: Alpha next to Alpha`);
+    }
+  });
+
   test('late entrants without a start list → 409 no_start_list, nothing written', async () => {
     const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
     assert.equal(res.statusCode, 409, res.body);

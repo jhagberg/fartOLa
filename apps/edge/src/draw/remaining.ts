@@ -16,8 +16,10 @@
 // at the seam and draws uniformly among the orders with the fewest
 // (TR 7.5.1, TR 7.5.2); fillVacancies puts late entrants into free places
 // of the class's start grid (TR 7.5.8: "vakanta platser", not in elite
-// classes; the route checks the class kind).
+// classes; the route checks the class kind), and draws those beyond the
+// free places the same way with the last starter's club as the seam.
 
+import { drawSOFT } from './soft.ts';
 import type { DrawBoundary } from './soft.ts';
 import type { DrawRunner, RngFn } from './types.ts';
 import { DrawError } from './types.ts';
@@ -83,12 +85,15 @@ export function placeBeforeOrAfter(
  * k from 0 to the last start. Each takes a random free place, preferring
  * one where neither nearest starter is from the same club (TR 7.5.1).
  * Late entrants beyond the free places start right after the last start
- * (TR 7.5.7: there is always room), in order. */
+ * (TR 7.5.7: there is always room): in order, or with `separateClubs`
+ * (SOFT) drawn again with the last starter's club as the seam (drawSOFT
+ * boundary), so the block has the fewest same-club neighbours. */
 export function fillVacancies(
   existing: readonly StartedRunner[],
   late: readonly DrawRunner[],
   grid: { firstStartMs: number; intervalMs: number },
-  rng: RngFn
+  rng: RngFn,
+  separateClubs = false
 ): Assignment[] {
   if (late.length === 0) return [];
   if (existing.length === 0)
@@ -115,14 +120,24 @@ export function fillVacancies(
         }
     return out;
   };
-  let after = lastSlot;
-  return late.map((r) => {
-    let k: number;
-    if (free.length > 0) {
-      const pick = free.findIndex((f) => r.club === null || !neighbourClubs(f).includes(r.club));
-      k = free.splice(pick === -1 ? 0 : pick, 1)[0]!;
-      taken.set(k, r.club);
-    } else k = ++after;
+  const placed = late.slice(0, free.length).map((r) => {
+    const pick = free.findIndex((f) => r.club === null || !neighbourClubs(f).includes(r.club));
+    const k = free.splice(pick === -1 ? 0 : pick, 1)[0]!;
+    taken.set(k, r.club);
     return { id: r.id, startTimeMs: grid.firstStartMs + k * grid.intervalMs };
   });
+  // Free places all lie before the last start, so lastSlot is a starter's.
+  const rest = late.slice(placed.length);
+  const block =
+    separateClubs && rest.length > 0
+      ? (drawSOFT([...rest], { boundary: { before: taken.get(lastSlot) ?? null }, rngFn: rng })
+          .order as DrawRunner[])
+      : rest;
+  return [
+    ...placed,
+    ...block.map((r, i) => ({
+      id: r.id,
+      startTimeMs: grid.firstStartMs + (lastSlot + 1 + i) * grid.intervalMs,
+    })),
+  ];
 }
