@@ -1,14 +1,13 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Vitest coverage for readElapsedMs (02.1-14 follow-up, item F): the readout
-// view's running time uses the start punch when present, else the drawn
-// start, and shows nothing otherwise (no first-punch fallback). Task 11:
-// Task 14: the class's start method picks the start (auto/start_time/start_punch).
+// Vitest coverage for the readout view's helpers. Its running time is the
+// backend's (the /readout row's elapsed_time_ms); the web no longer
+// rebuilds it from the card (readElapsedMs, removed with the fixed-offset
+// competition clock, ADR-0017).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { clockToEpochMs, defaultClockOffsetMin, softStatus } from '@fartola/shared-types';
 import {
-  readElapsedMs,
   toReceiptRead,
   softStatusLabel,
   resultRowCells,
@@ -32,57 +31,6 @@ const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
 const OFFSET = 120; // the competition clock of 2026-10-03 (CEST)
 const at = (sec: number, day = '2026-10-03', offset = OFFSET): number =>
   clockToEpochMs(day, sec, offset);
-const drawn10 = at(10 * 3600);
-
-describe('readElapsedMs', () => {
-  // 02.1-14 Task 14: the class's start method, as dnfMp.startMs. Task 11
-  // had the start punch win (MeOS); the default 'auto' now times a runner
-  // with a start time from it (SOFT TR 4.18.9 (2026-07-01)).
-  it('auto: start time wins over the start punch', () => {
-    expect(readElapsedMs(row({}), drawn10, OFFSET)).toBe(45 * 60 * 1000);
-    expect(readElapsedMs(row({}), drawn10, OFFSET, 'auto')).toBe(45 * 60 * 1000);
-  });
-
-  it('start_punch: punch wins; no punch → start time', () => {
-    expect(readElapsedMs(row({}), drawn10, OFFSET, 'start_punch')).toBe(44 * 60 * 1000);
-    expect(
-      readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10, OFFSET, 'start_punch')
-    ).toBe(45 * 60 * 1000);
-  });
-
-  it('start_time: start time only; punch without start time → null', () => {
-    expect(readElapsedMs(row({}), drawn10, OFFSET, 'start_time')).toBe(45 * 60 * 1000);
-    expect(readElapsedMs(row({}), null, OFFSET, 'start_time')).toBeNull();
-  });
-
-  it('no start punch → drawn start', () => {
-    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10, OFFSET)).toBe(
-      45 * 60 * 1000
-    );
-  });
-
-  it('no drawn start → start punch', () => {
-    expect(readElapsedMs(row({}), null, OFFSET)).toBe(44 * 60 * 1000);
-  });
-
-  it('neither drawn start nor start punch → null (no first-punch fallback)', () => {
-    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), null, OFFSET)).toBeNull();
-  });
-
-  it('no finish → null', () => {
-    expect(readElapsedMs(row({ finish_seconds_in_half_day: null }), drawn10, OFFSET)).toBeNull();
-  });
-
-  it('run across noon from a drawn start: 11:50 → 12:20 PM is 30 min', () => {
-    const drawn = at(11 * 3600 + 50 * 60);
-    const r = row({
-      start_seconds_in_half_day: null,
-      finish_seconds_in_half_day: 20 * 60,
-      finish_half_day: 1,
-    });
-    expect(readElapsedMs(r, drawn, OFFSET)).toBe(30 * 60 * 1000);
-  });
-});
 
 // 02.1-14 Task 9: a class without timing shows no running or split time on
 // the readout receipt (MeOS readout shows "Godkänd" instead of a time).

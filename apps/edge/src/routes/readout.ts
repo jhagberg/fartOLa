@@ -115,6 +115,12 @@ interface HistoryRow {
    * The UI uses this to distinguish auto-DNF (no clear button) from
    * manual-DNF (clear button visible). */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** Mirrors CompetitorView.start_time_ms / elapsed_time_ms: the drawn start
+   * (epoch ms) and the official running time as scoring resolved them, so
+   * the UI shows the backend's timing instead of recomputing it. Like
+   * `status`, they are the competitor's (latest read). */
+  start_time_ms: number | null;
+  elapsed_time_ms: number | null;
   /** 02.1-14 Task 13 — mirrors CompetitorView.missing_start /
    * suggested_start_ms / suggested_start_offset_ms: the competitor's latest
    * read has no start of either kind; the suggestion is check + offset. */
@@ -153,6 +159,10 @@ interface ReadoutResponse {
   current_read: HistoryRow | null;
   history: HistoryRow[];
   pending_unknown_cards: number[];
+  /** ADR-0017 — the competition clock's UTC offset in minutes, with the
+   * data it formats: a corrected offset reaches open read-out views on
+   * their next refetch. Null for an unknown competition. */
+  clock_offset_min: number | null;
 }
 
 const HISTORY_CAP = 12;
@@ -310,6 +320,8 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           // distinguish auto-DNF (manual_status=null) from operator-set DNF
           // (manual_status='DNF'). Null for unmatched / pre-read cards.
           manual_status: view?.manual_status ?? null,
+          start_time_ms: view?.start_time_ms ?? null,
+          elapsed_time_ms: view?.elapsed_time_ms ?? null,
           missing_start: view?.missing_start ?? false,
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
@@ -350,6 +362,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         current_read: currentRead,
         history,
         pending_unknown_cards: pendingUnknownCards,
+        clock_offset_min: clockOffsetMin,
       };
       void reply.code(200);
       return response;

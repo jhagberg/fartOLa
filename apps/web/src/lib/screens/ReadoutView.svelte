@@ -95,7 +95,6 @@
     formatElapsed,
     formatElapsedTenths,
     toReceiptRead,
-    readElapsedMs,
     missingStartHint,
     startWarning,
     setStartFromInput,
@@ -118,6 +117,10 @@
   let competitors: CompetitorDTO[] = $state([]);
   let history: ReadoutHistoryRow[] = $state([]);
   let pendingUnknownCards: number[] = $state([]);
+  /** The competition clock's UTC offset (ADR-0017), from the same /readout
+   * payload as the times it formats, so a corrected offset arrives with the
+   * shifted data on the next refetch. */
+  let clockOffsetMin: number | null = $state(null);
   /** Currently-displayed read — usually history[0] but the operator can
    * click a history row to pin a different one. Null = empty state. */
   let pinnedKey: string | null = $state(null);
@@ -241,16 +244,15 @@
   });
 
   /** Format a start_time_ms value (epoch ms) as HH:MM:SS on the competition clock. */
-  function formatStartTimeMs(ms: number | null | undefined, clockOffsetMin: number): string {
-    if (ms == null) return '—';
-    return formatClockTime(ms, clockOffsetMin);
+  function formatStartTimeMs(ms: number | null, offsetMin: number | null): string {
+    if (ms === null || offsetMin === null) return '—';
+    return formatClockTime(ms, offsetMin);
   }
 
   /** Build the LatestReadCard input. */
   const latestReadProp = $derived.by(() => {
     const row = currentRow;
-    if (!row || !competition) return null;
-    const clockOffsetMin = competition.clock_offset_min;
+    if (!row) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
     return {
@@ -258,18 +260,14 @@
       name: row.competitor_name,
       cls: cls?.name ?? '—',
       club: competitor?.club ?? null,
-      startTime: formatStartTimeMs(competitor?.start_time_ms, clockOffsetMin),
+      startTime: formatStartTimeMs(row.start_time_ms, clockOffsetMin),
       readTime: formatTimeOfDay(row.event_time_ms),
       elapsed: (() => {
-        const elapsedMs = readElapsedMs(
-          row,
-          competitor?.start_time_ms ?? null,
-          clockOffsetMin,
-          cls?.start_method ?? 'auto'
-        );
+        // The backend's running time (scoring), never recomputed here.
+        const elapsedMs = row.elapsed_time_ms;
         // 02.1-14 Task 9: no running time for a class without timing.
         if (elapsedMs === null || cls?.no_timing) return '—';
-        return competition.timing_format === 'tenths'
+        return competition?.timing_format === 'tenths'
           ? formatElapsedTenths(elapsedMs)
           : formatElapsed(elapsedMs);
       })(),
@@ -282,7 +280,7 @@
       competitorId: row.competitor_id,
       // 02.1-14 Task 13: "Saknar starttid" + suggestion.
       missingStart: row.missing_start,
-      missingStartHint: missingStartHint(row, clockOffsetMin),
+      missingStartHint: clockOffsetMin === null ? null : missingStartHint(row, clockOffsetMin),
       // 02.1-14 Task 14: late / early start punch (jury warning).
       startWarning: startWarning(row),
     };
@@ -292,17 +290,11 @@
    * toReceiptRead from the raw card data on the history row. */
   const receiptRead = $derived.by(() => {
     const row = currentRow;
-    if (!row || row.unmatched || !competition) return null;
+    if (!row || row.unmatched) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
-    // Elapsed: finish − start per the class's start method, like the
-    // projection.
-    const elapsedMs = readElapsedMs(
-      row,
-      competitor?.start_time_ms ?? null,
-      competition.clock_offset_min,
-      cls?.start_method ?? 'auto'
-    );
+    // Elapsed: the backend's running time (scoring), never recomputed here.
+    const elapsedMs = row.elapsed_time_ms;
     return toReceiptRead({
       row,
       className: cls?.name ?? '—',
@@ -363,6 +355,7 @@
       competitors = compsRes.competitors;
       history = readoutRes.history;
       pendingUnknownCards = readoutRes.pending_unknown_cards;
+      clockOffsetMin = readoutRes.clock_offset_min;
       selectedTemplate = compRes.competition.receipt_template;
       autoPrint = compRes.competition.auto_print;
       // Claim this competition as the bridge's active feed. Without this
@@ -479,6 +472,7 @@
       const res = (await getReadout(competitionId)) as ReadoutResponse;
       history = res.history;
       pendingUnknownCards = res.pending_unknown_cards;
+      clockOffsetMin = res.clock_offset_min;
     } catch {
       // Soft fail — WS will catch up.
     }
@@ -664,14 +658,14 @@
   // read on the competition clock, before the read's finish.
   async function onSetStartTimeHandler(competitorId: string, text: string): Promise<void> {
     const row = currentRow;
-    if (!row || !competition) return;
+    if (!row || clockOffsetMin === null) return;
     try {
       const result = await setStartFromInput(
         competitionId,
         competitorId,
         text,
         row.finish_ms,
-        competition.clock_offset_min
+        clockOffsetMin
       );
       if (result !== 'ok') {
         toast(t(result === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime'));

@@ -37,10 +37,10 @@ import {
   hiredCards,
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
+import { clockToEpochMs, formatClockTime, localToEpochMs } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
 import type { HalfDayClock } from '@fartola/sportident';
 import { eq } from 'drizzle-orm';
-import { localToEpochMs } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -235,6 +235,69 @@ describe('GET /api/competitions/:id/readout', () => {
     // are the day before; the UI resolves an edited start against finish_ms.
     assert.equal(row.suggested_start_ms, Date.parse('1969-12-31T08:59:54+02:00'));
     assert.equal(row.finish_ms, Date.parse('1969-12-31T09:30:00+02:00'));
+  });
+
+  // The row carries scoring's own timing (Codex review of the clock change):
+  // the web used to rebuild it modulo 12 h and showed 11:30:00 for a start
+  // after the finish, where scoring has no time. And the clock offset comes
+  // with the data, so a corrected offset reaches an open read-out view.
+  test("test 2d: the row has scoring's start and running time, the payload the offset", async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2d');
+    const DAY = '2026-05-14'; // default +120
+    const setStart = (sec: number): void => {
+      ctx.handle.db
+        .update(competitors)
+        .set({ startTimeMs: clockToEpochMs(DAY, sec, 120) })
+        .where(eq(competitors.id, competitorId))
+        .run();
+      ctx.app.projectionStore.markDirty('comp-2d');
+    };
+    // No start punch; finish 09:30, read 09:35, start time 10:00.
+    insertCardRead(
+      ctx.handle,
+      ctx.nodeId,
+      'comp-2d',
+      7501853,
+      clockToEpochMs(DAY, 9 * 3600 + 35 * 60, 120),
+      1,
+      [31],
+      null
+    );
+    type Body = {
+      clock_offset_min: number | null;
+      history: Array<{ start_time_ms: number | null; elapsed_time_ms: number | null }>;
+    };
+    // The route reads the cached projection; recompute it as the debounced
+    // markDirty would before the WS results_update that triggers a refetch.
+    const get = async (): Promise<Body> => {
+      ctx.app.projectionStore.recomputeNow('comp-2d');
+      const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2d/readout' });
+      return res.json() as Body;
+    };
+
+    setStart(10 * 3600);
+    assert.equal(
+      (await get()).history[0]!.elapsed_time_ms,
+      null,
+      'start after the finish: no time'
+    );
+
+    setStart(9 * 3600);
+    let body = await get();
+    assert.equal(body.clock_offset_min, 120);
+    assert.equal(formatClockTime(body.history[0]!.start_time_ms!, 120), '09:00:00');
+    assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
+
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/competitions/comp-2d',
+      payload: { clock_offset_min: 60 },
+    });
+    assert.equal(patch.statusCode, 200, patch.body);
+    body = await get();
+    assert.equal(body.clock_offset_min, 60);
+    assert.equal(formatClockTime(body.history[0]!.start_time_ms!, 60), '09:00:00');
+    assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
   });
 
   // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).

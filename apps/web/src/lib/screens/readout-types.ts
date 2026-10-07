@@ -13,13 +13,11 @@
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
 import {
-  epochToClockSeconds,
   formatClockTime,
   parseTimeOfDay,
   softStatus,
   startBeforeFinishMs,
   type SoftStatus,
-  type StartMethod,
 } from '@fartola/shared-types';
 import { patchCompetitorStartTime } from '#lib/api/client.ts';
 import { t } from '#lib/i18n/index.ts';
@@ -76,6 +74,11 @@ export interface ReadoutHistoryRow {
    * the status is auto-detected from card_read + course. The UI uses this
    * to show the clear button only for manual overrides, not for auto-DNF. */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** The drawn start (epoch ms) and the official running time as the
+   * backend's scoring resolved them; the UI shows these and never
+   * recomputes timing from the card. */
+  start_time_ms: number | null;
+  elapsed_time_ms: number | null;
   /** 02.1-14 Task 13 — the competitor's latest read has a finish but no
    * start punch and no drawn start; suggested start = check + offset (both
    * null without a check punch). */
@@ -97,43 +100,15 @@ export interface ReadoutResponse {
   current_read: ReadoutHistoryRow | null;
   history: ReadoutHistoryRow[];
   pending_unknown_cards: number[];
+  /** The competition clock's UTC offset in minutes (ADR-0017), sent with
+   * the data it formats; null for an unknown competition. */
+  clock_offset_min: number | null;
 }
 
 /** Unique key for a history row — used by Svelte's keyed each and by
  * the flashIn animation lookup. */
 export function historyKey(row: ReadoutHistoryRow): string {
   return `${row.event_time_ms}-${row.local_seq}`;
-}
-
-const HALF_DAY_SEC = 43200;
-
-/** Running time for a read: finish − start, as the edge projection computes
- * it (dnfMp.startMs, 02.1-14 Task 14), the drawn start read on the
- * competition clock (`clockOffsetMin`): the class's start method picks the
- * start — 'auto' the start time if any, else the punch; 'start_time' the
- * start time only; 'start_punch' the punch, else the start time.
- * No start at all → null; the old first-punch fallback showed a misleading
- * time. Card clocks are compared modulo 12 h (runs under 12 h), so SI5 cards
- * without a PM bit work too. */
-export function readElapsedMs(
-  row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
-  drawnStartMs: number | null,
-  clockOffsetMin: number,
-  startMethod: StartMethod = 'auto'
-): number | null {
-  if (row.finish_seconds_in_half_day === null) return null;
-  const drawn =
-    drawnStartMs === null ? null : epochToClockSeconds(drawnStartMs, clockOffsetMin) % HALF_DAY_SEC;
-  const punch = row.start_seconds_in_half_day;
-  const base =
-    startMethod === 'start_time'
-      ? drawn
-      : startMethod === 'start_punch'
-        ? (punch ?? drawn)
-        : (drawn ?? punch);
-  if (base === null) return null;
-  const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
-  return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
 }
 
 /** 02.1-14 Task 13: the parts of "Check 10:19:37 + 1:54 → 10:21:31" for a

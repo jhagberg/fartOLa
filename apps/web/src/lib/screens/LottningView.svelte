@@ -21,7 +21,6 @@
     getLottning,
     patchClass,
     patchCompetitorStartTime,
-    getCompetition,
     type LottningBody,
   } from '#lib/api/client.ts';
   import Field from '#lib/ui/Field.svelte';
@@ -30,6 +29,7 @@
   import Button from '#lib/ui/Button.svelte';
   import type { ClassDTO, StartMethod } from '@fartola/shared-types';
   import { clockToEpochMs, formatClockTime } from '@fartola/shared-types';
+  import { fetchCompetitionClock, type CompetitionClock } from './competition-clock.ts';
 
   interface Props {
     competitionId: string;
@@ -92,7 +92,12 @@
   async function loadStartList(): Promise<void> {
     if (!selectedClassId) return;
     try {
-      const [res] = await Promise.all([getLottning(competitionId, selectedClassId), getClock()]);
+      // The clock with the list it formats: both reflect the server now.
+      const [res, nextClock] = await Promise.all([
+        getLottning(competitionId, selectedClassId),
+        fetchCompetitionClock(competitionId),
+      ]);
+      clock = nextClock;
       startList = res.start_list;
       startListLoaded = true;
     } catch {
@@ -109,21 +114,15 @@
 
   // --- helpers --------------------------------------------------------------
 
-  /** The competition clock (date + UTC offset, ADR-0012), fetched once;
-   * anchors HH:MM inputs and formats start times. */
-  let clock: { date: string; offsetMin: number } | null = $state(null);
-  async function getClock(): Promise<{ date: string; offsetMin: number }> {
-    if (clock === null) {
-      const { competition } = await getCompetition(competitionId);
-      clock = { date: competition.date, offsetMin: competition.clock_offset_min };
-    }
-    return clock;
-  }
+  /** The competition clock (date + UTC offset, ADR-0017) the start list
+   * was loaded with; refreshed with every list load. */
+  let clock: CompetitionClock | null = $state(null);
 
-  /** Convert HH:MM on the competition clock to epoch ms. */
+  /** Convert HH:MM on the competition clock to epoch ms (clock fetched now:
+   * the offset may have been corrected since the list loaded). */
   async function hhmmToMs(hhmm: string): Promise<number> {
     const [hh, mm] = hhmm.split(':').map(Number);
-    const { date, offsetMin } = await getClock();
+    const { date, offsetMin } = await fetchCompetitionClock(competitionId);
     return clockToEpochMs(date, (hh ?? 0) * 3600 + (mm ?? 0) * 60, offsetMin);
   }
 
@@ -237,7 +236,7 @@
     if (newSec === null) { cancelEditTime(id); return; }
     savingStartTime = { ...savingStartTime, [id]: true };
     try {
-      const { date, offsetMin } = await getClock();
+      const { date, offsetMin } = await fetchCompetitionClock(competitionId);
       const newMs = clockToEpochMs(date, newSec, offsetMin);
       await patchCompetitorStartTime(competitionId, id, newMs);
       // Refresh the start list
