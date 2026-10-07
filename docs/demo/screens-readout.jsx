@@ -513,12 +513,11 @@ function punchNo(punches, i) {
   return punches.slice(0, i + 1).filter(q => !q.extra && !q.struck).length + '.';
 }
 
-// ok/total over controls someone has to punch (plus finish); extras and struck excluded.
+// ok/total over the tiles that are not extra or struck, as the app counts them
+// (the finish tile counts in the total, not in ok).
 function punchProgress(read) {
   const counted = read.punches.filter(p => !p.extra && !p.struck);
-  const course = window.MOCK_COURSES && window.MOCK_COURSES[read.cls];
-  const total = course ? course.controls.length - course.voided.length + 1 : counted.length;
-  return { ok: counted.filter(p => p.ok).length, total };
+  return { ok: counted.filter(p => p.ok && !p.finish).length, total: counted.length };
 }
 
 function StatusPill({ status, t, small }) {
@@ -614,7 +613,7 @@ function skogisFromRead(read) {
   // stats 1..5
   const ctrls = (read.punches || []).filter(p => !p.finish).length;
   // best legs / total → KART
-  const bestLegs = (read.punches || []).filter(p => p.legRank === 1).length;
+  const bestLegs = 0; // leg ranks are not computed yet (the app shows none)
   const totalLegs = Math.max(1, (read.punches || []).length);
   const kart = Math.max(1, Math.min(5, Math.round((bestLegs / totalLegs) * 5) + 1));
   // FART: based on place vs starters
@@ -871,6 +870,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
         </table>
         <div className="rcpt-sep"></div>
         <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && <div className="rcpt-row"><span>{t('rcpt.place')} {read.cls}</span><b>{read.place}</b></div>}
         <div className="rcpt-foot">{t('rcpt.thanks')}</div>
       </div>
@@ -891,7 +891,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
             {read.elapsed}
           </div>
           <div style={{fontSize: 11, marginTop: 4, color: '#666', textTransform: 'uppercase', letterSpacing: '0.06em'}}>
-            {t('rcpt.total')} · {read.status}
+            {read.untimed ? t('ro.untimed') + ' · ' : ''}{t('rcpt.total')} · {read.status}
           </div>
         </div>
         <div className="rcpt-sep"></div>
@@ -934,7 +934,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
     );
   }
 
-  // ---------- DETAILED (MeOS-OZ style: per-leg rank + time lost) ----------
+  // ---------- DETAILED (MeOS-OZ style; leg rank and time lost are not computed yet) ----------
   if (tpl === 'detailed') {
     return (
       <div className="receipt">
@@ -955,14 +955,15 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
                 <td>{punchNo(read.punches, i)}</td>
                 <td>{punchCode(p, t)}</td>
                 <td style={{textAlign:'right'}}>{p.split}</td>
-                <td style={{textAlign:'right', color: p.legRank === 1 ? '#0a7a2a' : '#444'}}>{p.legRank || '—'}</td>
-                <td style={{textAlign:'right', color: p.lost === '+0:00' ? '#0a7a2a' : '#a64c00'}}>{p.lost || '—'}</td>
+                <td style={{textAlign:'right'}}>—</td>
+                <td style={{textAlign:'right'}}>—</td>
               </tr>
             ))}
           </tbody>
         </table>
         <div className="rcpt-sep"></div>
         <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && (
           <>
             <div className="rcpt-row"><span>{t('rcpt.place')}</span><b>{read.place} {t('rcpt.of')} {prog.finishedInClass} {t('rcpt.finished')}</b></div>
@@ -986,6 +987,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
         <div className="rcpt-row"><span>{read.cls} · {read.club}</span><span>{read.startTime}</span></div>
         <div className="rcpt-sep"></div>
         <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && (
           <div className="rcpt-row" style={{fontSize: 10.5, color: '#555'}}>
             <span>{isLeader ? '★ ' + t('rcpt.leader') : t('rcpt.behind')}</span>
