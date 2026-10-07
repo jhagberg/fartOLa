@@ -53,7 +53,7 @@
 // - .planning/phases/02.1-sanctioned-competition-foundations/02.1-03-PLAN.md task 2
 
 import type { FastifyInstance } from 'fastify';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { isAbsolute } from 'node:path';
 import multipart from '@fastify/multipart';
 import { z } from 'zod';
@@ -639,12 +639,21 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         .innerJoin(classesTable, eq(classesTable.id, competitorsTable.classId))
         .where(eq(competitorsTable.competitionId, competitionId))
         .all();
-      const { matched, unmatched } = matchPreviousStage(runners, results);
+      // The file replaces the results of the classes it contains (OLA exports
+      // one file per class); other classes keep theirs.
+      const fileClasses = new Set(results.map((r) => r.className));
+      const scoped = runners.filter((r) => fileClasses.has(r.className));
+      const { matched, unmatched } = matchPreviousStage(scoped, results);
       app.fartolaDb.sqlite.transaction(() => {
         app.fartolaDb.db
           .update(competitorsTable)
           .set({ inputTimeMs: null, inputStatus: null })
-          .where(eq(competitorsTable.competitionId, competitionId))
+          .where(
+            inArray(
+              competitorsTable.id,
+              scoped.map((r) => r.id)
+            )
+          )
           .run();
         for (const m of matched)
           app.fartolaDb.db
