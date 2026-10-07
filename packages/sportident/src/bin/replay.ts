@@ -23,7 +23,7 @@ import { SiMainStation } from '../SiStation/SiMainStation.ts';
 import { NdjsonEmitter } from '../output/ndjson.ts';
 import type { BaseSiCard } from '../SiCard/BaseSiCard.ts';
 import { inferCardType } from '../SiCard/cardTypeFromNumber.ts';
-import type { FrameError } from '../siProtocol.ts';
+import { render, type FrameError } from '../siProtocol.ts';
 
 export interface ReplayResult {
   matches: boolean;
@@ -88,6 +88,22 @@ const parseTranscript = (raw: string): { steps: TranscriptStep[]; meta: Transcri
 };
 
 /**
+ * Reply for a GET_SI8 page-1 request that a transcript does not contain.
+ * Bench captures made before block-1 support (siac-jonas-001: touch-free
+ * finish, block 1 never read) are frozen truth, so they stay strict; this one
+ * extra request is answered with an erased page (all 0xEE, "no data") and the
+ * decoder keeps touch_free with no code. Undefined for any other request.
+ */
+export const legacyBlock1Reply = (sent: number[]): number[] | undefined => {
+  const request = [0xff, ...render({ command: 0xef, parameters: [0x01] })];
+  if (hexEncode(sent) !== hexEncode(request)) return undefined;
+  return render({
+    command: 0xef,
+    parameters: [0x00, 0x0a, 0x01, ...new Array<number>(128).fill(0xee)],
+  });
+};
+
+/**
  * Playback transport: gated by SiMainStation's send order.
  *   - On send(): assert next step is `out` with matching bytes; advance cursor.
  *     Pump the FIRST following `in` immediately (it's the response). Spontaneous
@@ -129,6 +145,14 @@ class PlaybackTransport extends EventEmitter implements ISerialTransport {
       }
     }
     const step = this.steps[this.cursor];
+    const legacy = legacyBlock1Reply(bytes);
+    if (
+      legacy !== undefined &&
+      (step === undefined || hexEncode(step.bytes) !== hexEncode(bytes))
+    ) {
+      setImmediate(() => this.emit('data', legacy));
+      return Promise.resolve();
+    }
     if (!step) {
       this.error = `out mismatch: transcript exhausted (sent ${hexEncode(bytes)})`;
       return Promise.reject(new Error(this.error));

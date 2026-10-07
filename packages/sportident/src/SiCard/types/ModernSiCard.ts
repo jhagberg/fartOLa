@@ -19,6 +19,9 @@
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
 //   - Start/finish/check station codes (CN plus PTD bit 6; touch-free records read it from block 1) read into startCode/finishCode/checkCode.
+//   - Block 1 (page 1) is also fetched when a start/finish/check record is touch-free
+//     (PTD bit 7) and the card holder step did not read it; MeOS SportIdent.cpp:1366
+//     reads it for every SI10/SI11/SIAC card.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
@@ -169,6 +172,7 @@ export class ModernSiCard extends BaseSiCard {
   public punchCount?: number;
   public cardSeries?: ModernSiCardSeriesKey;
   public uid?: number;
+  protected block1Read = false;
 
   constructor(cardNumber: number) {
     super(cardNumber);
@@ -204,6 +208,7 @@ export class ModernSiCard extends BaseSiCard {
   typeSpecificRead(): Promise<void> {
     return this.typeSpecificReadBasic()
       .then(() => this.typeSpecificReadCardHolder())
+      .then(() => this.typeSpecificReadTouchFreeBlock())
       .then(() => this.typeSpecificReadPunches())
       .then(() => this.populateRaceResult());
   }
@@ -219,9 +224,31 @@ export class ModernSiCard extends BaseSiCard {
     if (cardHolderSoFar && (cardHolderSoFar.value as { isComplete?: boolean }).isComplete) {
       return Promise.resolve();
     }
+    return this.readBlock1();
+  }
+
+  protected readBlock1(): Promise<void> {
     return this.typeSpecificGetPage(1).then((page1) => {
       this.storage.splice(bytesPerPage * 1, bytesPerPage, ...page1);
+      this.block1Read = true;
     });
+  }
+
+  /** True when a start, finish or check record in page 0 is touch-free (PTD
+   * bit 7) and block 1, which holds its station code, has not been read. An
+   * erased record (0xEE) has bit 7 set too, hence the time check. */
+  protected needsBlock1(): boolean {
+    if (this.block1Read) return false;
+    return (['start', 'finish', 'check'] as const).some(
+      (name) =>
+        this.storage.get(`${name}TouchFree`)?.value === true &&
+        this.storage.get(`${name}Time`)?.value != null
+    );
+  }
+
+  typeSpecificReadTouchFreeBlock(): Promise<void> {
+    if (!this.needsBlock1()) return Promise.resolve();
+    return this.readBlock1();
   }
 
   typeSpecificReadPunches(): Promise<void> {
