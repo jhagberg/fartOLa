@@ -45,6 +45,8 @@ export interface PursuitResult {
   restarted: number;
 }
 
+import { DrawError } from './types.ts';
+
 const NO_TIME = Number.MAX_SAFE_INTEGER;
 
 export function drawPursuit(
@@ -69,12 +71,14 @@ export function drawPursuit(
   if (opts.reverse) for (const x of times) if (inside(x.t)) reverseDelta = x.t;
 
   const assignments: Array<{ id: string; startTimeMs: number }> = [];
+  let lastMain = Number.NEGATIVE_INFINITY;
   let breakIndex = -1;
   let restarted = 0;
   times.forEach(({ k, t }, i) => {
     let start: number;
     if (inside(t) && breakIndex === -1) {
       start = opts.reverse ? opts.firstStartMs - t + reverseDelta : opts.firstStartMs + t - delta;
+      lastMain = Math.max(lastMain, start);
     } else {
       restarted++;
       if (!opts.reverse) {
@@ -87,5 +91,11 @@ export function drawPursuit(
     }
     assignments.push({ id: runners[k]!.id, startTimeMs: start });
   });
+  // The restart block (omstart) must come after the whole pursuit.
+  if (restarted > 0 && lastMain >= opts.restartMs)
+    throw new DrawError(
+      'restart_overlaps_pursuit',
+      'The restart time is not after the last pursuit start.'
+    );
   return { assignments, restarted };
 }

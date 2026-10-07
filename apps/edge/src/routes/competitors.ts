@@ -627,6 +627,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         return reply.code(422).send({ error: 'class_not_in_competition' });
       }
       update.classId = parsed.data.class_id;
+      // A seeding group belongs to the class it was set in (SOFT TR 7.4.5).
+      if (parsed.data.class_id !== row.classId) update.seedGroup = null;
     }
     const cardChanged =
       parsed.data.card_number !== undefined && parsed.data.card_number !== row.cardNumber;

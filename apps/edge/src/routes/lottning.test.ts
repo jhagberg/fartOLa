@@ -743,6 +743,24 @@ describe('lottning route', () => {
     assert.equal((unknown.json() as { error: string }).error, 'competition_level_unknown');
   });
 
+  test('seed_group is cleared when a competitor moves to another class', async () => {
+    const [id] = [...timesOf().keys()];
+    assert.equal((await putSeeding([[id!]])).statusCode, 200);
+    const other = ctx.handle.db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(eq(classes.name, 'D21'))
+      .get()!.id;
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitors/${id}/profile`,
+      payload: { class_id: other },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const row = ctx.handle.db.select().from(competitors).where(eq(competitors.id, id!)).get()!;
+    assert.equal(row.seedGroup, null);
+  });
+
   test('Seeded: bad groups → 400; one group → 409', async () => {
     setKind('elit', 21);
     setLevel('niva1');

@@ -23,7 +23,7 @@ import { ClassCreateInput, ClassKind, StartMethod, type ClassDTO } from '@fartol
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { resolveSecret } from '../config/secrets.ts';
-import { suggestClassKind } from '../draw/classKind.ts';
+import { kindNeedsAge, suggestClassKind } from '../draw/classKind.ts';
 import { fetchEventorClassTypes } from '../eventor/eventClasses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { maxTimeLocked } from './_maxTime.ts';
@@ -73,7 +73,8 @@ function kindOnCreate(input: {
   if (input.class_kind !== undefined)
     return {
       classKind: input.class_kind,
-      ageClass: input.age_class ?? null,
+      // The name's age is kept when the operator gives none.
+      ageClass: input.age_class ?? suggestClassKind(input.name)?.ageClass ?? null,
       classKindSource: 'operator',
     };
   const s = suggestClassKind(input.name);
@@ -183,6 +184,9 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       .get();
     if (!compRow) return reply.code(404).send({ error: 'competition not found' });
 
+    const kind = kindOnCreate(parsed.data);
+    if (kind.classKind !== null && kindNeedsAge(kind.classKind) && kind.ageClass === null)
+      return reply.code(400).send({ error: 'age_class_required' });
     const row: Class = {
       id: crypto.randomUUID(),
       competitionId: id,
@@ -196,11 +200,30 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       courseId: null,
       noTiming: false,
       startMethod: 'auto',
-      ...kindOnCreate(parsed.data),
+      ...kind,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));
   });
+
+  /** Eventor's ClassTypeId per class name for the linked event. */
+  const eventorTypes = async (eventorEventId: number | null) => {
+    let types = new Map<string, number>();
+    let eventor: 'used' | 'not_linked' | 'no_key' | 'failed' = 'not_linked';
+    if (eventorEventId !== null) {
+      const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
+      if (!apiKey) eventor = 'no_key';
+      else
+        try {
+          types = await fetchEventorClassTypes({ apiKey, eventId: eventorEventId });
+          eventor = 'used';
+        } catch (e) {
+          app.log.warn({ err: (e as Error).message }, 'eventor eventclasses fetch failed');
+          eventor = 'failed';
+        }
+    }
+    return { types, eventor };
+  };
 
   // GET /api/competitions/:id/classes/kinds — the class kind of every class
   // and a suggestion for it (SOFT TR 3.4.2): Eventor's ClassTypeId when the
@@ -214,20 +237,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       .where(eq(competitions.id, req.params.id))
       .get();
     if (!comp) return reply.code(404).send({ error: 'competition not found' });
-    let types = new Map<string, number>();
-    let eventor: 'used' | 'not_linked' | 'no_key' | 'failed' = 'not_linked';
-    if (comp.eventorEventId !== null) {
-      const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
-      if (!apiKey) eventor = 'no_key';
-      else
-        try {
-          types = await fetchEventorClassTypes({ apiKey, eventId: comp.eventorEventId });
-          eventor = 'used';
-        } catch (e) {
-          app.log.warn({ err: (e as Error).message }, 'eventor eventclasses fetch failed');
-          eventor = 'failed';
-        }
-    }
+    const { types, eventor } = await eventorTypes(comp.eventorEventId);
     const rows = app.fartolaDb.db
       .select()
       .from(classes)
@@ -251,6 +261,44 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
     };
   });
 
+  // POST /api/competitions/:id/classes/kinds/from-eventor — sets the kind of
+  // every class Eventor classifies (ClassTypeId 17 / 19) with source
+  // 'eventor', which counts as confirmed. A kind the operator chose stays.
+  app.post<{ Params: { id: string } }>(
+    '/api/competitions/:id/classes/kinds/from-eventor',
+    async (req, reply) => {
+      const comp = app.fartolaDb.db
+        .select({ eventorEventId: competitions.eventorEventId })
+        .from(competitions)
+        .where(eq(competitions.id, req.params.id))
+        .get();
+      if (!comp) return reply.code(404).send({ error: 'competition not found' });
+      const { types, eventor } = await eventorTypes(comp.eventorEventId);
+      if (eventor !== 'used')
+        return reply.code(409).send({ error: 'eventor_unavailable', eventor });
+      const rows = app.fartolaDb.db
+        .select()
+        .from(classes)
+        .where(eq(classes.competitionId, req.params.id))
+        .all();
+      let updated = 0;
+      app.fartolaDb.sqlite.transaction(() => {
+        for (const r of rows) {
+          if (r.classKindSource === 'operator') continue;
+          const s = suggestClassKind(r.name, types.get(r.name) ?? null);
+          if (s === null || s.source !== 'eventor') continue;
+          app.fartolaDb.db
+            .update(classes)
+            .set({ classKind: s.kind, ageClass: s.ageClass, classKindSource: 'eventor' })
+            .where(eq(classes.id, r.id))
+            .run();
+          updated++;
+        }
+      })();
+      return { updated };
+    }
+  );
+
   // PUT /api/competitions/:id/classes/kinds — the operator confirms or
   // changes class kinds (source 'operator'). All or nothing: an id outside
   // the competition → 400 and nothing is written.
@@ -269,14 +317,30 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
     const unknown = ids.find((id) => !known.has(id));
     if (unknown !== undefined)
       return reply.code(400).send({ error: 'class_not_in_competition', class_id: unknown });
+    // An age class needs its age: from the item, else from the class name.
+    const names = new Map(
+      app.fartolaDb.db
+        .select({ id: classes.id, name: classes.name })
+        .from(classes)
+        .where(inArray(classes.id, ids))
+        .all()
+        .map((r) => [r.id, r.name])
+    );
+    const items = parsed.data.items.map((i) => ({
+      ...i,
+      age_class: i.age_class ?? suggestClassKind(names.get(i.class_id) ?? '')?.ageClass ?? null,
+    }));
+    const noAge = items.find((i) => kindNeedsAge(i.class_kind) && i.age_class === null);
+    if (noAge !== undefined)
+      return reply.code(400).send({ error: 'age_class_required', class_id: noAge.class_id });
     app.fartolaDb.sqlite.transaction(() => {
-      for (const i of parsed.data.items)
+      for (const i of items)
         app.fartolaDb.db
           .update(classes)
           .set({ classKind: i.class_kind, ageClass: i.age_class, classKindSource: 'operator' })
           .where(eq(classes.id, i.class_id))
           .run();
     })();
-    return { updated: parsed.data.items.length };
+    return { updated: items.length };
   });
 }

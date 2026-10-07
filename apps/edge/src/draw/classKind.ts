@@ -103,5 +103,13 @@ export function kindProblem(c: {
  * too until SOFT confirms the reading
  * (.planning/todos/pending/2026-10-08-verify-start-method-rules-and-ola.md). */
 export function pursuitBanned(kind: ClassKind, ageClass: number | null): boolean {
-  return kind === 'inskolning' || (ageClass !== null && ageClass <= 12);
+  if (kind === 'inskolning') return true;
+  // An age class without its age cannot show it is outside D/H10-12: refuse.
+  if (kindNeedsAge(kind)) return ageClass === null || ageClass <= 12;
+  return false;
+}
+
+/** Kinds whose rules depend on the D/H age (everything but the open classes). */
+export function kindNeedsAge(kind: ClassKind): boolean {
+  return kind !== 'oppen' && kind !== 'inskolning';
 }
