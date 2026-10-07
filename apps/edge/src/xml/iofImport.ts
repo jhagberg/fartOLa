@@ -100,6 +100,27 @@ export interface ImportedStartEntry {
   bibNumber: string | null;
 }
 
+/** Eventor person ID: Person > Id[@type='Eventor'] (or an untyped Id). */
+function eventorPersonIdOf(personNode: RawNode): number | null {
+  for (const pid of toArray(personNode?.['Id'] as unknown)) {
+    if (!pid) continue;
+    let type: string | null = null;
+    let text: unknown;
+    if (typeof pid === 'object') {
+      const p = pid as Record<string, unknown>;
+      type = asString(p['@_type']);
+      text = p['#text'] ?? p;
+    } else {
+      text = pid;
+    }
+    if (type === null || type === 'Eventor') {
+      const n = asInt(text);
+      if (n !== null) return n;
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Public API.
 // ---------------------------------------------------------------------------
@@ -147,28 +168,7 @@ export function importStartList(xmlSource: string, clockOffsetMin: number): Impo
       const name = `${givenName} ${familyName}`.trim();
       if (name.length === 0) continue;
 
-      // Eventor person ID — look for Id[@type='Eventor'] under Person.
-      let eventorPersonId: number | null = null;
-      const personIds = toArray(personNode?.['Id'] as unknown);
-      for (const pid of personIds) {
-        if (!pid) continue;
-        let type: string | null = null;
-        let text: unknown;
-        if (typeof pid === 'object') {
-          const p = pid as Record<string, unknown>;
-          type = asString(p['@_type']);
-          text = p['#text'] ?? p;
-        } else {
-          text = pid;
-        }
-        if (type === null || type === 'Eventor') {
-          const n = asInt(text);
-          if (n !== null) {
-            eventorPersonId = n;
-            break;
-          }
-        }
-      }
+      const eventorPersonId = eventorPersonIdOf(personNode);
 
       // Start element (PersonRaceStart). We take the first Start child.
       const startNodes = toArray(ps['Start'] as RawNode | RawNode[]);
@@ -217,5 +217,71 @@ export function importStartList(xmlSource: string, clockOffsetMin: number): Impo
     }
   }
 
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
+// ResultList — an earlier stage's results for a pursuit (SOFT TR 7.4.1).
+// ---------------------------------------------------------------------------
+
+export interface ImportedResult {
+  /** 1-based PersonResult position in the file (across all ClassResults). */
+  row: number;
+  name: string;
+  className: string;
+  club: string | null;
+  eventorPersonId: number | null;
+  /** Running time in whole seconds, as ms: OverallResult/Time when present
+   * (the total over earlier stages), else Result/Time. Null when missing. */
+  timeMs: number | null;
+  /** IOF ResultStatus of the same element ('OK', 'MissingPunch', …). */
+  status: string | null;
+}
+
+/** Parse an IOF XML 3.0 ResultList (e.g. day 1 from MeOS, OLA or Eventor):
+ * one entry per named PersonResult, first Result only. Pure; the caller does
+ * the DOCTYPE pre-flight, size cap and XSD validation. */
+export function importResultList(xmlSource: string): ImportedResult[] {
+  let raw: Record<string, unknown>;
+  try {
+    raw = parser.parse(xmlSource) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`Malformed XML: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+  }
+  const resultList = raw['ResultList'] as RawNode;
+  if (!resultList) throw new Error('XML root element is not <ResultList>');
+
+  const entries: ImportedResult[] = [];
+  let row = 0;
+  for (const cr of toArray(resultList['ClassResult'] as RawNode | RawNode[])) {
+    if (!cr) continue;
+    const className = asString(((cr['Class'] ?? {}) as RawNode)?.['Name']) ?? '';
+    for (const pr of toArray(cr['PersonResult'] as RawNode | RawNode[])) {
+      if (!pr) continue;
+      row += 1;
+      const personNode = (pr['Person'] ?? {}) as RawNode;
+      const nameNode = (personNode?.['Name'] ?? {}) as RawNode;
+      const name =
+        `${asString(nameNode?.['Given']) ?? ''} ${asString(nameNode?.['Family']) ?? ''}`.trim();
+      if (name.length === 0) continue;
+      const result = (toArray(pr['Result'] as RawNode | RawNode[])[0] ?? {}) as RawNode;
+      const overall = (result?.['OverallResult'] ?? null) as RawNode;
+      const source = overall ?? result;
+      const seconds = Number(asString(source?.['Time']));
+      entries.push({
+        row,
+        name,
+        className,
+        club: asString(((pr['Organisation'] ?? {}) as RawNode)?.['Name']),
+        eventorPersonId: eventorPersonIdOf(personNode),
+        // SOFT TR 4.20.7: whole seconds.
+        timeMs:
+          asString(source?.['Time']) !== null && Number.isFinite(seconds)
+            ? Math.round(seconds) * 1000
+            : null,
+        status: asString(source?.['Status']),
+      });
+    }
+  }
   return entries;
 }

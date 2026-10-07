@@ -18,7 +18,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { importStartList } from './iofImport.ts';
+import { importResultList, importStartList } from './iofImport.ts';
 import { buildStartListXml as exportStartListXml } from './iofExport.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
@@ -307,5 +307,37 @@ describe('importStartList', () => {
     const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]!.startTimeMs, startTimeMs);
+  });
+});
+
+describe('importResultList (SOFT TR 7.4.1)', () => {
+  const doc = (body: string) =>
+    `<?xml version="1.0" encoding="UTF-8"?><ResultList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0"><Event><Name>Dag 2</Name></Event><ClassResult><Class><Name>H21</Name></Class>${body}</ClassResult></ResultList>`;
+  const person = (given: string, result: string) =>
+    `<PersonResult><Person><Id type="Eventor">12</Id><Name><Family>Ek</Family><Given>${given}</Given></Name></Person><Organisation><Name>OK Ek</Name></Organisation><Result>${result}</Result></PersonResult>`;
+
+  test('one entry per PersonResult; OverallResult (total over the stages) wins over Result; whole seconds', () => {
+    const got = importResultList(
+      doc(
+        person(
+          'Ann',
+          '<Time>1500</Time><Status>OK</Status><OverallResult><Time>3100.6</Time><Status>OK</Status></OverallResult>'
+        ) +
+          person('Bo', '<Time>1600</Time><Status>MissingPunch</Status>') +
+          person('Cy', '<Status>DidNotStart</Status>')
+      )
+    );
+    assert.deepEqual(
+      got.map((r) => [r.row, r.name, r.className, r.club, r.eventorPersonId, r.timeMs, r.status]),
+      [
+        [1, 'Ann Ek', 'H21', 'OK Ek', 12, 3_101_000, 'OK'],
+        [2, 'Bo Ek', 'H21', 'OK Ek', 12, 1_600_000, 'MissingPunch'],
+        [3, 'Cy Ek', 'H21', 'OK Ek', 12, null, 'DidNotStart'],
+      ]
+    );
+  });
+
+  test('a document that is not a ResultList → throws', () => {
+    assert.throws(() => importResultList('<StartList/>'), /not <ResultList>/);
   });
 });
