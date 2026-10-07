@@ -316,7 +316,7 @@ function App() {
           onChange={v => setTweak('font', v)}
         />
         <TweakRow label={t('tweaks.eventor.title')}>
-          <span style={{color: 'var(--ok)'}}>●</span> {t('tweaks.eventor.ready', { days: window.MOCK_PHASE2.integrations.eventor.cacheAgeDays })}
+          <span><span style={{color: 'var(--ok)'}}>●</span> {t('tweaks.eventor.ready', { days: window.MOCK_PHASE2.integrations.eventor.cacheAgeDays })}</span>
         </TweakRow>
       </TweaksPanel>
     </div>
