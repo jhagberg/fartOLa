@@ -52,6 +52,8 @@
     setLiveresultatCredentials,
     clearLiveresultatCredentials,
     type LiveresultatCredentials,
+    getRadioStatus,
+    setRadioSettings,
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
@@ -329,6 +331,58 @@
   $effect(() => {
     void currentCompId;
     void loadLive();
+  });
+
+  // ---- Radiokontroller (ROC) ----------------------------------------------
+  /** The club's ROC id; offered when none is saved yet. */
+  const DEFAULT_ROC_ID = '2380';
+  let radioEnabled = $state(false);
+  let radioId = $state(DEFAULT_ROC_ID);
+  let radioBusy = $state(false);
+  let radioMsg: string | null = $state(null);
+  let radioErr: string | null = $state(null);
+
+  async function loadRadio(): Promise<void> {
+    radioMsg = null;
+    radioErr = null;
+    if (!currentCompId) return;
+    try {
+      const r = await getRadioStatus(currentCompId);
+      radioEnabled = r.settings.enabled;
+      radioId = r.settings.roc_competition_id ?? DEFAULT_ROC_ID;
+    } catch {
+      // soft fail — section shows the defaults
+    }
+  }
+
+  async function saveRadio(): Promise<void> {
+    if (!currentCompId || radioBusy) return;
+    if (!/^\d+$/.test(radioId.trim())) {
+      radioErr = t('settings.radio.invalid');
+      radioMsg = null;
+      return;
+    }
+    radioBusy = true;
+    radioErr = null;
+    radioMsg = null;
+    try {
+      const r = await setRadioSettings(currentCompId, {
+        enabled: radioEnabled,
+        roc_competition_id: radioId.trim(),
+      });
+      radioEnabled = r.settings.enabled;
+      radioId = r.settings.roc_competition_id ?? DEFAULT_ROC_ID;
+      radioMsg = t('settings.radio.saved');
+    } catch {
+      radioErr = t('settings.radio.saveError');
+    } finally {
+      radioBusy = false;
+    }
+  }
+
+  $effect(() => {
+    void currentCompId;
+    void loadRadio();
   });
 </script>
 
@@ -629,9 +683,57 @@
       </div>
     {/if}
   </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Radiokontroller (ROC)                                                -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="radio-section">
+    <header class="section-head">
+      <h2>{t('settings.radio.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.radio.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
+    {:else}
+      <div class="live-form">
+        <label>
+          <span>{t('settings.radio.id')}</span>
+          <input type="text" inputmode="numeric" bind:value={radioId} data-testid="radio-id" />
+        </label>
+        <label class="radio-toggle">
+          <input type="checkbox" bind:checked={radioEnabled} data-testid="radio-enabled" />
+          <span>{t('settings.radio.enabled')}</span>
+        </label>
+      </div>
+      {#if radioErr}
+        <p class="err" role="alert">{radioErr}</p>
+      {/if}
+      {#if radioMsg}
+        <p class="muted" role="status" data-testid="radio-saved">{radioMsg}</p>
+      {/if}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={radioBusy}
+          onclick={() => void saveRadio()}
+          data-testid="radio-save"
+        >
+          {t('settings.radio.save')}
+        </Button>
+      </div>
+    {/if}
+  </section>
 </section>
 
 <style>
+  .live-form .radio-toggle {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-sm);
+    min-height: 44px;
+  }
   .live-form {
     display: flex;
     flex-wrap: wrap;

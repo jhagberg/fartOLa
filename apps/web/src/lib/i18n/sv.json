@@ -596,5 +596,25 @@
   "settings.liveresultat.active": "Skickar till liveresultat",
   "settings.liveresultat.inactive": "Inte konfigurerad",
   "settings.liveresultat.invalid": "Tävlings-id ska vara ett nummer och lösenordet får inte vara tomt.",
-  "settings.liveresultat.saveError": "Kunde inte spara."
+  "settings.liveresultat.saveError": "Kunde inte spara.",
+
+  "radio.title": "Radiokontroller",
+  "radio.state.ok": "OK",
+  "radio.state.few": "Få stämplingar",
+  "radio.state.silent": "Tyst",
+  "radio.dateWarning": "Datumvarning ({{n}} rader med fel datum)",
+  "radio.lastHeard": "Senast hörd {{time}} ({{min}} min sedan)",
+  "radio.coverage": "{{text}} avlästa med radiomatch",
+  "radio.none": "Ingen radiostämpling mottagen än.",
+  "radio.linkOk": "Kontakt med ROC",
+  "radio.linkProblem": "Ingen kontakt med ROC",
+  "radio.loadError": "Kan inte hämta status",
+  "settings.radio.title": "Radiokontroller (ROC)",
+  "settings.radio.description": "Hämtar radiostämplingar från roc.olresultat.se och varnar när en radiolänk tystnar eller tappar stämplingar. Resultaten påverkas inte: de kommer alltid från avläst bricka.",
+  "settings.radio.enabled": "Hämta radiostämplingar från ROC",
+  "settings.radio.id": "ROC-tävlings-id",
+  "settings.radio.save": "Spara",
+  "settings.radio.saved": "Sparat.",
+  "settings.radio.invalid": "ROC-id ska vara ett nummer.",
+  "settings.radio.saveError": "Kunde inte spara."
 }

@@ -1,0 +1,153 @@
+// Authored for fartola. Not ported from upstream.
+//
+// Vitest coverage for the radio-control status view helpers, the API client
+// URLs and the i18n catalogue (sv + en). Pure-helper style, like
+// SettingsView.test.ts.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
+import { radioControlView, rocLinkProblem, sortedRadioViews } from './radio-status.ts';
+
+const NOW = Date.UTC(2026, 9, 4, 9, 30, 0);
+
+function control(over: Partial<RadioControlStatus>): RadioControlStatus {
+  return {
+    control_code: 78,
+    state: 'ok',
+    last_heard_ms: NOW - 3 * 60_000,
+    received: 40,
+    window_card_punches: 12,
+    window_matched: 12,
+    coverage: 1,
+    date_mismatch_count: 0,
+    ...over,
+  };
+}
+
+function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null): RadioStatus {
+  return {
+    settings: { enabled: true, roc_competition_id: '2380', start_id: 1, last_id: 2 },
+    poll,
+    now_ms: NOW,
+    window_min: 20,
+    silence_min: 10,
+    coverage_threshold: 0.8,
+    controls,
+  };
+}
+
+describe('radioControlView', () => {
+  it('gives every state a text label key and a symbol (never colour alone)', () => {
+    const symbols = new Set<string>();
+    for (const state of ['ok', 'few', 'silent'] as const) {
+      const v = radioControlView(control({ state }), NOW);
+      expect(v.labelKey).toBe(`radio.state.${state}`);
+      expect(v.symbol.length).toBeGreaterThan(0);
+      symbols.add(v.symbol);
+    }
+    expect(symbols.size).toBe(3);
+  });
+
+  it('shows minutes since last heard and coverage as matched/total', () => {
+    const v = radioControlView(control({ window_matched: 9, window_card_punches: 12 }), NOW);
+    expect(v.agoMin).toBe(3);
+    expect(v.coverageText).toBe('9/12');
+    expect(radioControlView(control({ window_card_punches: 0 }), NOW).coverageText).toBeNull();
+  });
+
+  it('carries the date warning count next to the state', () => {
+    expect(radioControlView(control({ date_mismatch_count: 4 }), NOW).dateWarnings).toBe(4);
+  });
+});
+
+describe('sortedRadioViews', () => {
+  it('lists the worst first: silent, few, date warning, ok', () => {
+    const out = sortedRadioViews(
+      status([
+        control({ control_code: 1 }),
+        control({ control_code: 2, date_mismatch_count: 1 }),
+        control({ control_code: 3, state: 'few' }),
+        control({ control_code: 4, state: 'silent' }),
+      ])
+    );
+    expect(out.map((v) => v.code)).toEqual([4, 3, 2, 1]);
+  });
+});
+
+describe('rocLinkProblem', () => {
+  it('is null without poll data or with a healthy poll', () => {
+    expect(rocLinkProblem(status([]))).toBeNull();
+    const ok = { last_poll_at: 1, last_success_at: 1, last_error: null, consecutive_failures: 0 };
+    expect(rocLinkProblem(status([], ok))).toBeNull();
+  });
+  it('reports consecutive failures with the error', () => {
+    const bad = {
+      last_poll_at: 2,
+      last_success_at: 1,
+      last_error: 'ROC HTTP 500',
+      consecutive_failures: 3,
+    };
+    expect(rocLinkProblem(status([], bad))).toBe('ROC HTTP 500');
+  });
+});
+
+describe('radio API client', () => {
+  beforeEach(() => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify(status([])), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+    ) as unknown as typeof fetch;
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('GETs status and PATCHes settings on the radio routes', async () => {
+    const { getRadioStatus, setRadioSettings } = await import('../api/client.ts');
+    await getRadioStatus('c 1');
+    await setRadioSettings('c 1', { enabled: true, roc_competition_id: '2380' });
+    const calls = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toBe('/api/competitions/c%201/radio/status');
+    expect(calls[1]![0]).toBe('/api/competitions/c%201/radio/settings');
+    expect((calls[1]![1] as RequestInit).method).toBe('PATCH');
+    expect(JSON.parse((calls[1]![1] as RequestInit).body as string)).toEqual({
+      enabled: true,
+      roc_competition_id: '2380',
+    });
+  });
+});
+
+describe('radio i18n keys', () => {
+  const KEYS = [
+    'radio.title',
+    'radio.state.ok',
+    'radio.state.few',
+    'radio.state.silent',
+    'radio.dateWarning',
+    'radio.lastHeard',
+    'radio.coverage',
+    'radio.none',
+    'radio.linkOk',
+    'radio.linkProblem',
+    'radio.loadError',
+    'settings.radio.title',
+    'settings.radio.description',
+    'settings.radio.enabled',
+    'settings.radio.id',
+    'settings.radio.save',
+    'settings.radio.saved',
+    'settings.radio.invalid',
+    'settings.radio.saveError',
+  ];
+  it('exist in sv and en', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    for (const k of KEYS) {
+      expect(sv[k], `sv ${k}`).toBeTruthy();
+      expect(en[k], `en ${k}`).toBeTruthy();
+    }
+    expect(sv['radio.state.few']).toBe('Få stämplingar');
+    expect(sv['radio.state.silent']).toBe('Tyst');
+  });
+});

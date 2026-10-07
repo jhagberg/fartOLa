@@ -86,6 +86,7 @@
   import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
   import ConsentConfirmationToast from '#lib/components/ConsentConfirmationToast.svelte';
   import HyrbrickaToast from '#lib/components/HyrbrickaToast.svelte';
+  import RadioStatusPanel from '#lib/components/RadioStatusPanel.svelte';
   import type { ReceiptTemplate } from '#lib/components/receipt-templates/types.ts';
   import {
     type ReadoutResponse,
@@ -836,6 +837,8 @@
   </div>
 
   <aside class="ro-side">
+    <RadioStatusPanel {competitionId} />
+
     <HistoryList
       rows={historyRows}
       activeKey={currentRow ? historyKey(currentRow) : null}

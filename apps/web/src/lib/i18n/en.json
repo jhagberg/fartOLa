@@ -596,5 +596,25 @@
   "settings.liveresultat.active": "Pushing to liveresultat",
   "settings.liveresultat.inactive": "Not configured",
   "settings.liveresultat.invalid": "The competition id must be a number and the password must not be empty.",
-  "settings.liveresultat.saveError": "Could not save."
+  "settings.liveresultat.saveError": "Could not save.",
+
+  "radio.title": "Radio controls",
+  "radio.state.ok": "OK",
+  "radio.state.few": "Few punches",
+  "radio.state.silent": "Silent",
+  "radio.dateWarning": "Date warning ({{n}} rows with the wrong date)",
+  "radio.lastHeard": "Last heard {{time}} ({{min}} min ago)",
+  "radio.coverage": "{{text}} read-out punches matched by radio",
+  "radio.none": "No radio punch received yet.",
+  "radio.linkOk": "Connected to ROC",
+  "radio.linkProblem": "No contact with ROC",
+  "radio.loadError": "Cannot fetch status",
+  "settings.radio.title": "Radio controls (ROC)",
+  "settings.radio.description": "Fetches radio punches from roc.olresultat.se and warns when a radio link goes silent or drops punches. Results are not affected: they always come from the read-out card.",
+  "settings.radio.enabled": "Fetch radio punches from ROC",
+  "settings.radio.id": "ROC competition id",
+  "settings.radio.save": "Save",
+  "settings.radio.saved": "Saved.",
+  "settings.radio.invalid": "The ROC id must be a number.",
+  "settings.radio.saveError": "Could not save."
 }
