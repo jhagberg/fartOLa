@@ -7,7 +7,7 @@
 //        start_times_set events, newest first, with what each changed and
 //        whether it has been undone.
 //   POST /api/competitions/:id/start-times/undo { node_id, local_seq } —
-//        puts back the start times (and class grid) the event replaced, as a
+//        puts back the start times (and class grids) the event replaced, as a
 //        new event with cause 'undo'. 409 start_changed_since when a runner's
 //        start was changed again afterwards (undo that change first);
 //        409 already_undone; 404 when there is no such event.
@@ -18,7 +18,7 @@ import { z } from 'zod';
 
 import { classes, competitors, events, type EventPayload } from '../db/schema.ts';
 import { issuesToErrors } from './_zod-errors.ts';
-import { writeStartTimes } from '../db/startTimes.ts';
+import { gridsOf, writeStartTimes } from '../db/startTimes.ts';
 
 type StartTimesSet = Extract<EventPayload, { event_type: 'start_times_set' }>;
 
@@ -92,19 +92,19 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
       if (moved.length > 0)
         return reply.code(409).send({ error: 'start_changed_since', competitor_ids: moved });
 
-      const grid = target.payload.class_grid;
-      // The class grid must still be the one this event set: a later draw,
-      // late-entrant placement or import changed it otherwise, and undo
-      // would overwrite that decision.
-      if (grid !== undefined && target.payload.class_id !== null) {
+      // Every class grid the event set must still be the one it set: a
+      // later draw, late-entrant placement or import changed it otherwise,
+      // and undo would overwrite that decision.
+      const grids = gridsOf(target.payload);
+      for (const g of grids) {
         const cur = app.fartolaDb.db
           .select({ first: classes.firstStartMs, interval: classes.startIntervalSec })
           .from(classes)
-          .where(eq(classes.id, target.payload.class_id))
+          .where(eq(classes.id, g.class_id))
           .get();
         if (
           cur !== undefined &&
-          (cur.first !== grid.first_start_ms || cur.interval !== grid.interval_sec)
+          (cur.first !== g.first_start_ms || cur.interval !== g.interval_sec)
         )
           return reply.code(409).send({ error: 'grid_changed_since' });
       }
@@ -115,14 +115,11 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
           competitorId: c.competitor_id,
           startTimeMs: c.previous_ms,
         })),
-        ...(grid !== undefined
-          ? {
-              classGrid: {
-                firstStartMs: grid.previous_first_start_ms,
-                intervalSec: grid.previous_interval_sec,
-              },
-            }
-          : {}),
+        classGrids: grids.map((g) => ({
+          classId: g.class_id,
+          firstStartMs: g.previous_first_start_ms,
+          intervalSec: g.previous_interval_sec,
+        })),
         undoes: { node_id, local_seq },
       });
       app.projectionStore.markDirty(competitionId);
