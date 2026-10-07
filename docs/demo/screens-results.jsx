@@ -1,11 +1,54 @@
 // Live results — public-facing within the LAN
 const { useState: useStateR } = React;
 
+function ResultsTable({ rows, cells, t }) {
+  return (
+    <table className="res-table">
+      <thead>
+        <tr>
+          <th>{t('res.place')}</th>
+          <th>{t('res.name')}</th>
+          <th>{t('res.club')}</th>
+          <th style={{textAlign: 'right'}}>{t('res.time')}</th>
+          <th>{t('res.status')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          const c = cells(r);
+          return (
+            <tr key={i} className={r.status === 'PEND' ? 'pend' : (i === 0 && r.status === 'OK' ? 'new' : '')}>
+              <td className="plc">{c.place}</td>
+              <td className="name">{r.name}</td>
+              <td className="club">{r.club}</td>
+              <td className="tm">{c.time}</td>
+              <td><StatusPill status={r.status} label={c.label} t={t} small /></td>
+            </tr>
+          );
+        })}
+        {rows.length === 0 && (
+          <tr><td colSpan="5" style={{textAlign: 'center', padding: 40, color: 'var(--fg-faint)'}}>Inga deltagare ännu.</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
 function ResultsView({ t, fullscreen, setFullscreen }) {
   const classes = window.MOCK_CLASSES || [];
   const results = window.MOCK_RESULTS || {};
-  const [active, setActive] = useStateR('H21');
-  const rows = results[active] || [];
+  const [active, setActive] = useStateR('ALL');
+  // As in the app: 'Alla' shows one table per class that has rows, each under
+  // "klass · Bana namn · längd" (SOFT TR 7.8.2); a class tab shows just that class.
+  const shown = active === 'ALL' ? classes.filter(c => (results[c.id] || []).length > 0) : classes.filter(c => c.id === active);
+  const rows = shown.flatMap(c => results[c.id] || []);
+  const heading = (c) => `${c.name} · ${t('res.course')} ${c.course} · ${String(c.length).replace('.', ',')} km`;
+  // Place and time only for an approved run; every row carries SOFT's status name.
+  const cells = (r) => ({
+    place: r.status === 'OK' && r.place ? r.place : '—',
+    time: r.status === 'OK' ? r.time : '—',
+    label: softLabel(r, t),
+  });
 
   return (
     <div className={fullscreen ? 'res-fs' : ''}>
@@ -58,6 +101,8 @@ function ResultsView({ t, fullscreen, setFullscreen }) {
         .res-table td.tm { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; text-align: right; width: 120px; }
         .res-table td.club { color: var(--fg-muted); font-size: 14px; }
         .res-table tr.pend td { color: var(--fg-faint); }
+        .class-course { margin: 18px 0 8px; font-size: 16px; font-weight: 600; }
+        .comp-meta { margin: 16px 0 0; color: var(--fg-muted); font-size: 13px; }
         .res-table tr.new td { background: var(--accent-soft); }
 
         /* Fullscreen / projector mode */
@@ -98,33 +143,15 @@ function ResultsView({ t, fullscreen, setFullscreen }) {
         ))}
       </div>
 
-      <div style={{marginTop: 16}}>
-        <table className="res-table">
-          <thead>
-            <tr>
-              <th>{t('res.place')}</th>
-              <th>{t('res.name')}</th>
-              <th>{t('res.club')}</th>
-              <th style={{textAlign: 'right'}}>{t('res.time')}</th>
-              <th>{t('res.status')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={r.status === 'PEND' ? 'pend' : (i === 0 && r.status === 'OK' ? 'new' : '')}>
-                <td className="plc">{r.place || '—'}</td>
-                <td className="name">{r.name} {r.note && <span className="faint" style={{fontWeight: 400, fontSize: 12}}>{r.note}</span>}</td>
-                <td className="club">{r.club}</td>
-                <td className="tm">{r.time}</td>
-                <td><StatusPill status={r.status} t={t} small /></td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan="5" style={{textAlign: 'center', padding: 40, color: 'var(--fg-faint)'}}>Inga deltagare ännu.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {shown.map(c => (
+        <div key={c.id}>
+          <h2 className="class-course">{heading(c)}</h2>
+          <ResultsTable rows={results[c.id] || []} cells={cells} t={t} />
+        </div>
+      ))}
+      {shown.length === 0 && <ResultsTable rows={[]} cells={cells} t={t} />}
+
+      <p className="comp-meta">{(window.MOCK_COMPETITIONS[0] || {}).name} · {(window.MOCK_COMPETITIONS[0] || {}).date}</p>
     </div>
   );
 }
