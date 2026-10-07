@@ -630,6 +630,29 @@ describe('lottning route', () => {
     }
   });
 
+  test('SOFT TR 7.5.1: late entrants into vacant places and after the class → the placement with the fewest neighbours (B _ C A + late A, B → B A C A B)', async () => {
+    // Alpha×3/Beta×2 draws A B A B A in places 0–4.
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    const place = (k: number) => firstStartMs + k * 60_000;
+    for (let round = 0, last = 4; round < 10; round++, last += 5) {
+      // B, a vacant place, C, A; then late A and B.
+      addRunner(`B${round}`, 'Beta', place(last + 1));
+      addRunner(`C${round}`, 'Gamma', place(last + 3));
+      addRunner(`A${round}`, 'Alpha', place(last + 4));
+      const a = addRunner(`Late A${round}`, 'Alpha');
+      const b = addRunner(`Late B${round}`, 'Beta');
+      const res = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+      assert.equal(res.statusCode, 201, res.body);
+      const times = timesOf();
+      assert.deepEqual(
+        [times.get(a), times.get(b)],
+        [place(last + 2), place(last + 5)],
+        `round ${round}`
+      );
+    }
+  });
+
   test('late entrants without a start list → 409 no_start_list, nothing written', async () => {
     const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
     assert.equal(res.statusCode, 409, res.body);
