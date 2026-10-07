@@ -17,7 +17,7 @@ progress:
 
 GSD's project memory. Updated by GSD commands as work progresses.
 This file tracks where we are, what is next, open questions, and
-blockers. Decisions live in `.planning/adr/` as MADR-format ADRs —
+blockers. Decisions live in `docs/decisions/` as MADR-format ADRs —
 not duplicated here.
 
 ---
@@ -103,8 +103,8 @@ the synchronous PlaybackTransport can't reproduce).
 
 ## Decisions
 
-Captured as MADR-format ADRs in `.planning/adr/`. See
-`.planning/adr/README.md` for the index.
+Captured as MADR-format ADRs in `docs/decisions/`. See
+`docs/decisions/README.md` for the index.
 
 **Plan-level decisions (00-01):**
 

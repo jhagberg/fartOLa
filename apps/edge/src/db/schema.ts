@@ -7,7 +7,7 @@
 // for storing the node_id across restarts.
 //
 // Locked by:
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md (events table
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md (events table
 //   is immutable — enforced by triggers in 0001_append_only_triggers.sql)
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09
 //   (mutable config tables — Phase 1 uses CRUD; Phase 2 will layer Yjs
@@ -476,7 +476,7 @@ export const events = sqliteTable(
 //   meos_* tables; auto-merge into competitors with source='meos')
 // - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-HB-1 (junction table
 //   hired_cards with compound PK + contact info MeOS lacks)
-// - .planning/adr/0009-eventor-runner-cache.md (PII trade-off for the
+// - docs/decisions/0009-eventor-runner-cache.md (PII trade-off for the
 //   national runner DB cache)
 
 // ---------------------------------------------------------------------------
@@ -681,7 +681,7 @@ export const courseReplacements = sqliteTable(
 //
 // Locked by:
 //   - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md
-//   - .planning/adr/0010-event-admin-codes-trust-model.md
+//   - docs/decisions/0010-event-admin-codes-trust-model.md
 //   - T-02.1-24..27b (STRIDE threat register for event codes)
 // ===========================================================================
 
