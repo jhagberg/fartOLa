@@ -95,6 +95,7 @@ function project(starts: Record<string, number>, classes: Class[] = [H21]) {
   const ids = Object.keys(starts);
   return reduce({
     competition_id: 'comp-1',
+    clock_offset_min: 120,
     events: ids.map((_, i) => read(100 + i, TEN + 600)),
     competitors: ids.map((id, i) => runner(id, 100 + i, at(TEN) + starts[id]!)),
     classes,
@@ -143,6 +144,7 @@ describe('SOFT TR 4.20.7: official time in whole seconds, rounded', () => {
         created_at_ms: 0,
         race_started_at_ms: null,
         timing_format: 'seconds',
+        clock_offset_min: 120,
       },
       classes: [
         {
@@ -166,7 +168,7 @@ describe('SOFT TR 4.20.7: official time in whole seconds, rounded', () => {
 
     const mop = buildMopXml({
       state,
-      competition: { id: 'comp-1', name: 'T', date: DAY },
+      competition: { id: 'comp-1', name: 'T', date: DAY, clockOffsetMin: 120 },
       classes: [{ id: 'cls-H21', name: 'H21' }],
       clubs: [],
     });

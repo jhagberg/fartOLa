@@ -1,12 +1,14 @@
 ---
-status: accepted
-date: 2026-10-05
+status: superseded by ADR-0017
+date: 2026-10-07
 decision-makers: [Jonas Hagberg]
 consulted: ['Codex (review of PR #51, findings 8 and N3)']
 informed: []
 ---
 
 # Competition time on the local wall clock; card clocks without DST arithmetic
+
+> Superseded by [ADR-0017](0017-fixed-offset-competition-clock.md) (2026-10-07): one fixed-offset clock per competition.
 
 Decided 2026-10-04/05, recorded 2026-10-05.
 
@@ -107,8 +109,8 @@ noon of the competition date, with an operator override): epoch stays the
 only stored type, every timing conversion uses that constant instead of the
 DST-aware zone, and `start_wall_ms` goes away. This matches what a station
 is: a clock set once to a fixed offset. It will supersede the conversion part
-of this ADR when built. Todo:
-[2026-10-05-competition-clock-fixed-offset.md](../../.planning/todos/pending/2026-10-05-competition-clock-fixed-offset.md).
+of this ADR when built. Todo: `2026-10-05-competition-clock-fixed-offset.md`
+(built and removed; see [ADR-0017](0017-fixed-offset-competition-clock.md)).
 
 ## More Information
 

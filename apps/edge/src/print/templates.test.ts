@@ -17,8 +17,8 @@ test('formatGap uses printer-safe text for the leader row', () => {
   assert.equal(formatGap(0), 'Leder');
 });
 
-test('formatStartTime renders epoch ms on the competition wall clock (02.1-14 Task 1)', () => {
-  assert.equal(formatStartTime(Date.parse('2026-10-03T08:00:00Z')), '10:00:00');
+test('formatStartTime renders epoch ms on the competition clock (02.1-14 Task 1)', () => {
+  assert.equal(formatStartTime(Date.parse('2026-10-03T08:00:00Z'), 120), '10:00:00');
 });
 
 const clock = (sec: number): { seconds_in_half_day: number; half_day: 0; weekday: null } => ({
@@ -52,7 +52,6 @@ function receiptData(over: Partial<CompetitorView> = {}): ReceiptData {
     no_timing: true,
     missing_start: false,
     suggested_start_ms: null,
-    suggested_start_wall_ms: null,
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,

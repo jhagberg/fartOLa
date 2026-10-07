@@ -21,7 +21,6 @@
     getLottning,
     patchClass,
     patchCompetitorStartTime,
-    getCompetition,
     type LottningBody,
   } from '#lib/api/client.ts';
   import Field from '#lib/ui/Field.svelte';
@@ -29,7 +28,8 @@
   import Input from '#lib/ui/Input.svelte';
   import Button from '#lib/ui/Button.svelte';
   import type { ClassDTO, StartMethod } from '@fartola/shared-types';
-  import { localToEpochMs, formatLocalTime } from '@fartola/shared-types';
+  import { clockToEpochMs, formatClockTime } from '@fartola/shared-types';
+  import { fetchCompetitionClock, type CompetitionClock } from './competition-clock.ts';
 
   interface Props {
     competitionId: string;
@@ -44,7 +44,7 @@
   let drawMode: 'SOFT' | 'Random' | 'Simultaneous' = $state('SOFT');
 
   /** HH:MM string for the first-start time input. Converted to epoch ms on
-   * the competition's date (02.1-14 Task 1: start times are epoch ms). */
+   * the competition clock (02.1-14 Task 1: start times are epoch ms). */
   let firstStartHHMM: string = $state('10:00');
 
   /** Start interval in seconds. Default 120 for sprints per D-07. */
@@ -92,7 +92,12 @@
   async function loadStartList(): Promise<void> {
     if (!selectedClassId) return;
     try {
-      const res = await getLottning(competitionId, selectedClassId);
+      // The clock with the list it formats: both reflect the server now.
+      const [res, nextClock] = await Promise.all([
+        getLottning(competitionId, selectedClassId),
+        fetchCompetitionClock(competitionId),
+      ]);
+      clock = nextClock;
       startList = res.start_list;
       startListLoaded = true;
     } catch {
@@ -109,23 +114,22 @@
 
   // --- helpers --------------------------------------------------------------
 
-  /** Competition date ('YYYY-MM-DD'), fetched once; anchors HH:MM inputs. */
-  let competitionDate: string | null = null;
-  async function getCompetitionDate(): Promise<string> {
-    competitionDate ??= (await getCompetition(competitionId)).competition.date;
-    return competitionDate;
-  }
+  /** The competition clock (date + UTC offset, ADR-0017) the start list
+   * was loaded with; refreshed with every list load. */
+  let clock: CompetitionClock | null = $state(null);
 
-  /** Convert HH:MM on the competition date to epoch ms. */
+  /** Convert HH:MM on the competition clock to epoch ms (clock fetched now:
+   * the offset may have been corrected since the list loaded). */
   async function hhmmToMs(hhmm: string): Promise<number> {
     const [hh, mm] = hhmm.split(':').map(Number);
-    return localToEpochMs(await getCompetitionDate(), (hh ?? 0) * 3600 + (mm ?? 0) * 60);
+    const { date, offsetMin } = await fetchCompetitionClock(competitionId);
+    return clockToEpochMs(date, (hh ?? 0) * 3600 + (mm ?? 0) * 60, offsetMin);
   }
 
-  /** Format epoch ms as HH:MM:SS (competition local clock). */
+  /** Format epoch ms as HH:MM:SS on the competition clock. */
   function msToHHMMSS(ms: number | null): string {
-    if (ms === null) return '—';
-    return formatLocalTime(ms);
+    if (ms === null || clock === null) return '—';
+    return formatClockTime(ms, clock.offsetMin);
   }
 
   /** Parse mm:ss maxTime input to seconds. Returns null on empty/invalid. */
@@ -232,7 +236,8 @@
     if (newSec === null) { cancelEditTime(id); return; }
     savingStartTime = { ...savingStartTime, [id]: true };
     try {
-      const newMs = localToEpochMs(await getCompetitionDate(), newSec);
+      const { date, offsetMin } = await fetchCompetitionClock(competitionId);
+      const newMs = clockToEpochMs(date, newSec, offsetMin);
       await patchCompetitorStartTime(competitionId, id, newMs);
       // Refresh the start list
       await loadStartList();

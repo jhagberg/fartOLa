@@ -221,7 +221,7 @@ describe('eventorPush routes', () => {
     assert.equal(pushed.length, 1);
     assert.match(pushed[0]!.xml, /<StartList /);
     assert.match(pushed[0]!.xml, /<Family>Andersson<\/Family>/);
-    assert.match(pushed[0]!.xml, /<StartTime>2026-05-24T\d\d:00:00(\.000)?Z<\/StartTime>/);
+    assert.match(pushed[0]!.xml, /<StartTime>2026-05-24T\d\d:00:00\+02:00<\/StartTime>/);
     await app.close();
   });
 });

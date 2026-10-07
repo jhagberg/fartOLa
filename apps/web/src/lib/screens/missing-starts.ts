@@ -6,18 +6,13 @@
 // batch apply. Kept out of the component so it can be tested without
 // mounting Svelte.
 
-import { formatWallClock, parseWallClock } from '@fartola/shared-types';
+import { formatClockTime } from '@fartola/shared-types';
 import {
   applyMissingStarts,
   type MissingStartItem,
   type MissingStartsResponse,
 } from '#lib/api/client.ts';
-import {
-  formatElapsed,
-  resolveStartInput,
-  wallTimeOfDay,
-  type StartEntry,
-} from './readout-types.ts';
+import { formatElapsed, resolveStartInput, type StartEntry } from './readout-types.ts';
 
 export type { MissingStartItem, MissingStartsResponse };
 
@@ -40,42 +35,48 @@ export function statsLabel(
   return { key: 'ms.statsFallback', vars: { offset: formatElapsed(r.offset_ms), n: r.n } };
 }
 
-/** A listed wall-clock time ('YYYY-MM-DDTHH:MM:SS') as 'HH:MM:SS', or ''. */
-export function wallText(wall: string | null): string {
-  const ms = wall === null ? null : parseWallClock(wall);
-  return ms === null ? '' : wallTimeOfDay(ms);
+/** A listed time (epoch ms) as 'HH:MM:SS' on the competition clock, or ''. */
+export function clockText(ms: number | null, clockOffsetMin: number): string {
+  return ms === null ? '' : formatClockTime(ms, clockOffsetMin);
 }
 
 /** The editable start field starts at the suggestion (HH:MM:SS), or empty. */
-export function initialStartText(item: MissingStartItem): string {
-  return wallText(item.suggested_start_wall);
+export function initialStartText(item: MissingStartItem, clockOffsetMin: number): string {
+  return clockText(item.suggested_start_ms, clockOffsetMin);
 }
 
-/** Start text → a start on the runner's wall-clock timeline, before the
- * finish (readout-types resolveStartInput). */
-function parseStart(item: MissingStartItem, text: string): StartEntry {
-  return resolveStartInput(text, item.finish_wall);
+/** Start text → a start before the finish (readout-types resolveStartInput). */
+function parseStart(item: MissingStartItem, text: string, clockOffsetMin: number): StartEntry {
+  return resolveStartInput(text, item.finish_ms, clockOffsetMin);
 }
 
-/** Running time with the edited start: finish − start on the wall clock,
- * as the backend computes it; null when the text is not a time or the start
- * is after the finish. */
-export function resultingTimeMs(item: MissingStartItem, text: string): number | null {
-  const start = parseStart(item, text);
+/** Running time with the edited start: finish − start, as the backend
+ * computes it; null when the text is not a time or the start is after the
+ * finish. */
+export function resultingTimeMs(
+  item: MissingStartItem,
+  text: string,
+  clockOffsetMin: number
+): number | null {
+  const start = parseStart(item, text, clockOffsetMin);
   if ('error' in start) return null;
-  return parseWallClock(item.finish_wall)! - start.wallMs;
+  return item.finish_ms - start.startMs;
 }
 
 /** "Sätt" / "Sätt alla": one batch. Any row without a valid start → nothing
  * is sent and those competitor ids come back, with the first one's reason. */
 export async function applyMissingStartRows(
   competitionId: string,
-  rows: Array<{ item: MissingStartItem; text: string }>
+  rows: Array<{ item: MissingStartItem; text: string }>,
+  clockOffsetMin: number
 ): Promise<
   | { ok: true; updated: number }
   | { ok: false; invalid: string[]; error: 'invalid' | 'after_finish' }
 > {
-  const parsed = rows.map((r) => ({ id: r.item.competitor_id, start: parseStart(r.item, r.text) }));
+  const parsed = rows.map((r) => ({
+    id: r.item.competitor_id,
+    start: parseStart(r.item, r.text, clockOffsetMin),
+  }));
   const bad = parsed.filter((p) => 'error' in p.start);
   if (bad.length > 0) {
     const first = bad[0]!.start as { error: 'invalid' | 'after_finish' };
@@ -85,7 +86,7 @@ export async function applyMissingStartRows(
     competitionId,
     parsed.map((p) => ({
       competitor_id: p.id,
-      start_wall: formatWallClock((p.start as { wallMs: number }).wallMs),
+      start_time_ms: (p.start as { startMs: number }).startMs,
     }))
   );
   return { ok: true, updated };

@@ -104,6 +104,11 @@ export const CompetitionDTO = z.object({
   /** SOFT TR 4.21.1 — the competition's max time in seconds, the same for
    * all classes. NULL = none. Set via PUT /api/competitions/:id/max-time. */
   max_time_sec: z.number().int().positive().nullable().optional(),
+  /** ADR-0012 — the competition clock's UTC offset in minutes, in force:
+   * competitions.clock_offset_min when the operator set one, else the
+   * zone's offset at local noon of `date`. Every time of day shown, read
+   * off a card or exchanged (IOF, MOP) is epoch + this offset. */
+  clock_offset_min: z.number().int(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 
@@ -128,6 +133,11 @@ export const CompetitionPatchInput = z.object({
   /** Phase 2.1 Plan 11 — link (positive integer) or unlink (null) an
    * Eventor event. PATCH with null removes an existing link. */
   eventor_event_id: z.number().int().positive().nullable().optional(),
+  /** ADR-0012 — override the competition clock's UTC offset (minutes), e.g.
+   * +60 for a night race dated the Sunday it ends on the spring DST night,
+   * or stations synced on the other offset. null = back to the date's
+   * default. */
+  clock_offset_min: z.number().int().min(-720).max(840).nullable().optional(),
 });
 export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 

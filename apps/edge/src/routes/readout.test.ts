@@ -37,10 +37,10 @@ import {
   hiredCards,
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
+import { clockToEpochMs, formatClockTime, localToEpochMs } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
 import type { HalfDayClock } from '@fartola/sportident';
 import { eq } from 'drizzle-orm';
-import { localToEpochMs } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -111,7 +111,8 @@ function insertCardRead(
     seconds_in_half_day: 9 * 3600,
     weekday: null,
   },
-  check: HalfDayClock | null = null
+  check: HalfDayClock | null = null,
+  finish: HalfDayClock = { half_day: 0, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null }
 ): void {
   handle.db
     .insert(events)
@@ -127,7 +128,7 @@ function insertCardRead(
         card_number: cardNumber,
         card_type: 'SI10',
         start,
-        finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null },
+        finish,
         check,
         clear: null,
         punch_count: punches.length,
@@ -322,19 +323,175 @@ describe('GET /api/competitions/:id/readout', () => {
           missing_start: boolean;
           suggested_start_ms: number | null;
           suggested_start_offset_ms: number | null;
-          suggested_start_wall: string | null;
-          finish_wall: string | null;
+          finish_ms: number | null;
         }>;
       }
     ).history[0]!;
     assert.equal(row.missing_start, true);
     assert.equal(row.suggested_start_offset_ms, 114_000);
-    assert.equal(typeof row.suggested_start_ms, 'number');
-    // The card's clock as wall-clock strings (read at epoch 100 ms, 01:00
-    // local on 1970-01-01, so the 08:58 check and 09:30 finish are the day
-    // before): what the UI resolves an edited start against.
-    assert.equal(row.suggested_start_wall, '1969-12-31T08:59:54');
-    assert.equal(row.finish_wall, '1969-12-31T09:30:00');
+    // Card clocks on the competition clock (+02:00 for 2026-05-14). Read at
+    // epoch 100 ms, 02:00 on that clock, so the 08:58 check and 09:30 finish
+    // are the day before; the UI resolves an edited start against finish_ms.
+    assert.equal(row.suggested_start_ms, Date.parse('1969-12-31T08:59:54+02:00'));
+    assert.equal(row.finish_ms, Date.parse('1969-12-31T09:30:00+02:00'));
+  });
+
+  // The row carries scoring's own timing (Codex review of the clock change):
+  // the web used to rebuild it modulo 12 h and showed 11:30:00 for a start
+  // after the finish, where scoring has no time. And the clock offset comes
+  // with the data, so a corrected offset reaches an open read-out view.
+  test("test 2d: the row has scoring's start and running time, the payload the offset", async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2d');
+    const DAY = '2026-05-14'; // default +120
+    const setStart = (sec: number): void => {
+      ctx.handle.db
+        .update(competitors)
+        .set({ startTimeMs: clockToEpochMs(DAY, sec, 120) })
+        .where(eq(competitors.id, competitorId))
+        .run();
+      ctx.app.projectionStore.markDirty('comp-2d');
+    };
+    // No start punch; finish 09:30, read 09:35, start time 10:00.
+    insertCardRead(
+      ctx.handle,
+      ctx.nodeId,
+      'comp-2d',
+      7501853,
+      clockToEpochMs(DAY, 9 * 3600 + 35 * 60, 120),
+      1,
+      [31],
+      null
+    );
+    type Body = {
+      clock_offset_min: number | null;
+      history: Array<{ start_time_ms: number | null; elapsed_time_ms: number | null }>;
+    };
+    // The route reads the cached projection; recompute it as the debounced
+    // markDirty would before the WS results_update that triggers a refetch.
+    const get = async (): Promise<Body> => {
+      ctx.app.projectionStore.recomputeNow('comp-2d');
+      const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2d/readout' });
+      return res.json() as Body;
+    };
+
+    setStart(10 * 3600);
+    assert.equal(
+      (await get()).history[0]!.elapsed_time_ms,
+      null,
+      'start after the finish: no time'
+    );
+
+    setStart(9 * 3600);
+    let body = await get();
+    assert.equal(body.clock_offset_min, 120);
+    assert.equal(formatClockTime(body.history[0]!.start_time_ms!, 120), '09:00:00');
+    assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
+
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/competitions/comp-2d',
+      payload: { clock_offset_min: 60 },
+    });
+    assert.equal(patch.statusCode, 200, patch.body);
+    body = await get();
+    assert.equal(body.clock_offset_min, 60);
+    assert.equal(formatClockTime(body.history[0]!.start_time_ms!, 60), '09:00:00');
+    assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
+  });
+
+  // Codex follow-up review: the route pairs the cached projection with the
+  // offset read now. An offset change shifts the stored starts, so the
+  // cache must be fresh by the time the PATCH returns — not one debounce
+  // later. A long debounce makes the old window deterministic.
+  test('test 2f: right after an offset change, the start still reads 09:00', async () => {
+    const handle = openDatabase(':memory:');
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 60_000,
+    });
+    try {
+      const { competitorId } = seedCompetition(handle, 'comp-2f');
+      const DAY = '2026-05-14'; // default +120
+      handle.db
+        .update(competitors)
+        .set({ startTimeMs: clockToEpochMs(DAY, 9 * 3600, 120) })
+        .where(eq(competitors.id, competitorId))
+        .run();
+      insertCardRead(
+        handle,
+        nodeId,
+        'comp-2f',
+        7501853,
+        clockToEpochMs(DAY, 9 * 3600 + 35 * 60, 120),
+        1,
+        [31],
+        null
+      );
+      type Body = { clock_offset_min: number; history: Array<{ start_time_ms: number }> };
+      const get = async (): Promise<Body> =>
+        (
+          await app.inject({ method: 'GET', url: '/api/competitions/comp-2f/readout' })
+        ).json() as Body;
+      const startText = (b: Body): string =>
+        formatClockTime(b.history[0]!.start_time_ms, b.clock_offset_min);
+
+      assert.equal(startText(await get()), '09:00:00'); // caches the projection
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: '/api/competitions/comp-2f',
+        payload: { clock_offset_min: 60 },
+      });
+      assert.equal(patch.statusCode, 200, patch.body);
+      const after = await get();
+      assert.equal(after.clock_offset_min, 60);
+      assert.equal(startText(after), '09:00:00');
+    } finally {
+      await app.close();
+      handle.close();
+    }
+  });
+
+  // Codex follow-up review: every history row carried the latest read's
+  // running time, so selecting an older read paired its finish with
+  // another read's time.
+  test("test 2e: each history row has its own read's running time", async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2e');
+    const DAY = '2026-05-14'; // default +120
+    ctx.handle.db
+      .update(competitors)
+      .set({ startTimeMs: clockToEpochMs(DAY, 9 * 3600, 120) })
+      .where(eq(competitors.id, competitorId))
+      .run();
+    const finishAt = (min: number): HalfDayClock => ({
+      half_day: 0,
+      seconds_in_half_day: 9 * 3600 + min * 60,
+      weekday: null,
+    });
+    // No start punch: both reads time from the 09:00 start time.
+    const read = (seq: number, finishMin: number, readMin: number): void =>
+      insertCardRead(
+        ctx.handle,
+        ctx.nodeId,
+        'comp-2e',
+        7501853,
+        clockToEpochMs(DAY, 9 * 3600 + readMin * 60, 120),
+        seq,
+        [31],
+        null,
+        null,
+        finishAt(finishMin)
+      );
+    read(1, 30, 35);
+    read(2, 45, 50);
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2e/readout' });
+    const rows = (res.json() as { history: Array<{ elapsed_time_ms: number | null }> }).history;
+    assert.deepEqual(
+      rows.map((r) => r.elapsed_time_ms),
+      [45 * 60 * 1000, 30 * 60 * 1000]
+    );
   });
 
   // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).

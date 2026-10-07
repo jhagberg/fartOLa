@@ -1,0 +1,15 @@
+-- Migration 0018 — one competition clock (ADR-0017)
+--
+-- Every timing conversion now uses one fixed UTC offset per competition:
+-- the zone's offset at local noon of competitions.date, or
+-- competitions.clock_offset_min (minutes) when the operator overrides it —
+-- for a night race dated the day it ends, or stations synced on the other
+-- offset. NULL = the date's default.
+--
+-- The data step runs in TS after this file (db/migrate.ts
+-- migrateStartsToFixedClock): SQLite cannot compute zone offsets. It moves
+-- every stored start from the old civil clock (or competitors.start_wall_ms,
+-- 0015, where that was in force) onto the fixed-offset clock and drops
+-- start_wall_ms in the same transaction. Hand-written like 0011–0017, no
+-- snapshot.
+ALTER TABLE `competitions` ADD `clock_offset_min` integer;

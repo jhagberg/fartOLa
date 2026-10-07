@@ -184,7 +184,7 @@ describe('POST /api/competitions/:id/print-receipt (plan 15 Task 1)', () => {
     };
     assert.ok(data.skogisStats, 'kids envelope must carry skogisStats');
     for (const k of ['fart', 'stig', 'kart', 'tur'] as const) {
-      const v = data.skogisStats[k];
+      const v: number = data.skogisStats[k];
       assert.ok(typeof v === 'number' && v >= 1 && v <= 5, `${k}=${v} must be in 1..5`);
     }
   });

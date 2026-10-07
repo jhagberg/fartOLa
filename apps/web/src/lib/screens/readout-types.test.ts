@@ -1,14 +1,13 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Vitest coverage for readElapsedMs (02.1-14 follow-up, item F): the readout
-// view's running time uses the start punch when present, else the drawn
-// start, and shows nothing otherwise (no first-punch fallback). Task 11:
-// Task 14: the class's start method picks the start (auto/start_time/start_punch).
+// Vitest coverage for the readout view's helpers. Its running time is the
+// backend's (the /readout row's elapsed_time_ms); the web no longer
+// rebuilds it from the card (readElapsedMs, removed with the fixed-offset
+// competition clock, ADR-0017).
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { localToEpochMs, softStatus } from '@fartola/shared-types';
+import { clockToEpochMs, defaultClockOffsetMin, softStatus } from '@fartola/shared-types';
 import {
-  readElapsedMs,
   rawPunchesToReceipt,
   classifyPunches,
   classBehind,
@@ -32,55 +31,9 @@ const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
     ...over,
   }) as ReadoutHistoryRow;
 
-const drawn10 = localToEpochMs('2026-10-03', 10 * 3600);
-
-describe('readElapsedMs', () => {
-  // 02.1-14 Task 14: the class's start method, as dnfMp.startMs. Task 11
-  // had the start punch win (MeOS); the default 'auto' now times a runner
-  // with a start time from it (SOFT TR 4.18.9 (2026-07-01)).
-  it('auto: start time wins over the start punch', () => {
-    expect(readElapsedMs(row({}), drawn10)).toBe(45 * 60 * 1000);
-    expect(readElapsedMs(row({}), drawn10, 'auto')).toBe(45 * 60 * 1000);
-  });
-
-  it('start_punch: punch wins; no punch → start time', () => {
-    expect(readElapsedMs(row({}), drawn10, 'start_punch')).toBe(44 * 60 * 1000);
-    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10, 'start_punch')).toBe(
-      45 * 60 * 1000
-    );
-  });
-
-  it('start_time: start time only; punch without start time → null', () => {
-    expect(readElapsedMs(row({}), drawn10, 'start_time')).toBe(45 * 60 * 1000);
-    expect(readElapsedMs(row({}), null, 'start_time')).toBeNull();
-  });
-
-  it('no start punch → drawn start', () => {
-    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), drawn10)).toBe(45 * 60 * 1000);
-  });
-
-  it('no drawn start → start punch', () => {
-    expect(readElapsedMs(row({}), null)).toBe(44 * 60 * 1000);
-  });
-
-  it('neither drawn start nor start punch → null (no first-punch fallback)', () => {
-    expect(readElapsedMs(row({ start_seconds_in_half_day: null }), null)).toBeNull();
-  });
-
-  it('no finish → null', () => {
-    expect(readElapsedMs(row({ finish_seconds_in_half_day: null }), drawn10)).toBeNull();
-  });
-
-  it('run across noon from a drawn start: 11:50 → 12:20 PM is 30 min', () => {
-    const drawn = localToEpochMs('2026-10-03', 11 * 3600 + 50 * 60);
-    const r = row({
-      start_seconds_in_half_day: null,
-      finish_seconds_in_half_day: 20 * 60,
-      finish_half_day: 1,
-    });
-    expect(readElapsedMs(r, drawn)).toBe(30 * 60 * 1000);
-  });
-});
+const OFFSET = 120; // the competition clock of 2026-10-03 (CEST)
+const at = (sec: number, day = '2026-10-03', offset = OFFSET): number =>
+  clockToEpochMs(day, sec, offset);
 
 // 02.1-14 Task 9: a class without timing shows no running or split time on
 // the readout receipt (MeOS readout shows "Godkänd" instead of a time).
@@ -163,7 +116,7 @@ describe('SOFT status names on published surfaces', () => {
 // so the card's logic lives in these helpers: the warning text, the edited
 // time field, and the PATCH start-time call LatestReadCard triggers.
 describe('missing start (02.1-14 Task 13)', () => {
-  const check = localToEpochMs('2026-10-03', 10 * 3600 + 19 * 60 + 37);
+  const check = at(10 * 3600 + 19 * 60 + 37);
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -173,10 +126,9 @@ describe('missing start (02.1-14 Task 13)', () => {
     const r = row({
       missing_start: true,
       suggested_start_ms: check + 114_000,
-      suggested_start_wall: '2026-10-03T10:21:31',
       suggested_start_offset_ms: 114_000,
     });
-    expect(missingStartHint(r)).toEqual({
+    expect(missingStartHint(r, OFFSET)).toEqual({
       check: '10:19:37',
       offset: '1:54',
       suggested: '10:21:31',
@@ -184,15 +136,14 @@ describe('missing start (02.1-14 Task 13)', () => {
   });
 
   // Codex third review of #51, finding 4: the hint is the card's clock, also
-  // in the hour skipped when DST starts.
+  // in the hour skipped when DST starts (stations on +01:00 here).
   it('hint: station times in the skipped spring hour stay as they are', () => {
     const r = row({
       missing_start: true,
       suggested_start_ms: Date.parse('2026-03-29T01:00:54Z'),
-      suggested_start_wall: '2026-03-29T02:00:54',
       suggested_start_offset_ms: 114_000,
     });
-    expect(missingStartHint(r)).toEqual({
+    expect(missingStartHint(r, 60)).toEqual({
       check: '01:59:00',
       offset: '1:54',
       suggested: '02:00:54',
@@ -203,25 +154,25 @@ describe('missing start (02.1-14 Task 13)', () => {
     const noCheck = row({
       missing_start: true,
       suggested_start_ms: null,
-      suggested_start_wall: null,
       suggested_start_offset_ms: null,
     });
-    expect(missingStartHint(noCheck)).toBeNull();
+    expect(missingStartHint(noCheck, OFFSET)).toBeNull();
     expect(
       missingStartHint(
         row({
           missing_start: false,
           suggested_start_ms: check,
-          suggested_start_wall: '2026-10-03T10:19:37',
           suggested_start_offset_ms: 0,
-        })
+        }),
+        OFFSET
       )
     ).toBeNull();
   });
 
   const patchBody = async (
     text: string,
-    finishWall: string
+    finishMs: number,
+    offset = OFFSET
   ): Promise<{ result: string; body: unknown }> => {
     const fetchMock = vi.fn(
       async () =>
@@ -231,7 +182,7 @@ describe('missing start (02.1-14 Task 13)', () => {
         })
     );
     global.fetch = fetchMock as unknown as typeof fetch;
-    const result = await setStartFromInput('comp-1', 'r1', text, finishWall);
+    const result = await setStartFromInput('comp-1', 'r1', text, finishMs, offset);
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit] | undefined;
     if (call !== undefined) {
       expect(call[0]).toBe('/api/competitions/comp-1/competitors/r1/start-time');
@@ -240,38 +191,41 @@ describe('missing start (02.1-14 Task 13)', () => {
     return { result, body: call === undefined ? null : JSON.parse(call[1].body as string) };
   };
 
-  it('"Sätt starttid" PATCHes the edited start as a wall-clock time before the finish', async () => {
-    expect(await patchBody('10:21:40', '2026-10-03T10:55:00')).toEqual({
+  const finish1055 = at(10 * 3600 + 55 * 60);
+
+  it('"Sätt starttid" PATCHes the edited start (competition clock) before the finish', async () => {
+    expect(await patchBody('10:21:40', finish1055)).toEqual({
       result: 'ok',
-      body: { start_wall: '2026-10-03T10:21:40' },
+      body: { start_time_ms: at(10 * 3600 + 21 * 60 + 40) },
     });
-    expect((await patchBody(' 10:22 ', '2026-10-03T10:55:00')).body).toEqual({
-      start_wall: '2026-10-03T10:22:00',
+    expect((await patchBody(' 10:22 ', finish1055)).body).toEqual({
+      start_time_ms: at(10 * 3600 + 22 * 60),
     });
   });
 
   it('DST days: 03:00 against a finish at 03:10 is saved as 03:00', async () => {
     for (const day of ['2026-03-29', '2026-10-25']) {
-      expect((await patchBody('03:00', `${day}T03:10:00`)).body).toEqual({
-        start_wall: `${day}T03:00:00`,
+      const offset = defaultClockOffsetMin(day);
+      expect((await patchBody('03:00', at(3 * 3600 + 10 * 60, day, offset), offset)).body).toEqual({
+        start_time_ms: at(3 * 3600, day, offset),
       });
     }
   });
 
   it('23:50 against a finish at 00:10 is saved on the day before', async () => {
-    expect((await patchBody('23:50', '2026-10-04T00:10:00')).body).toEqual({
-      start_wall: '2026-10-03T23:50:00',
+    expect((await patchBody('23:50', at(10 * 60, '2026-10-04'))).body).toEqual({
+      start_time_ms: at(23 * 3600 + 50 * 60),
     });
   });
 
   it('an invalid time, or a start after the finish, is not sent', async () => {
     for (const text of ['25:00', '10:61:00', 'abc', '']) {
-      expect(await patchBody(text, '2026-10-03T10:55:00')).toEqual({
+      expect(await patchBody(text, finish1055)).toEqual({
         result: 'invalid',
         body: null,
       });
     }
-    expect(await patchBody('11:00', '2026-10-03T10:55:00')).toEqual({
+    expect(await patchBody('11:00', finish1055)).toEqual({
       result: 'after_finish',
       body: null,
     });

@@ -31,7 +31,7 @@ import { openDatabase } from '../src/db/index.ts';
 import { competitions, competitors } from '../src/db/schema.ts';
 import type { CompetitionState, ManualStatus } from '../src/projection/types.ts';
 import { ensureNodeId } from '../src/db/node-id.ts';
-import { formatLocalTime } from '../src/time/competitionClock.ts';
+import { formatClockTime } from '../src/time/competitionClock.ts';
 import { loadCompetitionInputs } from '../src/projection/loader.ts';
 import { reduce } from '../src/projection/reduce.ts';
 import { buildServer } from '../src/server.ts';
@@ -81,6 +81,8 @@ export interface ReplayReport {
   meosDifferences: MeosDifference[];
   imports: Record<string, unknown>;
   unknownCards: number[];
+  /** The competition clock's UTC offset (minutes) the times are shown on. */
+  clockOffsetMin: number;
 }
 
 /** IOF result status → the fartOLa statuses that mean the same thing. */
@@ -284,6 +286,7 @@ export async function replay(
       meosDifferences,
       imports,
       unknownCards: state.pending_unknown_cards,
+      clockOffsetMin: input.clock_offset_min,
     };
   } finally {
     await app.close();
@@ -316,7 +319,7 @@ export function formatReport(r: ReplayReport): string {
       out.push(
         `  bricka ${m.card ?? '–'}: väntat ${m.expected} ${mmss(m.expectedTime)}, fick ${m.got} ${mmss(m.gotTime)}` +
           (m.missingStart
-            ? ` — varnad: saknar starttid, förslag ${m.missingStart.suggestedStartMs === null ? '–' : formatLocalTime(m.missingStart.suggestedStartMs)}`
+            ? ` — varnad: saknar starttid, förslag ${m.missingStart.suggestedStartMs === null ? '–' : formatClockTime(m.missingStart.suggestedStartMs, r.clockOffsetMin)}`
             : '')
       );
   }

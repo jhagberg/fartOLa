@@ -13,16 +13,13 @@
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
 import {
-  epochToLocalSeconds,
-  formatWallClock,
+  formatClockTime,
   parseTimeOfDay,
-  parseWallClock,
   softStatus,
-  startBeforeFinishWallMs,
+  startBeforeFinishMs,
   type SoftStatus,
-  type StartMethod,
 } from '@fartola/shared-types';
-import { patchCompetitorStartWall } from '#lib/api/client.ts';
+import { patchCompetitorStartTime } from '#lib/api/client.ts';
 import { t } from '#lib/i18n/index.ts';
 import type { ReceiptRead, ReceiptPunch } from '#lib/components/receipt-templates/types.ts';
 
@@ -77,17 +74,20 @@ export interface ReadoutHistoryRow {
    * the status is auto-detected from card_read + course. The UI uses this
    * to show the clear button only for manual overrides, not for auto-DNF. */
   manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** The drawn start (epoch ms) and the official running time as the
+   * backend's scoring resolved them; the UI shows these and never
+   * recomputes timing from the card. */
+  start_time_ms: number | null;
+  elapsed_time_ms: number | null;
   /** 02.1-14 Task 13 — the competitor's latest read has a finish but no
    * start punch and no drawn start; suggested start = check + offset (both
    * null without a check punch). */
   missing_start: boolean;
   suggested_start_ms: number | null;
   suggested_start_offset_ms: number | null;
-  /** The suggestion and this read's finish as local wall-clock strings
-   * 'YYYY-MM-DDTHH:MM:SS' — the card's clock, the scale the running time is
-   * computed on (null without one). */
-  suggested_start_wall: string | null;
-  finish_wall: string | null;
+  /** This read's finish as epoch ms, as the backend computes the running
+   * time (null without one); an edited start is resolved before it. */
+  finish_ms: number | null;
   /** 02.1-14 Task 14 — start punch more than 60 s after / before the start
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
@@ -109,6 +109,9 @@ export interface ReadoutResponse {
   pending_unknown_cards: number[];
   /** Control codes voided course-wide now (shown "struken", never missing). */
   voided_codes: number[];
+  /** The competition clock's UTC offset in minutes (ADR-0017), sent with
+   * the data it formats; null for an unknown competition. */
+  clock_offset_min: number | null;
 }
 
 /** Unique key for a history row — used by Svelte's keyed each and by
@@ -117,57 +120,23 @@ export function historyKey(row: ReadoutHistoryRow): string {
   return `${row.event_time_ms}-${row.local_seq}`;
 }
 
-const HALF_DAY_SEC = 43200;
-
-/** Running time for a read: finish − start, as the edge projection computes
- * it (dnfMp.startMs, 02.1-14 Task 14): the class's start method picks the
- * start — 'auto' the start time if any, else the punch; 'start_time' the
- * start time only; 'start_punch' the punch, else the start time.
- * No start at all → null; the old first-punch fallback showed a misleading
- * time. Card clocks are compared modulo 12 h (runs under 12 h), so SI5 cards
- * without a PM bit work too. */
-export function readElapsedMs(
-  row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
-  drawnStartMs: number | null,
-  startMethod: StartMethod = 'auto'
-): number | null {
-  if (row.finish_seconds_in_half_day === null) return null;
-  const drawn = drawnStartMs === null ? null : epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC;
-  const punch = row.start_seconds_in_half_day;
-  const base =
-    startMethod === 'start_time'
-      ? drawn
-      : startMethod === 'start_punch'
-        ? (punch ?? drawn)
-        : (drawn ?? punch);
-  if (base === null) return null;
-  const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
-  return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
-}
-
 /** 02.1-14 Task 13: the parts of "Check 10:19:37 + 1:54 → 10:21:31" for a
- * missing start, or null when the start is not missing or there is no
- * suggestion (no check punch). */
+ * missing start, on the competition clock (`clockOffsetMin`), or null when
+ * the start is not missing or there is no suggestion (no check punch). */
 export function missingStartHint(
   row: Pick<
     ReadoutHistoryRow,
-    'missing_start' | 'suggested_start_wall' | 'suggested_start_offset_ms'
-  >
+    'missing_start' | 'suggested_start_ms' | 'suggested_start_offset_ms'
+  >,
+  clockOffsetMin: number
 ): { check: string; offset: string; suggested: string } | null {
-  const { suggested_start_offset_ms: offset } = row;
-  const suggested =
-    row.suggested_start_wall === null ? null : parseWallClock(row.suggested_start_wall);
+  const { suggested_start_ms: suggested, suggested_start_offset_ms: offset } = row;
   if (!row.missing_start || suggested === null || offset === null) return null;
   return {
-    check: wallTimeOfDay(suggested - offset),
+    check: formatClockTime(suggested - offset, clockOffsetMin),
     offset: formatElapsed(offset),
-    suggested: wallTimeOfDay(suggested),
+    suggested: formatClockTime(suggested, clockOffsetMin),
   };
-}
-
-/** Wall-clock ms → 'HH:MM:SS'. */
-export function wallTimeOfDay(wallMs: number): string {
-  return formatWallClock(wallMs).slice(11, 19);
 }
 
 /** 02.1-14 Task 14: "Sen start +3:12" / "Tjuvstart? −0:05" for the read-out
@@ -183,35 +152,38 @@ export function startWarning(
   return null;
 }
 
-/** An edited start: on the wall-clock timeline, or why not. */
-export type StartEntry = { wallMs: number } | { error: 'invalid' | 'after_finish' };
+/** An edited start as epoch ms, or why not. */
+export type StartEntry = { startMs: number } | { error: 'invalid' | 'after_finish' };
 
-/** 'HH:MM' or 'HH:MM:SS' → a start on the finish's wall-clock timeline
- * (`finishWall` 'YYYY-MM-DDTHH:MM:SS', as the backend computes the running
- * time): the latest such time not after the finish, so 23:50 against a
- * finish at 00:10 is the day before; more than 12 h before it means the
- * start is after the finish. No epoch arithmetic, so DST nights are no
- * different. */
-export function resolveStartInput(text: string, finishWall: string | null): StartEntry {
+/** 'HH:MM' or 'HH:MM:SS' on the competition clock (`clockOffsetMin`) → a
+ * start before `finishMs` (as the backend computes the running time): the
+ * latest such time not after the finish, so 23:50 against a finish at 00:10
+ * is the day before; more than 12 h before it means the start is after the
+ * finish. One fixed offset, so DST nights are no different. */
+export function resolveStartInput(
+  text: string,
+  finishMs: number | null,
+  clockOffsetMin: number
+): StartEntry {
   const seconds = parseTimeOfDay(text);
-  const finish = finishWall === null ? null : parseWallClock(finishWall);
-  if (seconds === null || finish === null) return { error: 'invalid' };
-  const wallMs = startBeforeFinishWallMs(seconds, finish);
-  return wallMs === null ? { error: 'after_finish' } : { wallMs };
+  if (seconds === null || finishMs === null) return { error: 'invalid' };
+  const startMs = startBeforeFinishMs(seconds, finishMs, clockOffsetMin);
+  return startMs === null ? { error: 'after_finish' } : { startMs };
 }
 
-/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time as a
- * wall-clock time. Sends nothing when the text is not a time, or the start
- * would be after the finish. */
+/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time. Sends
+ * nothing when the text is not a time, or the start would be after the
+ * finish. */
 export async function setStartFromInput(
   competitionId: string,
   competitorId: string,
   text: string,
-  finishWall: string | null
+  finishMs: number | null,
+  clockOffsetMin: number
 ): Promise<'ok' | 'invalid' | 'after_finish'> {
-  const entry = resolveStartInput(text, finishWall);
+  const entry = resolveStartInput(text, finishMs, clockOffsetMin);
   if ('error' in entry) return entry.error;
-  await patchCompetitorStartWall(competitionId, competitorId, formatWallClock(entry.wallMs));
+  await patchCompetitorStartTime(competitionId, competitorId, entry.startMs);
   return 'ok';
 }
 

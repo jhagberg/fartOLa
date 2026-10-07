@@ -38,6 +38,7 @@ import type { DbHandle } from '../db/index.ts';
 import { classes, clubs, competitions } from '../db/schema.ts';
 import type { PushQueueConfig, PushQueueHandle } from '../integrations/liveresultat/queue.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 const CredentialsInput = z
   .object({
@@ -59,6 +60,7 @@ export function liveresultatConfig(
       liveresultatPwd: competitions.liveresultatPwd,
       name: competitions.name,
       date: competitions.date,
+      clockOffsetMin: competitions.clockOffsetMin,
     })
     .from(competitions)
     .where(eq(competitions.id, competitionId))
@@ -69,6 +71,7 @@ export function liveresultatConfig(
     liveresultatPwd: row.liveresultatPwd,
     competitionName: row.name,
     competitionDate: row.date,
+    clockOffsetMin: competitionClockOffsetMin(row.date, row.clockOffsetMin),
   };
 }
 

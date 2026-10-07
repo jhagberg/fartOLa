@@ -16,7 +16,7 @@ import { buildServer } from '../server.ts';
 import { openDatabase, type DbHandle } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import { classes, competitors, controls, courseControls, courses, events } from '../db/schema.ts';
-import { localToEpochMs } from '../time/competitionClock.ts';
+import { clockToEpochMs, formatClockTime, localToEpochMs } from '../time/competitionClock.ts';
 
 const DAY = '2026-05-14';
 const COMP = 'comp-ms';
@@ -228,10 +228,13 @@ describe('missing starts (02.1-14 Task 15)', () => {
 // Codex third review of #51, finding 3. 2026-03-29: the clocks go 02:00 →
 // 03:00, SI stations don't. Check 01:59, no start, finish 02:30, read at
 // 03:35 on the laptop: the suggestion is station time 02:00:54 (check +
-// 1:54), a wall time with no instant of its own. As epoch ms it came back
-// as 03:00:54 — after the finish — and the applied runner had no time.
+// 1:54). On the civil clock it had no instant of its own; on the
+// competition clock (one fixed offset, ADR-0012) it is an ordinary epoch,
+// so start_time_ms alone times the runner.
 describe('missing start suggested in the skipped spring hour', () => {
   const SPRING = '2026-03-29';
+  const OFFSET = 120; // the default: CEST at noon of SPRING
+  const clock = (sec: number): number => clockToEpochMs(SPRING, sec, OFFSET);
   let ctx: Ctx;
   beforeEach(async () => {
     const handle = openDatabase(':memory:');
@@ -250,7 +253,7 @@ describe('missing start suggested in the skipped spring hour', () => {
       )
       .run(COMP, SPRING);
     handle.db.insert(classes).values({ id: 'cls', competitionId: COMP, name: 'H21' }).run();
-    addRunner(ctx, 'x', 'Xenia', 1);
+    addRunner(ctx, 'x', 'Xenia Ek', 1);
     const readAt = localToEpochMs(SPRING, 3 * 3600 + 35 * 60);
     handle.db
       .insert(events)
@@ -281,42 +284,55 @@ describe('missing start suggested in the skipped spring hour', () => {
     ctx.handle.close();
   });
 
-  test('the listed station-clock suggestion, applied, times the runner', async () => {
+  const elapsedOfX = (): number | null =>
+    ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!.elapsed_time_ms;
+
+  test('the listed suggestion, applied as start_time_ms, times the runner', async () => {
     const res = await ctx.app.inject({
       method: 'GET',
       url: `/api/competitions/${COMP}/missing-starts`,
     });
-    const item = (res.json() as { items: Array<Record<string, unknown>> }).items[0]!;
-    assert.equal(item['suggested_start_wall'], `${SPRING}T02:00:54`);
-    assert.equal(item['check_wall'], `${SPRING}T01:59:00`);
-    assert.equal(item['finish_wall'], `${SPRING}T02:30:00`);
+    const body = res.json() as {
+      clock_offset_min: number;
+      items: Array<Record<string, number | null>>;
+    };
+    const item = body.items[0]!;
+    assert.equal(body.clock_offset_min, OFFSET);
+    assert.equal(formatClockTime(item['suggested_start_ms']!, OFFSET), '02:00:54');
+    assert.equal(formatClockTime(item['check_ms']!, OFFSET), '01:59:00');
+    assert.equal(formatClockTime(item['finish_ms']!, OFFSET), '02:30:00');
 
     const applied = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${COMP}/missing-starts/apply`,
-      payload: { items: [{ competitor_id: 'x', start_wall: item['suggested_start_wall'] }] },
+      payload: { items: [{ competitor_id: 'x', start_time_ms: item['suggested_start_ms'] }] },
     });
     assert.equal(applied.statusCode, 200, applied.body);
     const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
     assert.equal(x.status, 'OK');
     assert.equal(x.missing_start, false);
     assert.equal(x.elapsed_time_ms, (29 * 60 + 6) * 1000);
+    // One column: the start is start_time_ms and nothing else.
+    const columns = ctx.handle.sqlite
+      .prepare<unknown[], { name: string }>("SELECT name FROM pragma_table_info('competitors')")
+      .all()
+      .map((c) => c.name);
+    assert.equal(columns.includes('start_wall_ms'), false);
+    const row = ctx.handle.db.select().from(competitors).where(eq(competitors.id, 'x')).get();
+    assert.equal(row?.startTimeMs, item['suggested_start_ms']);
   });
 
-  test('PATCH start-time takes a wall-clock start too', async () => {
+  test('PATCH start-time: a start in the skipped hour; start_wall is gone', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',
       url: `/api/competitions/${COMP}/competitors/x/start-time`,
-      payload: { start_wall: `${SPRING}T02:10:00` },
+      payload: { start_time_ms: clock(2 * 3600 + 10 * 60) },
     });
     assert.equal(res.statusCode, 200, res.body);
-    const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
-    assert.equal(x.elapsed_time_ms, 20 * 60 * 1000);
-    // Not a wall-clock time → 400; both fields at once → 400.
+    assert.equal(elapsedOfX(), 20 * 60 * 1000);
     for (const payload of [
-      { start_wall: `${SPRING} 02:10:00` },
-      { start_wall: `${SPRING}T25:10:00` },
-      { start_wall: `${SPRING}T02:10:00`, start_time_ms: localToEpochMs(SPRING, 3600) },
+      { start_wall: `${SPRING}T02:10:00` },
+      { start_wall: `${SPRING}T02:10:00`, start_time_ms: clock(3600) },
     ]) {
       const bad = await ctx.app.inject({
         method: 'PATCH',
@@ -327,20 +343,58 @@ describe('missing start suggested in the skipped spring hour', () => {
     }
   });
 
-  test('an epoch start written later replaces the wall-clock one', async () => {
+  // Codex: a redraw to civil 03:00:54 gave the same epoch as an old 02:00:54
+  // override, so the stale override still counted. One column: the last
+  // writer wins, whoever it is.
+  test('a redraw after a manual start: the drawn start counts', async () => {
     await ctx.app.inject({
       method: 'PATCH',
       url: `/api/competitions/${COMP}/competitors/x/start-time`,
-      payload: { start_wall: `${SPRING}T02:10:00` },
+      payload: { start_time_ms: clock(2 * 3600 + 54) },
     });
-    // Any other writer of start_time_ms (draw, import) leaves start_wall_ms
-    // stale; it must no longer count.
-    ctx.handle.db
-      .update(competitors)
-      .set({ startTimeMs: localToEpochMs(SPRING, 3600 + 50 * 60) })
-      .where(eq(competitors.id, 'x'))
-      .run();
-    const x = ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get('x')!;
-    assert.equal(x.elapsed_time_ms, 40 * 60 * 1000);
+    assert.equal(elapsedOfX(), (29 * 60 + 6) * 1000);
+    // 03:00:54 on the old civil clock is 01:00:54Z, the old override's epoch.
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${COMP}/lottning/cls`,
+      payload: { mode: 'Simultaneous', firstStartMs: clock(3600 + 50 * 60), intervalSec: 0 },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(elapsedOfX(), 40 * 60 * 1000);
+  });
+
+  test('an IOF StartList import after a manual start: the imported start counts', async () => {
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${COMP}/competitors/x/start-time`,
+      payload: { start_time_ms: clock(2 * 3600 + 54) },
+    });
+    // An offset-free StartTime is on the competition clock.
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<StartList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0"
+           createTime="2026-03-28T18:00:00Z" creator="test">
+  <Event><Name>Natt</Name><StartTime><Date>${SPRING}</Date></StartTime></Event>
+  <ClassStart><Class><Name>H21</Name></Class>
+    <PersonStart>
+      <Person><Name><Family>Ek</Family><Given>Xenia</Given></Name></Person>
+      <Start>
+        <StartTime>${SPRING}T01:50:00</StartTime>
+        <ControlCard punchingSystem="SI">1</ControlCard>
+      </Start>
+    </PersonStart>
+  </ClassStart>
+</StartList>`;
+    const form = new FormData();
+    form.set('file', new File([xml], 'startlist.xml', { type: 'application/xml' }));
+    const req = new Request('http://x/', { method: 'POST', body: form });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${COMP}/import/startlist`,
+      payload: Buffer.from(await req.arrayBuffer()),
+      headers: { 'content-type': req.headers.get('content-type') ?? '' },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal((res.json() as { exact: number }).exact, 1);
+    assert.equal(elapsedOfX(), 40 * 60 * 1000);
   });
 });

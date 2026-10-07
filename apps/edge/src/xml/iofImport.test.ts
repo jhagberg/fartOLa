@@ -101,7 +101,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     const e = entries[0]!;
     assert.equal(e.className, 'H21');
@@ -120,13 +120,13 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     const expected = new Date(startTime).getTime();
     assert.equal(entries[0]!.startTimeMs, expected);
   });
 
-  test('a StartTime without an offset is competition-local time, whatever the host time zone', () => {
+  test('a StartTime without an offset is on the competition clock, whatever the host time zone', () => {
     const saved = process.env['TZ'];
     process.env['TZ'] = 'UTC'; // a UTC host: Date.parse would read 10:00 as 10:00Z
     try {
@@ -137,13 +137,20 @@ describe('importStartList', () => {
             persons: [
               { given: 'Anna', family: 'Andersson', startTime: '2026-10-03T10:00:00' },
               { given: 'Bo', family: 'Berg', startTime: '2026-01-15T10:00:00.5' },
+              // In the hour skipped when DST starts: one instant on a fixed clock.
+              { given: 'Cia', family: 'Carlsson', startTime: '2026-03-29T02:00:54' },
             ],
           },
         ],
       });
-      const [anna, bo] = importStartList(xml);
-      assert.equal(anna!.startTimeMs, Date.parse('2026-10-03T08:00:00Z')); // CEST
-      assert.equal(bo!.startTimeMs, Date.parse('2026-01-15T09:00:00.5Z')); // CET
+      const [anna, bo, cia] = importStartList(xml, 120);
+      assert.equal(anna!.startTimeMs, Date.parse('2026-10-03T08:00:00Z'));
+      assert.equal(bo!.startTimeMs, Date.parse('2026-01-15T08:00:00.5Z'));
+      assert.equal(cia!.startTimeMs, Date.parse('2026-03-29T00:00:54Z'));
+      // The competition's offset, not the zone's at each time.
+      const [, bo60, cia60] = importStartList(xml, 60);
+      assert.equal(bo60!.startTimeMs, Date.parse('2026-01-15T09:00:00.5Z'));
+      assert.equal(cia60!.startTimeMs, Date.parse('2026-03-29T01:00:54Z'));
     } finally {
       if (saved === undefined) delete process.env['TZ'];
       else process.env['TZ'] = saved;
@@ -159,7 +166,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    assert.equal(importStartList(xml)[0]!.startTimeMs, Date.parse('2026-10-03T09:00:00Z'));
+    assert.equal(importStartList(xml, 120)[0]!.startTimeMs, Date.parse('2026-10-03T09:00:00Z'));
   });
 
   // 02.1-14 Task 6 changed this: the entry used to be dropped silently; it is
@@ -176,7 +183,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.deepEqual(
       entries.map((e) => [e.row, e.name, e.startTimeMs]),
       [
@@ -202,7 +209,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]!.siCard, 7501853);
   });
@@ -223,7 +230,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]!.eventorPersonId, 12345);
   });
@@ -244,7 +251,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 3);
     const h21 = entries.filter((e) => e.className === 'H21');
     const d21 = entries.filter((e) => e.className === 'D21');
@@ -258,7 +265,7 @@ describe('importStartList', () => {
   test('test 7: non-StartList root element throws', () => {
     const xml =
       '<?xml version="1.0"?><ResultList iofVersion="3.0"><Event><Name>X</Name></Event></ResultList>';
-    assert.throws(() => importStartList(xml), /StartList/);
+    assert.throws(() => importStartList(xml, 120), /StartList/);
   });
 
   test('bibNumber extracted when present', () => {
@@ -277,7 +284,7 @@ describe('importStartList', () => {
         },
       ],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries[0]!.bibNumber, '42');
   });
 
@@ -293,10 +300,11 @@ describe('importStartList', () => {
         created_at_ms: 0,
         race_started_at_ms: null,
         timing_format: 'seconds',
+        clock_offset_min: 120,
       },
       classes: [{ name: 'H21', competitors: [{ name: 'Anna Andersson', startTimeMs }] }],
     });
-    const entries = importStartList(xml);
+    const entries = importStartList(xml, 120);
     assert.equal(entries.length, 1);
     assert.equal(entries[0]!.startTimeMs, startTimeMs);
   });

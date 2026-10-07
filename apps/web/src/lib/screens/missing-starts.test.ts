@@ -6,7 +6,7 @@
 // edited start, and the batch apply call.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { localToEpochMs } from '@fartola/shared-types';
+import { clockToEpochMs, defaultClockOffsetMin } from '@fartola/shared-types';
 import {
   applyMissingStartRows,
   initialStartText,
@@ -15,7 +15,9 @@ import {
   type MissingStartItem,
 } from './missing-starts.ts';
 
-const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+const OFFSET = 120; // the competition clock of 2026-10-03 (CEST)
+const at = (sec: number, day = '2026-10-03', offset = OFFSET): number =>
+  clockToEpochMs(day, sec, offset);
 const item = (over: Partial<MissingStartItem> = {}): MissingStartItem => ({
   competitor_id: 'x',
   name: 'Xenia',
@@ -27,9 +29,6 @@ const item = (over: Partial<MissingStartItem> = {}): MissingStartItem => ({
   check_ms: at(10 * 3600 + 19 * 60 + 37),
   suggested_start_ms: at(10 * 3600 + 21 * 60 + 31),
   finish_ms: at(10 * 3600 + 55 * 60),
-  check_wall: '2026-10-03T10:19:37',
-  suggested_start_wall: '2026-10-03T10:21:31',
-  finish_wall: '2026-10-03T10:55:00',
   ...over,
 });
 
@@ -49,24 +48,15 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
   });
 
   it('the start field starts at the suggestion, or empty without one', () => {
-    expect(initialStartText(item())).toBe('10:21:31');
-    expect(
-      initialStartText(
-        item({
-          suggested_start_ms: null,
-          check_ms: null,
-          suggested_start_wall: null,
-          check_wall: null,
-        })
-      )
-    ).toBe('');
+    expect(initialStartText(item(), OFFSET)).toBe('10:21:31');
+    expect(initialStartText(item({ suggested_start_ms: null, check_ms: null }), OFFSET)).toBe('');
   });
 
   it('resulting time = finish − edited start; null for an invalid or later start', () => {
-    expect(resultingTimeMs(item(), '10:21:31')).toBe((33 * 60 + 29) * 1000);
-    expect(resultingTimeMs(item(), '10:25')).toBe(30 * 60 * 1000);
-    expect(resultingTimeMs(item(), 'xx')).toBeNull();
-    expect(resultingTimeMs(item(), '11:00')).toBeNull();
+    expect(resultingTimeMs(item(), '10:21:31', OFFSET)).toBe((33 * 60 + 29) * 1000);
+    expect(resultingTimeMs(item(), '10:25', OFFSET)).toBe(30 * 60 * 1000);
+    expect(resultingTimeMs(item(), 'xx', OFFSET)).toBeNull();
+    expect(resultingTimeMs(item(), '11:00', OFFSET)).toBeNull();
   });
 
   it('"Sätt alla" POSTs every row in one batch', async () => {
@@ -74,18 +64,22 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
       async () => new Response(JSON.stringify({ updated: 2 }), { status: 200 })
     );
     global.fetch = fetchMock as unknown as typeof fetch;
-    const res = await applyMissingStartRows('comp-1', [
-      { item: item(), text: '10:21:31' },
-      { item: item({ competitor_id: 'y' }), text: '10:22' },
-    ]);
+    const res = await applyMissingStartRows(
+      'comp-1',
+      [
+        { item: item(), text: '10:21:31' },
+        { item: item({ competitor_id: 'y' }), text: '10:22' },
+      ],
+      OFFSET
+    );
     expect(res).toEqual({ ok: true, updated: 2 });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/competitions/comp-1/missing-starts/apply');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({
       items: [
-        { competitor_id: 'x', start_wall: '2026-10-03T10:21:31' },
-        { competitor_id: 'y', start_wall: '2026-10-03T10:22:00' },
+        { competitor_id: 'x', start_time_ms: at(10 * 3600 + 21 * 60 + 31) },
+        { competitor_id: 'y', start_time_ms: at(10 * 3600 + 22 * 60) },
       ],
     });
   });
@@ -93,58 +87,64 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
   it('an invalid time anywhere sends nothing and names the rows', async () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
-    const res = await applyMissingStartRows('comp-1', [
-      { item: item(), text: '10:21:31' },
-      { item: item({ competitor_id: 'y' }), text: '' },
-    ]);
+    const res = await applyMissingStartRows(
+      'comp-1',
+      [
+        { item: item(), text: '10:21:31' },
+        { item: item({ competitor_id: 'y' }), text: '' },
+      ],
+      OFFSET
+    );
     expect(res).toEqual({ ok: false, invalid: ['y'], error: 'invalid' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   // Codex third review of #51, finding 4: the preview and the saved start
-  // used epoch arithmetic; the backend times on the wall clock.
-  it('DST days: 01:50 → 03:10 previews 80 minutes and saves 01:50', async () => {
+  // must match the backend, which times on the competition clock (one fixed
+  // offset per competition, ADR-0012).
+  it('DST days: 01:50 → 03:10 previews 80 minutes and saves 03:00 as one instant', async () => {
     for (const day of ['2026-03-29', '2026-10-25']) {
+      const offset = defaultClockOffsetMin(day);
       const dst = item({
-        suggested_start_wall: `${day}T01:50:00`,
-        finish_wall: `${day}T03:10:00`,
+        suggested_start_ms: at(3600 + 50 * 60, day, offset),
+        finish_ms: at(3 * 3600 + 10 * 60, day, offset),
       });
-      expect(resultingTimeMs(dst, initialStartText(dst))).toBe(80 * 60 * 1000);
-      expect(resultingTimeMs(dst, '03:00')).toBe(10 * 60 * 1000);
+      expect(resultingTimeMs(dst, initialStartText(dst, offset), offset)).toBe(80 * 60 * 1000);
+      expect(resultingTimeMs(dst, '03:00', offset)).toBe(10 * 60 * 1000);
       const fetchMock = vi.fn(
         async () => new Response(JSON.stringify({ updated: 1 }), { status: 200 })
       );
       global.fetch = fetchMock as unknown as typeof fetch;
-      await applyMissingStartRows('comp-1', [{ item: dst, text: '03:00' }]);
+      await applyMissingStartRows('comp-1', [{ item: dst, text: '03:00' }], offset);
       const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
       expect(JSON.parse(init.body as string)).toEqual({
-        items: [{ competitor_id: 'x', start_wall: `${day}T03:00:00` }],
+        items: [{ competitor_id: 'x', start_time_ms: at(3 * 3600, day, offset) }],
       });
     }
   });
 
   it('no suggestion: 23:50 against a finish at 00:10 is the day before', async () => {
     const late = item({
-      check_wall: null,
-      suggested_start_wall: null,
-      finish_wall: '2026-10-04T00:10:00',
+      check_ms: null,
+      suggested_start_ms: null,
+      finish_ms: at(10 * 60, '2026-10-04'),
     });
-    expect(resultingTimeMs(late, '23:50')).toBe(20 * 60 * 1000);
+    expect(resultingTimeMs(late, '23:50', OFFSET)).toBe(20 * 60 * 1000);
     const fetchMock = vi.fn(
       async () => new Response(JSON.stringify({ updated: 1 }), { status: 200 })
     );
     global.fetch = fetchMock as unknown as typeof fetch;
-    await applyMissingStartRows('comp-1', [{ item: late, text: '23:50' }]);
+    await applyMissingStartRows('comp-1', [{ item: late, text: '23:50' }], OFFSET);
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toEqual({
-      items: [{ competitor_id: 'x', start_wall: '2026-10-03T23:50:00' }],
+      items: [{ competitor_id: 'x', start_time_ms: at(23 * 3600 + 50 * 60) }],
     });
   });
 
   it('a start after the finish is rejected and not sent', async () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
-    const res = await applyMissingStartRows('comp-1', [{ item: item(), text: '11:00' }]);
+    const res = await applyMissingStartRows('comp-1', [{ item: item(), text: '11:00' }], OFFSET);
     expect(res).toEqual({ ok: false, invalid: ['x'], error: 'after_finish' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -153,7 +153,14 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
-          JSON.stringify({ n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000, items: [] }),
+          JSON.stringify({
+            n: 0,
+            median_ms: null,
+            mean_ms: null,
+            offset_ms: 114_000,
+            clock_offset_min: 120,
+            items: [],
+          }),
           { status: 200 }
         )
     );

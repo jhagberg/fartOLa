@@ -52,8 +52,9 @@
 import { XMLBuilder } from 'fast-xml-parser';
 import { validateXml, type XsdError } from './validate.ts';
 import type { CompetitionState, CompetitorView } from '../projection/types.ts';
-import { startWallMs } from '../projection/dnfMp.ts';
-import { cardClockToWallMs, wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
+import { startMs } from '../projection/dnfMp.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { formatClockDateTime } from '../time/competitionClock.ts';
 import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -73,9 +74,6 @@ export interface ExportInput {
   /** Competitor id → Eventor person id (EntryList import), written as
    * Person > Id so Eventor links the results (SOFT TA till TR 7.8.3). */
   eventorPersonIds?: ReadonlyMap<string, number>;
-  /** Competitor id → competitors.start_wall_ms, for a start set as a
-   * wall-clock time (dnfMp.drawnStartWallMs). */
-  startWallMs?: ReadonlyMap<string, number>;
   state: CompetitionState;
   status?: ExportStatus;
   /** Creator attribute on the root element. Defaults to `fartOLa v0.1`. Tests
@@ -273,29 +271,27 @@ interface ResultListNode {
 function raceTimes(
   view: CompetitorView,
   cls: ClassDTO,
-  drawnStartWallMs: number | null
+  clockOffsetMin: number
 ): { start: number | null; finish: number | null } {
   if (view.status === 'PEND' || view.status === 'DNS' || view.status === 'CANCEL') {
     return { start: null, finish: null };
   }
   const read = view.card_read_history[view.card_read_history.length - 1];
   if (read === undefined) return { start: view.start_time_ms, finish: null };
-  // Same timeline as the running time: the local wall clock (dnfMp.startWallMs),
-  // turned into an absolute instant only here, where it leaves the system.
-  const start = startWallMs({
-    start: read.start,
-    cardType: read.card_type,
-    readAtMs: read.event_time_ms,
-    drawnStartMs: view.start_time_ms,
-    drawnStartWallMs,
-    startMethod: cls.start_method,
-  });
+  // The same start and finish the running time is computed from.
   return {
-    start: start === null ? null : wallMsToEpochMs(start),
+    start: startMs({
+      start: read.start,
+      cardType: read.card_type,
+      readAtMs: read.event_time_ms,
+      drawnStartMs: view.start_time_ms,
+      clockOffsetMin,
+      startMethod: cls.start_method,
+    }),
     finish:
       read.finish === null
         ? null
-        : wallMsToEpochMs(cardClockToWallMs(read.finish, read.card_type, read.event_time_ms)),
+        : cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, clockOffsetMin),
   };
 }
 
@@ -304,7 +300,7 @@ function buildPersonResult(
   place: number | null,
   cls: ClassDTO,
   eventorPersonId: number | undefined,
-  drawnStartWallMs: number | null
+  clockOffsetMin: number
 ): PersonResultNode | null {
   const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
@@ -326,13 +322,13 @@ function buildPersonResult(
   // plan can add proper TZ-aware reconstruction when the operator-set
   // event start time lands.
   const result: Partial<ResultNode> = {};
-  // StartTime / FinishTime as xsd:dateTime (UTC, Z suffix like the
-  // StartList), absolute from the competition clock. An untimed class
-  // exports neither.
+  // StartTime / FinishTime as xsd:dateTime on the competition clock with
+  // its explicit offset (ADR-0012, like the StartList): the exact instant,
+  // reading as the station time. An untimed class exports neither.
   if (!noTiming) {
-    const { start, finish } = raceTimes(view, cls, drawnStartWallMs);
-    if (start !== null) result.StartTime = new Date(start).toISOString();
-    if (finish !== null) result.FinishTime = new Date(finish).toISOString();
+    const { start, finish } = raceTimes(view, cls, clockOffsetMin);
+    if (start !== null) result.StartTime = formatClockDateTime(start, clockOffsetMin);
+    if (finish !== null) result.FinishTime = formatClockDateTime(finish, clockOffsetMin);
   }
   // 02.1-14 Task 9: an untimed class exports no Time / Position (as MeOS
   // iof30interface.cpp writePersonResult with hasTiming=false, and Eventor).
@@ -412,7 +408,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
         row.place,
         cls,
         input.eventorPersonIds?.get(view.id),
-        input.startWallMs?.get(view.id) ?? null
+        input.competition.clock_offset_min
       );
       if (node === null) {
         pendingCount += 1; // PEND: no result yet, left out
@@ -495,7 +491,8 @@ export async function validateAndBuild(input: ExportInput): Promise<ValidatedBui
 //   - Root element is StartList (no @status attribute — StartList XSD does not
 //     carry a status restriction unlike ResultList).
 //   - ClassStart > PersonStart > Start > StartTime (NOT ClassResult/PersonResult).
-//   - StartTime is xsd:dateTime (UTC ISO with Z suffix).
+//   - StartTime is xsd:dateTime on the competition clock with its explicit
+//     offset (ADR-0012), e.g. 2026-03-29T02:00:54+01:00.
 //   - Competitors with null startTimeMs are excluded (not yet drawn).
 //   - CANCEL status emits <Status>Cancelled</Status> (per D-14).
 //
@@ -563,8 +560,11 @@ export function buildStartListXml(input: StartListInput): StartListBuildResult {
       if (competitor.bibNumber !== undefined && competitor.bibNumber !== null) {
         start.BibNumber = competitor.bibNumber;
       }
-      // Emit UTC ISO string with Z suffix (RESEARCH Pitfall 4).
-      start.StartTime = new Date(competitor.startTimeMs).toISOString();
+      // An explicit offset, never a bare local time (RESEARCH Pitfall 4).
+      start.StartTime = formatClockDateTime(
+        competitor.startTimeMs,
+        input.competition.clock_offset_min
+      );
 
       // Build PersonStart with XSD-required element order:
       // EntryId?, Person?, Organisation?, Start+ (IOF.xsd lines 2009-2044).

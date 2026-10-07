@@ -26,8 +26,8 @@ The decision of 2026-05-12 stands, with its scope stated as built:
   2026-05-23). There is no collaborative form editing today.
 - The edge↔edge and edge→central sync protocol, idempotent on
   `(node_id, local_seq)`, is not built yet (Phase 4; see ADR-0004).
-- Time: event `ts_ms` is epoch. Elapsed time is computed on the local wall clock
-  (ADR-0012).
+- Time: event `ts_ms` is epoch. Elapsed time is computed on the competition's
+  fixed-offset clock (ADR-0017, which superseded ADR-0012).
 
 The original text below is kept as recorded.
 
