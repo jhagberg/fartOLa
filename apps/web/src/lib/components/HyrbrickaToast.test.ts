@@ -24,6 +24,16 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Warm the i18n modules during collection. The first dynamic import inside a
+// test pays the cold Vite transform (index.ts, tweaks store, i18next, both
+// catalogs) and counts against the per-test timeout, which a machine under
+// heavy load (all packages' tests in parallel) can blow past 10s. Importing
+// here runs outside any test timeout; the imports in the tests then hit the
+// module cache.
+await import('../i18n/index.ts');
+await import('../i18n/sv.json');
+await import('../i18n/en.json');
+
 describe('Plan 02-05 — i18n keys for the Hyrbricka toast', () => {
   it('sv.json has all readout.hyrbricka keys', async () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
