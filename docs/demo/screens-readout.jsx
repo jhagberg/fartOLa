@@ -514,10 +514,24 @@ function punchNo(punches, i) {
 }
 
 // ok/total over the tiles that are not extra or struck, as the app counts them
-// (the finish tile counts in the total, not in ok).
+// (a finish punch counts as ok, so a clean run is 16/16).
 function punchProgress(read) {
   const counted = read.punches.filter(p => !p.extra && !p.struck);
-  return { ok: counted.filter(p => p.ok && !p.finish).length, total: counted.length };
+  return { ok: counted.filter(p => p.ok || p.finish).length, total: counted.length };
+}
+
+// What a receipt prints for the status: SOFT's names, as the app's statusLabel
+// (TA till TR 7.8.2, TR 4.21.3). The operator's own StatusPill keeps the
+// detailed labels (Felstämpling, Bröt …).
+function softLabel(read, t) {
+  const key =
+    read.status === 'OK' ? (read.untimed ? 'DELTAGIT' : 'OK')
+    : read.status === 'MP' || read.status === 'DNF' || read.status === 'MAX' ? 'EJ_GODKAND'
+    : read.status === 'DQ' ? 'DISKAD'
+    : read.status === 'DNS' ? 'EJ_START'
+    : read.status === 'CANCEL' ? 'ATERBUD'
+    : 'EJ_UTLAST';
+  return t('soft.status.' + key);
 }
 
 function StatusPill({ status, t, small }) {
@@ -869,7 +883,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           </tbody>
         </table>
         <div className="rcpt-sep"></div>
-        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {softLabel(read, t)}</span></div>
         {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && <div className="rcpt-row"><span>{t('rcpt.place')} {read.cls}</span><b>{read.place}</b></div>}
         <div className="rcpt-foot">{t('rcpt.thanks')}</div>
@@ -891,7 +905,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
             {read.elapsed}
           </div>
           <div style={{fontSize: 11, marginTop: 4, color: '#666', textTransform: 'uppercase', letterSpacing: '0.06em'}}>
-            {read.untimed ? t('ro.untimed') + ' · ' : ''}{t('rcpt.total')} · {read.status}
+            {read.untimed ? t('ro.untimed') + ' · ' : ''}{t('rcpt.total')} · {softLabel(read, t)}
           </div>
         </div>
         <div className="rcpt-sep"></div>
@@ -913,7 +927,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
             </div>
           </>
         ) : (
-          <div className="rcpt-row"><b>Status</b><span>{read.status}</span></div>
+          <div className="rcpt-row"><b>Status</b><span>{softLabel(read, t)}</span></div>
         )}
         <div className="rcpt-sep"></div>
         <div style={{fontSize: 10, color: '#666', marginBottom: 4}}>{t('rcpt.controls')}</div>
@@ -962,7 +976,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           </tbody>
         </table>
         <div className="rcpt-sep"></div>
-        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {softLabel(read, t)}</span></div>
         {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && (
           <>
@@ -986,7 +1000,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
         <div className="rcpt-row"><b>{read.name}</b><span>{read.cardNumber}</span></div>
         <div className="rcpt-row"><span>{read.cls} · {read.club}</span><span>{read.startTime}</span></div>
         <div className="rcpt-sep"></div>
-        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span></div>
+        <div className="rcpt-row rcpt-total"><span>{t('rcpt.total')}</span><span>{read.elapsed} {softLabel(read, t)}</span></div>
         {read.untimed && <div className="rcpt-row"><span>{t('ro.untimed')}</span></div>}
         {read.place && (
           <div className="rcpt-row" style={{fontSize: 10.5, color: '#555'}}>
@@ -1101,7 +1115,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           <div style={{fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.08em'}}>{subtitle}</div>
           <div style={{fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1, marginTop: 2}}>{read.elapsed}</div>
           <div style={{fontSize: 10.5, fontFamily: 'var(--font-mono)', color: '#1a1a1a', marginTop: 2}}>
-            {read.status} · {ctrls} {t('rcpt.kids.controls')}{placeNum ? ' · ' + t('rcpt.place').toLowerCase() + ' ' + placeNum : ''}
+            {softLabel(read, t)} · {ctrls} {t('rcpt.kids.controls')}{placeNum ? ' · ' + t('rcpt.place').toLowerCase() + ' ' + placeNum : ''}
           </div>
         </div>
 
@@ -1146,7 +1160,7 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
           {read.status === 'OK' && read.place ? (
             <>{t('rcpt.place')} <b style={{color: '#1a1a1a'}}>{read.place}</b> {t('rcpt.of')} {prog.finishedInClass} {t('rcpt.finished')}</>
           ) : (
-            <b style={{color: '#1a1a1a'}}>{read.status}</b>
+            <b style={{color: '#1a1a1a'}}>{softLabel(read, t)}</b>
           )}
         </div>
         {!isLeader && read.status === 'OK' && (
