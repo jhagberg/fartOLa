@@ -45,8 +45,10 @@ function formatterFor(tz: string): Intl.DateTimeFormat {
   return f;
 }
 
-/** The zone's civil offset (local − UTC) in ms at the given instant. */
-function zoneOffsetMs(epochMs: number, tz: string): number {
+/** The zone's civil offset (local − UTC) in ms at the given instant. Civil
+ * time: for the calendar and for migrating data written on the old civil
+ * clock (apps/edge db/migrate.ts), never for timing. */
+export function zoneOffsetMs(epochMs: number, tz: string = COMPETITION_TZ): number {
   const p: Record<string, number> = {};
   for (const part of formatterFor(tz).formatToParts(epochMs)) {
     if (part.type !== 'literal') p[part.type] = Number(part.value);

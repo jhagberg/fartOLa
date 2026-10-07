@@ -109,6 +109,7 @@ export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
 export {
   COMPETITION_TZ,
   localToEpochMs,
+  zoneOffsetMs,
   defaultClockOffsetMin,
   competitionClockOffsetMin,
   clockToEpochMs,

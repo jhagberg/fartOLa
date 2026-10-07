@@ -13,6 +13,7 @@
 export {
   COMPETITION_TZ,
   localToEpochMs,
+  zoneOffsetMs,
   competitionClockOffsetMin,
   clockToEpochMs,
   epochToClockSeconds,
