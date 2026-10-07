@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import { proto } from '../../constants.ts';
 import type { SiMessage } from '../../siProtocol.ts';
 import { SiCard10 } from './SiCard10.ts';
+import { SiCard8 } from './SiCard8.ts';
+import { SiCard9 } from './SiCard9.ts';
 
 const BYTES_PER_PAGE = 128;
 const FINISH = 0x10;
@@ -117,4 +119,47 @@ describe('block 1 read for touch-free start/finish/check', () => {
     assert.equal(card.raceResult.finishTouchFree, true);
     assert.equal(card.raceResult.finishCode, undefined);
   });
+});
+
+describe('SI8/SI9 with zero punches', () => {
+  for (const [name, Card] of [
+    ['SI8', SiCard8],
+    ['SI9', SiCard9],
+  ] as const) {
+    const readCard = async (
+      mem: number[]
+    ): Promise<{ card: SiCard8 | SiCard9; pages: number[] }> => {
+      const card = new Card(0);
+      const pages: number[] = [];
+      card.mainStation = {
+        sendMessage: async (msg: SiMessage) => {
+          if (msg.mode !== undefined) return [];
+          const page = msg.parameters[0]!;
+          pages.push(page);
+          const data = mem.slice(page * BYTES_PER_PAGE, (page + 1) * BYTES_PER_PAGE);
+          return [[proto.cmd.GET_SI8, BYTES_PER_PAGE + 3, 0x00, 0x0a, page, ...data]];
+        },
+      } as unknown as NonNullable<SiCard8['mainStation']>;
+      await card.typeSpecificRead();
+      return { card, pages };
+    };
+
+    test(`${name}: touch-free finish reads page 1 and decodes the code`, async () => {
+      const mem = makeMemory();
+      setRecord(mem, FINISH, 0xc1, 0xee);
+      mem[0xa9] = 20;
+      const { card, pages } = await readCard(mem);
+      assert.deepEqual(pages, [0, 1]);
+      assert.equal(card.raceResult.finishCode, 276);
+      assert.equal(card.raceResult.finishTouchFree, true);
+    });
+
+    test(`${name}: no touch-free record, no punches: page 0 only`, async () => {
+      const mem = makeMemory();
+      setRecord(mem, FINISH, 0x01, 20);
+      const { card, pages } = await readCard(mem);
+      assert.deepEqual(pages, [0]);
+      assert.equal(card.raceResult.finishCode, 20);
+    });
+  }
 });
