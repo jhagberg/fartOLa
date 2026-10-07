@@ -612,7 +612,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
     const row = app.fartolaDb.db.select().from(competitors).where(eq(competitors.id, id)).get();
     if (!row) return reply.code(404).send({ error: 'competitor_not_found' });
 
-    const update: Partial<Competitor> = {};
+    const update: Omit<Partial<Competitor>, 'startTimeMs'> = {};
     if (parsed.data.name !== undefined) update.name = parsed.data.name;
     if (parsed.data.club !== undefined) update.club = parsed.data.club;
     if (parsed.data.class_id !== undefined) {

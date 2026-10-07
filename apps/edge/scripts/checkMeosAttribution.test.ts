@@ -84,6 +84,48 @@ describe('check-meos-attribution.sh (ADR-0001)', () => {
     }
   });
 
+  test('a file name with spaces is read whole; any package under packages/ is refused', () => {
+    const root = tree({
+      'apps/edge/src/a b.ts': HEADER,
+      'apps/edge/NOTICE.md': '- `apps/edge/src/a b.ts`\n',
+      'packages/other/src/c.ts': HEADER,
+    });
+    try {
+      const r = run(root);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.out, /packages\/other\/src\/c\.ts/);
+      assert.doesNotMatch(r.out, /a b\.ts/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a long first line does not hide the header (no SIGPIPE skip)', () => {
+    const root = tree({
+      'apps/edge/src/long.ts': HEADER + 'x'.repeat(200_000) + '\n',
+      'apps/edge/NOTICE.md': '',
+    });
+    try {
+      const r = run(root);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.out, /long\.ts/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a header without the file path is still a header', () => {
+    const root = tree({
+      'apps/edge/src/loose.ts': `// Ported ${'from'} MeOS oEventDraw.cpp\n`,
+      'apps/edge/NOTICE.md': '',
+    });
+    try {
+      assert.equal(run(root).status, 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('this repository passes', () => {
     const r = run(REPO);
     assert.equal(r.status, 0, r.out);
