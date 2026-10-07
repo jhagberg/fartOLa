@@ -92,6 +92,7 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     eventor_event_id: row.eventorEventId ?? null,
     max_time_sec: row.maxTimeSec ?? null,
     clock_offset_min: competitionClockOffsetMin(row.date, row.clockOffsetMin),
+    level: row.level,
   };
 }
 
@@ -139,6 +140,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       timingFormat: 'seconds',
       maxTimeSec: null,
       clockOffsetMin: null,
+      level: null,
       rocCompetitionId: null,
       rocEnabled: false,
       rocStartId: null,
@@ -216,6 +218,8 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     // ADR-0017 — null clears the override (back to the date's default).
     if (parsed.data.clock_offset_min !== undefined)
       patch.clockOffsetMin = parsed.data.clock_offset_min;
+    // SOFT TR 3.3.1 — competition level; null clears it.
+    if (parsed.data.level !== undefined) patch.level = parsed.data.level;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.

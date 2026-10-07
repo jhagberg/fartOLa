@@ -147,6 +147,24 @@ describe('competitions REST CRUD', () => {
     assert.equal(detail.competition.auto_print, true);
   });
 
+  test('SOFT TR 3.3.1: competition level — unset on create, set and cleared by PATCH, niva4 is its own level, unknown value → 400', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Nivå', date: '2026-05-21' },
+    });
+    const { id, level } = created.json() as { id: string; level: string | null };
+    assert.equal(level, null);
+    const patch = (payload: Record<string, unknown>) =>
+      ctx.app.inject({ method: 'PATCH', url: `/api/competitions/${id}`, payload });
+    for (const value of ['niva1', 'niva2', 'niva3', 'niva4', 'traning', null]) {
+      const res = await patch({ level: value });
+      assert.equal(res.statusCode, 200, res.body);
+      assert.equal((res.json() as { level: string | null }).level, value);
+    }
+    assert.equal((await patch({ level: 'niva5' })).statusCode, 400);
+  });
+
   test('test 6 (D-15 date format): POST with malformed date returns 400', async () => {
     // The regex ^\d{4}-\d{2}-\d{2}$ catches structural failures (wrong
     // number of digits, missing separators). It does NOT validate semantic

@@ -16,14 +16,33 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { ClassCreateInput, StartMethod, type ClassDTO } from '@fartola/shared-types';
+import { ClassCreateInput, ClassKind, StartMethod, type ClassDTO } from '@fartola/shared-types';
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
+import { resolveSecret } from '../config/secrets.ts';
+import { suggestClassKind } from '../draw/classKind.ts';
+import { fetchEventorClassTypes } from '../eventor/eventClasses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { maxTimeLocked } from './_maxTime.ts';
+
+const KindsInput = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            class_id: z.string().min(1),
+            class_kind: ClassKind,
+            age_class: z.number().int().positive().nullable(),
+          })
+          .strict()
+      )
+      .min(1),
+  })
+  .strict();
 
 // Phase 2.1 D-08: PATCH class route for maxTimeSec editing — a per-class
 // max time, used only when the competition has none (SOFT TR 4.21.1 wants
@@ -44,6 +63,25 @@ const PatchClassInput = z
     { message: 'maxTimeSec, no_timing or start_method required' }
   );
 
+/** The kind a new class gets: the operator's when given, else the SOFT-name
+ * suggestion, else none. */
+function kindOnCreate(input: {
+  name: string;
+  class_kind?: ClassKind | undefined;
+  age_class?: number | null | undefined;
+}): Pick<Class, 'classKind' | 'ageClass' | 'classKindSource'> {
+  if (input.class_kind !== undefined)
+    return {
+      classKind: input.class_kind,
+      ageClass: input.age_class ?? null,
+      classKindSource: 'operator',
+    };
+  const s = suggestClassKind(input.name);
+  return s === null
+    ? { classKind: null, ageClass: null, classKindSource: null }
+    : { classKind: s.kind, ageClass: s.ageClass, classKindSource: 'name' };
+}
+
 function classRowToDTO(row: Class): ClassDTO {
   return {
     id: row.id,
@@ -52,6 +90,9 @@ function classRowToDTO(row: Class): ClassDTO {
     short_name: row.shortName,
     no_timing: row.noTiming,
     start_method: row.startMethod,
+    class_kind: row.classKind,
+    age_class: row.ageClass,
+    class_kind_source: row.classKindSource,
   };
 }
 
@@ -155,8 +196,87 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       courseId: null,
       noTiming: false,
       startMethod: 'auto',
+      ...kindOnCreate(parsed.data),
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));
+  });
+
+  // GET /api/competitions/:id/classes/kinds — the class kind of every class
+  // and a suggestion for it (SOFT TR 3.4.2): Eventor's ClassTypeId when the
+  // competition is linked to an Eventor event and an API key is set, else
+  // the SOFT name pattern. Writes nothing; the operator confirms with PUT.
+  // `eventor`: 'used' | 'not_linked' | 'no_key' | 'failed'.
+  app.get<{ Params: { id: string } }>('/api/competitions/:id/classes/kinds', async (req, reply) => {
+    const comp = app.fartolaDb.db
+      .select({ eventorEventId: competitions.eventorEventId })
+      .from(competitions)
+      .where(eq(competitions.id, req.params.id))
+      .get();
+    if (!comp) return reply.code(404).send({ error: 'competition not found' });
+    let types = new Map<string, number>();
+    let eventor: 'used' | 'not_linked' | 'no_key' | 'failed' = 'not_linked';
+    if (comp.eventorEventId !== null) {
+      const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
+      if (!apiKey) eventor = 'no_key';
+      else
+        try {
+          types = await fetchEventorClassTypes({ apiKey, eventId: comp.eventorEventId });
+          eventor = 'used';
+        } catch (e) {
+          app.log.warn({ err: (e as Error).message }, 'eventor eventclasses fetch failed');
+          eventor = 'failed';
+        }
+    }
+    const rows = app.fartolaDb.db
+      .select()
+      .from(classes)
+      .where(eq(classes.competitionId, req.params.id))
+      .orderBy(asc(classes.name))
+      .all();
+    return {
+      eventor,
+      items: rows.map((r) => {
+        const s = suggestClassKind(r.name, types.get(r.name) ?? null);
+        return {
+          class_id: r.id,
+          name: r.name,
+          class_kind: r.classKind,
+          age_class: r.ageClass,
+          class_kind_source: r.classKindSource,
+          suggestion:
+            s === null ? null : { class_kind: s.kind, age_class: s.ageClass, source: s.source },
+        };
+      }),
+    };
+  });
+
+  // PUT /api/competitions/:id/classes/kinds — the operator confirms or
+  // changes class kinds (source 'operator'). All or nothing: an id outside
+  // the competition → 400 and nothing is written.
+  app.put<{ Params: { id: string } }>('/api/competitions/:id/classes/kinds', async (req, reply) => {
+    const parsed = KindsInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send(issuesToErrors(parsed.error.issues));
+    const ids = parsed.data.items.map((i) => i.class_id);
+    const known = new Set(
+      app.fartolaDb.db
+        .select({ id: classes.id })
+        .from(classes)
+        .where(and(eq(classes.competitionId, req.params.id), inArray(classes.id, ids)))
+        .all()
+        .map((r) => r.id)
+    );
+    const unknown = ids.find((id) => !known.has(id));
+    if (unknown !== undefined)
+      return reply.code(400).send({ error: 'class_not_in_competition', class_id: unknown });
+    app.fartolaDb.sqlite.transaction(() => {
+      for (const i of parsed.data.items)
+        app.fartolaDb.db
+          .update(classes)
+          .set({ classKind: i.class_kind, ageClass: i.age_class, classKindSource: 'operator' })
+          .where(eq(classes.id, i.class_id))
+          .run();
+    })();
+    return { updated: parsed.data.items.length };
   });
 }

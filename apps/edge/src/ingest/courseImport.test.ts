@@ -151,6 +151,26 @@ describe('ingestCourseData', () => {
     assert.deepEqual(orderedCodes, [31, 32, 33, 34]);
   });
 
+  test('SOFT TR 3.4.2: imported classes get the class kind their name implies', () => {
+    ingestCourseData(ctx.handle, ctx.competitionId, {
+      ...SAMPLE,
+      classes: [
+        { id: 'H12', name: 'H12', short_name: null },
+        { id: 'D21 Elit', name: 'D21 Elit', short_name: null },
+      ],
+      courses: SAMPLE.courses.map((c, i) => ({ ...c, class_id_ref: i === 0 ? 'H12' : 'D21 Elit' })),
+    });
+    const kinds = Object.fromEntries(
+      ctx.handle.db
+        .select()
+        .from(classes)
+        .where(eq(classes.competitionId, ctx.competitionId))
+        .all()
+        .map((r) => [r.name, [r.classKind, r.ageClass, r.classKindSource]])
+    );
+    assert.deepEqual(kinds, { H12: ['ungdom', 12, 'name'], 'D21 Elit': ['elit', 21, 'name'] });
+  });
+
   test('test 2: re-running the same input is idempotent for classes + controls', () => {
     ingestCourseData(ctx.handle, ctx.competitionId, SAMPLE);
     const r2 = ingestCourseData(ctx.handle, ctx.competitionId, SAMPLE);

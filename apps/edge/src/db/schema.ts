@@ -279,6 +279,9 @@ export const competitions = sqliteTable('competitions', {
    * operator. NULL = the zone's offset at local noon of `date`
    * (competitionClockOffsetMin). Migration 0018. */
   clockOffsetMin: integer('clock_offset_min'),
+  /** SOFT TR 3.3.1 competition level, or 'traning'. NULL = not set; rules
+   * that depend on it refuse (409). Migration 0020. */
+  level: text('level', { enum: ['niva1', 'niva2', 'niva3', 'niva4', 'traning'] }),
   /** ROC (roc.olresultat.se) unitId; NULL = not set. */
   rocCompetitionId: text('roc_competition_id'),
   /** ROC polling on/off. */
@@ -336,6 +339,18 @@ export const classes = sqliteTable(
     startMethod: text('start_method', { enum: ['auto', 'start_time', 'start_punch'] })
       .notNull()
       .default('auto'),
+    /** SOFT class category (ClassKind, TR 3.4.6/3.4.9). Suggested from
+     * Eventor or the name, confirmed by the operator; NULL = not chosen
+     * (an unknown name). Migration 0020. */
+    classKind: text('class_kind', {
+      enum: ['elit', 'ungdom', 'junior', 'senior', 'veteran', 'oppen', 'inskolning'],
+    }),
+    /** The D/H age of an age class (youngest of a merged class, TR 3.4.7);
+     * NULL for open classes or unknown. Migration 0020. */
+    ageClass: integer('age_class'),
+    /** Where class_kind came from: 'eventor' (ClassTypeId), 'name' (SOFT
+     * name pattern) or 'operator'. NULL = no kind yet. Migration 0020. */
+    classKindSource: text('class_kind_source', { enum: ['eventor', 'name', 'operator'] }),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
