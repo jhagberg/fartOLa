@@ -50,7 +50,14 @@ export function writeStartTimes(
 ): { local_seq: number; changed: number } | null {
   let result: { local_seq: number; changed: number } | null = null;
   handle.sqlite.transaction(() => {
-    const ids = [...new Set(write.changes.map((c) => c.competitorId))];
+    // A competitor named twice gets the last value (one change per runner,
+    // so undo can restore it).
+    const lastOf = new Map(write.changes.map((c) => [c.competitorId, c.startTimeMs]));
+    const wanted = [...lastOf].map(([competitorId, startTimeMs]) => ({
+      competitorId,
+      startTimeMs,
+    }));
+    const ids = [...lastOf.keys()];
     const current = new Map(
       (ids.length === 0
         ? []
@@ -62,7 +69,7 @@ export function writeStartTimes(
       ).map((r) => [r.id, r.startTimeMs])
     );
     for (const id of ids) if (!current.has(id)) throw new UnknownCompetitor(id);
-    const changes = write.changes
+    const changes = wanted
       .filter((c) => current.get(c.competitorId) !== c.startTimeMs)
       .map((c) => ({
         competitor_id: c.competitorId,

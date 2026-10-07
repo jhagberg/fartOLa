@@ -308,6 +308,56 @@ describe('start times as events', () => {
     assert.deepEqual(column(), before);
   });
 
+  test('undo after a later grid change → 409 grid_changed_since, nothing written', async () => {
+    const draw = (intervalSec: number) =>
+      post(`/lottning/${ctx.classId}`, { mode: 'Simultaneous', firstStartMs: at(10), intervalSec });
+    for (const s of [60, 120, 180]) assert.equal((await draw(s)).statusCode, 201);
+    const second = (await history()).items.find((i) => i.local_seq === 2)!;
+    const before = startEvents().length;
+    // Mass start: every runner keeps the same time, only the grid differs.
+    const res = await post('/start-times/undo', {
+      node_id: second.node_id,
+      local_seq: second.local_seq,
+    });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: string }).error, 'grid_changed_since');
+    assert.equal(startEvents().length, before);
+    const cls = ctx.handle.db.select().from(classes).where(eq(classes.id, ctx.classId)).get()!;
+    assert.equal(cls.startIntervalSec, 180);
+  });
+
+  test('history is newest first by write order, not by the laptop clock', async (t) => {
+    await post(`/lottning/${ctx.classId}`, { mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 });
+    const now = Date.now();
+    t.mock.method(Date, 'now', () => now - 120_000);
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${ctx.ids[0]}/start-time`,
+      payload: { start_time_ms: at(12) },
+    });
+    assert.deepEqual(
+      (await history()).items.map((i) => i.local_seq),
+      [2, 1]
+    );
+  });
+
+  test('the same runner twice in one request → one change, so undo works', async () => {
+    const res = await post('/missing-starts/apply', {
+      items: [
+        { competitor_id: ctx.ids[0], start_time_ms: at(12) },
+        { competitor_id: ctx.ids[0], start_time_ms: at(13) },
+      ],
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const item = (await history()).items[0]!;
+    const undo = await post('/start-times/undo', {
+      node_id: item.node_id,
+      local_seq: item.local_seq,
+    });
+    assert.equal(undo.statusCode, 201, undo.body);
+    assert.equal(column().get(ctx.ids[0]!), null);
+  });
+
   test('a write that changes nothing writes no event', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',
