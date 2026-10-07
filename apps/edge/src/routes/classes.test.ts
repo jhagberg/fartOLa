@@ -315,6 +315,83 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.equal(row(ctx.classId).classKind, 'oppen', 'an operator choice is never overwritten');
   });
 
+  test('SOFT TR 7.4.1: an age class needs its age: kept from the name, 400 when it cannot be known', async () => {
+    const create = (payload: Record<string, unknown>) =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${ctx.competitionId}/classes`,
+        payload,
+      });
+    const d12 = await create({ name: 'D12', class_kind: 'ungdom' });
+    assert.equal(d12.statusCode, 201, d12.body);
+    assert.equal((d12.json() as { age_class: number }).age_class, 12);
+    const bad = await create({ name: 'Knattar', class_kind: 'ungdom' });
+    assert.equal(bad.statusCode, 400);
+    assert.equal((bad.json() as { error: string }).error, 'age_class_required');
+    const open = await create({ name: 'Lilla', class_kind: 'oppen' });
+    assert.equal(open.statusCode, 201, open.body);
+    const id = (open.json() as { id: string }).id;
+    const put = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/competitions/${ctx.competitionId}/classes/kinds`,
+      payload: { items: [{ class_id: id, class_kind: 'ungdom', age_class: null }] },
+    });
+    assert.equal(put.statusCode, 400, put.body);
+    assert.equal(
+      ctx.handle.db.select().from(classes).where(eq(classes.id, id)).get()!.classKind,
+      'oppen',
+      'nothing written'
+    );
+  });
+
+  test("SOFT TR 3.4.2: from-eventor stores source 'eventor' (confirmed) and never overwrites an operator's kind", async (t) => {
+    ctx.handle.db
+      .update(competitions)
+      .set({ eventorEventId: 4711 })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO config (key, value) VALUES ('EVENTOR_API_KEY', 'KEY')`)
+      .run();
+    const mk = (name: string, classKind?: 'oppen') => {
+      const id = crypto.randomUUID();
+      ctx.handle.db
+        .insert(classes)
+        .values({
+          id,
+          competitionId: ctx.competitionId,
+          name,
+          ...(classKind ? { classKind, classKindSource: 'operator' as const } : {}),
+        })
+        .run();
+      return id;
+    };
+    const h21 = mk('H21 Kort');
+    const mine = mk('D21 Kort', 'oppen');
+    t.mock.method(
+      globalThis,
+      'fetch',
+      async () =>
+        new Response(
+          '<EventClassList><EventClass><Name>H21 Kort</Name><ClassTypeId>17</ClassTypeId></EventClass>' +
+            '<EventClass><Name>D21 Kort</Name><ClassTypeId>17</ClassTypeId></EventClass></EventClassList>',
+          { status: 200 }
+        )
+    );
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/classes/kinds/from-eventor`,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const row = (id: string) =>
+      ctx.handle.db.select().from(classes).where(eq(classes.id, id)).get()!;
+    assert.deepEqual(
+      [row(h21).classKind, row(h21).ageClass, row(h21).classKindSource],
+      ['senior', 21, 'eventor']
+    );
+    assert.deepEqual([row(mine).classKind, row(mine).classKindSource], ['oppen', 'operator']);
+  });
+
   test('PATCH with an empty body → 400', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',

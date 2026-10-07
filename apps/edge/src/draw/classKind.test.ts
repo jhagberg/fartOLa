@@ -73,5 +73,8 @@ describe('suggestClassKind (SOFT TR 3.4.6, TR 3.4.9)', () => {
     assert.equal(pursuitBanned('ungdom', 14), false);
     assert.equal(pursuitBanned('oppen', null), false);
     assert.equal(pursuitBanned('senior', 21), false);
+    // An age class with an unknown age cannot show it is outside D/H10-12.
+    assert.equal(pursuitBanned('ungdom', null), true);
+    assert.equal(pursuitBanned('senior', null), true);
   });
 });

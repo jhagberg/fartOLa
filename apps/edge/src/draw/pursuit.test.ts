@@ -3,6 +3,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { DrawError } from './types.ts';
 import { drawPursuit } from './pursuit.ts';
 import type { PursuitRunner } from './pursuit.ts';
 
@@ -82,5 +83,20 @@ describe('drawPursuit (MeOS drawPersuitList, SOFT TR 7.4.1)', () => {
       assignments: [],
       restarted: 0,
     });
+  });
+
+  test('the restart block must come after the last pursuit start', () => {
+    const input = [ok('a', 40), ok('b', 50), ok('far', 75)];
+    assert.throws(
+      () => drawPursuit(input, { ...opts, restartMs: T0 + 5 * MIN, reverse: false }),
+      (e: unknown) => e instanceof DrawError && e.code === 'restart_overlaps_pursuit'
+    );
+    assert.doesNotThrow(() =>
+      drawPursuit(input, { ...opts, restartMs: T0 + 10 * MIN + 1, reverse: false })
+    );
+    // Nobody in the restart block: the restart time does not matter.
+    assert.doesNotThrow(() =>
+      drawPursuit([ok('a', 40), ok('b', 50)], { ...opts, restartMs: T0, reverse: false })
+    );
   });
 });
