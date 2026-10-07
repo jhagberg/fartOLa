@@ -12,6 +12,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import sv from './sv.json' with { type: 'json' };
 import en from './en.json' with { type: 'json' };
 
+// Warm the i18n modules during collection. The first dynamic import inside a
+// test pays the cold Vite transform (index.ts, tweaks store, i18next, both
+// catalogs) and counts against the per-test timeout, which a machine under
+// heavy load (all packages' tests in parallel) can blow past 10s. Importing
+// here runs outside any test timeout; the imports in the tests then hit the
+// module cache.
+await import('./index.ts');
+await import('./sv.json');
+await import('./en.json');
+
 beforeEach(() => {
   localStorage.clear();
 });
