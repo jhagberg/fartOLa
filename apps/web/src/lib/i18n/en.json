@@ -637,5 +637,6 @@
   "settings.radio.checkCodes": "Check units (codes)",
   "settings.radio.finishCodes": "Finish units (codes)",
   "settings.radio.unitsHelp": "ROC sends the station's own code. Say which codes are start, check and finish, e.g. start 3, 13, check 2, 12, 22, finish 10, 20. A row with such a code is compared with the card's start, check or finish time from that very unit.",
-  "settings.radio.heard": "Heard codes not yet listed: {{codes}}"
+  "settings.radio.heard": "Heard codes not yet listed: {{codes}}",
+  "settings.radio.loadError": "Could not load the settings. Reload the page."
 }

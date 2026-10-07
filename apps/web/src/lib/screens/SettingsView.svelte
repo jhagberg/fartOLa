@@ -348,6 +348,9 @@
   let radioFinishCodes = $state('');
   let radioHeard = $state('');
   let radioBaseline: { key: string; id: number | null } | null = $state(null);
+  /** True only once the current competition's settings have been loaded: until
+   * then the form holds defaults and must not be saved over the real ones. */
+  let radioReady = $state(false);
   let radioBusy = $state(false);
   let radioMsg: string | null = $state(null);
   let radioErr: string | null = $state(null);
@@ -391,19 +394,24 @@
     radioFinishCodes = '';
     radioHeard = '';
     radioBaseline = null;
+    radioReady = false;
     const id = currentCompId;
     if (!id) return;
     try {
       const r = await getRadioStatus(id);
-      if (isCurrent()) applyRadio(r);
+      if (isCurrent()) {
+        applyRadio(r);
+        radioReady = true;
+      }
     } catch {
-      // soft fail — section shows the defaults
+      // Save stays off: the form holds defaults, not the real settings.
+      if (isCurrent()) radioErr = t('settings.radio.loadError');
     }
   }
 
   async function saveRadio(): Promise<void> {
     const id = currentCompId;
-    if (!id || radioBusy) return;
+    if (!id || radioBusy || !radioReady) return;
     const codes = parseCodes(radioControls);
     const startCodes = parseCodes(radioStartCodes);
     const checkCodes = parseCodes(radioCheckCodes);
@@ -822,7 +830,7 @@
         <Button
           variant="primary"
           size="sm"
-          disabled={radioBusy}
+          disabled={radioBusy || !radioReady}
           onclick={() => void saveRadio()}
           data-testid="radio-save"
         >

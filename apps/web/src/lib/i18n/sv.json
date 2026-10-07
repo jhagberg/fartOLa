@@ -637,5 +637,6 @@
   "settings.radio.checkCodes": "Checkenheter (koder)",
   "settings.radio.finishCodes": "Målenheter (koder)",
   "settings.radio.unitsHelp": "ROC skickar stationens egen kod. Ange vilka koder som är start, check och mål, t.ex. start 3, 13, check 2, 12, 22, mål 10, 20. En rad med en sådan kod jämförs med brickans start-, check- eller måltid från just den enheten.",
-  "settings.radio.heard": "Hörda koder som inte är inlagda: {{codes}}"
+  "settings.radio.heard": "Hörda koder som inte är inlagda: {{codes}}",
+  "settings.radio.loadError": "Kunde inte hämta inställningarna. Ladda om sidan."
 }
