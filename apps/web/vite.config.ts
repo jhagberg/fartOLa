@@ -41,9 +41,6 @@ export default defineConfig({
       prerender: { entries: [] },
     }),
   ],
-  // Component tests mount Svelte components in jsdom: resolve svelte's client
-  // build there (its default under Node is the server build, no mount()).
-  ...(process.env['VITEST'] ? { resolve: { conditions: ['browser'] } } : {}),
   server: {
     proxy: {
       '/api': {

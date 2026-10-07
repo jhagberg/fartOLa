@@ -617,7 +617,7 @@
   "settings.radio.saved": "Saved.",
   "settings.radio.invalid": "The ROC id must be a number.",
   "settings.radio.saveError": "Could not save.",
-  "radio.siacProblem": "{{what}}: ordinary cards {{other}} %, SIAC {{siac}} % – check the Air+ setting",
+  "radio.siacProblem": "{{what}}: contact punches {{other}} %, touch-free {{siac}} %. Touch-free punches (SIAC Air) are not getting through – check the Air+ setting",
   "radio.neverHeard": "Nothing heard from this control yet",
   "radio.delay": "delay {{text}}",
   "radio.baseline.from": "Fetching punches from ROC id {{id}} onwards",

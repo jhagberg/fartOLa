@@ -617,7 +617,7 @@
   "settings.radio.saved": "Sparat.",
   "settings.radio.invalid": "ROC-id ska vara ett nummer.",
   "settings.radio.saveError": "Kunde inte spara.",
-  "radio.siacProblem": "{{what}}: vanliga brickor {{other}} %, SIAC {{siac}} % – kontrollera Air+-inställningen",
+  "radio.siacProblem": "{{what}}: vanliga stämplingar {{other}} %, beröringsfria {{siac}} %. Beröringsfria stämplingar (SIAC Air) kommer inte fram – kontrollera Air+-inställningen",
   "radio.neverHeard": "Inget hört från kontrollen än",
   "radio.delay": "fördröjning {{text}}",
   "radio.baseline.from": "Hämtar stämplingar från ROC-id {{id}} och framåt",

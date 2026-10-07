@@ -168,7 +168,9 @@ describe('unit names and the SIAC warning numbers', () => {
     const { t } = await import('../i18n/index.ts');
     expect(
       t('radio.siacProblem', { what: t('radio.name.finish', { code: 20 }), other: 87, siac: 4 })
-    ).toBe('Mål enhet 20: vanliga brickor 87 %, SIAC 4 % – kontrollera Air+-inställningen');
+    ).toBe(
+      'Mål enhet 20: vanliga stämplingar 87 %, beröringsfria 4 %. Beröringsfria stämplingar (SIAC Air) kommer inte fram – kontrollera Air+-inställningen'
+    );
   });
 });
 
