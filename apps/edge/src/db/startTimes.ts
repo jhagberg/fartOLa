@@ -15,9 +15,20 @@ import type { DbHandle } from './index.ts';
 import { classes, competitors, events, type EventPayload, type StartTimeCause } from './schema.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 
-type ClassGrid = NonNullable<
-  Extract<EventPayload, { event_type: 'start_times_set' }>['class_grid']
->;
+type StartTimesSet = Extract<EventPayload, { event_type: 'start_times_set' }>;
+type ClassGrid = NonNullable<StartTimesSet['class_grid']>;
+type ClassGrids = NonNullable<StartTimesSet['class_grids']>;
+
+/** Every class grid an event set: its class_grid (one class, class_id) and
+ * its class_grids (several classes). */
+export function gridsOf(p: StartTimesSet): ClassGrids {
+  return [
+    ...(p.class_grid !== undefined && p.class_id !== null
+      ? [{ class_id: p.class_id, ...p.class_grid }]
+      : []),
+    ...(p.class_grids ?? []),
+  ];
+}
 
 export interface StartTimeWrite {
   cause: StartTimeCause;
@@ -25,6 +36,12 @@ export interface StartTimeWrite {
   changes: ReadonlyArray<{ competitorId: string; startTimeMs: number | null }>;
   /** A draw's start grid for the class (classes.first_start_ms, start_interval_sec). */
   classGrid?: { firstStartMs: number | null; intervalSec: number | null };
+  /** Grids of several classes, written in the same event as the starts. */
+  classGrids?: ReadonlyArray<{
+    classId: string;
+    firstStartMs: number | null;
+    intervalSec: number | null;
+  }>;
   undoes?: { node_id: string; local_seq: number };
 }
 
@@ -77,34 +94,39 @@ export function writeStartTimes(
         previous_ms: current.get(c.competitorId)!,
       }));
 
-    let classGrid: ClassGrid | undefined;
-    if (write.classGrid !== undefined && write.classId !== null) {
+    // Set a class's grid; the event records it when it changed.
+    const setGrid = (
+      classId: string,
+      g: { firstStartMs: number | null; intervalSec: number | null }
+    ): ClassGrid | undefined => {
       const row = handle.db
         .select({ first: classes.firstStartMs, interval: classes.startIntervalSec })
         .from(classes)
-        .where(eq(classes.id, write.classId))
+        .where(eq(classes.id, classId))
         .get();
-      if (
-        row !== undefined &&
-        (row.first !== write.classGrid.firstStartMs || row.interval !== write.classGrid.intervalSec)
-      ) {
-        classGrid = {
-          first_start_ms: write.classGrid.firstStartMs,
-          interval_sec: write.classGrid.intervalSec,
-          previous_first_start_ms: row.first,
-          previous_interval_sec: row.interval,
-        };
-        handle.db
-          .update(classes)
-          .set({
-            firstStartMs: write.classGrid.firstStartMs,
-            startIntervalSec: write.classGrid.intervalSec,
-          })
-          .where(eq(classes.id, write.classId))
-          .run();
-      }
-    }
-    if (changes.length === 0 && classGrid === undefined) return;
+      if (row === undefined || (row.first === g.firstStartMs && row.interval === g.intervalSec))
+        return undefined;
+      handle.db
+        .update(classes)
+        .set({ firstStartMs: g.firstStartMs, startIntervalSec: g.intervalSec })
+        .where(eq(classes.id, classId))
+        .run();
+      return {
+        first_start_ms: g.firstStartMs,
+        interval_sec: g.intervalSec,
+        previous_first_start_ms: row.first,
+        previous_interval_sec: row.interval,
+      };
+    };
+    const classGrid =
+      write.classGrid !== undefined && write.classId !== null
+        ? setGrid(write.classId, write.classGrid)
+        : undefined;
+    const classGrids = (write.classGrids ?? []).flatMap((g) => {
+      const set = setGrid(g.classId, g);
+      return set === undefined ? [] : [{ class_id: g.classId, ...set }];
+    });
+    if (changes.length === 0 && classGrid === undefined && classGrids.length === 0) return;
 
     const r = insertEvent(
       handle,
@@ -117,6 +139,7 @@ export function writeStartTimes(
         class_id: write.classId,
         changes,
         ...(classGrid !== undefined ? { class_grid: classGrid } : {}),
+        ...(classGrids.length > 0 ? { class_grids: classGrids } : {}),
         ...(write.undoes !== undefined ? { undoes: write.undoes } : {}),
       },
       competitionId
@@ -148,13 +171,10 @@ export function rebuildStartTimeCache(handle: DbHandle): number {
   const start = new Map<string, number | null>();
   const grid = new Map<string, { first: number | null; interval: number | null }>();
   for (const r of rows) {
-    const p = r.payload as Extract<EventPayload, { event_type: 'start_times_set' }>;
+    const p = r.payload as StartTimesSet;
     for (const c of p.changes) start.set(c.competitor_id, c.start_time_ms);
-    if (p.class_grid !== undefined && p.class_id !== null)
-      grid.set(p.class_id, {
-        first: p.class_grid.first_start_ms,
-        interval: p.class_grid.interval_sec,
-      });
+    for (const g of gridsOf(p))
+      grid.set(g.class_id, { first: g.first_start_ms, interval: g.interval_sec });
   }
   let changed = 0;
   handle.sqlite.transaction(() => {

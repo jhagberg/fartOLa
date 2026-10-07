@@ -240,21 +240,13 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
         db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
         if (shiftMs !== 0) {
           // Start times are events (ADR-0003 update 2026-10): the shift is
-          // one start_times_set event for the runners and one per class
-          // grid, so the projection moves with the cache.
+          // one start_times_set event for the runners and every class grid,
+          // so the projection moves with the cache.
           const starts = db
             .select({ id: competitors.id, startTimeMs: competitors.startTimeMs })
             .from(competitors)
             .where(and(eq(competitors.competitionId, id), isNotNull(competitors.startTimeMs)))
             .all();
-          writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
-            cause: 'clock_shift',
-            classId: null,
-            changes: starts.map((r) => ({
-              competitorId: r.id,
-              startTimeMs: r.startTimeMs! - shiftMs,
-            })),
-          });
           const grids = db
             .select({
               id: classes.id,
@@ -264,13 +256,19 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
             .from(classes)
             .where(and(eq(classes.competitionId, id), isNotNull(classes.firstStartMs)))
             .all();
-          for (const g of grids)
-            writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
-              cause: 'clock_shift',
+          writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
+            cause: 'clock_shift',
+            classId: null,
+            changes: starts.map((r) => ({
+              competitorId: r.id,
+              startTimeMs: r.startTimeMs! - shiftMs,
+            })),
+            classGrids: grids.map((g) => ({
               classId: g.id,
-              changes: [],
-              classGrid: { firstStartMs: g.firstStartMs! - shiftMs, intervalSec: g.intervalSec },
-            });
+              firstStartMs: g.firstStartMs! - shiftMs,
+              intervalSec: g.intervalSec,
+            })),
+          });
         }
       })();
       // The date and the override set the competition clock card times are

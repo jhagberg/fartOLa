@@ -154,40 +154,42 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   });
 
-  /** After an import set start times, the class grid (classes.first_start_ms,
-   * start_interval_sec) of each affected class follows the actual starts: the
+  /** The class grid (classes.first_start_ms, start_interval_sec) of each
+   * class the import gives starts, as it will be after the import: the
    * first start, and the smallest gap as the interval (null with fewer than
    * two distinct times). A grid left from an earlier draw would otherwise
-   * misplace late entrants (SOFT TR 7.5.3, TR 7.5.8). Call inside the
-   * transaction that wrote the starts. */
-  const syncClassGrids = (competitionId: string, competitorIds: readonly string[]): void => {
-    if (competitorIds.length === 0) return;
+   * misplace late entrants (SOFT TR 7.5.3, TR 7.5.8). Written in the same
+   * start_times_set event as the starts, so one undo restores both. */
+  const gridsAfter = (
+    changes: ReadonlyArray<{ competitorId: string; startTimeMs: number }>
+  ): Array<{ classId: string; firstStartMs: number | null; intervalSec: number | null }> => {
+    if (changes.length === 0) return [];
+    const next = new Map(changes.map((c) => [c.competitorId, c.startTimeMs]));
     const classIds = new Set(
       app.fartolaDb.db
         .select({ classId: competitorsTable.classId })
         .from(competitorsTable)
-        .where(inArray(competitorsTable.id, [...new Set(competitorIds)]))
+        .where(inArray(competitorsTable.id, [...next.keys()]))
         .all()
         .map((r) => r.classId)
     );
-    for (const classId of classIds) {
+    return [...classIds].map((classId) => {
       const times = app.fartolaDb.db
-        .select({ t: competitorsTable.startTimeMs })
+        .select({ id: competitorsTable.id, t: competitorsTable.startTimeMs })
         .from(competitorsTable)
         .where(eq(competitorsTable.classId, classId))
         .all()
-        .flatMap((r) => (r.t === null ? [] : [r.t]));
+        .flatMap((r) => {
+          const t = next.has(r.id) ? next.get(r.id)! : r.t;
+          return t === null ? [] : [t];
+        });
       const gap = smallestGapMs(times);
-      writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
-        cause: 'start_list_import',
+      return {
         classId,
-        changes: [],
-        classGrid: {
-          firstStartMs: times.length > 0 ? Math.min(...times) : null,
-          intervalSec: gap === null ? null : Math.round(gap / 1000),
-        },
-      });
-    }
+        firstStartMs: times.length > 0 ? Math.min(...times) : null,
+        intervalSec: gap === null ? null : Math.round(gap / 1000),
+      };
+    });
   };
 
   // ---------------------------------------------------------------------------
@@ -514,15 +516,16 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               )
               .run();
           }
+          const changes = exactWrites.map((w) => ({
+            competitorId: w.id,
+            startTimeMs: w.startTimeMs,
+          }));
           writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
             cause: 'start_list_import',
             classId: null,
-            changes: exactWrites.map((w) => ({ competitorId: w.id, startTimeMs: w.startTimeMs })),
+            changes,
+            classGrids: gridsAfter(changes),
           });
-          syncClassGrids(
-            competitionId,
-            exactWrites.map((w) => w.id)
-          );
         })();
       }
       app.projectionStore.markDirty(competitionId);
@@ -609,11 +612,8 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         cause: 'start_list_import',
         classId: null,
         changes,
+        classGrids: gridsAfter(changes),
       });
-      syncClassGrids(
-        competitionId,
-        changes.map((c) => c.competitorId)
-      );
     })();
 
     if (applied > 0) {

@@ -252,6 +252,16 @@ export type EventPayload =
         previous_first_start_ms: number | null;
         previous_interval_sec: number | null;
       };
+      /** Grids of several classes set in the same event (start-list
+       * import, clock shift, undo of either), so undo restores the starts
+       * and every grid together. */
+      class_grids?: Array<{
+        class_id: string;
+        first_start_ms: number | null;
+        interval_sec: number | null;
+        previous_first_start_ms: number | null;
+        previous_interval_sec: number | null;
+      }>;
       /** cause 'undo': the start_times_set event this one reverses. */
       undoes?: { node_id: string; local_seq: number };
     };

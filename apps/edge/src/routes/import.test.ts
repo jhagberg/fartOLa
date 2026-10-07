@@ -440,6 +440,103 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     assert.equal(after.statusCode, 201);
   });
 
+  test('ADR-0016: undoing a start-list import puts back the starts and the class grid together (one event)', async () => {
+    const compId = await newCompetition(ctx.app);
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21', class_kind: 'senior', age_class: 21 },
+    });
+    const classId = (cls.json() as { id: string }).id;
+    const cards = [7101, 7102, 7103];
+    cards.forEach((card, i) =>
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: `u${i}`,
+          competitionId: compId,
+          name: `Runner${i} Ek`,
+          club: `K${i}`,
+          classId,
+          cardNumber: card,
+        })
+        .run()
+    );
+    const t0 = new Date('2026-05-19T10:00:00Z').getTime();
+    const drawn = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', firstStartMs: t0, intervalSec: 60 },
+    });
+    assert.equal(drawn.statusCode, 201, drawn.body);
+    const startsOf = () =>
+      ctx.handle.db
+        .select({ t: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, classId))
+        .all()
+        .map((r) => r.t)
+        .sort();
+    const drawnStarts = startsOf();
+    // Import 11:00, 11:02, 11:04.
+    const hour = 3_600_000;
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      buildStartListXmlBuffer([
+        {
+          className: 'H21',
+          persons: cards.map((siCard, i) => ({
+            given: `Runner${i}`,
+            family: 'Ek',
+            startTimeIso: new Date(t0 + hour + i * 120_000).toISOString(),
+            siCard,
+          })),
+        },
+      ])
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    const history = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${compId}/start-times/history`,
+    });
+    const newest = (history.json() as { items: Array<{ node_id: string; local_seq: number }> })
+      .items[0]!;
+    const undo = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/start-times/undo`,
+      payload: { node_id: newest.node_id, local_seq: newest.local_seq },
+    });
+    assert.equal(undo.statusCode, 201, undo.body);
+    assert.equal((undo.json() as { changed: number }).changed, 3);
+    assert.deepEqual(startsOf(), drawnStarts);
+    const { classes: classesTable } = await import('../db/schema.ts');
+    const grid = ctx.handle.db
+      .select({ first: classesTable.firstStartMs, interval: classesTable.startIntervalSec })
+      .from(classesTable)
+      .where(eq(classesTable.id, classId))
+      .get();
+    assert.deepEqual(grid, { first: t0, interval: 60 });
+    // The drawn list is full again: a late entrant starts after it, not at 10:01.
+    ctx.handle.db
+      .insert(competitors)
+      .values({ id: 'late', competitionId: compId, name: 'Late Ek', club: 'Z', classId })
+      .run();
+    const late = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', drawType: 'RemainingVacant' },
+    });
+    assert.equal(late.statusCode, 201, late.body);
+    const lateStart = ctx.handle.db
+      .select({ t: competitors.startTimeMs })
+      .from(competitors)
+      .where(eq(competitors.id, 'late'))
+      .get()!.t;
+    assert.equal(lateStart, t0 + 3 * 60_000);
+  });
+
   test('startlist test 2: name-only match → fuzzy, NOT auto-applied', async () => {
     const compId = await newCompetition(ctx.app);
     const courseBytes = readFixture('iof30-coursedata-sample.xml');
