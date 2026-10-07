@@ -53,6 +53,9 @@ export default defineConfig({
       },
     },
   },
+  // Component tests mount Svelte in jsdom: resolve its client build, not
+  // the server one (otherwise mount() throws lifecycle_function_unavailable).
+  resolve: process.env['VITEST'] ? { conditions: ['browser'] } : {},
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],

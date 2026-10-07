@@ -92,6 +92,13 @@ export interface ReadoutHistoryRow {
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** The runner's current standing in the class (projection results rows):
+   * place and ms behind the leader are null for MP/DNF/untimed/unplaced;
+   * finished = runners with a place, starters = all in the class. */
+  class_place: number | null;
+  class_behind_leader_ms: number | null;
+  class_finished_count: number;
+  class_starters_count: number;
 }
 
 export interface ReadoutResponse {
@@ -100,6 +107,8 @@ export interface ReadoutResponse {
   current_read: ReadoutHistoryRow | null;
   history: ReadoutHistoryRow[];
   pending_unknown_cards: number[];
+  /** Control codes voided course-wide now (shown "struken", never missing). */
+  voided_codes: number[];
   /** The competition clock's UTC offset in minutes (ADR-0017), sent with
    * the data it formats; null for an unknown competition. */
   clock_offset_min: number | null;
@@ -322,6 +331,49 @@ export function rawPunchesToReceipt(
   return result;
 }
 
+/** Label the tiles `rawPunchesToReceipt` built for a course (course-shaped:
+ * one tile per expected control, then leftover punches, then the finish) so
+ * the UI can name them in text:
+ *   - a voided control's tile → 'struck' (counts as neither OK nor missing);
+ *   - a leftover punch of a control that is on the course but missing from
+ *     its place → 'order' ("fel ordn."); any other leftover → 'extra';
+ *   - a leftover punch of a voided control is dropped (the struck tile
+ *     already stands for it).
+ * Display only — status and missing_codes come from the edge projection.
+ * Without a course (`expectedCodes` empty) the tiles are returned as is. */
+export function classifyPunches(
+  tiles: ReceiptPunch[],
+  expectedCodes: number[] = [],
+  voidedCodes: number[] = []
+): ReceiptPunch[] {
+  if (expectedCodes.length === 0) return tiles;
+  const voided = new Set(voidedCodes);
+  const missed = new Set(
+    tiles.slice(0, expectedCodes.length).flatMap((p) => (p.ok === false ? [p.code] : []))
+  );
+  const out: ReceiptPunch[] = [];
+  tiles.forEach((p, i) => {
+    if (p.finish) out.push(p);
+    else if (i < expectedCodes.length) {
+      out.push(voided.has(expectedCodes[i]!) ? { ...p, ok: true, kind: 'struck' } : p);
+    } else if (!voided.has(p.code as number)) {
+      out.push({ ...p, kind: missed.has(p.code) ? 'order' : 'extra' });
+    }
+  });
+  return out;
+}
+
+/** "+0:34" behind the class leader for the receipts; null for the leader,
+ * and for a runner without a place. */
+export function classBehind(
+  row: Pick<ReadoutHistoryRow, 'class_place' | 'class_behind_leader_ms'>
+): string | null {
+  const ms = row.class_behind_leader_ms ?? null;
+  return row.class_place == null || row.class_place === 1 || ms === null || ms <= 0
+    ? null
+    : `+${formatElapsed(ms)}`;
+}
+
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
 /** The label a published surface (results screen, receipts) shows for a
@@ -358,15 +410,22 @@ export function toReceiptRead(input: {
   place?: number | null;
   /** 02.1-14 Task 9: class without timing — no running or split times. */
   noTiming?: boolean;
+  /** Control codes voided course-wide; their tiles read "struken". */
+  voidedCodes?: number[];
 }): ReceiptRead {
   const allPunches: ReceiptPunch[] =
     input.punches ??
-    rawPunchesToReceipt(
-      input.row.punches,
-      input.row.start_seconds_in_half_day,
-      input.row.finish_seconds_in_half_day,
-      input.row.expected_codes
+    classifyPunches(
+      rawPunchesToReceipt(
+        input.row.punches,
+        input.row.start_seconds_in_half_day,
+        input.row.finish_seconds_in_half_day,
+        input.row.expected_codes
+      ),
+      input.row.expected_codes,
+      input.voidedCodes
     );
+  const place = input.place ?? input.row.class_place ?? null;
   const punches = input.noTiming
     ? allPunches.map((p) => ({ ...p, split: '—', time: '—' }))
     : allPunches;
@@ -383,13 +442,14 @@ export function toReceiptRead(input: {
     statusLabel: softStatusLabel(
       softStatus(input.row.status, { noTiming: input.noTiming === true })
     ),
-    place: input.place ?? null,
+    place,
+    untimed: input.noTiming === true,
     punches,
     progress: {
-      place: input.place ?? null,
-      finishedInClass: 1,
-      startersInClass: 1,
-      behind: null,
+      place,
+      finishedInClass: input.row.class_finished_count ?? 0,
+      startersInClass: input.row.class_starters_count ?? 0,
+      behind: classBehind(input.row),
     },
     competitionName: input.competitionName,
     competitionDate: input.competitionDate,

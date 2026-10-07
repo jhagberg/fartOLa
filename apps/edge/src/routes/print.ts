@@ -44,6 +44,7 @@ import type {
   PrintCourse,
   PrintPlaceContext,
 } from '../print/sink.ts';
+import { loadVoidedControlCodes } from '../projection/loader.ts';
 import { skogisFromInput } from '@fartola/shared-types';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -157,6 +158,7 @@ export default async function registerPrintRoute(
             length_m: courseRow.lengthM,
             climb_m: courseRow.climbM,
             control_codes: controlCodes,
+            voided_codes: loadVoidedControlCodes(app.fartolaDb, competitionId),
           }
         : {
             id: '',

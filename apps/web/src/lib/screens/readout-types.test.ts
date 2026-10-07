@@ -8,6 +8,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { clockToEpochMs, defaultClockOffsetMin, softStatus } from '@fartola/shared-types';
 import {
+  rawPunchesToReceipt,
+  classifyPunches,
+  classBehind,
   toReceiptRead,
   softStatusLabel,
   resultRowCells,
@@ -269,5 +272,123 @@ describe('startWarning (02.1-14 Task 14)', () => {
     for (const key of ['ro.lateStart', 'ro.earlyStart']) {
       expect(en[key], `missing en key ${key}`).toBeTruthy();
     }
+  });
+});
+
+// Display labels: OK / struken / extra / fel ordn. (synthetic data).
+describe('classifyPunches', () => {
+  const at = (code: number, sec: number) => ({
+    code,
+    seconds_in_half_day: 36_000 + sec,
+    half_day: 0,
+  });
+  const classify = (punched: number[], expected: number[], voided: number[] = []) => {
+    const raw = punched.map((c, i) => at(c, 60 * (i + 1)));
+    return classifyPunches(rawPunchesToReceipt(raw, 36_000, 36_900, expected), expected, voided);
+  };
+  const kinds = (p: { kind?: string }[]) => p.map((x) => x.kind ?? 'ok');
+
+  it('plain run: every tile OK, finish last', () => {
+    const out = classify([31, 32, 33], [31, 32, 33]);
+    expect(kinds(out)).toEqual(['ok', 'ok', 'ok', 'ok']);
+    expect(out.every((p) => p.ok !== false)).toBe(true);
+  });
+
+  it('a voided control keeps its course position as struck and is not missing', () => {
+    const out = classify([31, 33], [31, 32, 33], [32]);
+    expect(out.map((p) => p.code)).toEqual([31, 32, 33, 'F']);
+    expect(kinds(out)).toEqual(['ok', 'struck', 'ok', 'ok']);
+    expect(out[1]?.ok).toBe(true);
+  });
+
+  it('a voided control that was punched anyway is struck, not extra', () => {
+    const out = classify([31, 32, 33], [31, 32, 33], [32]);
+    expect(kinds(out)).toEqual(['ok', 'struck', 'ok', 'ok']);
+  });
+
+  it('a punch not on the course is extra', () => {
+    const out = classify([31, 99, 32], [31, 32]);
+    expect(kinds(out)).toEqual(['ok', 'ok', 'extra', 'ok']);
+    expect(out[2]?.code).toBe(99);
+  });
+
+  it('a course control punched out of order is fel ordn.; its course slot stays a miss', () => {
+    // course 31,32,33; punched 31,33,32. The subsequence match (as the edge's
+    // matchCourse) takes 32 after 33, so 33 is the one out of order.
+    const out = classify([31, 33, 32], [31, 32, 33]);
+    expect(out[2]).toMatchObject({ code: 33, ok: false });
+    expect(out[2]?.kind).toBeUndefined();
+    expect(out[3]).toMatchObject({ code: 33, kind: 'order' });
+    expect(kinds(out)).toEqual(['ok', 'ok', 'ok', 'order', 'ok']);
+  });
+
+  it('a genuinely missing control stays a miss (ok: false, no kind)', () => {
+    const out = classify([31, 33], [31, 32, 33]);
+    expect(out[1]).toMatchObject({ code: 32, ok: false });
+    expect(out[1]?.kind).toBeUndefined();
+  });
+
+  it('without a course the tiles are returned unchanged', () => {
+    const tiles = rawPunchesToReceipt([at(31, 60)], 36_000, null, []);
+    expect(classifyPunches(tiles, [])).toBe(tiles);
+  });
+});
+
+describe('toReceiptRead untimed', () => {
+  const base = {
+    row: row({}),
+    className: 'D21',
+    classId: 'c',
+    club: null,
+    competitionName: 'T',
+    competitionDate: '2026-10-03',
+  };
+  it('flags a class without timing', () => {
+    expect(toReceiptRead({ ...base, noTiming: true }).untimed).toBe(true);
+    expect(toReceiptRead(base).untimed).toBe(false);
+  });
+});
+
+describe('class standing on the receipt read', () => {
+  const standing = {
+    class_place: 2,
+    class_behind_leader_ms: 34_000,
+    class_finished_count: 5,
+    class_starters_count: 8,
+  };
+  const base = {
+    className: 'D21',
+    classId: 'c',
+    club: null,
+    competitionName: 'T',
+    competitionDate: '2026-10-03',
+  };
+
+  it('carries place, time behind and class progress', () => {
+    const r = toReceiptRead({ ...base, row: row(standing) });
+    expect(r.place).toBe(2);
+    expect(r.progress).toMatchObject({
+      place: 2,
+      behind: '+0:34',
+      finishedInClass: 5,
+      startersInClass: 8,
+    });
+  });
+
+  it('the leader has a place but no "behind"', () => {
+    const r = toReceiptRead({
+      ...base,
+      row: row({ ...standing, class_place: 1, class_behind_leader_ms: 0 }),
+    });
+    expect(r.place).toBe(1);
+    expect(r.progress.behind).toBeNull();
+  });
+
+  it('MP / untimed / unplaced runners have no place or behind', () => {
+    const none = { class_place: null, class_behind_leader_ms: null };
+    const r = toReceiptRead({ ...base, row: row({ ...standing, ...none }) });
+    expect(r.place).toBeNull();
+    expect(r.progress.behind).toBeNull();
+    expect(classBehind(row({ ...standing, ...none }))).toBeNull();
   });
 });

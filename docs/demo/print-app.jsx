@@ -129,7 +129,7 @@ function WalkupPrint() {
               </div>
               <div className="field">
                 <label>Klass *</label>
-                <input className="input" defaultValue="D21 — Medel svår (4.8 km)" readOnly />
+                <input className="input" defaultValue="D12 — Kort (2.4 km)" readOnly />
               </div>
             </div>
           </div>
@@ -153,19 +153,19 @@ function ResultsPrint() {
 }
 
 function PrintApp() {
-  const erik = window.MOCK_READS[0];
-  const mikael = window.MOCK_READS[2];
+  const lead = window.MOCK_READS[0]; // H21 winner
+  const mp = window.MOCK_READS[2]; // MP, with a struck control
   return (
     <div className="print-doc font-plex">
       <PrintPage label="01 · Tävlingar" sub="Home"><HomePrint /></PrintPage>
       <PrintPage label="02 · Ny tävling" sub="Wizard steg 2 av 3"><WizardPrint /></PrintPage>
-      <PrintPage label="03 · Avläsning · Erik Lindqvist" sub="Kvitto: Klassisk"><ReadoutPrint read={erik} tpl="classic" /></PrintPage>
-      <PrintPage label="04 · Avläsning · Erik Lindqvist" sub="Kvitto: Topp 4"><ReadoutPrint read={erik} tpl="top4" /></PrintPage>
-      <PrintPage label="05 · Avläsning · Erik Lindqvist" sub="Kvitto: Detaljerad (sträckplaceringar)"><ReadoutPrint read={erik} tpl="detailed" /></PrintPage>
-      <PrintPage label="06 · Avläsning · Mikael Sjöberg" sub="Felstämpling · Kvitto: Klassläge"><ReadoutPrint read={mikael} tpl="standing" /></PrintPage>
-      <PrintPage label="07 · Avläsning · Erik Lindqvist" sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={erik} tpl="kids" /></PrintPage>
-      <PrintPage label="08 · Avläsning · Anna Persson" sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[1]} tpl="kids" /></PrintPage>
-      <PrintPage label="09 · Avläsning · Karin Lund" sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[3]} tpl="kids" /></PrintPage>
+      <PrintPage label={`03 · Avläsning · ${lead.name}`} sub="Kvitto: Klassisk"><ReadoutPrint read={lead} tpl="classic" /></PrintPage>
+      <PrintPage label={`04 · Avläsning · ${lead.name}`} sub="Kvitto: Topp 4"><ReadoutPrint read={lead} tpl="top4" /></PrintPage>
+      <PrintPage label={`05 · Avläsning · ${lead.name}`} sub="Kvitto: Detaljerad (sträckplaceringar)"><ReadoutPrint read={lead} tpl="detailed" /></PrintPage>
+      <PrintPage label={`06 · Avläsning · ${mp.name}`} sub="Felstämpling · Kvitto: Klassläge"><ReadoutPrint read={mp} tpl="standing" /></PrintPage>
+      <PrintPage label={`07 · Avläsning · ${lead.name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={lead} tpl="kids" /></PrintPage>
+      <PrintPage label={`08 · Avläsning · ${window.MOCK_READS[1].name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[1]} tpl="kids" /></PrintPage>
+      <PrintPage label={`09 · Avläsning · ${window.MOCK_READS[3].name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[3]} tpl="kids" /></PrintPage>
       <PrintPage label="10 · Walk-up registrering" sub="Okänd bricka avläst"><WalkupPrint /></PrintPage>
       <PrintPage label="11 · Liveresultat" sub="H21"><ResultsPrint /></PrintPage>
     </div>

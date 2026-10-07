@@ -59,7 +59,7 @@ function Phase2StatusStrip({ phase2 }) {
 function RegistrationDeskView({ t, queue: initialQueue, classes, onSaved }) {
   const [queue, setQueue] = useStateP2(initialQueue || []);
   const [active, setActive] = useStateP2(queue[0] || null);
-  const [cls, setCls] = useStateP2('HD12');
+  const [cls, setCls] = useStateP2('H10');
   const [hired, setHired] = useStateP2(active && active.source === 'rental');
   const [contact, setContact] = useStateP2('');
 
@@ -70,7 +70,7 @@ function RegistrationDeskView({ t, queue: initialQueue, classes, onSaved }) {
       setActive(nextActive);
       setHired(nextActive && nextActive.source === 'rental');
       setContact('');
-      setCls(nextActive && nextActive.cls ? nextActive.cls : 'HD12');
+      setCls(nextActive && nextActive.cls ? nextActive.cls : 'H10');
       return next;
     });
     if (onSaved) onSaved();

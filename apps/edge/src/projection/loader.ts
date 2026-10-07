@@ -17,7 +17,7 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-08-PLAN.md task 1
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09 D-11 D-12
 
-import { eq, asc } from 'drizzle-orm';
+import { and, eq, asc, inArray } from 'drizzle-orm';
 
 import {
   events,
@@ -31,7 +31,7 @@ import {
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
-import type { ReduceInput, CourseWithControlCodes } from './reduce.ts';
+import { voidedControlCodes, type ReduceInput, type CourseWithControlCodes } from './reduce.ts';
 
 /**
  * Read all projection inputs for `competitionId` and produce a ReduceInput.
@@ -126,4 +126,23 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
     courses: coursesWithCodes,
     replacementControls: replacementControls as ReadonlyMap<string, ReadonlyMap<number, number[]>>,
   };
+}
+
+/** The control codes voided course-wide right now, sorted — the same state
+ * the reducer applies (control_voided / control_unvoided replayed in order).
+ * For display surfaces (readout response, receipts) that show a struck
+ * control instead of a missing one. */
+export function loadVoidedControlCodes(handle: DbHandle, competitionId: string): number[] {
+  const rows = handle.db
+    .select()
+    .from(events)
+    .where(
+      and(
+        eq(events.competitionId, competitionId),
+        inArray(events.eventType, ['control_voided', 'control_unvoided'])
+      )
+    )
+    .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
+    .all();
+  return [...voidedControlCodes(rows, competitionId)].sort((a, b) => a - b);
 }

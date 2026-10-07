@@ -24,6 +24,10 @@ export interface ReceiptPunch {
   finish?: boolean;
   /** OK at this control; false → red dashed miss tile (PunchGrid). */
   ok?: boolean;
+  /** Set when the tile is not a plain OK/miss control: 'struck' = a control
+   * voided course-wide (shown "struken", never missing); 'extra' = a punch
+   * not on the course; 'order' = a course control punched out of order. */
+  kind?: 'struck' | 'extra' | 'order';
   /** Per-leg place; 1 = fastest split. Detailed template colours green. */
   legRank?: number | null;
   /** Time lost vs the leg leader, e.g. "+0:08". Detailed only. */
@@ -56,6 +60,8 @@ export interface ReceiptRead {
    * "Diskad", "Deltagit" …; TA till TR 7.8.2, TR 4.21.3). */
   statusLabel: string;
   place: number | null;
+  /** Class without timing: no place or running time; receipts say so. */
+  untimed?: boolean;
   punches: ReceiptPunch[];
   progress: ReceiptProgress;
   /** Competition meta — used in the receipt header rows. */

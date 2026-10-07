@@ -77,6 +77,7 @@
   } from '#lib/api/client.ts';
   import type { EventorLookupHit, EventorLookupMany } from '@fartola/shared-types';
   import LatestReadCard from '#lib/components/LatestReadCard.svelte';
+  import { punchProgress } from '#lib/components/receipt-templates/punchLabels.ts';
   import PunchGrid from '#lib/components/PunchGrid.svelte';
   import SplitsTable from '#lib/components/SplitsTable.svelte';
   import HistoryList from '#lib/components/HistoryList.svelte';
@@ -116,6 +117,7 @@
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
   let history: ReadoutHistoryRow[] = $state([]);
+  let voidedCodes: number[] = $state([]);
   let pendingUnknownCards: number[] = $state([]);
   /** The competition clock's UTC offset (ADR-0017), from the same /readout
    * payload as the times it formats, so a corrected offset arrives with the
@@ -257,6 +259,7 @@
     const cls = competitor ? classesById.get(competitor.class_id) : null;
     return {
       cardNumber: row.card_number,
+      cardType: row.card_type,
       name: row.competitor_name,
       cls: cls?.name ?? '—',
       club: competitor?.club ?? null,
@@ -275,7 +278,8 @@
       // Phase 2.1 (plan 13): pass manual_status through so LatestReadCard
       // can distinguish auto-DNF (no clear button) from operator override.
       manual_status: row.manual_status,
-      place: null,
+      place: row.class_place ?? null,
+      untimed: cls?.no_timing ?? false,
       unknown: row.unmatched,
       competitorId: row.competitor_id,
       // 02.1-14 Task 13: "Saknar starttid" + suggestion.
@@ -303,8 +307,8 @@
       competitionName: competition?.name ?? '',
       competitionDate: competition?.date ?? '',
       elapsedMs,
-      place: null,
       noTiming: cls?.no_timing ?? false,
+      voidedCodes,
     });
   });
 
@@ -355,6 +359,7 @@
       competitors = compsRes.competitors;
       history = readoutRes.history;
       pendingUnknownCards = readoutRes.pending_unknown_cards;
+      voidedCodes = readoutRes.voided_codes;
       clockOffsetMin = readoutRes.clock_offset_min;
       selectedTemplate = compRes.competition.receipt_template;
       autoPrint = compRes.competition.auto_print;
@@ -472,6 +477,7 @@
       const res = (await getReadout(competitionId)) as ReadoutResponse;
       history = res.history;
       pendingUnknownCards = res.pending_unknown_cards;
+      voidedCodes = res.voided_codes;
       clockOffsetMin = res.clock_offset_min;
     } catch {
       // Soft fail — WS will catch up.
@@ -791,7 +797,7 @@
           <div class="controls-head">
             <h3>{t('ro.course')}</h3>
             <span class="muted mono">
-              {receiptRead.punches.filter((p) => p.ok).length}/{receiptRead.punches.length}
+              {punchProgress(receiptRead.punches).ok}/{punchProgress(receiptRead.punches).total}
             </span>
           </div>
           {#if tweaks.density === 'high'}

@@ -27,6 +27,8 @@
     SKOGIS_PAPER,
   } from '#lib/skogis/skogis.ts';
   import type { ReceiptTemplateProps } from './types.ts';
+  import PunchCode from './PunchCode.svelte';
+  import { punchNo } from './punchLabels.ts';
 
   let { read }: ReceiptTemplateProps = $props();
 
@@ -509,11 +511,12 @@
 <table class="kids-splits">
   <tbody>
     {#each punchPairs as pair, i (i)}
+      {@const second = pair[1]}
       <tr>
-        <td>{i * 2 + 1}. {pair[0].finish ? 'M' : pair[0].code}</td>
+        <td>{punchNo(read.punches, i * 2)} <PunchCode p={pair[0]} /></td>
         <td class="t">{pair[0].split}</td>
-        <td>{pair[1] ? `${i * 2 + 2}. ${pair[1].finish ? 'M' : pair[1].code}` : ''}</td>
-        <td class="t">{pair[1] ? pair[1].split : ''}</td>
+        <td>{#if second}{punchNo(read.punches, i * 2 + 1)} <PunchCode p={second} />{/if}</td>
+        <td class="t">{second ? second.split : ''}</td>
       </tr>
     {/each}
   </tbody>

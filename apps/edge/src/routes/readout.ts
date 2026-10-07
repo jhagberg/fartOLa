@@ -57,6 +57,7 @@ import { officialMs, rawElapsedMs } from '../projection/dnfMp.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
+import { loadVoidedControlCodes } from '../projection/loader.ts';
 
 const ACTIVE_COMP_KEY = 'active_competition_id';
 
@@ -139,6 +140,17 @@ interface HistoryRow {
    * time in a class timed from it. Warnings for the jury only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** The competitor's CURRENT standing in the class, from the projection's
+   * results rows (display only). Refreshes with every readout refetch, so a
+   * later finisher moving this runner down shows up on the open card.
+   * class_place / class_behind_leader_ms are null for MP, DNF, DNS, PEND, a
+   * class without timing and unmatched cards; equal times share a place. */
+  class_place: number | null;
+  class_behind_leader_ms: number | null;
+  /** Runners in the class with a place ("x av y i mål": x = class_place,
+   * y = this) and all runners in the class. 0 for unmatched cards. */
+  class_finished_count: number;
+  class_starters_count: number;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side
@@ -162,6 +174,9 @@ interface ReadoutResponse {
   current_read: HistoryRow | null;
   history: HistoryRow[];
   pending_unknown_cards: number[];
+  /** Control codes voided course-wide now: the UI shows them as struck
+   * ("struken") on the course instead of missing. */
+  voided_codes: number[];
   /** ADR-0017 — the competition clock's UTC offset in minutes, with the
    * data it formats: a corrected offset reaches open read-out views on
    * their next refetch. Null for an unknown competition. */
@@ -293,6 +308,10 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         const payload = e.payload as Extract<EventPayload, { event_type: 'card_read' }>;
         const competitor = byCard.get(payload.card_number);
         const view = competitor && projection ? projection.competitors.get(competitor.id) : null;
+        const classRows = competitor
+          ? (projection?.results_by_class.get(competitor.classId) ?? [])
+          : [];
+        const classRow = classRows.find((r) => r.competitor_id === competitor?.id);
         // This read's running time: the projection's for the competitor's
         // latest read (manual status, voided legs, MAX included), else the
         // same scoring helper on this read's own card.
@@ -371,6 +390,10 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
                 ),
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
+          class_place: classRow?.place ?? null,
+          class_behind_leader_ms: classRow?.behind_leader_ms ?? null,
+          class_finished_count: classRows.filter((r) => r.place !== null).length,
+          class_starters_count: classRows.length,
         };
       });
 
@@ -397,6 +420,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         current_read: currentRead,
         history,
         pending_unknown_cards: pendingUnknownCards,
+        voided_codes: loadVoidedControlCodes(app.fartolaDb, id),
         clock_offset_min: clockOffsetMin,
       };
       void reply.code(200);

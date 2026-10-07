@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
   import type { ReceiptPunch } from './receipt-templates/types.ts';
+  import { punchLabel, punchNo } from './receipt-templates/punchLabels.ts';
 
   interface Props {
     punches: ReceiptPunch[];
@@ -27,10 +28,17 @@
 
 <div class="punch-grid" data-testid="punch-grid">
   {#each punches as p, i (i)}
-    <div class="punch" class:ok={!p.finish && p.ok} class:miss={!p.finish && !p.ok} class:finish={p.finish}>
-      <span class="idx mono">{i + 1}</span>
-      <span class="code mono">{p.finish ? 'M' : p.code}</span>
-      <span class="split mono">{p.split}</span>
+    <div
+      class="punch"
+      class:ok={!p.finish && !p.kind && p.ok}
+      class:miss={!p.finish && !p.kind && !p.ok}
+      class:struck={p.kind === 'struck'}
+      class:extra={p.kind === 'extra' || p.kind === 'order'}
+      class:finish={p.finish}
+    >
+      <span class="idx mono">{p.kind || p.finish ? '' : punchNo(punches, i).replace('.', '')}</span>
+      <span class="code mono">{#if p.finish}M{:else if p.kind === 'struck'}<s>{p.code}</s>{:else}{p.code}{/if}</span>
+      <span class="split mono">{punchLabel(p) ?? p.split}</span>
     </div>
   {/each}
 </div>
@@ -76,6 +84,24 @@
     border-color: color-mix(in srgb, var(--dnf) 40%, transparent);
     color: var(--dnf);
     border-style: dashed;
+  }
+  /* Struck and extra tiles are told apart by their label text and border
+     style, not by colour (ADR-0016 rule 7). */
+  .punch.extra {
+    background: var(--bg-sunken);
+    border-style: dashed;
+    color: var(--fg-muted);
+  }
+  .punch.struck {
+    background: var(--bg-sunken);
+    border-style: dotted;
+    color: var(--fg-muted);
+  }
+  .punch.extra .split,
+  .punch.struck .split {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--fg-muted);
   }
   .punch.finish {
     background: var(--accent-soft);

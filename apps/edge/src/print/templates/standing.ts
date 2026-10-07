@@ -8,7 +8,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatGap, receiptTime } from '../templates.ts';
+import { finishedInClass, formatGap, receiptTime } from '../templates.ts';
 
 export default async function standing(
   printer: ThermalPrinterLike,
@@ -34,9 +34,7 @@ export default async function standing(
   printer.setTextNormal();
 
   if (data.placeContext.place !== null) {
-    printer.println(
-      `PLATS ${data.placeContext.place} av ${data.placeContext.class_rows.length} i mål`
-    );
+    printer.println(`PLATS ${data.placeContext.place} av ${finishedInClass(data)} i mål`);
   } else if (data.competitor.status === 'PEND' && !data.competitor.no_timing) {
     // Other statuses print SOFT's name in place of the time (receiptTime);
     // an untimed class has no place (02.1-14 Task 9) and is not "waiting".

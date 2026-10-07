@@ -13,6 +13,8 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import PunchCode from './receipt-templates/PunchCode.svelte';
+  import { punchNo } from './receipt-templates/punchLabels.ts';
   import type { ReceiptPunch } from './receipt-templates/types.ts';
 
   interface Props {
@@ -34,8 +36,8 @@
   <tbody>
     {#each punches as p, i (i)}
       <tr class:finish-row={p.finish}>
-        <td>{i + 1}</td>
-        <td>{p.finish ? 'M (mål)' : p.code}</td>
+        <td>{punchNo(punches, i).replace('.', '')}</td>
+        <td><PunchCode {p} finishText="M (mål)" /></td>
         <td>{p.split}</td>
         <td>{p.time}</td>
       </tr>

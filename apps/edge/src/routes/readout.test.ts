@@ -165,6 +165,15 @@ interface ReadoutBody {
     unmatched: boolean;
   }>;
   pending_unknown_cards: number[];
+  voided_codes: number[];
+}
+
+interface StandingRow {
+  card_number: number;
+  class_place: number | null;
+  class_behind_leader_ms: number | null;
+  class_finished_count: number;
+  class_starters_count: number;
 }
 
 describe('GET /api/competitions/:id/readout', () => {
@@ -207,6 +216,95 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.ok(body.current_read);
     assert.equal(body.current_read.competitor_id, competitorId);
     assert.equal(body.current_read.status, 'OK');
+  });
+
+  test('test 1b: voided_codes follows control_voided / control_unvoided', async () => {
+    seedCompetition(ctx.handle, 'comp-v');
+    const get = async (): Promise<number[]> =>
+      (
+        (
+          await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-v/readout' })
+        ).json() as ReadoutBody
+      ).voided_codes;
+    assert.deepEqual(await get(), []);
+    await ctx.app.inject({ method: 'POST', url: '/api/competitions/comp-v/voided-controls/32' });
+    assert.deepEqual(await get(), [32]);
+    await ctx.app.inject({ method: 'DELETE', url: '/api/competitions/comp-v/voided-controls/32' });
+    assert.deepEqual(await get(), []);
+  });
+
+  // Display of the projection's class standing on each read row.
+  describe('class standing on the row', () => {
+    const at = (min: number): HalfDayClock => ({
+      half_day: 0,
+      seconds_in_half_day: 9 * 3600 - min * 60,
+      weekday: null,
+    });
+    function addRunner(classId: string, card: number): void {
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: `cmp-${card}`,
+          competitionId: 'comp-s',
+          name: `Runner ${card}`,
+          club: 'Test',
+          classId,
+          cardNumber: card,
+          consentAtMs: 1_000,
+          consentStatus: 'explicit',
+          scrubbedAtMs: null,
+        })
+        .run();
+    }
+    async function rows(): Promise<StandingRow[]> {
+      const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-s/readout' });
+      return (res.json() as { history: StandingRow[] }).history;
+    }
+    const byCard = (r: StandingRow[], card: number): StandingRow =>
+      r.find((x) => x.card_number === card) as StandingRow;
+
+    test('OK runners get place and time behind; MP gets none; ties share a place', async () => {
+      const { classId } = seedCompetition(ctx.handle, 'comp-s');
+      addRunner(classId, 2);
+      addRunner(classId, 3);
+      addRunner(classId, 4);
+      // Finish 9:30. Start punches 9:00 (30:00), 8:58 (32:00), 8:58 (tie), MP.
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 7501853, 100, 1, [31], at(0));
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 2, 101, 2, [31], at(2));
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 3, 102, 3, [31], at(2));
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 4, 103, 4, [99], at(0));
+      const r = await rows();
+      assert.deepEqual(
+        [7501853, 2, 3, 4].map((c) => [
+          byCard(r, c).class_place,
+          byCard(r, c).class_behind_leader_ms,
+        ]),
+        [
+          [1, 0],
+          [2, 120_000],
+          [2, 120_000],
+          [null, null],
+        ]
+      );
+      for (const c of [7501853, 2, 3, 4]) {
+        assert.equal(byCard(r, c).class_finished_count, 3);
+        assert.equal(byCard(r, c).class_starters_count, 4);
+      }
+    });
+
+    test('a class without timing gets no place; unmatched cards none either', async () => {
+      const { classId } = seedCompetition(ctx.handle, 'comp-s');
+      ctx.handle.sqlite.prepare('UPDATE classes SET no_timing = 1 WHERE id = ?').run(classId);
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 7501853, 100, 1, [31], at(0));
+      insertCardRead(ctx.handle, ctx.nodeId, 'comp-s', 999, 101, 2, [31], at(0));
+      const r = await rows();
+      assert.equal(byCard(r, 7501853).class_place, null);
+      assert.equal(byCard(r, 7501853).class_behind_leader_ms, null);
+      assert.equal(byCard(r, 7501853).class_finished_count, 0);
+      assert.equal(byCard(r, 7501853).class_starters_count, 1);
+      assert.equal(byCard(r, 999).class_place, null);
+      assert.equal(byCard(r, 999).class_starters_count, 0);
+    });
   });
 
   // 02.1-14 Task 13: the row carries the missing-start flag and suggestion.

@@ -9,7 +9,14 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed, formatGap, halfDayClockGapMs, receiptTime } from '../templates.ts';
+import {
+  controlRows,
+  finishedInClass,
+  formatElapsed,
+  formatGap,
+  halfDayClockGapMs,
+  receiptTime,
+} from '../templates.ts';
 
 export default async function classic(
   printer: ThermalPrinterLike,
@@ -38,23 +45,17 @@ export default async function classic(
   // for the IOF XML export and the detailed template can lift them
   // then). For now we render `cum` only.
   printer.println('Sträcka  Kod    Cum');
-  for (let i = 0; i < data.course.control_codes.length; i++) {
-    const expected = data.course.control_codes[i] as number;
-    const actual = data.competitor.latest_punches[i];
-    if (actual !== undefined) {
-      // 02.1-14 Task 9: no split times for an untimed class.
-      const cumMs = data.competitor.no_timing
+  for (const row of controlRows(data)) {
+    const tag = row.no.padEnd(3, ' ');
+    const code = String(row.code).padEnd(5, ' ');
+    // 02.1-14 Task 9: no split times for an untimed class.
+    const cumMs =
+      row.punch === null || data.competitor.no_timing
         ? null
-        : halfDayClockGapMs(data.competitor.latest_start, actual);
-      const cumStr = formatElapsed(cumMs).padStart(7, ' ');
-      const tag = String(i + 1).padEnd(3, ' ');
-      const code = String(actual.code).padEnd(5, ' ');
-      printer.println(`${tag}      ${code} ${cumStr}`);
-    } else {
-      const tag = String(i + 1).padEnd(3, ' ');
-      const code = String(expected).padEnd(5, ' ');
-      printer.println(`${tag}      ${code}      —`);
-    }
+        : halfDayClockGapMs(data.competitor.latest_start, row.punch);
+    const cumStr = row.label === 'struken' ? '' : formatElapsed(cumMs).padStart(7, ' ');
+    const label = row.label === null ? '' : ` ${row.label}`;
+    printer.println(`${tag}      ${code} ${cumStr}${label}`.trimEnd());
   }
 
   printer.drawLine();
@@ -63,9 +64,7 @@ export default async function classic(
   printer.bold(false);
 
   if (data.placeContext.place !== null) {
-    printer.println(
-      `Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length} i mål`
-    );
+    printer.println(`Plats ${data.placeContext.place} av ${finishedInClass(data)} i mål`);
   }
   const gap = formatGap(data.placeContext.behind_leader_ms);
   if (gap.length > 0) printer.println(gap);

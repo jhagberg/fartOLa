@@ -41,6 +41,8 @@
 
   interface Read {
     cardNumber: number;
+    /** SI card model from the read ("SIAC", "SI10", "SI5" …); null when unknown. */
+    cardType: string | null;
     name: string | null;
     cls: string;
     club: string | null;
@@ -54,6 +56,8 @@
      * should appear — auto-DNF shows an explanation popover instead. */
     manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
     place: number | null;
+    /** Class without timing (no_timing): labelled instead of a place. */
+    untimed: boolean;
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
     competitorId: string | null;
@@ -247,11 +251,17 @@
               <span>{t('ro.club')} <b>{read.club}</b></span>
             {/if}
             <span>{t('ro.start')} <b class="mono">{read.startTime}</b></span>
+            {#if read.cardType}
+              <span data-testid="card-type">{t('ro.card')} <b class="mono">{read.cardType}</b></span>
+            {/if}
           </div>
         </div>
         <div class="result-col">
           <div class="elapsed mono" data-testid="elapsed">{read.elapsed}</div>
           <div class="place">
+            {#if read.untimed}
+              <span data-testid="untimed">{t('ro.untimed')}</span> ·
+            {/if}
             {#if read.place}
               {t('ro.place')} <b class="mono">{read.place}</b> ·
             {/if}
