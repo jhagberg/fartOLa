@@ -69,6 +69,7 @@ import { matchPreviousStage } from '../draw/previousStage.ts';
 import { importResultList, importStartList } from '../xml/iofImport.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
+import { smallestGapMs } from '../draw/remaining.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
@@ -152,6 +153,42 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
   await app.register(multipart, {
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   });
+
+  /** After an import set start times, the class grid (classes.first_start_ms,
+   * start_interval_sec) of each affected class follows the actual starts: the
+   * first start, and the smallest gap as the interval (null with fewer than
+   * two distinct times). A grid left from an earlier draw would otherwise
+   * misplace late entrants (SOFT TR 7.5.3, TR 7.5.8). Call inside the
+   * transaction that wrote the starts. */
+  const syncClassGrids = (competitionId: string, competitorIds: readonly string[]): void => {
+    if (competitorIds.length === 0) return;
+    const classIds = new Set(
+      app.fartolaDb.db
+        .select({ classId: competitorsTable.classId })
+        .from(competitorsTable)
+        .where(inArray(competitorsTable.id, [...new Set(competitorIds)]))
+        .all()
+        .map((r) => r.classId)
+    );
+    for (const classId of classIds) {
+      const times = app.fartolaDb.db
+        .select({ t: competitorsTable.startTimeMs })
+        .from(competitorsTable)
+        .where(eq(competitorsTable.classId, classId))
+        .all()
+        .flatMap((r) => (r.t === null ? [] : [r.t]));
+      const gap = smallestGapMs(times);
+      writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
+        cause: 'start_list_import',
+        classId,
+        changes: [],
+        classGrid: {
+          firstStartMs: times.length > 0 ? Math.min(...times) : null,
+          intervalSec: gap === null ? null : Math.round(gap / 1000),
+        },
+      });
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/import/startlist
@@ -482,6 +519,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
             classId: null,
             changes: exactWrites.map((w) => ({ competitorId: w.id, startTimeMs: w.startTimeMs })),
           });
+          syncClassGrids(
+            competitionId,
+            exactWrites.map((w) => w.id)
+          );
         })();
       }
       app.projectionStore.markDirty(competitionId);
@@ -569,6 +610,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         classId: null,
         changes,
       });
+      syncClassGrids(
+        competitionId,
+        changes.map((c) => c.competitorId)
+      );
     })();
 
     if (applied > 0) {

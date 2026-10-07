@@ -367,6 +367,79 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     assert.equal(updated?.startTimeMs, new Date(startTimeIso).getTime());
   });
 
+  test('SOFT TR 7.5.8: an imported start list replaces the class grid, so late entrants follow the imported starts', async () => {
+    const compId = await newCompetition(ctx.app);
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21', class_kind: 'senior', age_class: 21 },
+    });
+    const classId = (cls.json() as { id: string }).id;
+    const cards = [7001, 7002, 7003];
+    cards.forEach((card, i) =>
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: `r${i}`,
+          competitionId: compId,
+          name: `Runner${i} Ek`,
+          club: `K${i}`,
+          classId,
+          cardNumber: card,
+        })
+        .run()
+    );
+    const t0 = new Date('2026-05-19T10:00:00Z').getTime();
+    const drawn = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', firstStartMs: t0, intervalSec: 60 },
+    });
+    assert.equal(drawn.statusCode, 201, drawn.body);
+    // Day-of import: an hour later, two minutes apart.
+    const hour = 3_600_000;
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      buildStartListXmlBuffer([
+        {
+          className: 'H21',
+          persons: cards.map((siCard, i) => ({
+            given: `Runner${i}`,
+            family: 'Ek',
+            startTimeIso: new Date(t0 + hour + i * 120_000).toISOString(),
+            siCard,
+          })),
+        },
+      ])
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    ctx.handle.db
+      .insert(competitors)
+      .values({ id: 'late', competitionId: compId, name: 'Late Ek', club: 'Z', classId })
+      .run();
+    const late = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', drawType: 'RemainingVacant' },
+    });
+    assert.equal(late.statusCode, 201, late.body);
+    const lateStart = ctx.handle.db
+      .select({ t: competitors.startTimeMs })
+      .from(competitors)
+      .where(eq(competitors.id, 'late'))
+      .get()!.t!;
+    // No vacant place inside the imported 3-runner list: right after the last start.
+    assert.equal(lateStart, t0 + hour + 3 * 120_000);
+    const after = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', drawType: 'RemainingAfter' },
+    });
+    assert.equal(after.statusCode, 201);
+  });
+
   test('startlist test 2: name-only match → fuzzy, NOT auto-applied', async () => {
     const compId = await newCompetition(ctx.app);
     const courseBytes = readFixture('iof30-coursedata-sample.xml');
