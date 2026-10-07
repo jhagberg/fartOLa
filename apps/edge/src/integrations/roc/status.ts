@@ -5,6 +5,7 @@
 // competition wall clock and evaluates. Read-only; results are not touched.
 
 import { and, eq, gte } from 'drizzle-orm';
+import type { HalfDayClock } from '@fartola/sportident';
 import type { RadioStatus } from '@fartola/shared-types';
 
 import { competitions, events } from '../../db/schema.ts';
@@ -19,6 +20,10 @@ import {
   type CardPunchIn,
   type RadioPunchIn,
 } from './watchdog.ts';
+
+const ROC_START_CODE = 1;
+const ROC_FINISH_CODE = 2;
+const ROC_CHECK_CODE = 3;
 
 /** '52,78,100' → [52, 78, 100]; anything that is not a code is dropped. */
 export function parseRocControls(text: string | null): number[] {
@@ -62,8 +67,9 @@ export function buildRadioStatus(
     radio.push({
       code: p.control_code,
       card: p.card_number,
-      wallMs: epochToWallClockMs(e.eventTimeMs),
-      receivedWallMs: epochToWallClockMs(p.received_at_ms),
+      wallMs: p.wall_ms,
+      receivedMs: p.received_at_ms,
+      delayMs: p.received_at_ms - e.eventTimeMs,
       dateMismatch: p.date_mismatch,
     });
   }
@@ -87,23 +93,27 @@ export function buildRadioStatus(
     const p = e.payload;
     if (p.event_type !== 'card_read') continue;
     if (comp.raceStartedAtMs !== null && e.eventTimeMs < comp.raceStartedAtMs) continue;
-    for (const punch of p.punches) {
-      card.push({
-        code: punch.code,
-        card: p.card_number,
-        wallMs: cardClockToWallMs(punch, p.card_type, e.eventTimeMs),
-        siac: cardTypeFromNumber(p.card_number) === 'SIAC',
-      });
+    // Start, finish and check are card fields, not punches; ROC sends them
+    // as codes 1, 2 and 3 (the control types of the oPunch rows).
+    const clocks: Array<[number, HalfDayClock | null]> = [
+      [ROC_START_CODE, p.start],
+      [ROC_FINISH_CODE, p.finish],
+      [ROC_CHECK_CODE, p.check],
+      ...p.punches.map((x): [number, HalfDayClock] => [x.code, x]),
+    ];
+    const siac = cardTypeFromNumber(p.card_number) === 'SIAC';
+    for (const [code, clock] of clocks) {
+      if (clock === null) continue;
+      const wallMs = cardClockToWallMs(clock, p.card_type, e.eventTimeMs);
+      card.push({ code, card: p.card_number, wallMs, epochMs: wallMsToEpochMs(wallMs), siac });
     }
   }
 
   const controls = evaluateRadioWatchdog(radio, card, {
     nowWallMs: epochToWallClockMs(nowMs),
+    nowMs,
     expectedCodes: radioControls,
-  }).map((c) => ({
-    ...c,
-    last_heard_ms: c.last_heard_ms === null ? null : wallMsToEpochMs(c.last_heard_ms),
-  }));
+  });
 
   return {
     settings: {

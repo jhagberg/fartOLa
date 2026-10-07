@@ -13,8 +13,12 @@
 //   date. An explicit start id set by the operator wins.
 // - Only the time of day is used (place.ts); a row whose date is not the
 //   competition date is stored with date_mismatch=true, never dropped.
-// - Dedup on (card, code, time of day) via the idempotency key and the unique
-//   index from migration 0018.
+// - Every ROC row is stored once (idempotency key = unit:row id), also when it
+//   repeats a punch another sender already delivered: the same punch via two
+//   sender types is collapsed when read (watchdog), not here, so a wrong-dated
+//   duplicate still raises its date warning.
+// - A response is applied only if the competition's ROC settings are the ones
+//   the request was made with; otherwise it is discarded.
 // - Radio punches are events but never touch the projection: no markDirty
 //   here (that would also trigger a liveresultat push every few seconds).
 // - lastId is stored on the competition row so a restart resumes.
@@ -133,8 +137,16 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
     }
   }
 
-  async function pollOnce(competitionId: string): Promise<RocBatch | null> {
-    const comp = handle.db
+  type Cursor = {
+    date: string;
+    enabled: boolean;
+    unitId: string | null;
+    startId: number | null;
+    lastId: number | null;
+  };
+
+  function readCursor(competitionId: string): Cursor | undefined {
+    return handle.db
       .select({
         date: competitions.date,
         enabled: competitions.rocEnabled,
@@ -145,16 +157,23 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
       .from(competitions)
       .where(eq(competitions.id, competitionId))
       .get();
-    if (!comp || !comp.enabled || !comp.unitId) return null;
+  }
 
-    // lastId to ask for. No stored state: from 0, and find the start below.
+  async function pollOnce(competitionId: string): Promise<RocBatch | null> {
+    const comp = readCursor(competitionId);
+    if (!comp || !comp.enabled || !comp.unitId) return null;
+    const unitId = comp.unitId;
+
+    // lastId to ask for. No stored state: from 0, and take the baseline below.
     let startId = comp.startId;
     const lastId = comp.lastId ?? (startId !== null ? startId - 1 : null);
     const baseline = lastId === null;
     const askedFrom = lastId ?? 0;
 
+    const body = await fetchRows(unitId, askedFrom);
+    // Received = when the response was in, not when the request left.
     const receivedAtMs = now();
-    const { rows, malformed } = parseRocResponse(await fetchRows(comp.unitId, askedFrom));
+    const { rows, malformed } = parseRocResponse(body);
     const fresh = rows.filter((r) => r.id > askedFrom).sort((a, b) => a.id - b.id);
 
     const batch: RocBatch = {
@@ -179,51 +198,63 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
       else toStore.push(r);
     }
 
-    for (const r of toStore) {
-      const placed = placeTimeOfDay(r.time, receivedAtMs);
-      const dateMismatch = r.date !== comp.date;
-      try {
-        insertEvent(
-          handle,
-          nodeId,
-          'radio_punch',
-          placed.epochMs,
-          {
-            event_type: 'radio_punch',
-            source: 'roc',
-            idempotency_key: `${r.card}:${r.code}:${r.time}`,
-            roc_id: r.id,
-            card_number: r.card,
-            control_code: r.code,
-            time_of_day: r.time,
-            received_at_ms: receivedAtMs,
-            roc_date: r.date,
-            date_mismatch: dateMismatch,
-          },
-          competitionId
-        );
-        batch.inserted++;
-        if (dateMismatch) batch.dateMismatches++;
-      } catch (e) {
-        if (!isUniqueViolation(e)) throw e;
-        batch.duplicates++;
+    const apply = handle.sqlite.transaction((): boolean => {
+      // The operator may have changed the settings while the request was out
+      // (new unit, new start id, off): then this response belongs to the old
+      // settings and must not touch the new cursor.
+      const now2 = readCursor(competitionId);
+      if (
+        !now2 ||
+        !now2.enabled ||
+        now2.unitId !== unitId ||
+        now2.startId !== comp.startId ||
+        now2.lastId !== comp.lastId
+      ) {
+        return false;
       }
-    }
-
-    // After the inserts: a crash in between re-fetches the rows and the
-    // unique index swallows the repeats.
-    const maxId = baseline ? startId! - 1 : fresh.length > 0 ? fresh[fresh.length - 1]!.id : null;
-    if (maxId !== null || startId !== comp.startId) {
-      handle.db
-        .update(competitions)
-        .set({
-          rocLastId: maxId ?? comp.lastId,
-          rocStartId: startId,
-        })
-        .where(eq(competitions.id, competitionId))
-        .run();
-    }
-    return batch;
+      for (const r of toStore) {
+        const placed = placeTimeOfDay(r.time, receivedAtMs);
+        const dateMismatch = r.date !== comp.date;
+        try {
+          insertEvent(
+            handle,
+            nodeId,
+            'radio_punch',
+            placed.epochMs,
+            {
+              event_type: 'radio_punch',
+              source: 'roc',
+              idempotency_key: `${unitId}:${r.id}`,
+              roc_id: r.id,
+              card_number: r.card,
+              control_code: r.code,
+              time_of_day: r.time,
+              wall_ms: placed.wallMs,
+              received_at_ms: receivedAtMs,
+              roc_date: r.date,
+              date_mismatch: dateMismatch,
+            },
+            competitionId
+          );
+          batch.inserted++;
+          if (dateMismatch) batch.dateMismatches++;
+        } catch (e) {
+          if (!isUniqueViolation(e)) throw e;
+          batch.duplicates++;
+        }
+      }
+      // In the same transaction as the inserts: cursor and rows move together.
+      const maxId = baseline ? startId! - 1 : fresh.length > 0 ? fresh[fresh.length - 1]!.id : null;
+      if (maxId !== null || startId !== comp.startId) {
+        handle.db
+          .update(competitions)
+          .set({ rocLastId: maxId ?? comp.lastId, rocStartId: startId })
+          .where(eq(competitions.id, competitionId))
+          .run();
+      }
+      return true;
+    });
+    return apply() ? batch : null;
   }
 
   async function tickOne(id: string): Promise<void> {

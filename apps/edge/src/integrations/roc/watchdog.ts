@@ -29,8 +29,11 @@ export interface RadioPunchIn {
   card: number;
   /** The punch's time of day on the competition wall clock. */
   wallMs: number;
-  /** When we received it, same scale. */
-  receivedWallMs: number;
+  /** When we received it, epoch ms. Silence, last heard and delay are all
+   * epoch arithmetic: a repeated autumn hour must not move them. */
+  receivedMs: number;
+  /** receivedMs minus the punch's own time, ms. */
+  delayMs: number;
   dateMismatch: boolean;
 }
 
@@ -38,12 +41,17 @@ export interface CardPunchIn {
   code: number;
   card: number;
   wallMs: number;
+  /** The same instant as epoch ms, to compare with receive times. */
+  epochMs: number;
   /** SIAC card (touch-free punching). */
   siac?: boolean;
 }
 
 export interface WatchdogParams {
+  /** Now on the wall clock (matching and windows over card punches). */
   nowWallMs: number;
+  /** Now as epoch ms (receive times, silence, last heard). */
+  nowMs: number;
   /** Coverage window M, minutes. */
   windowMin?: number;
   /** Silence N, minutes. */
@@ -80,7 +88,7 @@ export function evaluateRadioWatchdog(
   const silenceMin = params.silenceMin ?? WATCHDOG_DEFAULTS.silenceMin;
   const threshold = params.coverageThreshold ?? WATCHDOG_DEFAULTS.coverageThreshold;
   const tol = params.matchToleranceMs ?? WATCHDOG_DEFAULTS.matchToleranceMs;
-  const { nowWallMs } = params;
+  const { nowWallMs, nowMs } = params;
 
   // A card read twice yields the same punches: count each (card, code, time) once.
   const seen = new Set<string>();
@@ -91,8 +99,21 @@ export function evaluateRadioWatchdog(
     return true;
   });
 
-  const radioByCode = new Map<number, RadioPunchIn[]>();
+  // The same punch can arrive via two sender types (two rows). Heard-ness
+  // (last heard, date mismatches) looks at every row; the punch itself
+  // (received count, matching, delay) once, as the first row received.
+  const allByCode = new Map<number, RadioPunchIn[]>();
+  const firstByKey = new Map<string, RadioPunchIn>();
   for (const p of radio) {
+    const all = allByCode.get(p.code);
+    if (all) all.push(p);
+    else allByCode.set(p.code, [p]);
+    const k = `${p.card}:${p.code}:${p.wallMs}`;
+    const first = firstByKey.get(k);
+    if (!first || p.receivedMs < first.receivedMs) firstByKey.set(k, p);
+  }
+  const radioByCode = new Map<number, RadioPunchIn[]>();
+  for (const p of firstByKey.values()) {
     const list = radioByCode.get(p.code);
     if (list) list.push(p);
     else radioByCode.set(p.code, [p]);
@@ -105,8 +126,8 @@ export function evaluateRadioWatchdog(
 
   const out: RadioControlStatus[] = [];
   for (const [code, punches] of radioByCode) {
-    const lastHeard =
-      punches.length === 0 ? null : Math.max(...punches.map((p) => p.receivedWallMs));
+    const rows = allByCode.get(code) ?? [];
+    const lastHeard = rows.length === 0 ? null : Math.max(...rows.map((p) => p.receivedMs));
     const cardHere = cardUnique.filter((p) => p.code === code && p.wallMs <= nowWallMs);
 
     const inWindow = cardHere.filter((p) => p.wallMs >= nowWallMs - windowMin * MIN_MS);
@@ -124,8 +145,8 @@ export function evaluateRadioWatchdog(
       share(otherMatched, otherIn.length) >= threshold;
 
     const delays = punches
-      .filter((p) => p.receivedWallMs >= nowWallMs - windowMin * MIN_MS)
-      .map((p) => p.receivedWallMs - p.wallMs)
+      .filter((p) => p.receivedMs >= nowMs - windowMin * MIN_MS)
+      .map((p) => p.delayMs)
       .sort((a, b) => a - b);
     const medianDelay =
       delays.length === 0
@@ -136,11 +157,10 @@ export function evaluateRadioWatchdog(
 
     const unheardRecent = cardHere.some(
       (p) =>
-        p.wallMs >= nowWallMs - WATCHDOG_DEFAULTS.silenceLookbackMin * MIN_MS &&
-        (lastHeard === null || p.wallMs > lastHeard)
+        p.epochMs >= nowMs - WATCHDOG_DEFAULTS.silenceLookbackMin * MIN_MS &&
+        (lastHeard === null || p.epochMs > lastHeard)
     );
-    const silent =
-      (lastHeard === null || lastHeard < nowWallMs - silenceMin * MIN_MS) && unheardRecent;
+    const silent = (lastHeard === null || lastHeard < nowMs - silenceMin * MIN_MS) && unheardRecent;
     const coverage = inWindow.length === 0 ? null : matched.length / inWindow.length;
     const few =
       coverage !== null && inWindow.length >= WATCHDOG_DEFAULTS.minSample && coverage < threshold;
@@ -160,7 +180,7 @@ export function evaluateRadioWatchdog(
       other_card_punches: otherIn.length,
       other_matched: otherMatched,
       siac_problem: siacProblem,
-      date_mismatch_count: punches.filter((p) => p.dateMismatch).length,
+      date_mismatch_count: rows.filter((p) => p.dateMismatch).length,
     });
   }
   return out.sort((a, b) => a.control_code - b.control_code);

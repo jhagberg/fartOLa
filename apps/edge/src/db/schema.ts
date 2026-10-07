@@ -196,8 +196,9 @@ export type EventPayload =
       // competition clock (the ROC date is never used for that).
       event_type: 'radio_punch';
       source: 'roc';
-      /** `${card_number}:${control_code}:${time_of_day}` — no ROC id and no
-       * date, so the same punch via two sender types is stored once. */
+      /** `${roc unit}:${roc_id}`: a ROC row is stored once, however often it is
+       * fetched. The same punch via two sender types is two rows, collapsed on
+       * (card, code, time of day) when read. */
       idempotency_key: string;
       roc_id: number;
       card_number: number;
@@ -207,6 +208,10 @@ export type EventPayload =
       /** When we received the row (epoch ms). "Last heard" and the delivery
        * delay use this, not the punch's time of day: a backlog arrives late
        * with old times. */
+      /** The punch's time of day placed on the competition wall clock (the scale
+       * card punches use), kept as placed so radio and card punches compare
+       * without a DST round trip through epoch. */
+      wall_ms: number;
       received_at_ms: number;
       /** 'YYYY-MM-DD' ROC stamped the row with; kept to flag a sender whose
        * clock is off (date_mismatch), never to place or drop the punch. */

@@ -14,6 +14,7 @@ const card = (code: number, n: number, wallMs: number, siac = false): CardPunchI
   code,
   card: (siac ? 8_000_000 : 9_000_000) + n,
   wallMs,
+  epochMs: wallMs, // tests run with wall clock == epoch
   siac,
 });
 /** delayMs: how long after the punch we received it (0 = at once). */
@@ -28,7 +29,8 @@ const radio = (
   code,
   card: (siac ? 8_000_000 : 9_000_000) + n,
   wallMs,
-  receivedWallMs: wallMs + delayMs,
+  receivedMs: wallMs + delayMs,
+  delayMs,
   dateMismatch,
 });
 
@@ -42,7 +44,7 @@ describe('evaluateRadioWatchdog', () => {
       radio(78, 7, at(15, 7 - 2)),
       radio(78, 8, at(15, 8 + 3)),
     ];
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.window_card_punches, 10);
     assert.equal(c!.window_matched, 7);
     assert.equal(c!.coverage, 0.7);
@@ -53,7 +55,7 @@ describe('evaluateRadioWatchdog', () => {
   test('a radio punch from another card at the same time is not a match', () => {
     const cards = [1, 2, 3, 4, 5].map((n) => card(78, n, at(5, n)));
     const radios = [1, 2, 3, 4, 5].map((n) => radio(78, n + 100, at(5, n)));
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.window_matched, 0);
   });
 
@@ -63,7 +65,7 @@ describe('evaluateRadioWatchdog', () => {
       card(78, 50, at(40)), // outside M=20: unheard but not counted
     ];
     const radios = [1, 2, 3, 4, 5, 6].map((n) => radio(78, n, at(3, n)));
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.window_card_punches, 6);
     assert.equal(c!.coverage, 1);
     assert.equal(c!.state, 'ok');
@@ -71,7 +73,10 @@ describe('evaluateRadioWatchdog', () => {
 
   test('a handful of card punches is too few to judge coverage', () => {
     const cards = [1, 2, 3].map((n) => card(78, n, at(5, n)));
-    const [c] = evaluateRadioWatchdog([radio(78, 1, at(5, 1))], cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog([radio(78, 1, at(5, 1))], cards, {
+      nowWallMs: NOW,
+      nowMs: NOW,
+    });
     assert.equal(c!.coverage, 1 / 3);
     assert.equal(c!.state, 'ok');
   });
@@ -79,7 +84,7 @@ describe('evaluateRadioWatchdog', () => {
   test('silent: nothing for 10 min while read-out cards passed after the last radio punch', () => {
     const radios = [radio(100, 1, at(30))];
     const cards = [card(100, 1, at(30)), card(100, 2, at(25)), card(100, 3, at(12))];
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.state, 'silent');
     assert.equal(c!.last_heard_ms, at(30));
   });
@@ -87,21 +92,21 @@ describe('evaluateRadioWatchdog', () => {
   test('not silent when only 9 minutes have passed', () => {
     const radios = [radio(100, 1, at(9))];
     const cards = [card(100, 2, at(5))];
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.state, 'ok');
   });
 
   test('a quiet control is not silent: no card punches since the last radio punch', () => {
     const radios = [radio(100, 1, at(45))];
     const cards = [card(100, 1, at(45))]; // was heard; nobody since
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.state, 'ok');
   });
 
   test('card punches older than an hour do not make a control silent', () => {
     const radios = [radio(100, 1, at(200))];
     const cards = [card(100, 2, at(90))];
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.state, 'ok');
   });
 
@@ -112,7 +117,7 @@ describe('evaluateRadioWatchdog', () => {
       radio(78, 3, at(2, 9), true),
       radio(100, 4, at(2)),
     ];
-    const out = evaluateRadioWatchdog(radios, [], { nowWallMs: NOW });
+    const out = evaluateRadioWatchdog(radios, [], { nowWallMs: NOW, nowMs: NOW });
     assert.deepEqual(
       out.map((c) => [c.control_code, c.date_mismatch_count, c.state]),
       [
@@ -125,25 +130,29 @@ describe('evaluateRadioWatchdog', () => {
   test('the same card read twice counts once', () => {
     const cards = [1, 2, 3, 4, 5].flatMap((n) => [card(78, n, at(5, n)), card(78, n, at(5, n))]);
     const radios = [1, 2, 3, 4, 5].map((n) => radio(78, n, at(5, n)));
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.window_card_punches, 5);
   });
 
   test('a control with no radio punches is not listed', () => {
-    assert.deepEqual(evaluateRadioWatchdog([], [card(78, 1, at(2))], { nowWallMs: NOW }), []);
+    assert.deepEqual(
+      evaluateRadioWatchdog([], [card(78, 1, at(2))], { nowWallMs: NOW, nowMs: NOW }),
+      []
+    );
   });
 
   test('last heard is when we received the punch: a late backlog does not hide silence', () => {
     // Punches from 40 min ago, delivered 35 min late = received 5 min ago: alive.
     const alive = evaluateRadioWatchdog([radio(100, 1, at(40), false, 35 * MIN)], [], {
       nowWallMs: NOW,
+      nowMs: NOW,
     });
     assert.equal(alive[0]!.last_heard_ms, at(5));
     // Same punch time, received 25 min ago, runners since: silent.
     const silent = evaluateRadioWatchdog(
       [radio(100, 1, at(40), false, 15 * MIN)],
       [card(100, 2, at(8))],
-      { nowWallMs: NOW }
+      { nowWallMs: NOW, nowMs: NOW }
     );
     assert.equal(silent[0]!.last_heard_ms, at(25));
     assert.equal(silent[0]!.state, 'silent');
@@ -156,9 +165,9 @@ describe('evaluateRadioWatchdog', () => {
       radio(78, 3, at(8), false, 90_000),
       radio(78, 4, at(60), false, 500_000), // outside the window
     ];
-    const [c] = evaluateRadioWatchdog(radios, [], { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, [], { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.median_delay_ms, 3000);
-    const none = evaluateRadioWatchdog([radio(78, 4, at(60))], [], { nowWallMs: NOW });
+    const none = evaluateRadioWatchdog([radio(78, 4, at(60))], [], { nowWallMs: NOW, nowMs: NOW });
     assert.equal(none[0]!.median_delay_ms, null);
   });
 
@@ -168,6 +177,7 @@ describe('evaluateRadioWatchdog', () => {
       [card(52, 1, at(20)), card(52, 2, at(5))],
       {
         nowWallMs: NOW,
+        nowMs: NOW,
         expectedCodes: [52, 78],
       }
     );
@@ -182,6 +192,7 @@ describe('evaluateRadioWatchdog', () => {
   test('a listed control nobody has passed is shown, not silent; unlisted senders still show', () => {
     const out = evaluateRadioWatchdog([radio(87, 1, at(2))], [], {
       nowWallMs: NOW,
+      nowMs: NOW,
       expectedCodes: [52],
     });
     assert.deepEqual(
@@ -203,7 +214,7 @@ describe('evaluateRadioWatchdog', () => {
       ...[1, 2, 3, 4, 5, 6].map((n) => radio(2, n, at(10, n))),
       radio(2, 1, at(10, 21), false, 0, true),
     ];
-    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW });
+    const [c] = evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW });
     assert.equal(c!.other_card_punches, 6);
     assert.equal(c!.other_matched, 6);
     assert.equal(c!.siac_card_punches, 6);
@@ -218,7 +229,7 @@ describe('evaluateRadioWatchdog', () => {
         ...Array.from({ length: siacCount }, (_, i) => card(2, i + 1, at(10, i + 20), true)),
       ];
       const radios = [1, 2, 3, 4, 5, 6].slice(0, otherHeard).map((n) => radio(2, n, at(10, n)));
-      return evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW })[0]!;
+      return evaluateRadioWatchdog(radios, cards, { nowWallMs: NOW, nowMs: NOW })[0]!;
     };
     assert.equal(mk(6, 2).siac_problem, false); // others poor too
     assert.equal(mk(3, 6).siac_problem, false); // only 3 SIAC cards

@@ -173,24 +173,77 @@ describe('ROC poller', () => {
     assert.equal(rows[1]!.eventTimeMs, localToEpochMs(DATE, 10 * 3600 + 30));
   });
 
-  test('the same punch via two senders is stored once', async () => {
+  test('a re-fetched row is stored once; the same punch from two senders is two rows with their own date flags', async () => {
     const handle = setup();
     const { fetchImpl } = fakeFetch([
       '40;78;9000001;2026-10-04 10:00:00\r\n41;78;9000001;2026-10-03 10:00:00',
-      '42;78;9000001;2026-10-04 10:00:00',
     ]);
     const p = poller(handle, fetchImpl);
     const a = await p.pollOnce(COMP);
-    assert.equal(a?.inserted, 1);
-    assert.equal(a?.duplicates, 1);
-    const b = await p.pollOnce(COMP);
+    assert.equal(a?.inserted, 2);
+    // The wrong-dated duplicate still raises its warning.
+    assert.equal(a?.dateMismatches, 1);
+    assert.deepEqual(
+      radioEvents(handle).map((r) => r.p['date_mismatch']),
+      [false, true]
+    );
+  });
+
+  test('wrong-dated copy first, correct copy second: the warning stays', async () => {
+    const handle = setup();
+    const { fetchImpl } = fakeFetch([
+      '40;78;9000001;2026-10-03 10:00:00\r\n41;78;9000001;2026-10-04 10:00:00',
+    ]);
+    const a = await poller(handle, fetchImpl).pollOnce(COMP);
+    assert.equal(a?.dateMismatches, 1);
+  });
+
+  test('the same ROC row delivered twice (crash before the cursor moved) is stored once', async () => {
+    const handle = setup();
+    const row = '40;78;9000001;2026-10-04 10:00:00';
+    handle.sqlite.prepare('UPDATE competitions SET roc_last_id = 39').run();
+    const p1 = poller(handle, fakeFetch([row]).fetchImpl);
+    await p1.pollOnce(COMP);
+    handle.sqlite.prepare('UPDATE competitions SET roc_last_id = 39').run();
+    const b = await poller(handle, fakeFetch([row]).fetchImpl).pollOnce(COMP);
     assert.equal(b?.duplicates, 1);
     assert.equal(radioEvents(handle).length, 1);
-    // lastId still advanced past the duplicates.
-    assert.equal(
-      handle.db.select().from(competitions).where(eq(competitions.id, COMP)).get()!.rocLastId,
-      42
-    );
+  });
+
+  test('a response for old settings is discarded when the settings changed during the fetch', async () => {
+    const handle = setup({ startId: 1 });
+    let release!: (b: string) => void;
+    const slow = (() =>
+      new Promise<Response>((resolve) => {
+        release = (b) => resolve(new Response(b, { status: 200 }));
+      })) as unknown as typeof fetch;
+    const pending = poller(handle, slow).pollOnce(COMP);
+    // The operator moves to unit 999, start id 50, while the request is out.
+    handle.sqlite
+      .prepare(
+        "UPDATE competitions SET roc_competition_id='999', roc_start_id=50, roc_last_id=NULL"
+      )
+      .run();
+    release('1000;78;9000001;2026-10-04 10:00:00');
+    assert.equal(await pending, null);
+    const row = handle.db.select().from(competitions).where(eq(competitions.id, COMP)).get()!;
+    assert.deepEqual([row.rocCompetitionId, row.rocStartId, row.rocLastId], ['999', 50, null]);
+    assert.equal(radioEvents(handle).length, 0);
+  });
+
+  test('receive time is taken after the response is in', async () => {
+    const handle = setup();
+    let clock = NOON;
+    const fetchImpl = (async () => {
+      clock += 13_000; // the request takes 13 s
+      return new Response('90;78;9000001;2026-10-04 12:00:05', { status: 200 });
+    }) as unknown as typeof fetch;
+    const p = createRocPoller({ handle, nodeId: 'node-A', fetchImpl, now: () => clock });
+    await p.pollOnce(COMP);
+    const [e] = radioEvents(handle);
+    assert.equal(e!.p['received_at_ms'], NOON + 13_000);
+    // Punch 12:00:05 is placed relative to that, delay is 8 s, never negative.
+    assert.equal((e!.p['received_at_ms'] as number) - e!.eventTimeMs, 8_000);
   });
 
   test('places a time of day on the right side of midnight', async () => {

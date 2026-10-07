@@ -8,9 +8,10 @@
 -- competitions.roc_last_id         last ROC row id received, so a restart
 --                                  resumes where it stopped.
 --
--- The unique index makes a radio punch idempotent: the same card+code+time of
--- day arriving twice (two sender types) is stored once. It covers radio_punch
--- events only (partial index).
+-- The unique index makes a ROC row idempotent: its key is unit:row id, so a
+-- row fetched twice is stored once. It covers radio_punch events only
+-- (partial index). The same punch via two sender types is two rows and is
+-- collapsed on (card, code, time of day) when read.
 --
 -- Hand-written like 0011–0018, no snapshot.
 ALTER TABLE `competitions` ADD `roc_competition_id` text;--> statement-breakpoint
