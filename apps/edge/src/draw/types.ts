@@ -32,3 +32,13 @@ export type RngFn = (min: number, max: number) => number;
 /** Where vacant places go in a drawn class: MeOS's three positions
  * (oEvent::VacantPosition, MeOS code/oEvent.h:540-544). */
 export type VacantPosition = 'Mixed' | 'First' | 'Last';
+
+/** A draw that cannot be done as asked. The route answers 409 with `code`. */
+export class DrawError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'DrawError';
+    this.code = code;
+  }
+}

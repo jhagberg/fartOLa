@@ -6,41 +6,42 @@
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
 //   GET  /api/competitions/:id/lottning/:classId — fetch current start list
 //
-// POST semantics (D-03/D-04/D-05/D-06/D-07):
-//   1. Validate body with Zod (mode enum, numeric params).
-//      Zod refinement rejects intervalSec <= 0 for SOFT and Random modes
-//      (Gemini 3.1 Pro MEDIUM: prevents accidental mass start).
-//   2. Cross-competition pre-flight: verify class belongs to competition → 404.
-//   3. Load competitors for the class, build DrawRunner[] array.
-//   4. Call the appropriate draw function based on mode.
-//   5. writeStartTimes (db/startTimes.ts): one start_times_set event and the
-//      start_time_ms cache, in one transaction (D-07: re-lotta replaces the
-//      target class's start times only), plus classes.first_start_ms +
-//      start_interval_sec.
-//   6. Call app.projectionStore.markDirty(competitionId).
-//   7. Return 201 { drawn: N }.
+// POST semantics:
+//   1. Validate the body with Zod. intervalSec must be > 0 except for
+//      Simultaneous (T-02.1-04b).
+//   2. Cross-competition pre-flight: the class belongs to the competition, else 404.
+//   3. SOFT rules that depend on the class kind (classes.class_kind) → 422
+//      { error, rule }; a class without a confirmed kind → 409
+//      class_kind_unknown / class_kind_unconfirmed.
+//   4. Load the class's named competitors (SOFT TR 7.5.1: no draw without a name).
+//   5. drawType 'All' (default): draw the whole class (SOFT, Random,
+//      Simultaneous); every runner gets the drawn time or none (D-07), the
+//      class gets its start grid. drawType 'Remaining*': place only runners
+//      without a start time (late entrants, SOFT TR 7.5.7/7.5.8); nobody
+//      else moves.
+//   6. Write through writeStartTimes: one start_times_set event plus the
+//      start_time_ms cache (ADR-0003 update 2026-10). Undo: POST
+//      …/start-times/undo. A DrawError → 409 { error, message }; nothing written.
+//   7. markDirty; 201 { drawn: N, … }.
 //
-// Start times are events (ADR-0003 update 2026-10): a draw is one
-// start_times_set event and can be undone (POST …/start-times/undo).
-//
-// T-02.1-04: mode is a Zod enum — only 'SOFT', 'Random', 'Simultaneous'.
-// T-02.1-04b: intervalSec <= 0 rejected for SOFT and Random modes.
-//
-// Locked by:
-// - .planning/phases/02.1-sanctioned-competition-foundations/02.1-02-PLAN.md task 2
-// - D-03, D-04, D-05, D-06, D-07 (draw modes and start list semantics)
+// T-02.1-04: mode and drawType are Zod enums.
 
+import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { classes, competitors } from '../db/schema.ts';
-import { writeStartTimes } from '../db/startTimes.ts';
-import { drawSOFT } from '../draw/soft.ts';
+import type { ClassKind, ClassKindSource } from '@fartola/shared-types';
+import { classes, competitions, competitors } from '../db/schema.ts';
 import { drawRandom } from '../draw/random.ts';
+import { kindProblem } from '../draw/classKind.ts';
+import { fillVacancies, placeBeforeOrAfter, smallestGapMs } from '../draw/remaining.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
-import type { DrawRunner } from '../draw/types.ts';
+import { drawSOFT } from '../draw/soft.ts';
+import { DrawError } from '../draw/types.ts';
+import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+import { writeStartTimes } from '../db/startTimes.ts';
 import { StartTimeMs } from './competitors.ts';
 
 // ---------------------------------------------------------------------------
@@ -51,28 +52,94 @@ const LottningInput = z
   .object({
     mode: z.enum(['SOFT', 'Random', 'Simultaneous']),
     // Epoch ms, like every other start-time write (not ms since midnight).
-    firstStartMs: StartTimeMs.unwrap(),
-    intervalSec: z.number().int().min(0),
+    firstStartMs: StartTimeMs.unwrap().optional(),
+    intervalSec: z.number().int().min(0).optional(),
     vacantSlots: z.number().int().nonnegative().optional(),
     /** Where vacancies go (MeOS VacantPosition). Default 'Mixed'. */
     vacantPosition: z.enum(['Mixed', 'First', 'Last']).optional(),
+    /** 'All' draws the whole class; the others place only the runners
+     * without a start time (late entrants, SOFT TR 7.5.8). Default 'All'. */
+    drawType: z.enum(['All', 'RemainingBefore', 'RemainingAfter', 'RemainingVacant']).optional(),
   })
-  .refine(
-    (data) => {
-      // T-02.1-04b: for individual-start modes, intervalSec must be > 0.
-      if (data.mode === 'SOFT' || data.mode === 'Random') {
-        return data.intervalSec > 0;
-      }
-      // Simultaneous: intervalSec is irrelevant so any value is accepted.
-      return true;
-    },
-    {
-      message: 'intervalSec must be > 0 for SOFT and Random draw modes',
-      path: ['intervalSec'],
+  .superRefine((d, ctx) => {
+    const need = (ok: boolean, path: string, message: string) => {
+      if (!ok) ctx.addIssue({ code: 'custom', path: [path], message });
+    };
+    if ((d.drawType ?? 'All') !== 'All') {
+      need(
+        d.mode === 'SOFT' || d.mode === 'Random',
+        'drawType',
+        'late entrants are drawn with SOFT or Random'
+      );
+      need(!d.vacantSlots, 'vacantSlots', 'vacancies are drawn with the whole class');
+      return;
     }
-  );
+    need(d.firstStartMs !== undefined, 'firstStartMs', 'firstStartMs is required');
+    need(d.intervalSec !== undefined, 'intervalSec', 'intervalSec is required');
+    // T-02.1-04b: for individual-start modes, intervalSec must be > 0.
+    if (d.mode !== 'Simultaneous')
+      need((d.intervalSec ?? 0) > 0, 'intervalSec', `intervalSec must be > 0 for ${d.mode}`);
+  });
+type LottningBody = z.infer<typeof LottningInput>;
+
+interface Row {
+  id: string;
+  name: string;
+  club: string | null;
+  startTimeMs: number | null;
+}
+
+/** What a draw writes: start times, whether runners not drawn lose their
+ * time (a whole-class draw), and the class's start grid. */
+interface DrawPlan {
+  assignments: Array<{ id: string; startTimeMs: number }>;
+  wholeClass: boolean;
+  classGrid?: { firstStartMs: number | null; intervalSec: number | null };
+}
+
+/** A SOFT rule that refuses this draw in this class, or null. The rules
+ * read the stored class kind and competition level, never the names; a
+ * rule that needs a kind that is not set, or only guessed from the name,
+ * refuses (409). */
+function refusal(
+  body: LottningBody,
+  cls: {
+    name: string;
+    classKind: ClassKind | null;
+    classKindSource: ClassKindSource | null;
+    ageClass: number | null;
+  }
+): { status: 409 | 422; error: string; message?: string; rule?: string } | null {
+  if (body.drawType === 'RemainingVacant') {
+    // A refusing rule needs a confirmed kind, not a name suggestion.
+    const problem = kindProblem(cls);
+    if (problem !== null) return { status: 409, ...problem };
+  }
+  // SOFT TR 7.5.8: vacant places may be offered on the day, not in an elite class.
+  if (body.drawType === 'RemainingVacant' && cls.classKind === 'elit')
+    return { status: 422, error: 'vacancies_not_offered_in_elite', rule: 'SOFT TR 7.5.8' };
+  return null;
+}
 
 export default async function registerLottningRoutes(app: FastifyInstance): Promise<void> {
+  const classOf = (competitionId: string, classId: string) =>
+    app.fartolaDb.db
+      .select({
+        id: classes.id,
+        name: classes.name,
+        firstStartMs: classes.firstStartMs,
+        startIntervalSec: classes.startIntervalSec,
+        maxTimeSec: classes.maxTimeSec,
+        classKind: classes.classKind,
+        classKindSource: classes.classKindSource,
+        ageClass: classes.ageClass,
+        level: competitions.level,
+      })
+      .from(classes)
+      .innerJoin(competitions, eq(competitions.id, classes.competitionId))
+      .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
+      .get();
+
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/lottning/:classId — draw and write start times
   // ---------------------------------------------------------------------------
@@ -85,78 +152,57 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       if (!parsed.success) {
         return reply.code(400).send(issuesToErrors(parsed.error.issues));
       }
-      const {
-        mode,
-        firstStartMs,
-        intervalSec,
-        vacantSlots = 0,
-        vacantPosition = 'Mixed',
-      } = parsed.data;
+      const body = parsed.data;
 
-      // Cross-competition pre-flight: verify class belongs to this competition.
-      const classRow = app.fartolaDb.db
-        .select({ id: classes.id, competitionId: classes.competitionId })
-        .from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
-        .get();
+      const classRow = classOf(competitionId, classId);
       if (!classRow) {
         return reply.code(404).send({ error: 'class_not_found' });
       }
+      const refused = refusal(body, classRow);
+      if (refused !== null) {
+        const { status, ...rest } = refused;
+        return reply.code(status).send(rest);
+      }
 
-      // Load competitors for the class. SOFT TR 7.5.1: an entry without a
-      // name is not drawn (it loses any start time it had).
-      const competitorRows = app.fartolaDb.db
-        .select({ id: competitors.id, name: competitors.name, club: competitors.club })
+      // All competitors of the class; SOFT TR 7.5.1: one without a name is
+      // not drawn (a whole-class draw leaves it without a start time).
+      const all: Row[] = app.fartolaDb.db
+        .select({
+          id: competitors.id,
+          name: competitors.name,
+          club: competitors.club,
+          startTimeMs: competitors.startTimeMs,
+        })
         .from(competitors)
         .where(eq(competitors.classId, classId))
         .all();
+      const named = all.filter((r) => r.name.trim().length > 0);
 
-      const runnerList: DrawRunner[] = competitorRows
-        .filter((r) => r.name.trim().length > 0)
-        .map((r) => ({ id: r.id, club: r.club }));
-
-      // Run the draw algorithm.
-      let drawResult;
-      if (mode === 'SOFT') {
-        drawResult = drawSOFT(runnerList, { vacantSlots, vacantPosition });
-      } else if (mode === 'Random') {
-        drawResult = drawRandom(runnerList, { vacantSlots, vacantPosition });
-      } else {
-        // Simultaneous
-        drawResult = drawSimultaneous(runnerList);
+      let plan: DrawPlan;
+      try {
+        plan =
+          (body.drawType ?? 'All') === 'All'
+            ? drawWholeClass(body, named)
+            : drawLateEntrants(body, classRow, named);
+      } catch (e) {
+        if (e instanceof DrawError)
+          return reply.code(409).send({ error: e.code, message: e.message });
+        throw e;
       }
 
-      // Assign start times based on draw order.
-      // For Simultaneous: all runners get firstStartMs.
-      // For SOFT/Random: runner at slot i (non-null) gets firstStartMs + slotIndex * intervalSec * 1000.
-      const assignments: Array<{ id: string; startTimeMs: number }> = [];
-      let slotIndex = 0;
-      for (const slot of drawResult.order) {
-        if (slot !== null) {
-          const timeMs =
-            mode === 'Simultaneous' ? firstStartMs : firstStartMs + slotIndex * intervalSec * 1000;
-          assignments.push({ id: slot.id, startTimeMs: timeMs });
-        }
-        slotIndex++;
-      }
-
-      // One start_times_set event (ADR-0003 update 2026-10): every runner in
-      // the class gets the drawn time or none (D-07: a redraw replaces all),
-      // and the class gets its start grid. Undo: POST …/start-times/undo.
-      const drawnAt = new Map(assignments.map((a) => [a.id, a.startTimeMs]));
+      const at = new Map(plan.assignments.map((a) => [a.id, a.startTimeMs]));
       writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
-        cause: 'draw',
+        cause: plan.wholeClass ? 'draw' : 'late_entrants',
         classId,
-        changes: competitorRows.map((r) => ({
-          competitorId: r.id,
-          startTimeMs: drawnAt.get(r.id) ?? null,
-        })),
-        classGrid: { firstStartMs, intervalSec },
+        changes: plan.wholeClass
+          ? all.map((r) => ({ competitorId: r.id, startTimeMs: at.get(r.id) ?? null }))
+          : plan.assignments.map((a) => ({ competitorId: a.id, startTimeMs: a.startTimeMs })),
+        ...(plan.classGrid !== undefined ? { classGrid: plan.classGrid } : {}),
       });
 
       app.projectionStore.markDirty(competitionId);
 
-      return reply.code(201).send({ drawn: assignments.length });
+      return reply.code(201).send({ drawn: plan.assignments.length });
     }
   );
 
@@ -168,18 +214,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
     async (req, reply) => {
       const { id: competitionId, classId } = req.params;
 
-      // Cross-competition pre-flight.
-      const classRow = app.fartolaDb.db
-        .select({
-          id: classes.id,
-          name: classes.name,
-          firstStartMs: classes.firstStartMs,
-          startIntervalSec: classes.startIntervalSec,
-          maxTimeSec: classes.maxTimeSec,
-        })
-        .from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
-        .get();
+      const classRow = classOf(competitionId, classId);
       if (!classRow) {
         return reply.code(404).send({ error: 'class_not_found' });
       }
@@ -216,4 +251,79 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       };
     }
   );
+}
+
+/** SOFT, Random, Simultaneous: the whole class, slot k at first + k·interval. */
+function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
+  const runners: DrawRunner[] = named.map((r) => ({ id: r.id, club: r.club }));
+  const firstStartMs = body.firstStartMs!;
+  const intervalSec = body.intervalSec!;
+  const vacancies = {
+    vacantSlots: body.vacantSlots ?? 0,
+    vacantPosition: body.vacantPosition ?? 'Mixed',
+  } as const;
+  let result: DrawResult;
+  if (body.mode === 'SOFT') result = drawSOFT(runners, vacancies);
+  else if (body.mode === 'Random') result = drawRandom(runners, vacancies);
+  else result = drawSimultaneous(runners);
+  const assignments: DrawPlan['assignments'] = [];
+  result.order.forEach((slot, k) => {
+    if (slot !== null)
+      assignments.push({
+        id: slot.id,
+        startTimeMs:
+          body.mode === 'Simultaneous' ? firstStartMs : firstStartMs + k * intervalSec * 1000,
+      });
+  });
+  return { assignments, wholeClass: true, classGrid: { firstStartMs, intervalSec } };
+}
+
+/** SOFT TR 7.5.7/7.5.8: the runners without a start time, without
+ * redrawing the others (MeOS drawList Remaining*, remaining.ts). */
+function drawLateEntrants(
+  body: LottningBody,
+  classRow: { firstStartMs: number | null; startIntervalSec: number | null },
+  named: Row[]
+): DrawPlan {
+  if (named.every((r) => r.startTimeMs === null))
+    throw new DrawError('no_start_list', 'The class has no start times yet; draw the whole class.');
+  const existing = named.flatMap((r) =>
+    r.startTimeMs === null ? [] : [{ id: r.id, club: r.club, startTimeMs: r.startTimeMs }]
+  );
+  const late: DrawRunner[] = named
+    .filter((r) => r.startTimeMs === null)
+    .map((r) => ({ id: r.id, club: r.club }));
+  // The class interval (TR 7.5.3: one interval through the class), else the
+  // smallest gap (MeOS), else the body's intervalSec.
+  const intervalMs =
+    (classRow.startIntervalSec ?? 0) > 0
+      ? classRow.startIntervalSec! * 1000
+      : (smallestGapMs(existing.map((r) => r.startTimeMs)) ??
+        ((body.intervalSec ?? 0) > 0 ? body.intervalSec! * 1000 : null));
+  if (intervalMs === null)
+    throw new DrawError('interval_unknown', 'The class has no start interval; give intervalSec.');
+  const order = (body.mode === 'SOFT' ? drawSOFT(late) : drawRandom(late)).order.filter(
+    (s): s is DrawRunner => s !== null
+  );
+  if (body.drawType === 'RemainingVacant') {
+    const firstStartMs = classRow.firstStartMs ?? Math.min(...existing.map((r) => r.startTimeMs));
+    const assignments = fillVacancies(existing, order, { firstStartMs, intervalMs }, (min, max) =>
+      crypto.randomInt(min, max)
+    );
+    return { assignments, wholeClass: false };
+  }
+  const placement = body.drawType === 'RemainingBefore' ? 'Before' : 'After';
+  const assignments = placeBeforeOrAfter(existing, order, placement, intervalMs);
+  return {
+    assignments,
+    wholeClass: false,
+    ...(placement === 'Before' && assignments.length > 0
+      ? {
+          classGrid: {
+            firstStartMs: assignments[0]!.startTimeMs,
+            intervalSec: classRow.startIntervalSec,
+          },
+        }
+      : {}),
+  };
 }

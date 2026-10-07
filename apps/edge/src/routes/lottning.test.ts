@@ -72,6 +72,9 @@ async function boot(): Promise<Ctx> {
         firstStartMs: null,
         startIntervalSec: null,
         maxTimeSec: null,
+        classKind: 'senior',
+        ageClass: 21,
+        classKindSource: 'operator',
       },
       {
         id: otherClassId,
@@ -81,6 +84,9 @@ async function boot(): Promise<Ctx> {
         firstStartMs: null,
         startIntervalSec: null,
         maxTimeSec: null,
+        classKind: 'senior',
+        ageClass: 21,
+        classKindSource: 'operator',
       },
     ])
     .run();
@@ -483,6 +489,25 @@ describe('lottning route', () => {
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
       payload,
     });
+  const addRunner = (
+    name: string,
+    club: string | null,
+    startTimeMs: number | null = null
+  ): string => {
+    const id = crypto.randomUUID();
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id,
+        competitionId: ctx.competitionId,
+        name,
+        club,
+        classId: ctx.classId,
+        startTimeMs,
+      })
+      .run();
+    return id;
+  };
   const timesOf = (): Map<string, number | null> =>
     new Map(
       ctx.handle.db
@@ -525,5 +550,124 @@ describe('lottning route', () => {
       times,
       [0, 1, 2, 3, 4].map((k) => firstStartMs + k * 60_000)
     );
+  });
+
+  test('SOFT TR 7.5.8: late entrants after the class (night) — the drawn runners keep their times', async () => {
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    const before = timesOf();
+    const x = addRunner('Late X', 'Gamma');
+    const y = addRunner('Late Y', 'Delta');
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal((res.json() as { drawn: number }).drawn, 2);
+    const after = timesOf();
+    for (const [id, t] of before) assert.equal(after.get(id), t, 'a drawn runner moved');
+    assert.deepEqual(
+      [after.get(x), after.get(y)].map(Number).sort((a, b) => a - b),
+      [firstStartMs + 5 * 60_000, firstStartMs + 6 * 60_000]
+    );
+  });
+
+  test('SOFT TR 7.5.8: late entrants before the class (day) — block ends one interval before the first start', async () => {
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    const x = addRunner('Late X', 'Gamma');
+    const res = await post({ mode: 'Random', drawType: 'RemainingBefore' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(timesOf().get(x), firstStartMs - 60_000);
+    const cls = ctx.handle.db.select().from(classes).where(eq(classes.id, ctx.classId)).get()!;
+    assert.equal(cls.firstStartMs, firstStartMs - 60_000);
+  });
+
+  test('SOFT TR 7.5.8: late entrants take vacant places; not in an elite class (422)', async () => {
+    const firstStartMs = at(10);
+    assert.equal(
+      (
+        await post({
+          mode: 'SOFT',
+          firstStartMs,
+          intervalSec: 60,
+          vacantSlots: 2,
+          vacantPosition: 'First',
+        })
+      ).statusCode,
+      201
+    );
+    const x = addRunner('Late X', 'Gamma');
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.ok(
+      [firstStartMs, firstStartMs + 60_000].includes(timesOf().get(x)!),
+      'not a vacant place'
+    );
+
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'elit', ageClass: 21 })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    addRunner('Late Z', 'Gamma');
+    const elite = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+    assert.equal(elite.statusCode, 422, elite.body);
+    assert.equal((elite.json() as { error: string }).error, 'vacancies_not_offered_in_elite');
+  });
+
+  test('late entrants without a start list → 409 no_start_list, nothing written', async () => {
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: string }).error, 'no_start_list');
+    assert.ok([...timesOf().values()].every((t) => t === null));
+  });
+
+  test('late entrants after an imported start list (no class interval) use the smallest gap', async () => {
+    // A StartList import sets start times but not classes.start_interval_sec.
+    const t0 = at(10);
+    let k = 0;
+    for (const id of timesOf().keys())
+      ctx.handle.db
+        .update(competitors)
+        .set({ startTimeMs: t0 + k++ * 120_000 })
+        .where(eq(competitors.id, id))
+        .run();
+    const x = addRunner('Late X', 'Gamma');
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(timesOf().get(x), t0 + 5 * 120_000);
+  });
+
+  test('a second late-entrant draw with nobody new is a no-op', async () => {
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+    addRunner('Late X', 'Gamma');
+    assert.equal((await post({ mode: 'SOFT', drawType: 'RemainingAfter' })).statusCode, 201);
+    const before = timesOf();
+    const again = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
+    assert.equal(again.statusCode, 201, again.body);
+    assert.equal((again.json() as { drawn: number }).drawn, 0);
+    assert.deepEqual(timesOf(), before);
+  });
+
+  test('a refusing rule needs a confirmed class kind: a name suggestion → 409 class_kind_unconfirmed', async () => {
+    const firstStartMs = at(10);
+    assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
+    addRunner('Late X', 'Gamma');
+    ctx.handle.db
+      .update(classes)
+      .set({ classKindSource: 'name' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: string }).error, 'class_kind_unconfirmed');
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: null, classKindSource: null })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const none = await post({ mode: 'SOFT', drawType: 'RemainingVacant' });
+    assert.equal((none.json() as { error: string }).error, 'class_kind_unknown');
   });
 });

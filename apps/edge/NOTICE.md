@@ -47,6 +47,7 @@ header and is listed here; `scripts/check-meos-attribution.sh` (in
 
 Ported files:
 
+- `apps/edge/src/draw/remaining.ts` — late entrants before/after the class, from `oEvent::drawList` (`code/oEventDraw.cpp:2498-2550`).
 - `apps/edge/scripts/meosDrawReference.ts` — reference translations of `drawSOFTMethod`, `drawMeOSMethod` (`code/oEventDraw.cpp:107-431`) and `permute` (`code/random.cpp:83-111`), used only by the draw benchmark.
 
 ## IOF Data Standard v3.0 — XSD bundled in `dist/xml/IOF.xsd`
