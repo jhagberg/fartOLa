@@ -754,4 +754,92 @@ describe('lottning route', () => {
     assert.equal(one.statusCode, 409, one.body);
     assert.equal((one.json() as { error: string }).error, 'one_seeding_group');
   });
+
+  /** Earlier-stage results as the ResultList import stores them. */
+  const setInput = (byName: Record<string, [number | null, string | null]>) => {
+    for (const [name, [inputTimeMs, inputStatus]] of Object.entries(byName))
+      ctx.handle.db
+        .update(competitors)
+        .set({ inputTimeMs, inputStatus })
+        .where(eq(competitors.name, name))
+        .run();
+  };
+  const pursuitBody = {
+    firstStartMs: at(10),
+    intervalSec: 60,
+    restartMs: at(11),
+    maxBehindSec: 3600,
+  };
+
+  test('SOFT TR 7.4.1: Pursuit — start = first start + time behind the leader in the imported ResultList', async () => {
+    setInput({
+      'Runner 0': [30 * 60_000, 'OK'],
+      'Runner 3': [32 * 60_000, 'OK'],
+      'Runner 1': [31 * 60_000, 'MissingPunch'],
+    });
+    const res = await post({ ...pursuitBody, mode: 'Pursuit' });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.deepEqual(res.json(), { drawn: 5, restarted: 3, without_result: 2 });
+    const byName = new Map(
+      ctx.handle.db
+        .select({ name: competitors.name, t: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, ctx.classId))
+        .all()
+        .map((r) => [r.name, r.t])
+    );
+    assert.equal(byName.get('Runner 0'), pursuitBody.firstStartMs);
+    assert.equal(byName.get('Runner 3'), pursuitBody.firstStartMs + 2 * 60_000);
+    // Not OK or no result → restart block, one interval apart, in name order.
+    assert.deepEqual(
+      ['Runner 1', 'Runner 2', 'Runner 4'].map((n) => byName.get(n)),
+      [pursuitBody.restartMs, pursuitBody.restartMs + 60_000, pursuitBody.restartMs + 120_000]
+    );
+  });
+
+  test('SOFT TR 7.4.1: no pursuit and no reverse pursuit in Inskolning or D/H10–12 (422)', async () => {
+    for (const [kind, age] of [
+      ['ungdom', 10],
+      ['ungdom', 12],
+      ['inskolning', null],
+    ] as const) {
+      setKind(kind, age);
+      for (const mode of ['Pursuit', 'ReversePursuit']) {
+        const res = await post({ ...pursuitBody, mode });
+        assert.equal(res.statusCode, 422, `${kind} ${age} ${mode}: ${res.body}`);
+        assert.deepEqual(res.json(), { error: 'pursuit_not_allowed', rule: 'SOFT TR 7.4.1' });
+      }
+    }
+    assert.ok(
+      [...timesOf().values()].every((t) => t === null),
+      'nothing written'
+    );
+    setKind('ungdom', 14);
+    assert.equal((await post({ ...pursuitBody, mode: 'ReversePursuit' })).statusCode, 201);
+  });
+
+  test('a class without a kind → 409 class_kind_unknown for the rules that need it', async () => {
+    setKind(null);
+    setLevel('niva1');
+    for (const body of [
+      { ...pursuitBody, mode: 'Pursuit' },
+      { mode: 'Seeded', firstStartMs: at(10), intervalSec: 60 },
+      { mode: 'SOFT', drawType: 'RemainingVacant' },
+    ]) {
+      const res = await post(body);
+      assert.equal(res.statusCode, 409, `${JSON.stringify(body)}: ${res.body}`);
+      assert.equal((res.json() as { error: string }).error, 'class_kind_unknown');
+    }
+  });
+
+  test('a pursuit needs a confirmed class kind: a name suggestion → 409 class_kind_unconfirmed', async () => {
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'ungdom', ageClass: 14, classKindSource: 'name' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const res = await post({ ...pursuitBody, mode: 'Pursuit' });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: string }).error, 'class_kind_unconfirmed');
+  });
 });

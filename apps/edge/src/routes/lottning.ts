@@ -16,7 +16,7 @@
 //      class_kind_unknown / class_kind_unconfirmed.
 //   4. Load the class's named competitors (SOFT TR 7.5.1: no draw without a name).
 //   5. drawType 'All' (default): draw the whole class (SOFT, Random,
-//      Simultaneous, Seeded); every runner gets the drawn time or none (D-07), the
+//      Simultaneous, Seeded, Pursuit, ReversePursuit); every runner gets the drawn time or none (D-07), the
 //      class gets its start grid. drawType 'Remaining*': place only runners
 //      without a start time (late entrants, SOFT TR 7.5.7/7.5.8); nobody
 //      else moves.
@@ -35,7 +35,8 @@ import { z } from 'zod';
 import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
 import { classes, competitions, competitors } from '../db/schema.ts';
 import { drawRandom } from '../draw/random.ts';
-import { kindProblem } from '../draw/classKind.ts';
+import { kindProblem, pursuitBanned } from '../draw/classKind.ts';
+import { drawPursuit } from '../draw/pursuit.ts';
 import { fillVacancies, placeBeforeOrAfter, smallestGapMs } from '../draw/remaining.ts';
 import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
@@ -50,9 +51,12 @@ import { StartTimeMs } from './competitors.ts';
 // Input validation schema
 // ---------------------------------------------------------------------------
 
+const PURSUIT = ['Pursuit', 'ReversePursuit'] as const;
+const isPursuit = (mode: string) => (PURSUIT as readonly string[]).includes(mode);
+
 const LottningInput = z
   .object({
-    mode: z.enum(['SOFT', 'Random', 'Simultaneous', 'Seeded']),
+    mode: z.enum(['SOFT', 'Random', 'Simultaneous', 'Seeded', 'Pursuit', 'ReversePursuit']),
     // Epoch ms, like every other start-time write (not ms since midnight).
     firstStartMs: StartTimeMs.unwrap().optional(),
     intervalSec: z.number().int().min(0).optional(),
@@ -64,6 +68,12 @@ const LottningInput = z
     drawType: z.enum(['All', 'RemainingBefore', 'RemainingAfter', 'RemainingVacant']).optional(),
     /** Seeded: strongest group starts first (default last, as MeOS). */
     bestFirst: z.boolean().optional(),
+    /** Pursuit: start of the restart block (omstart). */
+    restartMs: StartTimeMs.unwrap().optional(),
+    /** Pursuit: runners this far behind the leader start in the restart block. */
+    maxBehindSec: z.number().int().positive().optional(),
+    /** Pursuit: time factor (MeOS "scale"). Default 1. */
+    scale: z.number().positive().max(10).optional(),
   })
   .superRefine((d, ctx) => {
     const need = (ok: boolean, path: string, message: string) => {
@@ -83,6 +93,11 @@ const LottningInput = z
     // T-02.1-04b: for individual-start modes, intervalSec must be > 0.
     if (d.mode !== 'Simultaneous')
       need((d.intervalSec ?? 0) > 0, 'intervalSec', `intervalSec must be > 0 for ${d.mode}`);
+    if (isPursuit(d.mode)) {
+      need(d.restartMs !== undefined, 'restartMs', 'restartMs is required');
+      need(d.maxBehindSec !== undefined, 'maxBehindSec', 'maxBehindSec is required');
+      need(!d.vacantSlots, 'vacantSlots', 'a pursuit has no vacancies');
+    }
   });
 type LottningBody = z.infer<typeof LottningInput>;
 
@@ -94,6 +109,8 @@ interface Row {
   club: string | null;
   startTimeMs: number | null;
   seedGroup: number | null;
+  inputTimeMs: number | null;
+  inputStatus: string | null;
 }
 
 /** What a draw writes: start times, whether runners not drawn lose their
@@ -102,6 +119,8 @@ interface DrawPlan {
   assignments: Array<{ id: string; startTimeMs: number }>;
   wholeClass: boolean;
   classGrid?: { firstStartMs: number | null; intervalSec: number | null };
+  /** Counts the response adds (pursuit: restarted, without_result). */
+  extra?: Record<string, number>;
 }
 
 /** A SOFT rule that refuses this draw in this class, or null. The rules
@@ -133,8 +152,15 @@ function refusal(
         return { status: 422, error: 'seeding_not_allowed', rule: 'SOFT TR 7.4.5' };
     }
   }
+  // SOFT TR 7.4.1 (both pursuit kinds, see classKind.ts). A refusing rule
+  // needs a confirmed kind, not a name suggestion.
+  if (isPursuit(body.mode)) {
+    const problem = kindProblem(cls);
+    if (problem !== null) return { status: 409, ...problem };
+    if (pursuitBanned(cls.classKind!, cls.ageClass))
+      return { status: 422, error: 'pursuit_not_allowed', rule: 'SOFT TR 7.4.1' };
+  }
   if (body.drawType === 'RemainingVacant') {
-    // A refusing rule needs a confirmed kind, not a name suggestion.
     const problem = kindProblem(cls);
     if (problem !== null) return { status: 409, ...problem };
   }
@@ -196,6 +222,8 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           club: competitors.club,
           startTimeMs: competitors.startTimeMs,
           seedGroup: competitors.seedGroup,
+          inputTimeMs: competitors.inputTimeMs,
+          inputStatus: competitors.inputStatus,
         })
         .from(competitors)
         .where(eq(competitors.classId, classId))
@@ -204,10 +232,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
 
       let plan: DrawPlan;
       try {
-        plan =
-          (body.drawType ?? 'All') === 'All'
-            ? drawWholeClass(body, named)
-            : drawLateEntrants(body, classRow, named);
+        if ((body.drawType ?? 'All') !== 'All') plan = drawLateEntrants(body, classRow, named);
+        else if (isPursuit(body.mode)) plan = drawPursuitClass(body, named);
+        else plan = drawWholeClass(body, named);
       } catch (e) {
         if (e instanceof DrawError)
           return reply.code(409).send({ error: e.code, message: e.message });
@@ -226,7 +253,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
 
       app.projectionStore.markDirty(competitionId);
 
-      return reply.code(201).send({ drawn: plan.assignments.length });
+      return reply.code(201).send({ drawn: plan.assignments.length, ...plan.extra });
     }
   );
 
@@ -399,5 +426,33 @@ function drawLateEntrants(
           },
         }
       : {}),
+  };
+}
+
+/** SOFT TR 7.4.1: pursuit from the earlier stage's results imported with
+ * POST …/import/previous-results (competitors.input_time_ms/input_status). */
+function drawPursuitClass(body: LottningBody, named: Row[]): DrawPlan {
+  // MeOS sorts equal times by name (oEventDraw.cpp:3123-3124).
+  const sorted = [...named].sort((a, b) => a.name.localeCompare(b.name, 'sv'));
+  const { assignments, restarted } = drawPursuit(
+    sorted.map((r) => ({
+      id: r.id,
+      previousTimeMs: r.inputTimeMs,
+      previousOk: r.inputStatus === 'OK',
+    })),
+    {
+      firstStartMs: body.firstStartMs!,
+      restartMs: body.restartMs!,
+      maxBehindMs: body.maxBehindSec! * 1000,
+      intervalMs: body.intervalSec! * 1000,
+      reverse: body.mode === 'ReversePursuit',
+      ...(body.scale !== undefined ? { scale: body.scale } : {}),
+    }
+  );
+  return {
+    assignments,
+    wholeClass: true,
+    classGrid: { firstStartMs: body.firstStartMs!, intervalSec: null },
+    extra: { restarted, without_result: named.filter((r) => r.inputStatus === null).length },
   };
 }

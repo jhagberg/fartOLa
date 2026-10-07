@@ -3,7 +3,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { kindConfirmed, suggestClassKind } from './classKind.ts';
+import { kindConfirmed, pursuitBanned, suggestClassKind } from './classKind.ts';
 
 const asTuple = (name: string, type: number | null = null) => {
   const s = suggestClassKind(name, type);
@@ -64,5 +64,14 @@ describe('suggestClassKind (SOFT TR 3.4.6, TR 3.4.9)', () => {
     assert.equal(c('oppen', 'eventor'), true);
     assert.equal(c('oppen', 'operator'), true);
     assert.equal(c(null, null), false);
+  });
+
+  test('SOFT TR 7.4.1: pursuit banned in inskolning and D/H10–12 by stored kind and age', () => {
+    assert.equal(pursuitBanned('inskolning', null), true);
+    assert.equal(pursuitBanned('ungdom', 10), true);
+    assert.equal(pursuitBanned('ungdom', 12), true);
+    assert.equal(pursuitBanned('ungdom', 14), false);
+    assert.equal(pursuitBanned('oppen', null), false);
+    assert.equal(pursuitBanned('senior', 21), false);
   });
 });

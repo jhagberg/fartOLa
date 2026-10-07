@@ -97,3 +97,11 @@ export function kindProblem(c: {
     return { error: 'class_kind_unconfirmed', message: `Bekräfta klasstyp för ${c.name}` };
   return null;
 }
+
+/** SOFT TR 7.4.1: "Jaktstart får inte förekomma i inskolningsklass eller
+ * åldersklasserna D/H 10 och D/H 12." fartOLa bans reverse pursuit there
+ * too until SOFT confirms the reading
+ * (.planning/todos/pending/2026-10-08-verify-start-method-rules-and-ola.md). */
+export function pursuitBanned(kind: ClassKind, ageClass: number | null): boolean {
+  return kind === 'inskolning' || (ageClass !== null && ageClass <= 12);
+}
