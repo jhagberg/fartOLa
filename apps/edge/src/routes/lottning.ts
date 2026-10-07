@@ -4,6 +4,7 @@
 //
 // Routes registered here:
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
+//   PUT  /api/competitions/:id/lottning/:classId/seeding — store seeding groups
 //   GET  /api/competitions/:id/lottning/:classId — fetch current start list
 //
 // POST semantics:
@@ -15,7 +16,7 @@
 //      class_kind_unknown / class_kind_unconfirmed.
 //   4. Load the class's named competitors (SOFT TR 7.5.1: no draw without a name).
 //   5. drawType 'All' (default): draw the whole class (SOFT, Random,
-//      Simultaneous); every runner gets the drawn time or none (D-07), the
+//      Simultaneous, Seeded); every runner gets the drawn time or none (D-07), the
 //      class gets its start grid. drawType 'Remaining*': place only runners
 //      without a start time (late entrants, SOFT TR 7.5.7/7.5.8); nobody
 //      else moves.
@@ -31,11 +32,12 @@ import type { FastifyInstance } from 'fastify';
 import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type { ClassKind, ClassKindSource } from '@fartola/shared-types';
+import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
 import { classes, competitions, competitors } from '../db/schema.ts';
 import { drawRandom } from '../draw/random.ts';
 import { kindProblem } from '../draw/classKind.ts';
 import { fillVacancies, placeBeforeOrAfter, smallestGapMs } from '../draw/remaining.ts';
+import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
 import { DrawError } from '../draw/types.ts';
@@ -50,7 +52,7 @@ import { StartTimeMs } from './competitors.ts';
 
 const LottningInput = z
   .object({
-    mode: z.enum(['SOFT', 'Random', 'Simultaneous']),
+    mode: z.enum(['SOFT', 'Random', 'Simultaneous', 'Seeded']),
     // Epoch ms, like every other start-time write (not ms since midnight).
     firstStartMs: StartTimeMs.unwrap().optional(),
     intervalSec: z.number().int().min(0).optional(),
@@ -60,6 +62,8 @@ const LottningInput = z
     /** 'All' draws the whole class; the others place only the runners
      * without a start time (late entrants, SOFT TR 7.5.8). Default 'All'. */
     drawType: z.enum(['All', 'RemainingBefore', 'RemainingAfter', 'RemainingVacant']).optional(),
+    /** Seeded: strongest group starts first (default last, as MeOS). */
+    bestFirst: z.boolean().optional(),
   })
   .superRefine((d, ctx) => {
     const need = (ok: boolean, path: string, message: string) => {
@@ -82,11 +86,14 @@ const LottningInput = z
   });
 type LottningBody = z.infer<typeof LottningInput>;
 
+const SeedingInput = z.object({ groups: z.array(z.array(z.string().min(1)).min(1)) }).strict();
+
 interface Row {
   id: string;
   name: string;
   club: string | null;
   startTimeMs: number | null;
+  seedGroup: number | null;
 }
 
 /** What a draw writes: start times, whether runners not drawn lose their
@@ -108,8 +115,24 @@ function refusal(
     classKind: ClassKind | null;
     classKindSource: ClassKindSource | null;
     ageClass: number | null;
-  }
+  },
+  level: CompetitionLevel | null
 ): { status: 409 | 422; error: string; message?: string; rule?: string } | null {
+  // SOFT TR 7.4.5: seeding groups in elite classes at nivå 1; a training and
+  // a nivå 4 event (närtävling, freely designed, TR 3.3.1) may seed any
+  // class. Nivå 2–3 may not seed.
+  if (body.mode === 'Seeded') {
+    if (level === null) return { status: 409, error: 'competition_level_unknown' };
+    if (level === 'niva2' || level === 'niva3')
+      return { status: 422, error: 'seeding_not_allowed', rule: 'SOFT TR 7.4.5' };
+    if (level === 'niva1') {
+      // A refusing rule needs a confirmed kind, not a name suggestion.
+      const problem = kindProblem(cls);
+      if (problem !== null) return { status: 409, ...problem };
+      if (cls.classKind !== 'elit')
+        return { status: 422, error: 'seeding_not_allowed', rule: 'SOFT TR 7.4.5' };
+    }
+  }
   if (body.drawType === 'RemainingVacant') {
     // A refusing rule needs a confirmed kind, not a name suggestion.
     const problem = kindProblem(cls);
@@ -158,7 +181,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       if (!classRow) {
         return reply.code(404).send({ error: 'class_not_found' });
       }
-      const refused = refusal(body, classRow);
+      const refused = refusal(body, classRow, classRow.level);
       if (refused !== null) {
         const { status, ...rest } = refused;
         return reply.code(status).send(rest);
@@ -172,6 +195,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           name: competitors.name,
           club: competitors.club,
           startTimeMs: competitors.startTimeMs,
+          seedGroup: competitors.seedGroup,
         })
         .from(competitors)
         .where(eq(competitors.classId, classId))
@@ -207,6 +231,48 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
   );
 
   // ---------------------------------------------------------------------------
+  // PUT /api/competitions/:id/lottning/:classId/seeding — seeding groups
+  // (SOFT TR 7.4.5): competitor ids per group, strongest first. Replaces the
+  // class's groups; runners not listed are unseeded. A redraw reuses them.
+  // ---------------------------------------------------------------------------
+  app.put<{ Params: { id: string; classId: string } }>(
+    '/api/competitions/:id/lottning/:classId/seeding',
+    async (req, reply) => {
+      const { id: competitionId, classId } = req.params;
+      const parsed = SeedingInput.safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      if (!classOf(competitionId, classId))
+        return reply.code(404).send({ error: 'class_not_found' });
+      const inClass = new Set(
+        app.fartolaDb.db
+          .select({ id: competitors.id })
+          .from(competitors)
+          .where(eq(competitors.classId, classId))
+          .all()
+          .map((r) => r.id)
+      );
+      const groupOf = new Map<string, number>();
+      for (const [g, ids] of parsed.data.groups.entries())
+        for (const id of ids) {
+          if (!inClass.has(id))
+            return reply.code(400).send({ error: 'not_in_class', competitor_id: id });
+          if (groupOf.has(id))
+            return reply.code(400).send({ error: 'in_two_groups', competitor_id: id });
+          groupOf.set(id, g + 1);
+        }
+      app.fartolaDb.sqlite.transaction(() => {
+        for (const id of inClass)
+          app.fartolaDb.db
+            .update(competitors)
+            .set({ seedGroup: groupOf.get(id) ?? null })
+            .where(eq(competitors.id, id))
+            .run();
+      })();
+      return { seeded: groupOf.size };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
   // GET /api/competitions/:id/lottning/:classId — fetch current start list
   // ---------------------------------------------------------------------------
   app.get<{ Params: { id: string; classId: string } }>(
@@ -227,6 +293,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           club: competitors.club,
           cardNumber: competitors.cardNumber,
           startTimeMs: competitors.startTimeMs,
+          seedGroup: competitors.seedGroup,
         })
         .from(competitors)
         .where(and(eq(competitors.classId, classId), isNotNull(competitors.startTimeMs)))
@@ -240,6 +307,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           first_start_ms: classRow.firstStartMs,
           start_interval_sec: classRow.startIntervalSec,
           max_time_sec: classRow.maxTimeSec,
+          class_kind: classRow.classKind,
         },
         start_list: startList.map((r) => ({
           id: r.id,
@@ -247,13 +315,14 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           club: r.club,
           card_number: r.cardNumber,
           start_time_ms: r.startTimeMs,
+          seed_group: r.seedGroup,
         })),
       };
     }
   );
 }
 
-/** SOFT, Random, Simultaneous: the whole class, slot k at first + k·interval. */
+/** SOFT, Random, Simultaneous, Seeded: the whole class, slot k at first + k·interval. */
 function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
   const runners: DrawRunner[] = named.map((r) => ({ id: r.id, club: r.club }));
   const firstStartMs = body.firstStartMs!;
@@ -265,6 +334,11 @@ function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
   let result: DrawResult;
   if (body.mode === 'SOFT') result = drawSOFT(runners, vacancies);
   else if (body.mode === 'Random') result = drawRandom(runners, vacancies);
+  else if (body.mode === 'Seeded')
+    result = drawSeeded(
+      named.map((r) => ({ id: r.id, club: r.club, seedGroup: r.seedGroup })),
+      { ...vacancies, bestFirst: body.bestFirst ?? false }
+    );
   else result = drawSimultaneous(runners);
   const assignments: DrawPlan['assignments'] = [];
   result.order.forEach((slot, k) => {

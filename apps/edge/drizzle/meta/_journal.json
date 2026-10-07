@@ -141,6 +141,13 @@
       "when": 1791849600000,
       "tag": "0020_class_kind_and_level",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791936000000,
+      "tag": "0021_competitors_seed_group",
+      "breakpoints": true
     }
   ]
 }
