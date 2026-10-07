@@ -42,6 +42,7 @@ import { buildCardReadPayload } from './cardReadPayload.ts';
 import { insertEvent } from './eventInserter.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { ProjectionStore } from '../projection/store.ts';
+import { loadVoidedControlCodes } from '../projection/loader.ts';
 import type { PrinterSink, PrintEnvelope, ReceiptData, ReceiptTemplate } from '../print/sink.ts';
 import {
   competitors,
@@ -244,6 +245,7 @@ export function attachBridge(station: SiMainStation, opts: BridgeOpts): Attached
             length_m: courseRow.lengthM,
             climb_m: courseRow.climbM,
             control_codes: controlCodes,
+            voided_codes: loadVoidedControlCodes(opts.handle, activeId),
           }
         : { id: '', name: '', length_m: null, climb_m: null, control_codes: [] },
       placeContext: {

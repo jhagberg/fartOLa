@@ -54,6 +54,7 @@ import {
 import { cardClockToWallMs } from '../projection/halfDayClockMath.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
+import { loadVoidedControlCodes } from '../projection/loader.ts';
 
 const ACTIVE_COMP_KEY = 'active_competition_id';
 
@@ -154,6 +155,9 @@ interface ReadoutResponse {
   current_read: HistoryRow | null;
   history: HistoryRow[];
   pending_unknown_cards: number[];
+  /** Control codes voided course-wide now: the UI shows them as struck
+   * ("struken") on the course instead of missing. */
+  voided_codes: number[];
 }
 
 const HISTORY_CAP = 12;
@@ -345,6 +349,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         current_read: currentRead,
         history,
         pending_unknown_cards: pendingUnknownCards,
+        voided_codes: loadVoidedControlCodes(app.fartolaDb, id),
       };
       void reply.code(200);
       return response;

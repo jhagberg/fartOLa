@@ -77,6 +77,7 @@
   } from '#lib/api/client.ts';
   import type { EventorLookupHit, EventorLookupMany } from '@fartola/shared-types';
   import LatestReadCard from '#lib/components/LatestReadCard.svelte';
+  import { punchProgress } from '#lib/components/receipt-templates/punchLabels.ts';
   import PunchGrid from '#lib/components/PunchGrid.svelte';
   import SplitsTable from '#lib/components/SplitsTable.svelte';
   import HistoryList from '#lib/components/HistoryList.svelte';
@@ -117,6 +118,7 @@
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
   let history: ReadoutHistoryRow[] = $state([]);
+  let voidedCodes: number[] = $state([]);
   let pendingUnknownCards: number[] = $state([]);
   /** Currently-displayed read — usually history[0] but the operator can
    * click a history row to pin a different one. Null = empty state. */
@@ -254,9 +256,9 @@
     const cls = competitor ? classesById.get(competitor.class_id) : null;
     return {
       cardNumber: row.card_number,
+      cardType: row.card_type,
       name: row.competitor_name,
       cls: cls?.name ?? '—',
-      cardType: row.card_type,
       club: competitor?.club ?? null,
       startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),
@@ -311,6 +313,7 @@
       elapsedMs,
       place: null,
       noTiming: cls?.no_timing ?? false,
+      voidedCodes,
     });
   });
 
@@ -361,6 +364,7 @@
       competitors = compsRes.competitors;
       history = readoutRes.history;
       pendingUnknownCards = readoutRes.pending_unknown_cards;
+      voidedCodes = readoutRes.voided_codes;
       selectedTemplate = compRes.competition.receipt_template;
       autoPrint = compRes.competition.auto_print;
       // Claim this competition as the bridge's active feed. Without this
@@ -477,6 +481,7 @@
       const res = (await getReadout(competitionId)) as ReadoutResponse;
       history = res.history;
       pendingUnknownCards = res.pending_unknown_cards;
+      voidedCodes = res.voided_codes;
     } catch {
       // Soft fail — WS will catch up.
     }
@@ -789,7 +794,7 @@
           <div class="controls-head">
             <h3>{t('ro.course')}</h3>
             <span class="muted mono">
-              {receiptRead.punches.filter((p) => p.ok).length}/{receiptRead.punches.length}
+              {punchProgress(receiptRead.punches).ok}/{punchProgress(receiptRead.punches).total}
             </span>
           </div>
           {#if tweaks.density === 'high'}

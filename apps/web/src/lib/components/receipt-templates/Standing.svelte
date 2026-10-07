@@ -14,6 +14,8 @@
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import type { ReceiptTemplateProps } from './types.ts';
+  import PunchCode from './PunchCode.svelte';
+  import { punchNo } from './punchLabels.ts';
 
   let { read }: ReceiptTemplateProps = $props();
   const isLeader = $derived(read.progress.place === 1);
@@ -64,8 +66,8 @@
   <tbody>
     {#each read.punches as p, i (i)}
       <tr>
-        <td>{i + 1}.</td>
-        <td>{p.finish ? 'M' : p.code}</td>
+        <td>{punchNo(read.punches, i)}</td>
+        <td><PunchCode {p} /></td>
         <td>{p.split}</td>
         <td>{p.time}</td>
       </tr>

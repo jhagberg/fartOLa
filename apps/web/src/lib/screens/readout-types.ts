@@ -100,6 +100,8 @@ export interface ReadoutResponse {
   current_read: ReadoutHistoryRow | null;
   history: ReadoutHistoryRow[];
   pending_unknown_cards: number[];
+  /** Control codes voided course-wide now (shown "struken", never missing). */
+  voided_codes: number[];
 }
 
 /** Unique key for a history row — used by Svelte's keyed each and by
@@ -350,6 +352,38 @@ export function rawPunchesToReceipt(
   return result;
 }
 
+/** Label the tiles `rawPunchesToReceipt` built for a course (course-shaped:
+ * one tile per expected control, then leftover punches, then the finish) so
+ * the UI can name them in text:
+ *   - a voided control's tile → 'struck' (counts as neither OK nor missing);
+ *   - a leftover punch of a control that is on the course but missing from
+ *     its place → 'order' ("fel ordn."); any other leftover → 'extra';
+ *   - a leftover punch of a voided control is dropped (the struck tile
+ *     already stands for it).
+ * Display only — status and missing_codes come from the edge projection.
+ * Without a course (`expectedCodes` empty) the tiles are returned as is. */
+export function classifyPunches(
+  tiles: ReceiptPunch[],
+  expectedCodes: number[] = [],
+  voidedCodes: number[] = []
+): ReceiptPunch[] {
+  if (expectedCodes.length === 0) return tiles;
+  const voided = new Set(voidedCodes);
+  const missed = new Set(
+    tiles.slice(0, expectedCodes.length).flatMap((p) => (p.ok === false ? [p.code] : []))
+  );
+  const out: ReceiptPunch[] = [];
+  tiles.forEach((p, i) => {
+    if (p.finish) out.push(p);
+    else if (i < expectedCodes.length) {
+      out.push(voided.has(expectedCodes[i]!) ? { ...p, ok: true, kind: 'struck' } : p);
+    } else if (!voided.has(p.code as number)) {
+      out.push({ ...p, kind: missed.has(p.code) ? 'order' : 'extra' });
+    }
+  });
+  return out;
+}
+
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
 /** The label a published surface (results screen, receipts) shows for a
@@ -386,14 +420,20 @@ export function toReceiptRead(input: {
   place?: number | null;
   /** 02.1-14 Task 9: class without timing — no running or split times. */
   noTiming?: boolean;
+  /** Control codes voided course-wide; their tiles read "struken". */
+  voidedCodes?: number[];
 }): ReceiptRead {
   const allPunches: ReceiptPunch[] =
     input.punches ??
-    rawPunchesToReceipt(
-      input.row.punches,
-      input.row.start_seconds_in_half_day,
-      input.row.finish_seconds_in_half_day,
-      input.row.expected_codes
+    classifyPunches(
+      rawPunchesToReceipt(
+        input.row.punches,
+        input.row.start_seconds_in_half_day,
+        input.row.finish_seconds_in_half_day,
+        input.row.expected_codes
+      ),
+      input.row.expected_codes,
+      input.voidedCodes
     );
   const punches = input.noTiming
     ? allPunches.map((p) => ({ ...p, split: '—', time: '—' }))

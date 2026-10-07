@@ -59,6 +59,9 @@ export interface PrintCourse {
   length_m: number | null;
   climb_m: number | null;
   control_codes: number[];
+  /** Control codes voided course-wide; printed as "struken", never missing.
+   * Omitted/empty when none. */
+  voided_codes?: number[];
 }
 
 /** Placement context resolved at envelope construction (NOT inside the

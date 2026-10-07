@@ -164,6 +164,7 @@ interface ReadoutBody {
     unmatched: boolean;
   }>;
   pending_unknown_cards: number[];
+  voided_codes: number[];
 }
 
 describe('GET /api/competitions/:id/readout', () => {
@@ -206,6 +207,21 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.ok(body.current_read);
     assert.equal(body.current_read.competitor_id, competitorId);
     assert.equal(body.current_read.status, 'OK');
+  });
+
+  test('test 1b: voided_codes follows control_voided / control_unvoided', async () => {
+    seedCompetition(ctx.handle, 'comp-v');
+    const get = async (): Promise<number[]> =>
+      (
+        (
+          await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-v/readout' })
+        ).json() as ReadoutBody
+      ).voided_codes;
+    assert.deepEqual(await get(), []);
+    await ctx.app.inject({ method: 'POST', url: '/api/competitions/comp-v/voided-controls/32' });
+    assert.deepEqual(await get(), [32]);
+    await ctx.app.inject({ method: 'DELETE', url: '/api/competitions/comp-v/voided-controls/32' });
+    assert.deepEqual(await get(), []);
   });
 
   // 02.1-14 Task 13: the row carries the missing-start flag and suggestion.

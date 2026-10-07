@@ -19,6 +19,7 @@ import { softStatus, SOFT_STATUS_SV } from '@fartola/shared-types';
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
 import type { CompetitorView, ResultView } from '../projection/types.ts';
 import { formatLocalTime } from '../time/competitionClock.ts';
+import { matchCourse } from '../projection/dnfMp.ts';
 
 import classic from './templates/classic.ts';
 import standing from './templates/standing.ts';
@@ -107,6 +108,58 @@ export function rowTime(row: Pick<ResultView, 'soft_status' | 'elapsed_time_ms'>
   return row.soft_status === 'OK'
     ? formatElapsed(row.elapsed_time_ms)
     : SOFT_STATUS_SV[row.soft_status];
+}
+
+/** One line of the controls table. `label` is text, not colour: thermal
+ * paper has no strike-through, so a voided control prints "struken". */
+export interface ControlRow {
+  /** Running number of a real course control; '–' struck, '+' extra. */
+  no: string;
+  code: number;
+  /** The punch, or null for a struck or missing control. */
+  punch: NdjsonPunch | null;
+  label: 'struken' | 'extra' | 'fel ordn.' | null;
+}
+
+/** The controls table of a receipt: course controls in course order (a voided
+ * one as "struken", not missing), then punches not on the course as "extra",
+ * or "fel ordn." when the control is on the course but was punched out of
+ * order (the reducer's out_of_order_codes). */
+export function controlRows(data: ReceiptData): ControlRow[] {
+  const voided = new Set(data.course.voided_codes ?? []);
+  const punches = data.competitor.latest_punches;
+  const live = data.course.control_codes.filter((c) => !voided.has(c));
+  const match = matchCourse(
+    punches.map((p) => p.code),
+    live
+  );
+  const used = new Set(match.matched);
+  const rows: ControlRow[] = [];
+  let n = 0;
+  let li = 0;
+  for (const code of data.course.control_codes) {
+    if (voided.has(code)) {
+      rows.push({ no: '–', code, punch: null, label: 'struken' });
+      continue;
+    }
+    const idx = match.matched[li++] as number;
+    rows.push({
+      no: String(++n),
+      code,
+      punch: idx >= 0 ? (punches[idx] as NdjsonPunch) : null,
+      label: null,
+    });
+  }
+  punches.forEach((p, i) => {
+    if (used.has(i) || voided.has(p.code)) return;
+    rows.push({
+      no: '+',
+      code: p.code,
+      punch: p,
+      label: data.competitor.out_of_order_codes.includes(p.code) ? 'fel ordn.' : 'extra',
+    });
+  });
+  return rows;
 }
 
 /** Format the +M:SS leader-gap suffix used by every template's place line. */

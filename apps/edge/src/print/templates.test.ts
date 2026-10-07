@@ -144,3 +144,48 @@ test('SOFT TA till TR 7.8.2: receipts print "Ej godkänd", "Diskad" and "Ej star
   // An approved timed run still prints its time.
   assert.match(await printed('classic', receiptData({ no_timing: false })), /TOTAL 15:00/);
 });
+
+// Struck (voided) controls and extra / out-of-order punches are printed as
+// text: thermal paper has no strike-through and colour is not available.
+test('controls table prints "struken", "extra" and "fel ordn." (classic, detailed)', async () => {
+  const data = receiptData({
+    no_timing: false,
+    latest_punches: [
+      { code: 31, ...clock(36_100) },
+      { code: 34, ...clock(36_200) },
+      { code: 33, ...clock(36_300) },
+      { code: 99, ...clock(36_400) },
+    ],
+    missing_codes: [34],
+    extra_codes: [34, 99],
+    out_of_order_codes: [34],
+  });
+  data.course = { ...data.course, control_codes: [31, 32, 33, 34], voided_codes: [32] };
+  for (const name of ['classic', 'detailed'] as const) {
+    const lines = (await printed(name, data)).split('\n');
+    const row = (code: number): string =>
+      lines.find((l) => new RegExp(`^\\S+\\s+${code}\\s`).test(l)) ?? '';
+    assert.match(row(32), /struken/, `${name} struck 32`);
+    assert.match(row(99), /extra/, `${name} extra 99`);
+    // 34 is on the course but was punched out of order: the course row is
+    // empty and the stray punch is labelled.
+    assert.match(lines.filter((l) => /\b34\b/.test(l)).join('\n'), /fel ordn\./, `${name} 34`);
+    assert.doesNotMatch(row(31) + row(33), /struken|extra|fel ordn\./, `${name} plain rows`);
+    // The struck control keeps its place in the course (between 31 and 33)
+    // and is not numbered.
+    assert.match(row(32), /^–/, `${name} struck row unnumbered`);
+  }
+});
+
+test('a punch of a struck control is not printed as extra', async () => {
+  const data = receiptData({
+    latest_punches: [
+      { code: 31, ...clock(36_100) },
+      { code: 32, ...clock(36_200) },
+    ],
+  });
+  data.course = { ...data.course, control_codes: [31, 32], voided_codes: [32] };
+  const text = await printed('classic', data);
+  assert.equal(text.match(/struken/g)?.length, 1);
+  assert.doesNotMatch(text, /extra|fel ordn\./);
+});
