@@ -239,16 +239,18 @@ describe('lottning route', () => {
     const body = res.json() as { drawn: number };
     assert.equal(body.drawn, 5);
 
-    // With 2 vacants, at least one gap should be > intervalSec * 1000 ms
+    // SOFT TR 7.3.2/7.5.2: the 2 vacancies are random places on the grid,
+    // so the 5 runners take 5 distinct places among the 7.
     const rows = ctx.handle.db
       .select({ startTimeMs: competitors.startTimeMs })
       .from(competitors)
       .where(eq(competitors.classId, ctx.classId))
-      .orderBy(asc(competitors.startTimeMs))
       .all();
-    const times = rows.map((r) => r.startTimeMs as number);
-    const hasGap = times.some((_, i) => i > 0 && times[i]! - times[i - 1]! > intervalSec * 1000);
-    assert.ok(hasGap, `Expected a gap > ${intervalSec}s but times were ${times.join(',')}`);
+    const slots = rows.map(
+      (r) => ((r.startTimeMs as number) - firstStartMs) / (intervalSec * 1000)
+    );
+    assert.equal(new Set(slots).size, 5, `slots ${slots.join(',')}`);
+    for (const k of slots) assert.ok(Number.isInteger(k) && k >= 0 && k < 7, `slot ${k}`);
   });
 
   test('test 4: POST mode=Random → 201, all competitors have start_time_ms', async () => {
@@ -472,5 +474,56 @@ describe('lottning route', () => {
         'Start list not sorted'
       );
     }
+  });
+
+  // ---- M1 helpers --------------------------------------------------------
+  const post = (payload: Record<string, unknown>) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload,
+    });
+  const timesOf = (): Map<string, number | null> =>
+    new Map(
+      ctx.handle.db
+        .select({ id: competitors.id, startTimeMs: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, ctx.classId))
+        .all()
+        .map((r) => [r.id, r.startTimeMs])
+    );
+
+  test('SOFT TR 7.3.2: Random draws vacancies too; First puts them before the class', async () => {
+    const firstStartMs = at(10);
+    const res = await post({
+      mode: 'Random',
+      firstStartMs,
+      intervalSec: 60,
+      vacantSlots: 2,
+      vacantPosition: 'First',
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const times = [...timesOf().values()].map(Number).sort((a, b) => a - b);
+    assert.deepEqual(
+      times,
+      [2, 3, 4, 5, 6].map((k) => firstStartMs + k * 60_000)
+    );
+  });
+
+  test('vacantPosition Last: the class starts at the first start, vacancies after it', async () => {
+    const firstStartMs = at(10);
+    const res = await post({
+      mode: 'SOFT',
+      firstStartMs,
+      intervalSec: 60,
+      vacantSlots: 3,
+      vacantPosition: 'Last',
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const times = [...timesOf().values()].map(Number).sort((a, b) => a - b);
+    assert.deepEqual(
+      times,
+      [0, 1, 2, 3, 4].map((k) => firstStartMs + k * 60_000)
+    );
   });
 });

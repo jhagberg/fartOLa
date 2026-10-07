@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 
 import { drawSOFT } from './soft.ts';
 import { drawRandom } from './random.ts';
+import { placeVacancies } from './vacancies.ts';
 import { drawSimultaneous } from './simultaneous.ts';
 import type { DrawRunner } from './types.ts';
 
@@ -28,6 +29,20 @@ function makeLcgRng(seed: number): (min: number, max: number) => number {
     const range = max - min;
     if (range <= 0) return min;
     return min + (Math.abs(state) % range);
+  };
+}
+
+/** Seeded mulberry32 for statistical tests. The LCG above repeats its low
+ * bits (`% range` on a power-of-two modulus), so over many draws it yields
+ * one club pattern only; frequencies need a generator without that flaw. */
+function makeMulberryRng(seed: number): (min: number, max: number) => number {
+  let a = seed >>> 0;
+  return (min: number, max: number): number => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return min + Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * (max - min));
   };
 }
 
@@ -237,6 +252,83 @@ describe('draw algorithms', () => {
       }
       assert.ok(patterns.size >= 10, `only ${patterns.size} club patterns in 30 draws`);
       assert.equal(firstClubs.size, 3, 'every club can start first');
+    });
+  });
+
+  describe('placeVacancies (SOFT TR 7.3.2, 7.5.2)', () => {
+    const ten = mixedRunners([
+      ['A', 4],
+      ['B', 3],
+      ['C', 3],
+    ]);
+    const gapsOf = (slots: readonly (DrawRunner | null)[]): string => {
+      // Vacancy positions as "gap index" = runners before it.
+      const g: number[] = [];
+      let seenRunners = 0;
+      for (const s of slots)
+        if (s === null) g.push(seenRunners);
+        else seenRunners++;
+      return g.join(',');
+    };
+
+    test('Mixed: 3 vacancies among 10 runners → never adjacent, positions vary between draws', () => {
+      const rng = makeMulberryRng(17);
+      const sets = new Set<string>();
+      const used = new Set<number>();
+      for (let k = 0; k < 300; k++) {
+        const slots = placeVacancies(ten, 3, 'Mixed', rng);
+        assert.equal(slots.length, 13);
+        assert.deepEqual(
+          slots.filter((s) => s !== null),
+          ten,
+          'runner order kept'
+        );
+        for (let i = 1; i < slots.length; i++)
+          assert.ok(
+            !(slots[i] === null && slots[i - 1] === null),
+            `adjacent vacancies: ${gapsOf(slots)}`
+          );
+        sets.add(gapsOf(slots));
+        for (const g of gapsOf(slots).split(',')) used.add(Number(g));
+      }
+      assert.ok(sets.size >= 100, `only ${sets.size} vacancy layouts in 300 draws`);
+      assert.equal(used.size, 11, 'every gap 0…10 is used');
+    });
+
+    test('Mixed: more vacancies than gaps → all placed, runner order kept', () => {
+      const two = runners(2, 'A');
+      const slots = placeVacancies(two, 5, 'Mixed', makeMulberryRng(3));
+      assert.equal(slots.filter((s) => s === null).length, 5);
+      assert.deepEqual(
+        slots.filter((s) => s !== null),
+        two
+      );
+    });
+
+    test('First and Last: vacancies before or after the whole class (MeOS VacantPosition)', () => {
+      const first = placeVacancies(ten, 2, 'First', makeMulberryRng(1));
+      assert.deepEqual(first.slice(0, 2), [null, null]);
+      assert.deepEqual(first.slice(2), ten);
+      const last = placeVacancies(ten, 2, 'Last', makeMulberryRng(1));
+      assert.deepEqual(last.slice(10), [null, null]);
+      assert.deepEqual(last.slice(0, 10), ten);
+    });
+
+    test('drawRandom with vacancies → all runners plus the vacancies (SOFT TR 7.3.2)', () => {
+      const result = drawRandom(ten, {
+        vacantSlots: 2,
+        vacantPosition: 'Last',
+        rngFn: makeMulberryRng(9),
+      });
+      assert.equal(result.order.length, 12);
+      assert.deepEqual(result.order.slice(10), [null, null]);
+      assert.deepEqual(
+        result.order
+          .filter((s): s is DrawRunner => s !== null)
+          .map((r) => r.id)
+          .sort(),
+        ten.map((r) => r.id).sort()
+      );
     });
   });
 

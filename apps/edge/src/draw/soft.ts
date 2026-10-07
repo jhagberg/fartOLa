@@ -16,18 +16,21 @@
 // Phase 2.1 D-03/D-04.
 
 import crypto from 'node:crypto';
-import type { DrawRunner, DrawResult, DrawSlot } from './types.ts';
+import type { DrawRunner, DrawResult, DrawSlot, RngFn, VacantPosition } from './types.ts';
+import { placeVacancies } from './vacancies.ts';
 
 /** Options for drawSOFT. */
 export interface DrawSOFTOptions {
   /** Number of vacant (null) slots to insert. Defaults to 0. */
   vacantSlots?: number;
+  /** Where the vacant slots go (default 'Mixed', see vacancies.ts). */
+  vacantPosition?: VacantPosition;
   /**
    * Optional RNG injection for reproducible tests.
    * Signature: (min: number, max: number) => number (returns integer in [min, max)).
    * Defaults to crypto.randomInt (CSPRNG).
    */
-  rngFn?: (min: number, max: number) => number;
+  rngFn?: RngFn;
 }
 
 /**
@@ -45,12 +48,13 @@ export interface DrawSOFTOptions {
  * 4. Randomise: swap two random runners whenever that adds no same-club
  *    neighbour. The swaps are symmetric, so the draw wanders over the
  *    optimal orders at random and repeated draws differ (TR 7.5.2).
- * 5. Insert vacant null slots evenly across the result.
+ * 5. Place vacant null slots (vacancies.ts).
  * 6. Count adjacencies and return.
  */
 export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): DrawResult {
   const rng = opts.rngFn ?? ((min, max) => crypto.randomInt(min, max));
   const vacantSlots = opts.vacantSlots ?? 0;
+  const vacantPosition = opts.vacantPosition ?? 'Mixed';
 
   if (runners.length === 0) {
     return { order: [], adjacencyCount: 0 };
@@ -115,8 +119,8 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
     if (around(i, j) > before) [order[i], order[j]] = [order[j]!, order[i]!];
   }
 
-  // --- Step 5: Insert vacant slots evenly ---
-  const result: DrawSlot[] = insertVacants(order, vacantSlots);
+  // --- Step 5: Place vacant slots ---
+  const result: DrawSlot[] = placeVacancies(order, vacantSlots, vacantPosition, rng);
 
   // --- Step 6: Count adjacencies among non-null slots ---
   const adjacencyCount = countAdjacencies(result);
@@ -129,7 +133,7 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
 // ---------------------------------------------------------------------------
 
 /** Fisher-Yates in-place shuffle. */
-function fisherYatesShuffle<T>(arr: T[], rng: (min: number, max: number) => number): void {
+function fisherYatesShuffle<T>(arr: T[], rng: RngFn): void {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = rng(0, i + 1);
     // i and j are bounded by arr.length, so these indexes are in range.
@@ -137,41 +141,6 @@ function fisherYatesShuffle<T>(arr: T[], rng: (min: number, max: number) => numb
     arr[i] = arr[j]!;
     arr[j] = tmp;
   }
-}
-
-/**
- * Distribute `count` null (vacant) slots evenly into the runner sequence.
- * Uses Bresenham-style spacing: each vacant is placed at index
- * round((i + 0.5) * total / count) in the final slot array.
- */
-function insertVacants(runners: DrawRunner[], count: number): DrawSlot[] {
-  if (count <= 0) return runners;
-
-  const total = runners.length + count;
-  // Compute desired positions for vacants (evenly spaced).
-  const vacantPositions = new Set<number>();
-  for (let i = 0; i < count; i++) {
-    const pos = Math.round(((i + 0.5) * total) / count);
-    vacantPositions.add(Math.min(pos, total - 1));
-  }
-  // If collisions reduced the set below `count`, fill remaining from the end.
-  let fillIdx = total - 1;
-  while (vacantPositions.size < count) {
-    if (!vacantPositions.has(fillIdx)) vacantPositions.add(fillIdx);
-    fillIdx--;
-  }
-
-  const result: DrawSlot[] = [];
-  let runnerIdx = 0;
-  for (let pos = 0; pos < total; pos++) {
-    if (vacantPositions.has(pos)) {
-      result.push(null);
-    } else {
-      // Exactly runners.length non-vacant positions are emitted, so runnerIdx is in range.
-      result.push(runners[runnerIdx++]!);
-    }
-  }
-  return result;
 }
 
 /** Count adjacent pairs in the slot sequence where both runners share a club. */
