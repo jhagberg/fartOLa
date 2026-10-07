@@ -2,6 +2,7 @@
 // Upstream: https://github.com/allestuetsmerweh/sportident.js (MIT License)
 // Local modifications: import path `siProtocol` -> `siProtocol.ts` (Node 22 strip-types
 // requires the suffix; root tsconfig has `allowImportingTsExtensions: true`).
+//   - startCode/finishCode/checkCode: station codes of the start, finish and check units.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import type { SiTimestamp } from '../siProtocol.ts';
@@ -13,6 +14,14 @@ export interface IRaceResultData {
   checkTime?: SiTimestamp;
   startTime?: SiTimestamp;
   finishTime?: SiTimestamp;
+  /** Station codes (CN) of the units that stamped start/finish/check. Absent on SI5. */
+  startCode?: number;
+  finishCode?: number;
+  checkCode?: number;
+  /** The record was a touch-free (Air+) punch: PTD bit 7. SI8 and newer only. */
+  startTouchFree?: boolean;
+  finishTouchFree?: boolean;
+  checkTouchFree?: boolean;
   punches?: IPunch[];
 }
 

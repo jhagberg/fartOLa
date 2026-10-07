@@ -37,6 +37,7 @@ import type {
   HiredCardsListResponse,
   HiredCardReturnResponse,
   HealthDTO,
+  RadioStatus,
 } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -1114,6 +1115,36 @@ export function clearLiveresultatCredentials(
   competitionId: string
 ): Promise<LiveresultatCredentials> {
   return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// Radio controls (ROC input + watchdog).
+// ---------------------------------------------------------------------------
+
+/** GET /api/competitions/:id/radio/status */
+export function getRadioStatus(competitionId: string): Promise<RadioStatus> {
+  return apiFetch<RadioStatus>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/radio/status`
+  );
+}
+
+/** PATCH /api/competitions/:id/radio/settings — answers with the new status. */
+export function setRadioSettings(
+  competitionId: string,
+  body: {
+    enabled?: boolean;
+    roc_competition_id?: string | null;
+    start_id?: number | null;
+    radio_controls?: number[];
+    start_codes?: number[];
+    check_codes?: number[];
+    finish_codes?: number[];
+  }
+): Promise<RadioStatus> {
+  return apiFetch<RadioStatus>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/radio/settings`,
+    { method: 'PATCH', body }
+  );
 }
 
 /** POST /access — authenticate with an event code; sets a signed HttpOnly cookie. */

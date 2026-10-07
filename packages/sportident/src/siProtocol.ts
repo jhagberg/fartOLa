@@ -20,6 +20,8 @@
 
 import { proto } from './constants.ts';
 import { SiInt } from './storage/SiInt.ts';
+import { SiDict } from './storage/SiDict.ts';
+import { SiModified } from './storage/SiModified.ts';
 import { SiDataType, type SiStorageData } from './storage/SiDataType.ts';
 import { arr2big, assertArrIsOfLengths, assertIsByteArr, prettyHex } from './utils/bytes.ts';
 
@@ -399,11 +401,48 @@ export class SiTime extends SiDataType<SiTimestamp> {
 
 // --- Punch control code -------------------------------------------------------
 // A PTD punch record (SI6, SI8, SI9, SI10, SI11, SIAC) is
-// [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bits 6-7
-// hold bits 8-9, so code = cn + ((ptd & 0xc0) << 2) — up to 1023 (cf. SIReader's
-// sireader2.py). Upstream sportident.js reads the CN byte only.
+// [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bit 6
+// is code bit 8 (code = cn + 256 * bit 6, up to 511). PTD bit 7 is NOT a code
+// bit: on a start, finish or check record it marks a touch-free (SIAC Air+,
+// "beacon") punch, whose station code is then not in CN but in block 1 of the
+// card memory (see siStationCode). Behaviour as in MeOS SportIdent.cpp:1919
+// (analysePunch); written independently, upstream sportident.js reads CN only.
 
 /** Storage field for the control code of the PTD punch record at `punchOffset`. */
 export const siPunchCode = (punchOffset: number): SiInt =>
-  // SiInt concatenates parts little-endian: CN → bits 0-7, PTD bits 6-7 → bits 8-9.
-  new SiInt([[punchOffset + 1], [punchOffset, 6, 8]]);
+  // SiInt concatenates parts little-endian: CN → bits 0-7, PTD bit 6 → bit 8.
+  new SiInt([[punchOffset + 1], [punchOffset, 6, 7]]);
+
+interface StationCodeParts {
+  ptd: number;
+  cn: number;
+  beacon?: number;
+}
+
+/** Storage field for the station code of a start/finish/check record on SI8
+ * and newer cards: `recordOffset` is its PTD byte, `beaconCodeOffset` where
+ * block 1 keeps the code of a touch-free punch (MeOS reads it 153 bytes after
+ * the record pointer, SportIdent.cpp:1930). Without PTD bit 7 the code is the
+ * record's own (CN + PTD bit 6); with it, the block-1 byte (undefined while
+ * block 1 has not been read). */
+export const siStationCode = (
+  recordOffset: number,
+  beaconCodeOffset: number
+): SiModified<StationCodeParts, number> =>
+  new SiModified(
+    new SiDict<StationCodeParts>({
+      ptd: new SiInt([[recordOffset]]),
+      cn: new SiInt([[recordOffset + 1]]),
+      beacon: new SiInt([[beaconCodeOffset]]),
+    }) as unknown as SiDataType<StationCodeParts>,
+    ({ ptd, cn, beacon }) => {
+      // Bit 6 is code bit 8 whichever byte holds the low byte (MeOS applies
+      // it after choosing, SportIdent.cpp:1932).
+      const low = (ptd & 0x80) !== 0 ? beacon : cn;
+      return low === undefined ? undefined : low + 256 * ((ptd >> 6) & 1);
+    }
+  );
+
+/** True when the record's PTD bit 7 is set: a touch-free (Air+) punch. */
+export const siTouchFree = (recordOffset: number): SiModified<number, boolean> =>
+  new SiModified(new SiInt([[recordOffset, 7, 8]]), (bit) => bit === 1);

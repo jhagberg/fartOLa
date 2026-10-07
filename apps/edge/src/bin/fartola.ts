@@ -57,6 +57,7 @@ import { scheduleDailyRetention } from '../privacy/retention.ts';
 import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { createPushQueue } from '../integrations/liveresultat/queue.ts';
+import { createRocPoller } from '../integrations/roc/poller.ts';
 import { liveresultatConfig, liveresultatMopMeta } from '../routes/liveresultat.ts';
 
 /** A single serial reader entry as parsed from --serial or --serial-path. */
@@ -727,6 +728,18 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     liveresultatQueue.enqueue(competitionId);
   };
 
+  // ROC radio punches (roc.olresultat.se). Polls every competition with ROC
+  // switched on; FARTOLA_ROC_URL points it elsewhere (a stand-in server).
+  const rocUrl = process.env['FARTOLA_ROC_URL']?.trim();
+  const rocPoller = createRocPoller({
+    handle,
+    nodeId,
+    log: app.log,
+    ...(rocUrl ? { url: rocUrl } : {}),
+  });
+  app.rocPoller = rocPoller;
+  rocPoller.start();
+
   const shutdown = async (code: number): Promise<void> => {
     for (const lc of lifecycles) {
       try {
@@ -737,6 +750,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     }
     try {
       liveresultatQueue.stop();
+    } catch {
+      /* best-effort */
+    }
+    try {
+      rocPoller.stop();
     } catch {
       /* best-effort */
     }

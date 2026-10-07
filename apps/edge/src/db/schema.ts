@@ -190,6 +190,32 @@ export type EventPayload =
       previous_started_at_ms: number;
     }
   | {
+      // ROC radio punch (roc.olresultat.se), received by integrations/roc.
+      // NOT a card read: the reducer ignores it, results come from card
+      // reads only. event_time_ms is the time of day placed on the
+      // competition clock (the ROC date is never used for that).
+      event_type: 'radio_punch';
+      source: 'roc';
+      /** `${roc unit}:${roc_id}`: a ROC row is stored once, however often it is
+       * fetched. The same punch via two sender types is two rows, collapsed on
+       * (card, code, time of day) when read. */
+      idempotency_key: string;
+      roc_id: number;
+      card_number: number;
+      control_code: number;
+      /** 'HH:MM:SS' as sent by ROC (local wall clock, no zone). */
+      time_of_day: string;
+      /** When we received the row (epoch ms). "Last heard" and the delivery
+       * delay use this, not the punch's time of day: a backlog arrives late
+       * with old times. */
+      received_at_ms: number;
+      /** 'YYYY-MM-DD' ROC stamped the row with; kept to flag a sender whose
+       * clock is off (date_mismatch), never to place or drop the punch. */
+      roc_date: string;
+      /** roc_date differs from the competition date. */
+      date_mismatch: boolean;
+    }
+  | {
       event_type: 'frame_error';
       reason: string;
       raw: string;
@@ -253,6 +279,20 @@ export const competitions = sqliteTable('competitions', {
    * operator. NULL = the zone's offset at local noon of `date`
    * (competitionClockOffsetMin). Migration 0018. */
   clockOffsetMin: integer('clock_offset_min'),
+  /** ROC (roc.olresultat.se) unitId; NULL = not set. */
+  rocCompetitionId: text('roc_competition_id'),
+  /** ROC polling on/off. */
+  rocEnabled: integer('roc_enabled', { mode: 'boolean' }).notNull().default(false),
+  /** First ROC row id of this competition; lower ids are history. */
+  rocStartId: integer('roc_start_id'),
+  /** Last ROC row id received (a restart resumes after it). */
+  rocLastId: integer('roc_last_id'),
+  /** Expected radio control codes, comma separated ('52,78,100'); NULL = none listed. */
+  rocControls: text('roc_controls'),
+  /** Radio codes of start / check / finish units, comma separated; NULL = none. */
+  rocStartCodes: text('roc_start_codes'),
+  rocCheckCodes: text('roc_check_codes'),
+  rocFinishCodes: text('roc_finish_codes'),
 });
 
 // ---------------------------------------------------------------------------

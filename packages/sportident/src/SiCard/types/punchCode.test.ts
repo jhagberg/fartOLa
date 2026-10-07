@@ -1,9 +1,9 @@
 // Authored for fartola. Not ported from upstream.
 //
 // Control codes above 255 on PTD punch records. A record is
-// [ptd, cn, time_hi, time_lo]; CN holds code bits 0-7 and PTD bits 6-7 hold
-// code bits 8-9, so control code = cn + ((ptd & 0xc0) << 2) (cf. SIReader's
-// sireader2.py). `41 2C 0E 10` is control 300 (0x2C = 44, PTD 0x40 → +256),
+// [ptd, cn, time_hi, time_lo]; CN holds code bits 0-7 and PTD bit 6 is code
+// bit 8, so control code = cn + 256 * ((ptd >> 6) & 1). PTD bit 7 is not a code
+// bit (MeOS SportIdent.cpp:1919). `41 2C 0E 10` is control 300 (0x2C = 44, PTD 0x40 → +256),
 // punched at 01:00 PM (PTD bit 0 set → 3600 + 43 200 s).
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
@@ -34,7 +34,7 @@ interface Decodable {
   raceResult: { punches?: { code: number; time: number | null }[] };
 }
 
-describe('punch control code: PTD bits 6-7 are code bits 8-9', () => {
+describe('punch control code: PTD bit 6 is code bit 8, bit 7 is not a code bit', () => {
   for (const [name, Card] of [
     ['SiCard10', SiCard10],
     ['SiCard11', SiCard11],
@@ -61,4 +61,12 @@ describe('punch control code: PTD bits 6-7 are code bits 8-9', () => {
       assert.deepStrictEqual(decodable.raceResult.punches, [CODE_300_PUNCH]);
     });
   }
+
+  test('PTD bit 7 on an ordinary punch record is not a code bit', () => {
+    const card: Decodable = new SiCard10(0);
+    const bytes = si10.storageData.map((b) => b ?? 0xee);
+    bytes.splice(modernPunchOffset(0), 4, 0x81, 0x2c, 0x0e, 0x10);
+    card._decodeFromStorage(bytes);
+    assert.equal(card.raceResult.punches?.[0]?.code, 44);
+  });
 });

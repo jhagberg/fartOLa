@@ -282,7 +282,14 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     assert.ok(card);
     const payload = buildCardReadPayload(card);
     assert.equal(payload.card_type, 'SIAC');
-    assert.deepEqual(payload.finish, { seconds_in_half_day: 591, half_day: 1, weekday: null });
+    assert.deepEqual(payload.finish, {
+      seconds_in_half_day: 591,
+      half_day: 1,
+      weekday: null,
+      // PTD bit 7: a touch-free (Air+) finish. Its station code sits in block 1,
+      // which this capture never read, so there is no code.
+      touch_free: true,
+    });
     const halves = payload.punches.map((p) => p.half_day);
     assert.equal(halves[0], 0, 'first punch 11:29 is AM');
     assert.equal(halves[halves.length - 1], 1, 'last punch 12:09 is PM');

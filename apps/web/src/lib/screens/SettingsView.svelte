@@ -52,9 +52,13 @@
     setLiveresultatCredentials,
     clearLiveresultatCredentials,
     type LiveresultatCredentials,
+    getRadioStatus,
+    setRadioSettings,
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
+  import { baselineKey, latestOnly } from '#lib/screens/radio-status.ts';
+  import type { RadioStatus } from '@fartola/shared-types';
 
   // Per-row UI state. Keyed by integration key so we can find a row
   // fast on save and so adding a Phase-3 key needs no extra wiring.
@@ -329,6 +333,132 @@
   $effect(() => {
     void currentCompId;
     void loadLive();
+  });
+
+  // ---- Radiokontroller (ROC) ----------------------------------------------
+  /** The club's ROC id; offered when none is saved yet. */
+  const DEFAULT_ROC_ID = '2380';
+  let radioEnabled = $state(false);
+  let radioId = $state(DEFAULT_ROC_ID);
+  let radioStartId = $state('');
+  let radioStartIdLoaded = '';
+  let radioControls = $state('');
+  let radioStartCodes = $state('');
+  let radioCheckCodes = $state('');
+  let radioFinishCodes = $state('');
+  let radioHeard = $state('');
+  let radioBaseline: { key: string; id: number | null } | null = $state(null);
+  /** True only once the current competition's settings have been loaded: until
+   * then the form holds defaults and must not be saved over the real ones. */
+  let radioReady = $state(false);
+  let radioBusy = $state(false);
+  let radioMsg: string | null = $state(null);
+  let radioErr: string | null = $state(null);
+
+  function parseCodes(text: string): number[] {
+    return text
+      .split(/[,\s]+/)
+      .filter((x) => x !== '')
+      .map(Number);
+  }
+
+  function applyRadio(r: RadioStatus): void {
+    radioEnabled = r.settings.enabled;
+    radioId = r.settings.roc_competition_id ?? DEFAULT_ROC_ID;
+    radioStartId = r.settings.start_id === null ? '' : String(r.settings.start_id);
+    radioStartIdLoaded = radioStartId;
+    radioControls = r.settings.radio_controls.join(', ');
+    radioStartCodes = r.settings.start_codes.join(', ');
+    radioCheckCodes = r.settings.check_codes.join(', ');
+    radioFinishCodes = r.settings.finish_codes.join(', ');
+    radioHeard = r.settings.heard_codes.join(', ');
+    radioBaseline = baselineKey(r);
+  }
+
+  /** One token per load/switch/save: only the latest response may touch the form. */
+  const radioRequest = latestOnly();
+
+  async function loadRadio(): Promise<void> {
+    const isCurrent = radioRequest();
+    radioMsg = null;
+    radioErr = null;
+    // Blank the form first, so nothing of the previous competition can be saved
+    // into this one while its settings are loading.
+    radioEnabled = false;
+    radioId = DEFAULT_ROC_ID;
+    radioStartId = '';
+    radioStartIdLoaded = '';
+    radioControls = '';
+    radioStartCodes = '';
+    radioCheckCodes = '';
+    radioFinishCodes = '';
+    radioHeard = '';
+    radioBaseline = null;
+    radioReady = false;
+    const id = currentCompId;
+    if (!id) return;
+    try {
+      const r = await getRadioStatus(id);
+      if (isCurrent()) {
+        applyRadio(r);
+        radioReady = true;
+      }
+    } catch {
+      // Save stays off: the form holds defaults, not the real settings.
+      if (isCurrent()) radioErr = t('settings.radio.loadError');
+    }
+  }
+
+  async function saveRadio(): Promise<void> {
+    const id = currentCompId;
+    if (!id || radioBusy || !radioReady) return;
+    const codes = parseCodes(radioControls);
+    const startCodes = parseCodes(radioStartCodes);
+    const checkCodes = parseCodes(radioCheckCodes);
+    const finishCodes = parseCodes(radioFinishCodes);
+    const startText = radioStartId.trim();
+    if (
+      !/^\d+$/.test(radioId.trim()) ||
+      [codes, startCodes, checkCodes, finishCodes].some((l) =>
+        l.some((n) => !Number.isInteger(n) || n <= 0)
+      ) ||
+      (startText !== '' && !/^\d+$/.test(startText))
+    ) {
+      radioErr = t('settings.radio.invalid');
+      radioMsg = null;
+      return;
+    }
+    const isCurrent = radioRequest();
+    radioBusy = true;
+    radioErr = null;
+    radioMsg = null;
+    try {
+      const r = await setRadioSettings(id, {
+          enabled: radioEnabled,
+          roc_competition_id: radioId.trim(),
+          radio_controls: codes,
+          start_codes: startCodes,
+          check_codes: checkCodes,
+          finish_codes: finishCodes,
+          // Only when changed: setting it makes the next fetch start over from there.
+          ...(startText !== radioStartIdLoaded
+            ? { start_id: startText === '' ? null : Number(startText) }
+            : {}),
+      });
+      if (isCurrent()) {
+        applyRadio(r);
+        radioMsg = t('settings.radio.saved');
+      }
+    } catch {
+      if (isCurrent()) radioErr = t('settings.radio.saveError');
+    } finally {
+      radioBusy = false;
+    }
+  }
+
+  $effect(() => {
+    void currentCompId;
+    void loadRadio();
   });
 </script>
 
@@ -629,9 +759,95 @@
       </div>
     {/if}
   </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Radiokontroller (ROC)                                                -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="radio-section">
+    <header class="section-head">
+      <h2>{t('settings.radio.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.radio.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
+    {:else}
+      <div class="live-form">
+        <label>
+          <span>{t('settings.radio.id')}</span>
+          <input type="text" inputmode="numeric" bind:value={radioId} data-testid="radio-id" />
+        </label>
+        <label>
+          <span>{t('settings.radio.startId')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            bind:value={radioStartId}
+            data-testid="radio-start-id"
+          />
+        </label>
+        <label>
+          <span>{t('settings.radio.controls')}</span>
+          <input type="text" bind:value={radioControls} data-testid="radio-controls" />
+        </label>
+        <label>
+          <span>{t('settings.radio.startCodes')}</span>
+          <input type="text" bind:value={radioStartCodes} data-testid="radio-start-codes" />
+        </label>
+        <label>
+          <span>{t('settings.radio.checkCodes')}</span>
+          <input type="text" bind:value={radioCheckCodes} data-testid="radio-check-codes" />
+        </label>
+        <label>
+          <span>{t('settings.radio.finishCodes')}</span>
+          <input type="text" bind:value={radioFinishCodes} data-testid="radio-finish-codes" />
+        </label>
+        <label class="radio-toggle">
+          <input type="checkbox" bind:checked={radioEnabled} data-testid="radio-enabled" />
+          <span>{t('settings.radio.enabled')}</span>
+        </label>
+      </div>
+      <p class="desc muted small">{t('settings.radio.startIdHelp')}</p>
+      <p class="desc muted small">{t('settings.radio.controlsHelp')}</p>
+      <p class="desc muted small">{t('settings.radio.unitsHelp')}</p>
+      {#if radioHeard}
+        <p class="muted" data-testid="radio-heard-codes">
+          {t('settings.radio.heard', { codes: radioHeard })}
+        </p>
+      {/if}
+      {#if radioBaseline}
+        <p class="muted" data-testid="radio-settings-baseline">
+          {t(radioBaseline.key, { id: radioBaseline.id })}
+        </p>
+      {/if}
+      {#if radioErr}
+        <p class="err" role="alert">{radioErr}</p>
+      {/if}
+      {#if radioMsg}
+        <p class="muted" role="status" data-testid="radio-saved">{radioMsg}</p>
+      {/if}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={radioBusy || !radioReady}
+          onclick={() => void saveRadio()}
+          data-testid="radio-save"
+        >
+          {t('settings.radio.save')}
+        </Button>
+      </div>
+    {/if}
+  </section>
 </section>
 
 <style>
+  .live-form .radio-toggle {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-sm);
+    min-height: 44px;
+  }
   .live-form {
     display: flex;
     flex-wrap: wrap;
