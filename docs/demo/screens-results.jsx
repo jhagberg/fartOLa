@@ -34,10 +34,10 @@ function ResultsTable({ rows, cells, t }) {
   );
 }
 
-function ResultsView({ t, fullscreen, setFullscreen }) {
+function ResultsView({ t, fullscreen, setFullscreen, initialClass = 'ALL' }) {
   const classes = window.MOCK_CLASSES || [];
   const results = window.MOCK_RESULTS || {};
-  const [active, setActive] = useStateR('ALL');
+  const [active, setActive] = useStateR(initialClass);
   // As in the app: 'Alla' shows one table per class that has rows, each under
   // "klass · Bana namn · längd" (SOFT TR 7.8.2); a class tab shows just that class.
   const shown = active === 'ALL' ? classes.filter(c => (results[c.id] || []).length > 0) : classes.filter(c => c.id === active);
