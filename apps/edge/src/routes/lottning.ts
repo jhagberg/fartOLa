@@ -13,16 +13,15 @@
 //   2. Cross-competition pre-flight: verify class belongs to competition → 404.
 //   3. Load competitors for the class, build DrawRunner[] array.
 //   4. Call the appropriate draw function based on mode.
-//   5. In a sqlite.transaction:
-//      - UPDATE competitors SET start_time_ms = NULL for all in the class
-//        (D-07: re-lotta wipes prior start_time_ms for the target class only).
-//      - UPDATE each competitor's start_time_ms based on draw order.
-//      - UPDATE classes SET first_start_ms + start_interval_sec.
+//   5. writeStartTimes (db/startTimes.ts): one start_times_set event and the
+//      start_time_ms cache, in one transaction (D-07: re-lotta replaces the
+//      target class's start times only), plus classes.first_start_ms +
+//      start_interval_sec.
 //   6. Call app.projectionStore.markDirty(competitionId).
 //   7. Return 201 { drawn: N }.
 //
-// Draw is NOT event-sourced (PATTERNS.md S-2 note): start_time_ms is a
-// mutable column, not an event-sourced field. Re-lottning simply overwrites.
+// Start times are events (ADR-0003 update 2026-10): a draw is one
+// start_times_set event and can be undone (POST …/start-times/undo).
 //
 // T-02.1-04: mode is a Zod enum — only 'SOFT', 'Random', 'Simultaneous'.
 // T-02.1-04b: intervalSec <= 0 rejected for SOFT and Random modes.
@@ -36,6 +35,7 @@ import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { classes, competitors } from '../db/schema.ts';
+import { writeStartTimes } from '../db/startTimes.ts';
 import { drawSOFT } from '../draw/soft.ts';
 import { drawRandom } from '../draw/random.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
@@ -96,7 +96,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       }
 
       // Load competitors for the class. SOFT TR 7.5.1: an entry without a
-      // name is not drawn (it keeps no start time after the wipe below).
+      // name is not drawn (it loses any start time it had).
       const competitorRows = app.fartolaDb.db
         .select({ id: competitors.id, name: competitors.name, club: competitors.club })
         .from(competitors)
@@ -132,31 +132,19 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         slotIndex++;
       }
 
-      // Transactional write: wipe then assign (D-07).
-      app.fartolaDb.sqlite.transaction(() => {
-        // Wipe prior start_time_ms for all competitors in this class (re-lotta support).
-        app.fartolaDb.db
-          .update(competitors)
-          .set({ startTimeMs: null })
-          .where(eq(competitors.classId, classId))
-          .run();
-
-        // Assign new start times.
-        for (const { id, startTimeMs } of assignments) {
-          app.fartolaDb.db
-            .update(competitors)
-            .set({ startTimeMs })
-            .where(eq(competitors.id, id))
-            .run();
-        }
-
-        // Update class row with firstStartMs + intervalSec.
-        app.fartolaDb.db
-          .update(classes)
-          .set({ firstStartMs, startIntervalSec: intervalSec })
-          .where(eq(classes.id, classId))
-          .run();
-      })();
+      // One start_times_set event (ADR-0003 update 2026-10): every runner in
+      // the class gets the drawn time or none (D-07: a redraw replaces all),
+      // and the class gets its start grid. Undo: POST …/start-times/undo.
+      const drawnAt = new Map(assignments.map((a) => [a.id, a.startTimeMs]));
+      writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
+        cause: 'draw',
+        classId,
+        changes: competitorRows.map((r) => ({
+          competitorId: r.id,
+          startTimeMs: drawnAt.get(r.id) ?? null,
+        })),
+        classGrid: { firstStartMs, intervalSec },
+      });
 
       app.projectionStore.markDirty(competitionId);
 

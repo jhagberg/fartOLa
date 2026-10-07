@@ -85,7 +85,7 @@ export interface CompetitorView {
    * the course-match check and subtracts the leg duration from elapsed. */
   voided_legs: number[];
   /** Phase 2.1 (D-05): assigned start time for the competitor (epoch ms),
-   * NULL when no start time has been drawn. Loaded from competitors.start_time_ms. */
+   * NULL when no start time has been drawn. Folded from start_times_set events (projection/startTimes.ts); else competitors.start_time_ms. */
   start_time_ms: number | null;
   /** 02.1-14 Task 9: the competitor's class has no timing (MeOS NoTiming).
    * elapsed_time_ms is still computed, but public surfaces (results, MOP,

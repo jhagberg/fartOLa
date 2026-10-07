@@ -67,6 +67,7 @@ import { parseIofXml } from '../xml/parse.ts';
 import { validateXml } from '../xml/validate.ts';
 import { importStartList } from '../xml/iofImport.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
+import { writeStartTimes } from '../db/startTimes.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
@@ -458,16 +459,15 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       skipped.sort((a, b) => a.row - b.row);
       const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
 
-      // Write exact matches in a single transaction.
+      // Write exact matches in a single transaction: cards on the row, start
+      // times as one start_times_set event (ADR-0003 update 2026-10).
       if (exactWrites.length > 0) {
         app.fartolaDb.sqlite.transaction(() => {
           for (const w of exactWrites) {
+            if (w.cardNumber === undefined) continue;
             app.fartolaDb.db
               .update(competitorsTable)
-              .set({
-                startTimeMs: w.startTimeMs,
-                ...(w.cardNumber !== undefined ? { cardNumber: w.cardNumber } : {}),
-              })
+              .set({ cardNumber: w.cardNumber })
               .where(
                 and(
                   eq(competitorsTable.id, w.id),
@@ -476,6 +476,11 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               )
               .run();
           }
+          writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
+            cause: 'start_list_import',
+            classId: null,
+            changes: exactWrites.map((w) => ({ competitorId: w.id, startTimeMs: w.startTimeMs })),
+          });
         })();
       }
       app.projectionStore.markDirty(competitionId);
@@ -531,6 +536,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
     let applied = 0;
     let alreadyApplied = 0;
+    const changes: Array<{ competitorId: string; startTimeMs: number }> = [];
 
     // Idempotent: check existing start_time_ms before writing.
     app.fartolaDb.sqlite.transaction(() => {
@@ -554,18 +560,14 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           continue;
         }
 
-        app.fartolaDb.db
-          .update(competitorsTable)
-          .set({ startTimeMs: m.startTimeMs })
-          .where(
-            and(
-              eq(competitorsTable.id, m.competitorId),
-              eq(competitorsTable.competitionId, competitionId)
-            )
-          )
-          .run();
+        changes.push({ competitorId: m.competitorId, startTimeMs: m.startTimeMs });
         applied += 1;
       }
+      writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
+        cause: 'start_list_import',
+        classId: null,
+        changes,
+      });
     })();
 
     if (applied > 0) {
