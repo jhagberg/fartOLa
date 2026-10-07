@@ -46,10 +46,21 @@ this is a replacement, not a sixth template next to the old one.
   them.
 - Site demo (`docs/demo/print-app.jsx`) shows the new receipt.
 
-## Check first
+## Figures: origin and licence
 
-- Who drew the figure sheet and under what terms it may be published in
-  the AGPL repo and on the site (README only says "originalarket").
+The figure sheet was sketched by Marie Hagberg and drawn from those
+sketches with ChatGPT image generation (owner, 2026-10-07). Before the
+figures go into the public repo and the site:
+
+- Get Marie's written OK to publish them, and credit them: "Skisser:
+  Marie Hagberg. Bilder ritade med ChatGPT."
+- Put the images under their own licence, not the code's AGPL; CC BY 4.0
+  is the simple choice. Add `assets/LICENSE` (or a section in
+  `apps/edge/NOTICE.md`) naming the files, the credit and the licence.
+- OpenAI's terms assign the output to the user, so nothing blocks
+  publishing; purely AI-generated images may get weak or no copyright
+  protection, which only limits what we can stop others from doing.
+  (Not legal advice.)
 
 ## Tests
 
