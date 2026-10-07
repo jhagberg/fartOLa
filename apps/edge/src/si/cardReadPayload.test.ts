@@ -282,7 +282,12 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     assert.ok(card);
     const payload = buildCardReadPayload(card);
     assert.equal(payload.card_type, 'SIAC');
-    assert.deepEqual(payload.finish, { seconds_in_half_day: 591, half_day: 1, weekday: null });
+    assert.deepEqual(payload.finish, {
+      seconds_in_half_day: 591,
+      half_day: 1,
+      weekday: null,
+      code: 117, // station code (CN) of the finish unit, new field
+    });
     const halves = payload.punches.map((p) => p.half_day);
     assert.equal(halves[0], 0, 'first punch 11:29 is AM');
     assert.equal(halves[halves.length - 1], 1, 'last punch 12:09 is PM');

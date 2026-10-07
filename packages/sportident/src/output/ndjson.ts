@@ -64,6 +64,9 @@ export interface HalfDayClock {
   seconds_in_half_day: number;
   half_day: 0 | 1;
   weekday: number | null;
+  /** Station code (CN) of the unit that stamped this time. Start, finish and
+   * check on SI6 and newer only; absent otherwise. */
+  code?: number;
 }
 
 export interface NdjsonPunch {
@@ -166,11 +169,17 @@ const snakeCaseKeys = (obj: Record<string, unknown>): Record<string, unknown> =>
 // this conversion so the events.payload column shape stays byte-equal to the
 // NDJSON wire shape (T-PAYLOAD-DRIFT mitigation). Additive surface change —
 // pre-existing Phase 0 callers are unaffected.
-export const toHalfDayClock = (raw: number | null | undefined): HalfDayClock | null => {
+export const toHalfDayClock = (
+  raw: number | null | undefined,
+  code?: number | null
+): HalfDayClock | null => {
   if (raw === null || raw === undefined) return null;
   const half_day = raw >= SI_TIME_CUTOFF ? 1 : 0;
   const seconds_in_half_day = half_day === 1 ? raw - SI_TIME_CUTOFF : raw;
-  return { seconds_in_half_day, half_day, weekday: null };
+  const clock: HalfDayClock = { seconds_in_half_day, half_day, weekday: null };
+  // Only start/finish/check from SI6 and newer carry a station code.
+  if (typeof code === 'number') clock.code = code;
+  return clock;
 };
 
 // ---------------------------------------------------------------------------
@@ -260,9 +269,9 @@ export class NdjsonEmitter {
       ...this._base('card_read'),
       card_type,
       card_number: raceResult.cardNumber ?? card.cardNumber,
-      start: toHalfDayClock(raceResult.startTime),
-      finish: toHalfDayClock(raceResult.finishTime),
-      check: toHalfDayClock(raceResult.checkTime),
+      start: toHalfDayClock(raceResult.startTime, raceResult.startCode),
+      finish: toHalfDayClock(raceResult.finishTime, raceResult.finishCode),
+      check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode),
       clear: toHalfDayClock(raceResult.clearTime),
       punch_count: c.punchCount ?? punches.length,
       punches,

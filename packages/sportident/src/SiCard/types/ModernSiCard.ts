@@ -18,6 +18,7 @@
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
+//   - Start/finish/check station codes (CN byte next to each PTD) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
@@ -129,6 +130,9 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
+  startCode: new SiInt([[0x0d]]),
+  finishCode: new SiInt([[0x11]]),
+  checkCode: new SiInt([[0x09]]),
   punchCount: new SiInt([[0x16]]),
   punches: new SiModified(
     new SiArray(
@@ -267,10 +271,16 @@ export class ModernSiCard extends BaseSiCard {
     }
     const startTime = this.storage.get('startTime')?.value;
     if (startTime !== undefined) this.raceResult.startTime = startTime;
+    const startCode = this.storage.get('startCode')?.value;
+    if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
     const finishTime = this.storage.get('finishTime')?.value;
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
+    const finishCode = this.storage.get('finishCode')?.value;
+    if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
     const checkTime = this.storage.get('checkTime')?.value;
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
+    const checkCode = this.storage.get('checkCode')?.value;
+    if (checkTime != null && checkCode !== undefined) this.raceResult.checkCode = checkCode;
     const punches = this.storage.get('punches')?.value;
     if (punches !== undefined) this.raceResult.punches = punches as IPunch[];
     const cardHolder = this.storage.get('cardHolder')?.value;
