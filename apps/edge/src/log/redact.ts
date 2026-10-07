@@ -69,6 +69,10 @@ export const LOGGER_REDACT_PATHS: readonly string[] = [
   // liveresultat_pwd — T-02.1-13 mitigate (plan 02.1-07 task 2)
   'liveresultat_pwd',
   '*.liveresultat_pwd',
+  // The PATCH …/liveresultat/credentials body (SOFT TR 7.7.1) under a request
+  // envelope.
+  'req.body.liveresultat_pwd',
+  'request.body.liveresultat_pwd',
   'liveresultatPwd',
   '*.liveresultatPwd',
   // event admin code — T-02.1-26 mitigate (plan 02.1-12)
@@ -124,7 +128,8 @@ export function redactUrl(url: string): string {
 
 /** Fastify's default `req` log serializer (fastify/lib/logger-pino.js) with
  * the URL passed through redactUrl. Every request's "incoming request" line
- * goes through it. */
+ * goes through it, and so does any log object with a `req` key that is not a
+ * request (no url: logged without one, never a throw). */
 export const LOGGER_SERIALIZERS = {
   req(req: {
     method: string;
@@ -136,7 +141,7 @@ export const LOGGER_SERIALIZERS = {
   }): Record<string, unknown> {
     return {
       method: req.method,
-      url: redactUrl(req.url),
+      url: typeof req.url === 'string' ? redactUrl(req.url) : undefined,
       version: req.headers?.['accept-version'],
       host: req.host,
       remoteAddress: req.ip,

@@ -313,7 +313,11 @@
     </Field>
 
     <!-- Max time -->
-    <Field label={t('lottning.maxTime')} htmlFor="lottning-max-time">
+    <Field
+      label={t('lottning.maxTime')}
+      hint={t('lottning.maxTimeHint')}
+      htmlFor="lottning-max-time"
+    >
       <div class="max-time-row">
         <Input
           id="lottning-max-time"

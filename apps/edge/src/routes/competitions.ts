@@ -40,14 +40,17 @@ import {
   CompetitionPatchInput,
   type CompetitionDTO,
   type ClassDTO,
-  type CourseDTO,
-  type CourseControlDTO,
 } from '@fartola/shared-types';
-import { competitions, classes, courses, courseControls, controls } from '../db/schema.ts';
+import { competitions, classes } from '../db/schema.ts';
+import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { readoutChannel } from '@fartola/shared-types';
+import { z } from 'zod';
+import { maxTimeLocked } from './_maxTime.ts';
+
+const MaxTimeInput = z.object({ max_time_sec: z.number().int().positive().nullable() }).strict();
 
 // ---------------------------------------------------------------------------
 // Row → DTO mappers. apps/edge owns the boundary translation; shared-types
@@ -86,6 +89,7 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     timing_format: (row.timingFormat === 'tenths' ? 'tenths' : 'seconds') as 'seconds' | 'tenths',
     // Plan 11 — expose Eventor linkage; null when not linked.
     eventor_event_id: row.eventorEventId ?? null,
+    max_time_sec: row.maxTimeSec ?? null,
   };
 }
 
@@ -131,6 +135,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       // (wizard Eventor quickstart path).
       eventorEventId: parsed.data.eventor_event_id ?? null,
       timingFormat: 'seconds',
+      maxTimeSec: null,
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
     return reply.code(201).send(competitionRowToDTO(row));
@@ -159,45 +164,10 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       short_name: c.shortName,
       no_timing: c.noTiming,
       start_method: c.startMethod,
+      course_id: c.courseId,
     }));
 
-    // Courses + embedded controls. Two SELECTs: courses for the competition,
-    // then a single joined SELECT of all course_controls × controls for those
-    // courses ordered by (course_id, order_idx). Group in TS by course_id.
-    const courseRows = app.fartolaDb.db
-      .select()
-      .from(courses)
-      .where(eq(courses.competitionId, id))
-      .orderBy(asc(courses.name))
-      .all();
-    const controlsByCourse = new Map<string, CourseControlDTO[]>();
-    for (const c of courseRows) controlsByCourse.set(c.id, []);
-    if (courseRows.length > 0) {
-      const joined = app.fartolaDb.db
-        .select({
-          courseId: courseControls.courseId,
-          orderIdx: courseControls.orderIdx,
-          code: controls.code,
-        })
-        .from(courseControls)
-        .innerJoin(controls, eq(courseControls.controlId, controls.id))
-        .where(eq(controls.competitionId, id))
-        .orderBy(asc(courseControls.courseId), asc(courseControls.orderIdx))
-        .all();
-      for (const row of joined) {
-        const arr = controlsByCourse.get(row.courseId);
-        if (arr) arr.push({ control_code: row.code, order_idx: row.orderIdx });
-      }
-    }
-    const courseDTOs: CourseDTO[] = courseRows.map((c) => ({
-      id: c.id,
-      competition_id: c.competitionId,
-      name: c.name,
-      class_id: c.classId,
-      length_m: c.lengthM,
-      climb_m: c.climbM,
-      controls: controlsByCourse.get(c.id) ?? [],
-    }));
+    const courseDTOs = loadCourseDTOs(app.fartolaDb, id);
 
     return {
       competition: competitionRowToDTO(compRow),
@@ -248,6 +218,42 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     // no DELETE in plan 04 — but TS doesn't know that.
     if (!updated) return reply.code(404).send({ error: 'competition not found' });
     return reply.code(200).send(competitionRowToDTO(updated));
+  });
+
+  // PATCH /api/competitions/:id/max-time — the competition's max time.
+  //
+  // SOFT TR 4.21.1: "Maxtiden är densamma för alla klasser", 2 × the longest
+  // expected winning time (long / ultralong) or 4 × (middle / sprint). Body
+  // { max_time_sec: positive int | null }. The reducer uses it for every class
+  // without its own override. TR 4.21.2: locked after the first start → 409
+  // max_time_locked. A suffixed write route, so the event-code gate applies.
+  app.patch<{ Params: { id: string } }>('/api/competitions/:id/max-time', async (req, reply) => {
+    const { id } = req.params;
+    const parsed = MaxTimeInput.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send(issuesToErrors(parsed.error.issues));
+    }
+    const existing = app.fartolaDb.db
+      .select()
+      .from(competitions)
+      .where(eq(competitions.id, id))
+      .get();
+    if (!existing) return reply.code(404).send({ error: 'competition not found' });
+    if (existing.maxTimeSec === parsed.data.max_time_sec) {
+      return reply.code(200).send(competitionRowToDTO(existing));
+    }
+    if (maxTimeLocked(app.fartolaDb, id, Date.now())) {
+      return reply.code(409).send({ error: 'max_time_locked' });
+    }
+    app.fartolaDb.db
+      .update(competitions)
+      .set({ maxTimeSec: parsed.data.max_time_sec })
+      .where(eq(competitions.id, id))
+      .run();
+    app.projectionStore.markDirty(id);
+    return reply
+      .code(200)
+      .send(competitionRowToDTO({ ...existing, maxTimeSec: parsed.data.max_time_sec }));
   });
 
   // POST /api/competitions/:id/start-race — flip the race-phase gate.

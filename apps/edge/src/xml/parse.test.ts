@@ -154,4 +154,18 @@ describe('parseIofXml', () => {
       '<?xml version="1.0"?><!ENTITY x "lolz"><CourseData iofVersion="3.0"><Event><Name>x</Name></Event></CourseData>';
     assert.throws(() => parseIofXml(adversarial), /ENTITY declarations not allowed/);
   });
+
+  test('SOFT TR 7.5.1: a PersonEntry without a name (empty or whitespace) is not imported', () => {
+    const entry = (given: string, family: string) =>
+      `<PersonEntry><Person><Name><Family>${family}</Family><Given>${given}</Given></Name></Person><Class><Name>H21</Name></Class></PersonEntry>`;
+    const parsed = parseIofXml(
+      `<?xml version="1.0"?><EntryList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0"><Event><Name>E</Name></Event>${entry('Anna', 'A')}${entry('', '')}${entry('  ', '  ')}</EntryList>`
+    );
+    assert.equal(parsed.kind, 'EntryList');
+    if (parsed.kind !== 'EntryList') return;
+    assert.deepEqual(
+      parsed.data.competitors.map((c) => c.name),
+      ['Anna A']
+    );
+  });
 });

@@ -10,7 +10,9 @@
 //   5. W-5 empty competition VALID — zero ClassResult children, validateXml
 //      accepts, @status still emitted.
 //   6. Competitor with null club has no Organisation element.
-//   7. Status mapping for OK/MP/DNF (PEND omitted entirely).
+//   7. Status mapping for OK/MP/DNF (PEND omitted from every list and
+//      counted as pending: unread is not "not started", SOFT TA till TR
+//      7.8.2).
 //   8. Round-trip parse via fast-xml-parser confirms structural fields.
 //
 // Locked by:
@@ -35,7 +37,7 @@ import {
   type StartListInput,
 } from './iofExport.ts';
 import type { CompetitionState, CompetitorView, ResultView } from '../projection/types.ts';
-import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
+import { softStatus, type CompetitionDTO, type ClassDTO } from '@fartola/shared-types';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // PATTERNS S-5: HERE-based path resolution. The frozen-fixture lives next to
@@ -195,6 +197,7 @@ function rowFor(c: CompetitorView, place: number | null): ResultView {
     elapsed_time_ms: c.elapsed_time_ms,
     place,
     behind_leader_ms: null,
+    soft_status: softStatus(c.status),
   };
 }
 
@@ -278,7 +281,9 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     state.competitors.set(pendCia.id, pendCia);
     state.results_by_class.set('cls-d21', [rowFor(pendCia, null)]);
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    // Provisional: PEND may still be out in the forest (Final reports it
+    // as DidNotStart, see the SOFT TA till TR 7.8.2 test).
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     assert.equal(summary.class_count, 1);
     assert.ok(xml.includes('<Name>H21</Name>'));
     assert.ok(!xml.includes('<Name>D21</Name>'));
@@ -383,13 +388,110 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     const h21Rows = state.results_by_class.get('cls-h21')!;
     h21Rows.push(rowFor(dani, null));
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     // PEND not emitted → total person_result_count unchanged from the seed (3).
     assert.equal(summary.person_result_count, 3);
     assert.ok(!xml.includes('Danielsson'), 'PEND competitor must not appear');
     assert.ok(xml.includes('<Status>OK</Status>'));
     assert.ok(xml.includes('<Status>MissingPunch</Status>'));
     assert.ok(xml.includes('<Status>DidNotFinish</Status>'));
+  });
+
+  test('SOFT TA till TR 7.8.2: unread is not "not started" — the final ResultList leaves an unread runner out and counts them; only an operator DNS is DidNotStart', async () => {
+    const state = makeSeededState();
+    const unread = (id: string, name: string, status: CompetitorView['status']) => {
+      const v = makeCompetitorView({
+        id,
+        name,
+        club: 'StorTuna OK',
+        class_id: 'cls-h21',
+        card_number: null,
+        status,
+        elapsed_time_ms: null,
+      });
+      state.competitors.set(v.id, v);
+      state.results_by_class.get('cls-h21')!.push(rowFor(v, null));
+    };
+    unread('cmp-dani', 'Dani Danielsson', 'PEND');
+    unread('cmp-eva', 'Eva Eriksson', 'DNS');
+
+    const res = await validateAndBuild(makeInput({ state, status: 'Final' }));
+    assert.equal(res.valid, true, `XSD-invalid output: ${JSON.stringify(res)}`);
+    if (!res.valid) return;
+    assert.ok(!res.build.xml.includes('Danielsson'), 'an unread runner is not published');
+    assert.equal(res.build.summary.pending_count, 1);
+    assert.equal(res.build.summary.person_result_count, 4);
+    const evaXml = res.build.xml.slice(res.build.xml.indexOf('Eriksson'));
+    assert.match(
+      evaXml.slice(0, evaXml.indexOf('</PersonResult>')),
+      /<Status>DidNotStart<\/Status>/
+    );
+    // The other IOF statuses are unchanged.
+    assert.ok(res.build.xml.includes('<Status>MissingPunch</Status>'));
+    assert.ok(res.build.xml.includes('<Status>DidNotFinish</Status>'));
+  });
+
+  test('SOFT TA till TR 7.8.3: the ResultList carries Eventor person ids, course length and start/finish times, and validates against IOF.xsd', async () => {
+    const state = makeSeededState();
+    // Anna (OK) read out: drawn start 10:00:00, finish punch 10:12:00 local
+    // (2026-05-19, CEST = UTC+2), read at 10:15.
+    const readAt = Date.parse('2026-05-19T08:15:00Z');
+    const anna = {
+      ...state.competitors.get('cmp-anna')!,
+      start_time_ms: Date.parse('2026-05-19T08:00:00Z'),
+      card_read_history: [
+        {
+          event_time_ms: readAt,
+          card_number: 7501853,
+          card_type: 'SI10',
+          punches: [],
+          start: null,
+          finish: { seconds_in_half_day: 10 * 3600 + 12 * 60, half_day: 0 as const, weekday: null },
+        },
+      ],
+    };
+    state.competitors.set(anna.id, anna);
+    const course = {
+      id: 'crs-a',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'Bana A',
+      class_id: null,
+      length_m: 4200,
+      climb_m: 85,
+      controls: [
+        { control_code: 31, order_idx: 0 },
+        { control_code: 32, order_idx: 1 },
+      ],
+    };
+    const classes = makeClasses().map((c) =>
+      c.id === 'cls-h21' ? { ...c, course_id: 'crs-a' } : c
+    );
+    const res = await validateAndBuild(
+      makeInput({
+        state,
+        classes,
+        courses: [course],
+        eventorPersonIds: new Map([['cmp-anna', 12345]]),
+      })
+    );
+    if (!res.valid) assert.fail(`XSD-invalid: ${JSON.stringify(res.errors)}`);
+    const xml = res.build.xml;
+    // Person > Id (type "Sweden", as Eventor writes it) before Name.
+    assert.match(xml, /<Person>\s*<Id type="Sweden">12345<\/Id>\s*<Name>\s*<Family>Andersson/);
+    // Only runners with a known id get one.
+    assert.equal(xml.match(/<Id /g)?.length, 1);
+    // TR 7.8.2: the class's course with its length.
+    assert.match(
+      xml,
+      /<Course>\s*<Name>Bana A<\/Name>\s*<Length>4200<\/Length>\s*<Climb>85<\/Climb>\s*<NumberOfControls>2<\/NumberOfControls>\s*<\/Course>/
+    );
+    // D21 has no course: no Course element for it.
+    assert.equal(xml.match(/<Course>/g)?.length, 1);
+    // Start and finish as xsd:dateTime.
+    assert.match(
+      xml,
+      /<StartTime>2026-05-19T08:00:00.000Z<\/StartTime>\s*<FinishTime>2026-05-19T08:12:00.000Z<\/FinishTime>\s*<Time>720<\/Time>/
+    );
   });
 
   test('test 8: round-trip parse confirms structural fields', () => {

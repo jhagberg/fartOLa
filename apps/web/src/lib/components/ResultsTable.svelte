@@ -15,7 +15,8 @@
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import StatusPill from '#lib/ui/StatusPill.svelte';
-  import { formatElapsed } from '#lib/screens/readout-types.ts';
+  import { resultRowCells } from '#lib/screens/readout-types.ts';
+  import type { SoftStatus } from '@fartola/shared-types';
 
   interface ResultRow {
     competitor_id: string;
@@ -25,6 +26,8 @@
     elapsed_time_ms: number | null;
     place: number | null;
     behind_leader_ms: number | null;
+    /** SOFT's name for the status (TA till TR 7.8.2), set by the edge. */
+    soft_status: SoftStatus;
   }
 
   interface Props {
@@ -48,16 +51,24 @@
   </thead>
   <tbody>
     {#each rows as r (r.competitor_id)}
+      {@const cells = resultRowCells(r)}
       <tr
         class:pend={r.status === 'PEND'}
         class:new={flashIds.has(r.competitor_id)}
         data-testid="results-row"
       >
-        <td class="plc">{r.place ?? '—'}</td>
+        <td class="plc">{cells.place}</td>
         <td class="name" data-testid="results-row-name">{r.name}</td>
         <td class="club">{r.club ?? ''}</td>
-        <td class="tm">{r.status === 'OK' ? formatElapsed(r.elapsed_time_ms) : '—'}</td>
-        <td><StatusPill status={r.status} small /></td>
+        <td class="tm">{cells.time}</td>
+        <td>
+          <StatusPill
+            status={r.status}
+            label={cells.label}
+            tooltip={false}
+            small
+          />
+        </td>
       </tr>
     {/each}
     {#if rows.length === 0}

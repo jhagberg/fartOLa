@@ -55,6 +55,7 @@ import {
   type StartListCompetitor,
 } from '../xml/iofExport.ts';
 import type { CompetitionDTO, ClassDTO, StartMethod } from '@fartola/shared-types';
+import { resultListInputs } from './_resultListInputs.ts';
 
 function parseStatus(raw: unknown): ExportStatus {
   // C-L1: default to 'Final' when absent / unknown. The query layer is
@@ -92,6 +93,7 @@ interface ClassRow {
   shortName: string | null;
   noTiming: boolean;
   startMethod: StartMethod;
+  courseId: string | null;
 }
 
 function competitionRowToDTO(row: CompetitionRow): CompetitionDTO {
@@ -118,6 +120,7 @@ function classRowToDTO(row: ClassRow): ClassDTO {
     short_name: row.shortName,
     no_timing: row.noTiming,
     start_method: row.startMethod,
+    course_id: row.courseId,
   };
 }
 
@@ -158,7 +161,7 @@ export default async function registerExportRoutes(app: FastifyInstance): Promis
       const input: ExportInput = {
         competition: competitionRowToDTO(compRow),
         classes: classRows.map(classRowToDTO),
-        courses: [],
+        ...resultListInputs(app.fartolaDb, id),
         state,
         status,
       };
@@ -207,7 +210,7 @@ export default async function registerExportRoutes(app: FastifyInstance): Promis
       const input: ExportInput = {
         competition: competitionRowToDTO(compRow),
         classes: classRows.map(classRowToDTO),
-        courses: [],
+        ...resultListInputs(app.fartolaDb, id),
         state,
         status,
       };

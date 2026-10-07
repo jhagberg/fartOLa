@@ -199,6 +199,63 @@ describe('Plan 02-07 — /installningar route mounts SettingsView', () => {
   });
 });
 
+// SOFT TR 7.7.1: the liveresultat id and password are set and cleared from
+// Inställningar; the password is write-only.
+describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('SOFT TR 7.7.1: settings set and clear the liveresultat id and password', async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ liveresultat_id: '1234', has_password: true }), {
+          status: 200,
+        })
+    ) as unknown as typeof fetch;
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const { getLiveresultatCredentials, setLiveresultatCredentials, clearLiveresultatCredentials } =
+      await import('../api/client.ts');
+    expect(await setLiveresultatCredentials('c 1', '1234', 'hemligt')).toEqual({
+      liveresultat_id: '1234',
+      has_password: true,
+    });
+    await getLiveresultatCredentials('c 1');
+    await clearLiveresultatCredentials('c 1');
+    const calls = fetchMock.mock.calls.map((c) => {
+      const init = c[1] as RequestInit | undefined;
+      return [
+        String(c[0]),
+        init?.method,
+        init?.body === undefined ? null : JSON.parse(String(init.body)),
+      ];
+    });
+    const url = '/api/competitions/c%201/liveresultat/credentials';
+    expect(calls).toEqual([
+      [url, 'PATCH', { liveresultat_id: '1234', liveresultat_pwd: 'hemligt' }],
+      [url, 'GET', null],
+      [url, 'DELETE', null],
+    ]);
+  });
+
+  it('sv + en have the liveresultat keys; the hint cites the rule', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    for (const key of [
+      'settings.liveresultat.title',
+      'settings.liveresultat.description',
+      'settings.liveresultat.id',
+      'settings.liveresultat.password',
+      'settings.liveresultat.save',
+      'settings.liveresultat.clear',
+    ]) {
+      expect(sv[key], key).toBeTruthy();
+      expect(en[key], key).toBeTruthy();
+    }
+    expect(sv['settings.liveresultat.description']).toContain('TR 7.7.1');
+  });
+});
+
 // D-MOP-4 / D-MIP-1 revised 2026-10-05: the MeOS integration password, and
 // the explicit "allow MeOS without password" choice with its warning.
 describe('MeOS-koppling — i18n + API client', () => {

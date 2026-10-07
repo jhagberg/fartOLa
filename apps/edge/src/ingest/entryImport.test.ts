@@ -267,4 +267,45 @@ describe('ingestEntryList', () => {
       ctx.handle.close();
     }
   });
+  test('SOFT TA till TR 7.8.3: the EntryList import stores the Eventor person id from Person/Id', () => {
+    const ctx = bootCtx();
+    try {
+      // Eventor types its ids "Sweden"; untyped is accepted, another
+      // system's id or a non-numeric one is not Eventor's.
+      const entry = (id: string, family: string): string => `
+  <PersonEntry>
+    <Person>${id}<Name><Family>${family}</Family><Given>A</Given></Name></Person>
+    <Class><Name>H21</Name></Class>
+  </PersonEntry>`;
+      const xml = `<?xml version="1.0"?>
+<EntryList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+  <Event><Name>Ids</Name></Event>
+  ${entry('<Id type="Sweden">12345</Id>', 'Sweden')}
+  ${entry('<Id>678</Id>', 'Untyped')}
+  ${entry('<Id type="IOF">999</Id>', 'Other')}
+  ${entry('<Id>R0001</Id>', 'Anon')}
+  ${entry('', 'None')}
+</EntryList>`;
+      const parsed = parseIofXml(xml);
+      if (parsed.kind !== 'EntryList') throw new Error('expected EntryList');
+      ingestEntryList(ctx.handle, ctx.competitionId, parsed.data, Date.now());
+      const rows = ctx.handle.db
+        .select({ name: competitors.name, eventorPersonId: competitors.eventorPersonId })
+        .from(competitors)
+        .where(eq(competitors.competitionId, ctx.competitionId))
+        .all();
+      assert.deepEqual(
+        new Map(rows.map((r) => [r.name, r.eventorPersonId])),
+        new Map([
+          ['A Sweden', 12345],
+          ['A Untyped', 678],
+          ['A Other', null],
+          ['A Anon', null],
+          ['A None', null],
+        ])
+      );
+    } finally {
+      ctx.handle.close();
+    }
+  });
 });

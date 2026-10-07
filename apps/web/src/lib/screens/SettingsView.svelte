@@ -48,6 +48,10 @@
     generateEventCode,
     revokeEventCode,
     type EventCodeSummary,
+    getLiveresultatCredentials,
+    setLiveresultatCredentials,
+    clearLiveresultatCredentials,
+    type LiveresultatCredentials,
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
@@ -266,6 +270,65 @@
     // Reload helper codes whenever the active competition changes.
     void currentCompId;
     void loadHelperCodes();
+  });
+
+  // ---- Liveresultat (SOFT TR 7.7.1) ----------------------------------------
+  let live: LiveresultatCredentials | null = $state(null);
+  let liveId = $state('');
+  /** Write-only: never prefilled; the server only says whether one is set. */
+  let livePwd = $state('');
+  let liveBusy = $state(false);
+  let liveErr: string | null = $state(null);
+
+  async function loadLive(): Promise<void> {
+    live = null;
+    liveErr = null;
+    if (!currentCompId) return;
+    try {
+      live = await getLiveresultatCredentials(currentCompId);
+      liveId = live.liveresultat_id ?? '';
+      livePwd = '';
+    } catch {
+      // soft fail — section shows "not configured"
+    }
+  }
+
+  async function saveLive(): Promise<void> {
+    if (!currentCompId || liveBusy) return;
+    if (!/^\d+$/.test(liveId.trim()) || livePwd.length === 0) {
+      liveErr = t('settings.liveresultat.invalid');
+      return;
+    }
+    liveBusy = true;
+    liveErr = null;
+    try {
+      live = await setLiveresultatCredentials(currentCompId, liveId.trim(), livePwd);
+      livePwd = '';
+    } catch {
+      liveErr = t('settings.liveresultat.saveError');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function clearLive(): Promise<void> {
+    if (!currentCompId || liveBusy) return;
+    liveBusy = true;
+    liveErr = null;
+    try {
+      live = await clearLiveresultatCredentials(currentCompId);
+      liveId = '';
+      livePwd = '';
+    } catch {
+      liveErr = t('settings.liveresultat.saveError');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  $effect(() => {
+    void currentCompId;
+    void loadLive();
   });
 </script>
 
@@ -500,9 +563,86 @@
       {/if}
     {/if}
   </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="liveresultat-section">
+    <header class="section-head">
+      <h2>{t('settings.liveresultat.title')}</h2>
+      <span class="muted small" data-testid="liveresultat-state">
+        {live?.liveresultat_id && live.has_password
+          ? t('settings.liveresultat.active')
+          : t('settings.liveresultat.inactive')}
+      </span>
+    </header>
+    <p class="desc muted small">{t('settings.liveresultat.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
+    {:else}
+      <div class="live-form">
+        <label>
+          <span>{t('settings.liveresultat.id')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            bind:value={liveId}
+            data-testid="liveresultat-id"
+          />
+        </label>
+        <label>
+          <span>{t('settings.liveresultat.password')}</span>
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={live?.has_password ? t('settings.liveresultat.passwordSet') : ''}
+            bind:value={livePwd}
+            data-testid="liveresultat-password"
+          />
+        </label>
+      </div>
+      {#if liveErr}
+        <p class="err" role="alert">{liveErr}</p>
+      {/if}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={liveBusy}
+          onclick={() => void saveLive()}
+          data-testid="liveresultat-save"
+        >
+          {t('settings.liveresultat.save')}
+        </Button>
+        {#if live?.liveresultat_id || live?.has_password}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={liveBusy}
+            onclick={() => void clearLive()}
+            data-testid="liveresultat-clear"
+          >
+            {t('settings.liveresultat.clear')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
+  </section>
 </section>
 
 <style>
+  .live-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+  .live-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 200px;
+  }
   .settings-view {
     display: flex;
     flex-direction: column;

@@ -1045,6 +1045,34 @@ describe('Phase-2.1 reducer extensions — MAX / voided legs / replacement contr
     assert.equal(anna.status, 'OK');
   });
 
+  test('SOFT TR 4.21.1: the competition max time applies to every class, over any class value', () => {
+    seqCounter = 0;
+    // 700 s runs in two classes. Competition max time 600 s; H21 has no own
+    // value, D21 has 900 s. The competition value wins in both.
+    const read = (card: number, sec: number): Event =>
+      cardRead(card, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + sec));
+    const project = (maxTimeSec: number | null) =>
+      reduce({
+        competition_id: 'comp-1',
+        max_time_sec: maxTimeSec,
+        events: [read(1, 700), read(2, 700), read(3, 1000)],
+        competitors: [
+          comp({ id: 'c-anna', cardNumber: 1 }),
+          comp({ id: 'c-bea', cardNumber: 2, classId: 'cls-D21' }),
+          comp({ id: 'c-cia', cardNumber: 3, classId: 'cls-D21' }),
+        ],
+        classes: [cls('cls-H21'), clsWithMax('cls-D21', 900)],
+        courses: [course('cls-H21', [31, 32, 33, 34]), course('cls-D21', [31, 32, 33, 34])],
+      });
+    const statuses = (maxTimeSec: number | null) => {
+      const state = project(maxTimeSec);
+      return ['c-anna', 'c-bea', 'c-cia'].map((id) => state.competitors.get(id)!.status);
+    };
+    assert.deepEqual(statuses(600), ['MAX', 'MAX', 'MAX'], 'one limit for every class');
+    // Without a competition max time, a class value applies (non-sanctioned).
+    assert.deepEqual(statuses(null), ['OK', 'OK', 'MAX']);
+  });
+
   // Test 3: No cap → no MAX promotion
   test('test 3: MAX auto-compute — class.maxTimeSec is null → no MAX promotion', () => {
     seqCounter = 0;
@@ -1755,6 +1783,30 @@ describe('reduce — shared places, MP beats MAX (02.1-14 Task 7)', () => {
         ['a', 1, 0],
         ['b', 1, 0],
         ['c', 3, 100_000],
+      ]
+    );
+  });
+
+  test('SOFT TR 4.20.9: a runner over the max time gets no place and no behind; the OK runners are 1 and 2', () => {
+    seqCounter = 0;
+    const state = reduce({
+      competition_id: 'comp-1',
+      events: [run(1, [p(31)], 700), run(2, [p(31)], 550), run(3, [p(31)], 500)],
+      competitors: [
+        comp({ id: 'max', name: 'A', cardNumber: 1 }),
+        comp({ id: 'ok2', name: 'B', cardNumber: 2 }),
+        comp({ id: 'ok1', name: 'C', cardNumber: 3 }),
+      ],
+      classes: [clsWithMax('cls-H21', 600)],
+      courses: [course('cls-H21', [31])],
+    });
+    const rows = state.results_by_class.get('cls-H21')!;
+    assert.deepEqual(
+      rows.map((r) => [r.competitor_id, r.status, r.place, r.behind_leader_ms]),
+      [
+        ['ok1', 'OK', 1, 0],
+        ['ok2', 'OK', 2, 50_000],
+        ['max', 'MAX', null, null],
       ]
     );
   });

@@ -106,6 +106,20 @@
       "when": 1791417600000,
       "tag": "0015_competitors_start_wall",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791504000000,
+      "tag": "0016_competitions_max_time",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791590400000,
+      "tag": "0017_competitors_eventor_person_id",
+      "breakpoints": true
     }
   ]
 }

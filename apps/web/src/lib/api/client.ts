@@ -164,6 +164,28 @@ export function patchCompetition(id: string, body: CompetitionPatchInput): Promi
   });
 }
 
+/** SOFT TR 4.21.1 — set (seconds) or clear (null) the competition's max
+ * time, the same for all classes. 409 max_time_locked after the first start
+ * (TR 4.21.2). */
+export function setCompetitionMaxTime(
+  id: string,
+  maxTimeSec: number | null
+): Promise<CompetitionDTO> {
+  return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/max-time`, {
+    method: 'PATCH',
+    body: { max_time_sec: maxTimeSec },
+  });
+}
+
+/** Whole minutes from the max-time field → seconds. '' → null (no max
+ * time); anything but a positive whole number → undefined (invalid). */
+export function maxTimeMinutesToSec(raw: string): number | null | undefined {
+  const s = raw.trim();
+  if (s === '') return null;
+  if (!/^\d+$/.test(s) || Number(s) === 0) return undefined;
+  return Number(s) * 60;
+}
+
 /** Phase 2.1 — flip the race-phase gate. Idempotent: returns the existing
  * competition row (with race_started_at_ms already set) on a duplicate
  * call instead of resetting the start time. */
@@ -521,6 +543,8 @@ export type ExportStatus = 'Final' | 'Provisional';
 export interface ExportPreviewSummary {
   class_count: number;
   person_result_count: number;
+  /** Runners left out: no result yet (never read out). SOFT TA till TR 7.8.2. */
+  pending_count: number;
   status: ExportStatus;
 }
 
@@ -543,6 +567,16 @@ export function exportPreview(
   return apiFetch<ExportPreviewResult>(
     `/api/competitions/${encodeURIComponent(competitionId)}/export/preview`,
     { query: { status } }
+  );
+}
+
+/** SOFT TA till TR 7.8.2: "Sätt ej utlästa till Ej start" — DNS for every
+ * runner with no read-out and no status (MeOS "Sätt okända löpare utan
+ * registrering till <Ej Start>"); `undo` clears exactly those. */
+export function setUnreadDns(competitionId: string, undo = false): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/unread-dns${undo ? '/undo' : ''}`,
+    { method: 'POST', body: {} }
   );
 }
 
@@ -1057,6 +1091,45 @@ export function revokeEventCode(competitionId: string, codeId: string): Promise<
     `/api/competitions/${encodeURIComponent(competitionId)}/event-codes/${encodeURIComponent(codeId)}/revoke`,
     { method: 'POST', body: {} }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Liveresultat credentials (SOFT TR 7.7.1). The password is write-only: the
+// API answers with has_password, never the password.
+// ---------------------------------------------------------------------------
+
+export interface LiveresultatCredentials {
+  liveresultat_id: string | null;
+  has_password: boolean;
+}
+
+function liveresultatUrl(competitionId: string): string {
+  return `/api/competitions/${encodeURIComponent(competitionId)}/liveresultat/credentials`;
+}
+
+export function getLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId));
+}
+
+/** Set the id and password; the server then starts pushing. */
+export function setLiveresultatCredentials(
+  competitionId: string,
+  liveresultatId: string,
+  password: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), {
+    method: 'PATCH',
+    body: { liveresultat_id: liveresultatId, liveresultat_pwd: password },
+  });
+}
+
+/** Clear both; pushing stops. */
+export function clearLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), { method: 'DELETE' });
 }
 
 /** POST /access — authenticate with an event code; sets a signed HttpOnly cookie. */

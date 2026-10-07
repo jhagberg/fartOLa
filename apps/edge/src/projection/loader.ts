@@ -39,7 +39,11 @@ import type { ReduceInput, CourseWithControlCodes } from './reduce.ts';
  */
 export function loadCompetitionInputs(handle: DbHandle, competitionId: string): ReduceInput | null {
   const competition = handle.db
-    .select({ id: competitions.id, raceStartedAtMs: competitions.raceStartedAtMs })
+    .select({
+      id: competitions.id,
+      raceStartedAtMs: competitions.raceStartedAtMs,
+      maxTimeSec: competitions.maxTimeSec,
+    })
     .from(competitions)
     .where(eq(competitions.id, competitionId))
     .get();
@@ -111,6 +115,7 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
   return {
     competition_id: competitionId,
     race_started_at_ms: competition.raceStartedAtMs,
+    max_time_sec: competition.maxTimeSec,
     events: eventsRows,
     competitors: competitorsRows,
     classes: classesRows,

@@ -28,13 +28,17 @@
 //   - Conservative subset — only the elements every IOF 3.0 consumer
 //     parses correctly (RESEARCH §"Pitfall 5"). Specifically:
 //     ResultList > Event (Name + StartTime.Date) > ClassResult* >
-//     PersonResult+ > Person (Name.Family + Name.Given),
+//     Course? (Name, Length, Climb, NumberOfControls — SOFT TR 7.8.2:
+//     banlängd), PersonResult+ > Person (Id type="Sweden" when the Eventor
+//     person id is known — SOFT TA till TR 7.8.3, Name.Family + Name.Given),
 //     Organisation (only when club non-null), Result
 //     (StartTime?, FinishTime?, Time, Position (OK only), Status).
 //
-//   - PEND competitors are EXCLUDED. ResultList semantics target finished
-//     events; the toggle between Final/Provisional flips the top-level
-//     @status only — not what rows are emitted.
+//   - PEND competitors (never read out): a Final list (@status Complete)
+//     reports them as DidNotStart, "Ej start" in SOFT's terms (TA till TR
+//     7.8.2); fartOLa has no results-locked state, so the Final export is
+//     what "final" means. A Provisional list (Snapshot) leaves them out —
+//     they may still be in the forest.
 //
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-16-PLAN.md task 1
@@ -48,6 +52,8 @@
 import { XMLBuilder } from 'fast-xml-parser';
 import { validateXml, type XsdError } from './validate.ts';
 import type { CompetitionState, CompetitorView } from '../projection/types.ts';
+import { startWallMs } from '../projection/dnfMp.ts';
+import { cardClockToWallMs, wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
 import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -59,9 +65,17 @@ export type ExportStatus = 'Final' | 'Provisional';
 export interface ExportInput {
   competition: CompetitionDTO;
   classes: ClassDTO[];
-  /** Reserved for future split-time emission. Phase 1 conservative subset
-   * does not write SplitTime elements (RESEARCH §"Pitfall 5"). */
+  /** Each class's course (ClassDTO.course_id, else the course whose
+   * class_id is the class) gives ClassResult > Course: name, length, climb
+   * and number of controls (SOFT TR 7.8.2). No SplitTime elements yet
+   * (RESEARCH §"Pitfall 5"). */
   courses: CourseDTO[];
+  /** Competitor id → Eventor person id (EntryList import), written as
+   * Person > Id so Eventor links the results (SOFT TA till TR 7.8.3). */
+  eventorPersonIds?: ReadonlyMap<string, number>;
+  /** Competitor id → competitors.start_wall_ms, for a start set as a
+   * wall-clock time (dnfMp.drawnStartWallMs). */
+  startWallMs?: ReadonlyMap<string, number>;
   state: CompetitionState;
   status?: ExportStatus;
   /** Creator attribute on the root element. Defaults to `fartOLa v0.1`. Tests
@@ -75,6 +89,9 @@ export interface ExportInput {
 export interface ExportSummary {
   class_count: number;
   person_result_count: number;
+  /** Runners left out because they have no result yet (PEND, never read
+   * out). The UI warns "N löpare saknar resultat" (SOFT TA till TR 7.8.2). */
+  pending_count: number;
   status: ExportStatus;
 }
 
@@ -159,7 +176,8 @@ export type IofResultStatus =
   | 'OverTime';
 
 /** Internal projection status → IOF ResultStatus enum value. Returns null for
- * PEND — those competitors are excluded from the export entirely.
+ * PEND — a Provisional export leaves those competitors out, a Final one
+ * reports them as DidNotStart (see buildPersonResult).
  *
  * The Phase 2.0 manual states (DNS/DQ/CANCEL/MAX) round-trip into the IOF
  * XSD enum via the obvious mapping (DidNotStart / Disqualified / Cancelled
@@ -210,13 +228,24 @@ interface ResultNode {
 }
 
 interface PersonResultNode {
-  Person: { Name: { Family: string; Given: string } };
+  Person: {
+    Id?: { '@_type': 'Sweden'; '#text': number };
+    Name: { Family: string; Given: string };
+  };
   Organisation?: { '@_type': 'Club'; Name: string };
   Result: ResultNode;
 }
 
+interface CourseNode {
+  Name: string;
+  Length?: number;
+  Climb?: number;
+  NumberOfControls: number;
+}
+
 interface ClassResultNode {
   Class: { '@_resultListMode'?: 'UnorderedNoTimes'; Name: string };
+  Course?: CourseNode;
   PersonResult: PersonResultNode[];
 }
 
@@ -231,17 +260,55 @@ interface ResultListNode {
 }
 
 // ---------------------------------------------------------------------------
-// Build a single PersonResult subtree. Returns null for PEND (excluded from
-// the export entirely).
+// Build a single PersonResult subtree. Returns null for PEND: a runner never
+// read out is left out of every list, Final too. Unread is not "not started"
+// (SOFT TA till TR 7.8.2); the operator sets them to DNS ("Sätt ej utlästa
+// till Ej start", routes/manual.ts) and the summary counts the rest.
 // ---------------------------------------------------------------------------
+
+/** Start and finish (epoch ms) for the Result element: from the latest
+ * read-out, the start chosen by the class's start method as for the running
+ * time (dnfMp.startMs). A runner without a read-out has at most the drawn
+ * start time; one who did not start (or never read out) has neither. */
+function raceTimes(
+  view: CompetitorView,
+  cls: ClassDTO,
+  drawnStartWallMs: number | null
+): { start: number | null; finish: number | null } {
+  if (view.status === 'PEND' || view.status === 'DNS' || view.status === 'CANCEL') {
+    return { start: null, finish: null };
+  }
+  const read = view.card_read_history[view.card_read_history.length - 1];
+  if (read === undefined) return { start: view.start_time_ms, finish: null };
+  // Same timeline as the running time: the local wall clock (dnfMp.startWallMs),
+  // turned into an absolute instant only here, where it leaves the system.
+  const start = startWallMs({
+    start: read.start,
+    cardType: read.card_type,
+    readAtMs: read.event_time_ms,
+    drawnStartMs: view.start_time_ms,
+    drawnStartWallMs,
+    startMethod: cls.start_method,
+  });
+  return {
+    start: start === null ? null : wallMsToEpochMs(start),
+    finish:
+      read.finish === null
+        ? null
+        : wallMsToEpochMs(cardClockToWallMs(read.finish, read.card_type, read.event_time_ms)),
+  };
+}
 
 function buildPersonResult(
   view: CompetitorView,
   place: number | null,
-  noTiming: boolean
+  cls: ClassDTO,
+  eventorPersonId: number | undefined,
+  drawnStartWallMs: number | null
 ): PersonResultNode | null {
   const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
+  const noTiming = cls.no_timing;
 
   const { family, given } = splitName(view.name);
 
@@ -259,13 +326,20 @@ function buildPersonResult(
   // plan can add proper TZ-aware reconstruction when the operator-set
   // event start time lands.
   const result: Partial<ResultNode> = {};
+  // StartTime / FinishTime as xsd:dateTime (UTC, Z suffix like the
+  // StartList), absolute from the competition clock. An untimed class
+  // exports neither.
+  if (!noTiming) {
+    const { start, finish } = raceTimes(view, cls, drawnStartWallMs);
+    if (start !== null) result.StartTime = new Date(start).toISOString();
+    if (finish !== null) result.FinishTime = new Date(finish).toISOString();
+  }
   // 02.1-14 Task 9: an untimed class exports no Time / Position (as MeOS
   // iof30interface.cpp writePersonResult with hasTiming=false, and Eventor).
   if (view.elapsed_time_ms !== null && !noTiming) {
-    // Time is xsd:double in the IOF XSD — emit decimal seconds. We carry
-    // millisecond precision in the projection; round down to whole seconds
-    // because the receipt and the on-screen results table both round.
-    result.Time = Math.floor(view.elapsed_time_ms / 1000);
+    // Time is xsd:double in the IOF XSD. The projection's time is already
+    // the official one in whole seconds (SOFT TR 4.20.7, dnfMp.officialMs).
+    result.Time = Math.round(view.elapsed_time_ms / 1000);
   }
   if (xmlStatus === 'OK' && place !== null && !noTiming) {
     // Position must only be present when Status='OK' (per the XSD's
@@ -278,8 +352,17 @@ function buildPersonResult(
   // PersonResult sequence order per IOF.xsd lines 2360-2404:
   // EntryId?, Person, Organisation?, Result*, Extensions?. We emit
   // Person + (optional Organisation) + Result.
+  // Person sequence: Id*, Name, … (IOF.xsd Person). Eventor types its own
+  // person ids "Sweden" in IOF 3.0 output (eventor/__fixtures__/
+  // competitors-sample.xml), so the export does the same.
   const node: Partial<PersonResultNode> = {
-    Person: { Name: { Family: family, Given: given } },
+    Person:
+      eventorPersonId === undefined
+        ? { Name: { Family: family, Given: given } }
+        : {
+            Id: { '@_type': 'Sweden', '#text': eventorPersonId },
+            Name: { Family: family, Given: given },
+          },
   };
   if (view.club !== null && view.club.length > 0) {
     node.Organisation = { '@_type': 'Club', Name: view.club };
@@ -291,6 +374,17 @@ function buildPersonResult(
 // ---------------------------------------------------------------------------
 // Public API.
 // ---------------------------------------------------------------------------
+
+/** SOFT TR 7.8.2: the class's course with its length (metres), in the
+ * SimpleCourse element order Name, Length, Climb, NumberOfControls. */
+function courseNode(course: CourseDTO): CourseNode {
+  return {
+    Name: course.name,
+    ...(course.length_m === null ? {} : { Length: course.length_m }),
+    ...(course.climb_m === null ? {} : { Climb: course.climb_m }),
+    NumberOfControls: course.controls.length,
+  };
+}
 
 /** Build the IOF XML 3.0 ResultList string from a CompetitionState snapshot.
  *
@@ -305,6 +399,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
 
   const classResults: ClassResultNode[] = [];
   let personResultCount = 0;
+  let pendingCount = 0;
 
   for (const cls of input.classes) {
     const rows = input.state.results_by_class.get(cls.id) ?? [];
@@ -312,8 +407,17 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     for (const row of rows) {
       const view = input.state.competitors.get(row.competitor_id);
       if (view === undefined) continue;
-      const node = buildPersonResult(view, row.place, cls.no_timing);
-      if (node === null) continue; // PEND: skipped
+      const node = buildPersonResult(
+        view,
+        row.place,
+        cls,
+        input.eventorPersonIds?.get(view.id),
+        input.startWallMs?.get(view.id) ?? null
+      );
+      if (node === null) {
+        pendingCount += 1; // PEND: no result yet, left out
+        continue;
+      }
       personResults.push(node);
       personResultCount += 1;
     }
@@ -321,11 +425,16 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     // the output. The empty-competition path (W-5) emits zero ClassResult
     // children when this loop produces no entries at all.
     if (personResults.length === 0) continue;
+    const course =
+      input.courses.find((c) => c.id === cls.course_id) ??
+      input.courses.find((c) => c.class_id === cls.id);
     classResults.push({
       // 02.1-14 Task 9: mirror Eventor's ResultList for untimed classes.
       Class: cls.no_timing
         ? { '@_resultListMode': 'UnorderedNoTimes', Name: cls.name }
         : { Name: cls.name },
+      // ClassResult sequence: Class, Course*, PersonResult* (IOF.xsd).
+      ...(course === undefined ? {} : { Course: courseNode(course) }),
       PersonResult: personResults,
     });
   }
@@ -361,6 +470,7 @@ export function buildResultListXml(input: ExportInput): BuildResult {
     summary: {
       class_count: classResults.length,
       person_result_count: personResultCount,
+      pending_count: pendingCount,
       status,
     },
   };

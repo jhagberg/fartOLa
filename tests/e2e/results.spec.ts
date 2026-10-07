@@ -104,7 +104,7 @@ test('live results update via WS results_update on simulate-read', async ({ page
 
   await page.goto(`/competition/${competitionId}/results`);
   await expect(page.getByTestId('results-view')).toBeVisible();
-  await expect(page.getByTestId('results-table')).toBeVisible();
+  await expect(page.getByTestId('results-table').first()).toBeVisible();
 
   // Capture the millisecond updatedAtMs hook before the read so we can
   // assert it changes on the live update. WR-005: the visible header

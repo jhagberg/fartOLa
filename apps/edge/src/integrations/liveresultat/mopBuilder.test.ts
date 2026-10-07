@@ -275,6 +275,41 @@ describe('buildMopXml', () => {
     const cmp = root['cmp'] as Record<string, unknown>;
     const base = cmp['base'] as Record<string, unknown>;
     assert.equal(base['@_rt'], undefined);
-    assert.equal(base['@_stat'], 1);
+    // MeOS sends an untimed OK as 2 ("utan tidtagning"), not 1; see the MOP
+    // status test below.
+    assert.equal(base['@_stat'], 2);
+  });
+  it("MOP: statuses use MeOS's codes (MP 3, DNF 4, DQ 5, MAX 6, DNS 20, CANCEL 21; untimed OK 2)", () => {
+    const competitors = new Map<string, CompetitorView>();
+    competitors.set(
+      'max',
+      makeCompetitorView({ id: 'max', class_id: 'cls-1', status: 'MAX', elapsed_time_ms: 9e6 })
+    );
+    competitors.set('dq', makeCompetitorView({ id: 'dq', class_id: 'cls-1', status: 'DQ' }));
+    competitors.set('dnf', makeCompetitorView({ id: 'dnf', class_id: 'cls-1', status: 'DNF' }));
+    competitors.set('dns', makeCompetitorView({ id: 'dns', class_id: 'cls-1', status: 'DNS' }));
+    competitors.set('can', makeCompetitorView({ id: 'can', class_id: 'cls-1', status: 'CANCEL' }));
+    competitors.set(
+      'untimed',
+      makeCompetitorView({ id: 'untimed', class_id: 'cls-1', status: 'OK', no_timing: true })
+    );
+    const xml = buildMopXml({
+      state: makeState({ competitors }),
+      competition: { id: 'comp-id-1', name: 'Test', date: '2026-05-24' },
+      classes: [{ id: 'cls-1', name: 'H21' }],
+      clubs: [],
+    });
+    const root = parseXml(xml)['MOPComplete'] as Record<string, unknown>;
+    const cmps = root['cmp'] as Array<Record<string, unknown>>;
+    const stat = (id: string): unknown =>
+      (cmps.find((c) => c['@_id'] === id)!['base'] as Record<string, unknown>)['@_stat'];
+    // MeOS writes its RunnerStatus as MOP stat (infoserver.cpp:533,
+    // oRunner.h:34-35); liveresultat and other MOP receivers read those codes.
+    assert.equal(stat('max'), 6);
+    assert.equal(stat('dq'), 5);
+    assert.equal(stat('dnf'), 4);
+    assert.equal(stat('dns'), 20);
+    assert.equal(stat('can'), 21);
+    assert.equal(stat('untimed'), 2);
   });
 });

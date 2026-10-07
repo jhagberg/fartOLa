@@ -49,7 +49,7 @@
 
 <div class="rcpt-sep"></div>
 <div class="rcpt-row rcpt-total">
-  <span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span>
+  <span>{t('rcpt.total')}</span><span>{read.elapsed} {read.statusLabel}</span>
 </div>
 {#if read.place}
   <div class="rcpt-row">

@@ -246,6 +246,9 @@ export const competitions = sqliteTable('competitions', {
   /** Phase 2.1 D-17 — display format for elapsed times: 'seconds' or 'tenths'.
    * Sprint events typically use 'tenths'; road/forest use 'seconds'. */
   timingFormat: text('timing_format').default('seconds'),
+  /** SOFT TR 4.21.1 — one max time for every class, in seconds. NULL = none.
+   * classes.max_time_sec overrides it per class (non-sanctioned use). */
+  maxTimeSec: integer('max_time_sec'),
 });
 
 // ---------------------------------------------------------------------------
@@ -392,6 +395,10 @@ export const competitors = sqliteTable(
     /** Phase 2.1 D-05 — assigned start time as epoch ms. NULL = not drawn
      * (walk-up or late entry without a start slot). */
     startTimeMs: integer('start_time_ms'),
+    /** SOFT TA till TR 7.8.3 — person id in Eventor, from the EntryList
+     * import (Person/Id). The ResultList export writes it back so Eventor
+     * links the result to the person. NULL = unknown. */
+    eventorPersonId: integer('eventor_person_id'),
     /** The start as a local wall-clock time (ms on epochToWallClockMs's
      * scale) when it was set as one; NULL otherwise. Lets a start in the
      * skipped spring-DST hour keep its station-clock value. Valid only while

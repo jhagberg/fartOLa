@@ -41,6 +41,7 @@
 // - REQ-EVT-CMP-006 (DNF/MP from event log)
 
 import type { HalfDayClock } from '@fartola/sportident';
+import { softStatus } from '@fartola/shared-types';
 import type { Event, Competitor, Course, Class } from '../db/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 import {
@@ -77,6 +78,10 @@ export interface ReduceInput {
    *                   phase concept; production callers always set it
    *                   explicitly via the loader. */
   race_started_at_ms?: number | null;
+  /** SOFT TR 4.21.1 — the competition's max time in seconds, used for every
+   * class (a class's own max_time_sec only applies when this is unset).
+   * Omitted / null = none. */
+  max_time_sec?: number | null;
   events: readonly Event[];
   competitors: readonly Competitor[];
   classes: readonly Class[];
@@ -168,12 +173,14 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (assigned !== undefined) courseByClass.set(cls.id, assigned);
   }
 
-  // Phase 2.1 (D-08): class max-time lookup by class_id.
+  // Phase 2.1 (D-08): max time by class_id. SOFT TR 4.21.1: "Maxtiden är
+  // densamma för alla klasser" — a competition max time applies to every
+  // class; a class's own value is used only when the competition has none
+  // (non-sanctioned use).
   const maxTimeByClass = new Map<string, number>();
   for (const cls of input.classes) {
-    if (cls.maxTimeSec !== null && cls.maxTimeSec !== undefined) {
-      maxTimeByClass.set(cls.id, cls.maxTimeSec);
-    }
+    const maxTimeSec = input.max_time_sec ?? cls.maxTimeSec ?? null;
+    if (maxTimeSec !== null) maxTimeByClass.set(cls.id, maxTimeSec);
   }
 
   // 02.1-14 Task 9: classes without timing.
@@ -675,6 +682,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         elapsed_time_ms: timed ? v.elapsed_time_ms : null,
         place: p,
         behind_leader_ms: behind,
+        soft_status: softStatus(v.status, { noTiming: !timed }),
       };
     });
     resultsByClass.set(cls.id, rows);

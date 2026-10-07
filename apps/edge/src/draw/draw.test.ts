@@ -160,6 +160,86 @@ describe('draw algorithms', () => {
     });
   });
 
+  // SOFT TR 7.5.1 (2026-07-01): "Tävlande från samma förening ska om möjligt
+  // inte starta direkt efter varandra." Adjacency is counted from the
+  // returned order (not the reported adjacencyCount). The fewest same-club
+  // neighbours possible is max(0, 2·maxClub − n − 1); a runner without a
+  // club neighbours nobody.
+  describe('drawSOFT — club separation (SOFT TR 7.5.1)', () => {
+    const neighbours = (order: readonly (DrawRunner | null)[]): number => {
+      const real = order.filter((s): s is DrawRunner => s !== null);
+      let n = 0;
+      for (let i = 1; i < real.length; i++)
+        if (real[i]!.club !== null && real[i]!.club === real[i - 1]!.club) n++;
+      return n;
+    };
+    const fewest = (input: DrawRunner[]): number => {
+      const sizes = new Map<string, number>();
+      for (const r of input) {
+        const key = r.club ?? `__${r.id}`;
+        sizes.set(key, (sizes.get(key) ?? 0) + 1);
+      }
+      return Math.max(0, 2 * Math.max(...sizes.values()) - input.length - 1);
+    };
+
+    test('SOFT TR 7.5.1: A×4/B×2/C×2 → no same-club neighbours (Codex counterexample)', () => {
+      const input = mixedRunners([
+        ['A', 4],
+        ['B', 2],
+        ['C', 2],
+      ]);
+      for (let seed = 1; seed <= 50; seed++) {
+        const result = drawSOFT(input, { rngFn: makeLcgRng(seed) });
+        const ids = result.order.map((r) => r!.id).sort();
+        assert.deepEqual(ids, input.map((r) => r.id).sort(), `seed ${seed}: not a permutation`);
+        assert.equal(
+          neighbours(result.order),
+          0,
+          `seed ${seed}: ${result.order.map((r) => r!.club)}`
+        );
+        assert.equal(result.adjacencyCount, 0);
+      }
+    });
+
+    test('SOFT TR 7.5.1: property — over random club distributions the same-club neighbours are max(0, 2·maxClub − n − 1)', () => {
+      const pick = makeLcgRng(4711);
+      for (let i = 0; i < 400; i++) {
+        const clubs = pick(1, 6);
+        const input: DrawRunner[] = [];
+        for (let c = 0; c < clubs; c++) input.push(...runners(pick(1, 9), `K${c}`));
+        // Some runners without a club.
+        for (let u = pick(0, 3); u > 0; u--) input.push({ id: `none-${i}-${u}`, club: null });
+        const result = drawSOFT(input, { vacantSlots: pick(0, 3), rngFn: makeLcgRng(i + 1) });
+        const real = result.order.filter((s): s is DrawRunner => s !== null);
+        const shape = input.map((r) => r.club).join();
+        assert.deepEqual(real.map((r) => r.id).sort(), input.map((r) => r.id).sort(), shape);
+        assert.equal(
+          neighbours(result.order),
+          fewest(input),
+          `${shape} → ${real.map((r) => r.club)}`
+        );
+        assert.equal(result.adjacencyCount, fewest(input), shape);
+      }
+    });
+
+    test('SOFT TR 7.5.1/7.5.2: re-draws differ — club pattern and first club vary between draws', () => {
+      const input = mixedRunners([
+        ['A', 4],
+        ['B', 4],
+        ['C', 2],
+      ]);
+      const patterns = new Set<string>();
+      const firstClubs = new Set<string | null>();
+      for (let seed = 1; seed <= 30; seed++) {
+        const order = drawSOFT(input, { rngFn: makeLcgRng(seed * 7919) }).order;
+        patterns.add(order.map((r) => r!.club).join(''));
+        firstClubs.add(order[0]!.club);
+      }
+      assert.ok(patterns.size >= 10, `only ${patterns.size} club patterns in 30 draws`);
+      assert.equal(firstClubs.size, 3, 'every club can start first');
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // drawRandom tests
   // ---------------------------------------------------------------------------

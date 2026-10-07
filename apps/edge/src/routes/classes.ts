@@ -23,8 +23,11 @@ import { ClassCreateInput, StartMethod, type ClassDTO } from '@fartola/shared-ty
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+import { maxTimeLocked } from './_maxTime.ts';
 
-// Phase 2.1 D-08: PATCH class route for maxTimeSec editing.
+// Phase 2.1 D-08: PATCH class route for maxTimeSec editing — a per-class
+// max time, used only when the competition has none (SOFT TR 4.21.1 wants
+// one value for all classes, so it is for non-sanctioned use).
 // Backend ownership here (consumed by Plan 05 UI).
 // 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field), and
 // Task 14 start_method. Each field is optional; only the fields sent are
@@ -98,6 +101,17 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       }
 
       const { maxTimeSec, no_timing, start_method } = parsed.data;
+      // SOFT TR 4.21.2: no max time change after the first start.
+      if (maxTimeSec !== undefined && maxTimeLocked(app.fartolaDb, competitionId, Date.now())) {
+        const current = app.fartolaDb.db
+          .select({ maxTimeSec: classes.maxTimeSec })
+          .from(classes)
+          .where(eq(classes.id, classId))
+          .get();
+        if (current?.maxTimeSec !== maxTimeSec) {
+          return reply.code(409).send({ error: 'max_time_locked' });
+        }
+      }
       app.fartolaDb.db
         .update(classes)
         .set({

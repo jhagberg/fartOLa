@@ -52,6 +52,9 @@ export interface ReceiptRead {
   /** Cumulative time at finish, e.g. "23:14". */
   elapsed: string;
   status: 'OK' | 'MP' | 'DNF' | 'PEND' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+  /** What the receipt prints for the status: SOFT's name ("Ej godkänd",
+   * "Diskad", "Deltagit" …; TA till TR 7.8.2, TR 4.21.3). */
+  statusLabel: string;
   place: number | null;
   punches: ReceiptPunch[];
   progress: ReceiptProgress;

@@ -144,7 +144,8 @@ export function detectStatus(
   expectedControlCodes: readonly number[],
   alternatives?: ControlAlternatives
 ): StatusResult {
-  const elapsed = elapsedMs(input);
+  const raw = rawElapsedMs(input);
+  const elapsed = raw === null ? null : officialMs(raw);
 
   // Gate 1: no finish stamp → DNF, regardless of punches[] contents.
   if (input.finish === null) {
@@ -245,9 +246,17 @@ export function startPunchWarning(input: StartInput): {
   return none;
 }
 
+/** The official time: whole seconds, a fraction rounded to the nearest
+ * second, half up (SOFT TR 4.20.7 (2026-07-01): "avrundning till hel
+ * sekund"). Places, MAX, exports, MOP and receipts all use it. */
+export function officialMs(ms: number): number {
+  return Math.round(ms / 1000) * 1000;
+}
+
 /** Running time = finish − start on the local wall-clock timeline (02.1-14
- * Task 3); start per startWallMs above. Null without a finish or any start. */
-function elapsedMs(input: DetectInput): number | null {
+ * Task 3); start per startWallMs above. Unrounded: detectStatus rounds it to
+ * the official time. Null without a finish or any start. */
+export function rawElapsedMs(input: DetectInput): number | null {
   if (input.finish === null) return null;
   const start = startWallMs(input);
   if (start === null) return null;

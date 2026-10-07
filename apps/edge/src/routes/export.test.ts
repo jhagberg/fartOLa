@@ -20,6 +20,7 @@
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { XMLParser } from 'fast-xml-parser';
+import { eq } from 'drizzle-orm';
 
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -277,6 +278,35 @@ describe('GET /api/competitions/:id/export[/preview]', () => {
       `@status="${parsed.ResultList['@_status']}" must be in {Complete, Delta, Snapshot}`
     );
     assert.equal(parsed.ResultList['@_status'], 'Complete');
+  });
+
+  test('SOFT TR 7.8.2: the exported ResultList shows each class with its course length and the Eventor person ids', async () => {
+    seedCompetitionWithThreeReads(ctx.handle, ctx.nodeId, 'comp-len');
+    ctx.handle.db
+      .update(competitors)
+      .set({ eventorPersonId: 4711 })
+      .where(eq(competitors.id, 'cmp-comp-len-anna'))
+      .run();
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/competitions/comp-len/export?format=iof30',
+    });
+    assert.equal(res.statusCode, 200);
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    const parsed = parser.parse(res.body) as {
+      ResultList: {
+        ClassResult: Array<{
+          Class: { Name: string };
+          Course: { Name: string; Length: number };
+          PersonResult: Array<{ Person: { Id?: { '#text': number; '@_type': string } } }>;
+        }>;
+      };
+    };
+    const byClass = new Map(parsed.ResultList.ClassResult.map((c) => [c.Class.Name, c]));
+    assert.equal(byClass.get('H21')?.Course.Length, 1000);
+    assert.equal(byClass.get('D21')?.Course.Length, 900);
+    const ids = byClass.get('H21')!.PersonResult.map((p) => p.Person.Id ?? null);
+    assert.deepEqual(ids, [{ '#text': 4711, '@_type': 'Sweden' }, null]);
   });
 
   test('test 3: unsupported format → 400', async () => {

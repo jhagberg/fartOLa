@@ -17,10 +17,13 @@ import {
   formatWallClock,
   parseTimeOfDay,
   parseWallClock,
+  softStatus,
   startBeforeFinishWallMs,
+  type SoftStatus,
   type StartMethod,
 } from '@fartola/shared-types';
 import { patchCompetitorStartWall } from '#lib/api/client.ts';
+import { t } from '#lib/i18n/index.ts';
 import type { ReceiptRead, ReceiptPunch } from '#lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
@@ -349,6 +352,28 @@ export function rawPunchesToReceipt(
 
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
+/** The label a published surface (results screen, receipts) shows for a
+ * status: SOFT's names, TA till TR 7.8.2 / TR 4.21.3. The operator's own
+ * views keep the detailed status.* labels (Felstämpling, Bröt …). */
+export function softStatusLabel(key: SoftStatus): string {
+  return t(`soft.status.${key}`);
+}
+
+/** What a results-table row shows (TA till TR 7.8.2): place and time only
+ * for an approved timed run; every status row carries SOFT's name instead. */
+export function resultRowCells(r: {
+  soft_status: SoftStatus;
+  place: number | null;
+  elapsed_time_ms: number | null;
+}): { place: string; time: string; label: string } {
+  const timed = r.soft_status === 'OK';
+  return {
+    place: timed && r.place !== null ? String(r.place) : '—',
+    time: timed ? formatElapsed(r.elapsed_time_ms) : '—',
+    label: softStatusLabel(r.soft_status),
+  };
+}
+
 export function toReceiptRead(input: {
   row: ReadoutHistoryRow;
   className: string;
@@ -383,6 +408,9 @@ export function toReceiptRead(input: {
     readTime: formatTimeOfDay(input.row.event_time_ms),
     elapsed: formatElapsed(input.noTiming ? null : (input.elapsedMs ?? null)),
     status: input.row.status,
+    statusLabel: softStatusLabel(
+      softStatus(input.row.status, { noTiming: input.noTiming === true })
+    ),
     place: input.place ?? null,
     punches,
     progress: {

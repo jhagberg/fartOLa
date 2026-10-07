@@ -173,4 +173,52 @@ describe('GET /api/competitions/:id/results', () => {
     assert.equal(row.place, 1);
     assert.equal(body.last_event_seq, 1);
   });
+
+  test('SOFT TA till TR 7.8.2: rows carry the SOFT status name; a runner not read out is "Ej utläst" live', async () => {
+    const { classId } = seedCompetition(ctx.handle, 'comp-4');
+    // Bo is disqualified by hand; Anna (seeded) has not been read out.
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'cmp-bo',
+        competitionId: 'comp-4',
+        name: 'Bo',
+        club: 'Test',
+        classId,
+        cardNumber: 7501854,
+        consentAtMs: 1_000,
+        consentStatus: 'explicit',
+        scrubbedAtMs: null,
+      })
+      .run();
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: ctx.nodeId,
+        localSeq: 1,
+        competitionId: 'comp-4',
+        eventType: 'manual_status_set',
+        eventTimeMs: 100,
+        recordedAtMs: 100,
+        payload: {
+          event_type: 'manual_status_set',
+          competitor_id: 'cmp-bo',
+          status: 'DQ',
+          reason: 'Regelbrott',
+        },
+      })
+      .run();
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-4/results' });
+    assert.equal(res.statusCode, 200);
+    const rows = (
+      res.json() as { classes: Array<{ rows: Array<{ name: string; soft_status: string }> }> }
+    ).classes[0]!.rows;
+    assert.deepEqual(
+      rows.map((r) => [r.name, r.soft_status]),
+      [
+        ['Bo', 'DISKAD'],
+        ['Anna', 'EJ_UTLAST'],
+      ]
+    );
+  });
 });
