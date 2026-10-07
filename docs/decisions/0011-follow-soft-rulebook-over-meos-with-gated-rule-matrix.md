@@ -10,6 +10,20 @@ informed: []
 
 Decided 2026-10-04/05, recorded 2026-10-05.
 
+## Update 2026-10-07: the SOFT draw is fartOLa's own, measured against MeOS
+
+Porting MeOS's draw was allowed (ADR-0001, 2026-10-06) but not done:
+measured, both MeOS methods do worse than fartOLa's own SOFT draw on the
+rules. `apps/edge/scripts/draw-benchmark.ts` runs fartOLa's draw and
+reference ports of MeOS `drawSOFTMethod` and `drawMeOSMethod`
+(`apps/edge/scripts/meosDrawReference.ts`) on the same seeded classes.
+Seed 2026: of 4000 random classes, MeOS `drawSOFTMethod` left avoidable
+same-club neighbours (TR 7.5.1) in 1124, `drawMeOSMethod` and fartOLa in 0.
+Over 5000 redraws of A×4/B×4/C×2 (138 valid club patterns), fartOLa drew all
+138 with the most common at 1.1 %; `drawSOFTMethod` drew 6 (17.7 %) and
+`drawMeOSMethod` 16 (30.7 %), i.e. "snarlika utfall" (TR 7.5.2). The
+benchmark is a test (`draw-benchmark.test.ts`), so a regression fails CI.
+
 ## Context and Problem Statement
 
 Until October, fartOLa used MeOS's observable behaviour as its specification

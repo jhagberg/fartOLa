@@ -46,6 +46,27 @@ function makeMulberryRng(seed: number): (min: number, max: number) => number {
   };
 }
 
+/** Every club pattern with no two equal neighbours, e.g. {A:2,B:1} → ['ABA']. */
+function validPatterns(sizes: Record<string, number>): string[] {
+  const left = { ...sizes };
+  const n = Object.values(left).reduce((a, b) => a + b, 0);
+  const out: string[] = [];
+  const walk = (s: string, last: string): void => {
+    if (s.length === n) {
+      out.push(s);
+      return;
+    }
+    for (const c of Object.keys(left))
+      if (left[c]! > 0 && c !== last) {
+        left[c]!--;
+        walk(s + c, c);
+        left[c]!++;
+      }
+  };
+  walk('', '');
+  return out;
+}
+
 function runners(count: number, club: string): DrawRunner[] {
   return Array.from({ length: count }, (_, i) => ({ id: `${club}-${i}`, club }));
 }
@@ -252,6 +273,129 @@ describe('draw algorithms', () => {
       }
       assert.ok(patterns.size >= 10, `only ${patterns.size} club patterns in 30 draws`);
       assert.equal(firstClubs.size, 3, 'every club can start first');
+    });
+  });
+
+  describe('drawSOFT — runners without a club', () => {
+    test('SOFT TR 7.5.1: runners without a club are singletons — two of them may start in a row', () => {
+      // TR 7.5.1 separates runners of the same förening; a club-less runner
+      // has none. MeOS counts all club-less runners as one club
+      // (oEventDraw.cpp:137-138, getClubId() 0) and would keep them apart.
+      const input: DrawRunner[] = [
+        ...runners(3, 'A'),
+        ...Array.from({ length: 3 }, (_, i) => ({ id: `none-${i}`, club: null })),
+      ];
+      const rng = makeMulberryRng(5);
+      const shapes = new Set<string>();
+      for (let k = 0; k < 500; k++) {
+        const r = drawSOFT(input, { rngFn: rng });
+        assert.equal(r.adjacencyCount, 0);
+        shapes.add(r.order.map((s) => s!.club ?? '-').join(''));
+      }
+      assert.ok(
+        [...shapes].some((s) => s.includes('--')),
+        `club-less runners never adjacent: ${[...shapes].join(' ')}`
+      );
+    });
+  });
+
+  describe('drawSOFT — proof against SOFT TR 7.5.1 and TR 7.5.2', () => {
+    const classOf = (sizes: Record<string, number>, clubless = 0): DrawRunner[] => [
+      ...Object.entries(sizes).flatMap(([club, n]) => runners(n, club)),
+      ...Array.from({ length: clubless }, (_, i) => ({ id: `none-${i}`, club: null })),
+    ];
+    const pattern = (order: readonly (DrawRunner | null)[]) =>
+      order
+        .filter((s): s is DrawRunner => s !== null)
+        .map((r) => r.club ?? '-')
+        .join('');
+    /** Chi-square critical value at p = 0.001 (Wilson–Hilferty). */
+    const chiCritical = (df: number) =>
+      df * Math.pow(1 - 2 / (9 * df) + 3.09 * Math.sqrt(2 / (9 * df)), 3);
+
+    test('SOFT TR 7.5.1: every class shape up to 4 clubs × 4 (+ 0–2 club-less) → fewest neighbours in every draw', () => {
+      const rng = makeMulberryRng(1);
+      const shapes: number[][] = [];
+      const grow = (sizes: number[]) => {
+        if (sizes.length > 0) shapes.push(sizes);
+        if (sizes.length === 4) return;
+        for (let n = 1; n <= (sizes.at(-1) ?? 4); n++) grow([...sizes, n]);
+      };
+      grow([]);
+      for (const sizes of shapes)
+        for (let clubless = 0; clubless <= 2; clubless++) {
+          const input = classOf(Object.fromEntries(sizes.map((n, i) => [`K${i}`, n])), clubless);
+          const fewest = Math.max(0, 2 * sizes[0]! - input.length - 1);
+          for (let k = 0; k < 5; k++) {
+            const r = drawSOFT(input, { rngFn: rng });
+            assert.equal(r.adjacencyCount, fewest, `${sizes}+${clubless}: ${pattern(r.order)}`);
+          }
+        }
+    });
+
+    test('SOFT TR 7.5.2: small classes → every valid order is drawn, equally often (chi-square, p = 0.001)', () => {
+      for (const sizes of [
+        { A: 3, B: 2, C: 2 },
+        { A: 4, B: 2, C: 2 },
+        { A: 5, B: 3, C: 2 },
+        { A: 3, B: 1, C: 1, D: 1 },
+      ]) {
+        const valid = validPatterns(sizes);
+        const N = 40 * valid.length;
+        const rng = makeMulberryRng(4711);
+        const seen = new Map<string, number>();
+        for (let k = 0; k < N; k++) {
+          const p = pattern(drawSOFT(classOf(sizes), { rngFn: rng }).order);
+          seen.set(p, (seen.get(p) ?? 0) + 1);
+        }
+        const shape = JSON.stringify(sizes);
+        assert.deepEqual(
+          [...seen.keys()].sort(),
+          [...valid].sort(),
+          `${shape}: every valid order, no other`
+        );
+        const expected = N / valid.length;
+        const chi = valid.reduce((x, p) => x + ((seen.get(p) ?? 0) - expected) ** 2 / expected, 0);
+        const critical = chiCritical(valid.length - 1);
+        assert.ok(
+          chi < critical,
+          `${shape}: chi-square ${chi.toFixed(1)} ≥ ${critical.toFixed(1)}`
+        );
+      }
+    });
+
+    test('SOFT TR 7.5.2: the largest club starts first as often as in the valid orders, not more', () => {
+      for (const sizes of [
+        { A: 5, B: 3, C: 2 },
+        { A: 4, B: 2, C: 2 },
+      ]) {
+        const valid = validPatterns(sizes);
+        const share = valid.filter((p) => p[0] === 'A').length / valid.length;
+        const rng = makeMulberryRng(99);
+        const N = 2000;
+        let first = 0;
+        for (let k = 0; k < N; k++)
+          if (drawSOFT(classOf(sizes), { rngFn: rng }).order[0]!.club === 'A') first++;
+        assert.ok(
+          Math.abs(first / N - share) < 0.03,
+          `${JSON.stringify(sizes)}: A first in ${(first / N).toFixed(3)}, valid orders ${share.toFixed(3)}`
+        );
+      }
+    });
+
+    test('SOFT TR 7.5.2: vacancy positions vary between redraws (3 vacancies, 10 runners)', () => {
+      const input = classOf({ A: 4, B: 3, C: 3 });
+      const rng = makeMulberryRng(17);
+      const layouts = new Set<string>();
+      const firstSlotVacant = { yes: 0, no: 0 };
+      for (let k = 0; k < 300; k++) {
+        const order = drawSOFT(input, { vacantSlots: 3, rngFn: rng }).order;
+        layouts.add(order.map((s, i) => (s === null ? i : '')).join(','));
+        if (order[0] === null) firstSlotVacant.yes++;
+        else firstSlotVacant.no++;
+      }
+      assert.ok(layouts.size >= 100, `only ${layouts.size} vacancy layouts in 300 redraws`);
+      assert.ok(firstSlotVacant.yes > 0 && firstSlotVacant.no > 0, 'slot 0 always or never vacant');
     });
   });
 

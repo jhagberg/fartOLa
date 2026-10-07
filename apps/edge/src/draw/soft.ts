@@ -1,14 +1,17 @@
 // Authored for fartola. Not ported from upstream.
 //
-// SOFT club-blocking draw algorithm re-authored from the algorithm described
-// in oEventDraw.cpp:130-209 (NOT ported — re-authored against the algorithm).
+// SOFT club-separating draw. Written for fartOLa (c684d95), not from MeOS:
+// MeOS's drawSOFTMethod (MeOS code/oEventDraw.cpp:130-209) leaves avoidable
+// same-club neighbours and repeats few club patterns (draw benchmark,
+// apps/edge/scripts/draw-benchmark.ts), so it fails SOFT TR 7.5.1/7.5.2
+// (ADR-0011).
 //
 // D-04: drawSOFT produces a random permutation with the fewest adjacent
 // same-club runners possible: zero when no club exceeds half the class,
 // else 2·M − n − 1 (SOFT TR 7.5.1).
 //
 // D-06: Vakanta startplatser are distributed as null-competitor gaps in the
-// draw order (evenly spread via interleaving).
+// draw order, in random gaps (vacancies.ts).
 //
 // T-02.1-05 (DoS): uses an iterative binning approach — zero stack overflow
 // risk regardless of class size.
@@ -48,6 +51,10 @@ export interface DrawSOFTOptions {
  * 4. Randomise: swap two random runners whenever that adds no same-club
  *    neighbour. The swaps are symmetric, so the draw wanders over the
  *    optimal orders at random and repeated draws differ (TR 7.5.2).
+ *    Then reverse the order with probability ½: step 3 always starts the
+ *    largest club in slot 0, and when it fills half the class the swaps
+ *    cannot move it off the even slots (TR 7.5.2: A×5/B×3/C×2 started
+ *    with A in 91 % of draws, 77 % of the valid orders do).
  * 5. Place vacant null slots (vacancies.ts).
  * 6. Count adjacencies and return.
  */
@@ -118,6 +125,8 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
     [order[i], order[j]] = [order[j]!, order[i]!];
     if (around(i, j) > before) [order[i], order[j]] = [order[j]!, order[i]!];
   }
+
+  if (rng(0, 2) === 1) order.reverse();
 
   // --- Step 5: Place vacant slots ---
   const result: DrawSlot[] = placeVacancies(order, vacantSlots, vacantPosition, rng);
