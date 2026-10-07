@@ -208,10 +208,6 @@ export type EventPayload =
       /** When we received the row (epoch ms). "Last heard" and the delivery
        * delay use this, not the punch's time of day: a backlog arrives late
        * with old times. */
-      /** The punch's time of day placed on the competition wall clock (the scale
-       * card punches use), kept as placed so radio and card punches compare
-       * without a DST round trip through epoch. */
-      wall_ms: number;
       received_at_ms: number;
       /** 'YYYY-MM-DD' ROC stamped the row with; kept to flag a sender whose
        * clock is off (date_mismatch), never to place or drop the punch. */

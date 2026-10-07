@@ -12,7 +12,6 @@ import { openDatabase } from '../db/index.ts';
 import type { DbHandle } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import { insertEvent } from '../si/eventInserter.ts';
-import { epochToWallClockMs } from '../time/competitionClock.ts';
 
 const COMP = 'comp-1';
 
@@ -148,7 +147,6 @@ describe('radio routes', () => {
           card_number: 9_000_000 + i,
           control_code: 78,
           time_of_day: '10:00:00',
-          wall_ms: epochToWallClockMs(now - 60_000 * (i + 1)),
           received_at_ms: now - 60_000 * (i + 1),
           roc_date: '2020-01-01',
           date_mismatch: true,

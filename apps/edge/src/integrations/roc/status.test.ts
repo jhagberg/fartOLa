@@ -228,27 +228,64 @@ describe('buildRadioStatus — DST nights', () => {
     assert.equal(c.state, 'ok');
   });
 
-  test('autumn: a punch just received in the repeated hour is not an hour old', async () => {
-    const date = '2026-10-25';
-    const handle = setup(date);
-    const received = Date.UTC(2026, 9, 25, 1, 10, 0); // 02:10 CET, second pass
-    const nowMs = received + 2 * 60_000;
-    await deliver(handle, received, [`1;78;9000001;${date} 02:10:00`]);
-    const c = buildRadioStatus(handle, COMP, nowMs, null)!.controls[0]!;
-    assert.equal(c.last_heard_ms, received);
+  // 2026-10-25: Stockholm goes back at 03:00 CEST. The competition clock keeps
+  // one fixed offset (+01:00 here, the offset at noon), so 02:00-03:00 happens
+  // once and nothing repeats.
+  const AUTUMN = '2026-10-25';
+  const at0210 = Date.UTC(2026, 9, 25, 1, 10, 0); // 02:10:00 on the clock
+
+  test('autumn: a punch received at once in the 02:00-03:00 hour has a delay of seconds', async () => {
+    const handle = setup(AUTUMN);
+    await deliver(handle, at0210 + 1000, [`1;78;9000001;${AUTUMN} 02:10:00`]);
+    const c = buildRadioStatus(handle, COMP, at0210 + 120_000, null)!.controls[0]!;
+    assert.equal(c.median_delay_ms, 1000);
+    assert.equal(c.last_heard_ms, at0210 + 1000);
     assert.equal(c.state, 'ok');
   });
 
-  test('autumn: silence is measured in real time across the repeated hour', async () => {
-    const date = '2026-10-25';
+  test('autumn: silence is detected in the 02:00-03:00 hour', async () => {
+    const handle = setup(AUTUMN);
+    await deliver(handle, at0210 + 1000, [`1;78;9000001;${AUTUMN} 02:10:00`]);
+    // 14 minutes on: a card read with an unmatched 02:23 punch, nothing from the radio.
+    const now = at0210 + 14 * 60_000;
+    cardRead(handle, 9_000_002, now, { punches: [[78, 2 * 3600 + 23 * 60]] });
+    assert.equal(buildRadioStatus(handle, COMP, now, null)!.controls[0]!.state, 'silent');
+    // Not yet at 8 minutes.
+    const early = at0210 + 8 * 60_000;
+    assert.equal(buildRadioStatus(handle, COMP, early, null)!.controls[0]!.state, 'ok');
+  });
+
+  test('events from an earlier build (no stored placement) still match the cards', async () => {
+    const date = '2026-10-04';
     const handle = setup(date);
-    const received = Date.UTC(2026, 9, 25, 0, 20, 0); // 02:20 CEST, first pass
-    await deliver(handle, received, [`1;78;9000001;${date} 02:20:00`]);
-    // 20 real minutes later (02:40 CET is 80 min on the wall clock, 20 real);
-    // a runner has passed since: silent after 10 real minutes, not before.
-    const at = (min: number) => received + min * 60_000;
-    cardRead(handle, 9_000_002, at(15), { punches: [[78, 2 * 3600 + 35 * 60]] });
-    assert.equal(buildRadioStatus(handle, COMP, at(8), null)!.controls[0]!.state, 'ok');
-    assert.equal(buildRadioStatus(handle, COMP, at(20), null)!.controls[0]!.state, 'silent');
+    const nowMs = localToEpochMs(date, 11 * 3600);
+    const t = 10 * 3600 + 3000;
+    for (const n of SIX) {
+      cardRead(handle, 9_000_000 + n, nowMs - 60_000, { punches: [[78, t + n]] });
+      // The shape written before placement was derived: wall_ms present or absent,
+      // event_time_ms in the old placement.
+      insertEvent(
+        handle,
+        'node-A',
+        'radio_punch',
+        localToEpochMs(date, t + n),
+        {
+          event_type: 'radio_punch',
+          source: 'roc',
+          idempotency_key: `9${n}:78:${hms(t + n)}`,
+          roc_id: n,
+          card_number: 9_000_000 + n,
+          control_code: 78,
+          time_of_day: hms(t + n),
+          received_at_ms: nowMs - 30_000,
+          roc_date: date,
+          date_mismatch: false,
+        },
+        COMP
+      );
+    }
+    const c = buildRadioStatus(handle, COMP, nowMs, null)!.controls[0]!;
+    assert.equal(c.window_card_punches, 6);
+    assert.equal(c.window_matched, 6);
   });
 });

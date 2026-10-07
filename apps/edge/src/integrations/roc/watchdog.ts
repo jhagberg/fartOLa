@@ -1,7 +1,7 @@
 // Authored for fartola. Not ported from upstream.
 //
 // Radio watchdog: a pure function over radio punches and read-out card
-// punches, all on the competition wall clock (ms, cardClockToWallMs's scale).
+// punches, all epoch ms (the competition clock is one fixed offset, ADR-0017).
 // Per radio control:
 //   - last heard, punches received;
 //   - coverage: of the read-out card punches at the control in the last M
@@ -33,8 +33,8 @@ import type { RadioControlStatus } from '@fartola/shared-types';
 export interface RadioPunchIn {
   code: number;
   card: number;
-  /** The punch's time of day on the competition wall clock. */
-  wallMs: number;
+  /** The punch's own time, epoch ms. */
+  timeMs: number;
   /** When we received it, epoch ms. Silence, last heard and delay are all
    * epoch arithmetic: a repeated autumn hour must not move them. */
   receivedMs: number;
@@ -54,17 +54,13 @@ export interface CardPunchIn {
    * does not say (SI5), an "unknown unit". */
   unit?: number | null;
   card: number;
-  wallMs: number;
-  /** The same instant as epoch ms, to compare with receive times. */
-  epochMs: number;
+  /** The punch's own time, epoch ms. */
+  timeMs: number;
   /** SIAC card (touch-free punching). */
   siac?: boolean;
 }
 
 export interface WatchdogParams {
-  /** Now on the wall clock (matching and windows over card punches). */
-  nowWallMs: number;
-  /** Now as epoch ms (receive times, silence, last heard). */
   nowMs: number;
   /** Coverage window M, minutes. */
   windowMin?: number;
@@ -106,12 +102,12 @@ export function evaluateRadioWatchdog(
   const silenceMin = params.silenceMin ?? WATCHDOG_DEFAULTS.silenceMin;
   const threshold = params.coverageThreshold ?? WATCHDOG_DEFAULTS.coverageThreshold;
   const tol = params.matchToleranceMs ?? WATCHDOG_DEFAULTS.matchToleranceMs;
-  const { nowWallMs, nowMs } = params;
+  const { nowMs } = params;
 
   // A card read twice yields the same punches: count each (card, code, time) once.
   const seen = new Set<string>();
   const cardUnique = card.filter((p) => {
-    const k = `${p.card}:${p.role ?? ''}:${p.unit ?? ''}:${p.code}:${p.wallMs}`;
+    const k = `${p.card}:${p.role ?? ''}:${p.unit ?? ''}:${p.code}:${p.timeMs}`;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
@@ -123,7 +119,7 @@ export function evaluateRadioWatchdog(
   const allRows: RadioPunchIn[] = radio;
   const firstByKey = new Map<string, RadioPunchIn>();
   for (const p of radio) {
-    const k = `${p.card}:${p.code}:${p.wallMs}`;
+    const k = `${p.card}:${p.code}:${p.timeMs}`;
     const first = firstByKey.get(k);
     if (!first || p.receivedMs < first.receivedMs) firstByKey.set(k, p);
   }
@@ -196,11 +192,11 @@ export function evaluateRadioWatchdog(
   for (const ch of channels.values()) {
     const { code, punches, rows } = ch;
     const lastHeard = rows.length === 0 ? null : Math.max(...rows.map((p) => p.receivedMs));
-    const cardHere = ch.cards.filter((p) => p.wallMs <= nowWallMs);
+    const cardHere = ch.cards.filter((p) => p.timeMs <= nowMs);
 
-    const inWindow = cardHere.filter((p) => p.wallMs >= nowWallMs - windowMin * MIN_MS);
+    const inWindow = cardHere.filter((p) => p.timeMs >= nowMs - windowMin * MIN_MS);
     const isMatched = (c: CardPunchIn): boolean =>
-      punches.some((r) => r.card === c.card && Math.abs(r.wallMs - c.wallMs) <= tol);
+      punches.some((r) => r.card === c.card && Math.abs(r.timeMs - c.timeMs) <= tol);
     const matched = inWindow.filter(isMatched);
     const siacIn = inWindow.filter((p) => p.siac === true);
     const otherIn = inWindow.filter((p) => p.siac !== true);
@@ -225,8 +221,8 @@ export function evaluateRadioWatchdog(
 
     const unheardRecent = cardHere.some(
       (p) =>
-        p.epochMs >= nowMs - WATCHDOG_DEFAULTS.silenceLookbackMin * MIN_MS &&
-        (lastHeard === null || p.epochMs > lastHeard)
+        p.timeMs >= nowMs - WATCHDOG_DEFAULTS.silenceLookbackMin * MIN_MS &&
+        (lastHeard === null || p.timeMs > lastHeard)
     );
     const silent = (lastHeard === null || lastHeard < nowMs - silenceMin * MIN_MS) && unheardRecent;
     const coverage = inWindow.length === 0 ? null : matched.length / inWindow.length;

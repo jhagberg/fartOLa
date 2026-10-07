@@ -3,7 +3,7 @@
 // View helpers for the radio-control status (ROC input). A control's state is
 // shown as text plus a symbol, never by colour alone (ADR-0016 rule 7).
 
-import { formatLocalTime } from '@fartola/shared-types';
+import { formatClockTime } from '@fartola/shared-types';
 import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
 
 export interface RadioControlView {
@@ -42,7 +42,11 @@ export function formatDelay(ms: number): string {
   return sec < 90 ? `${sec} s` : `${Math.round(sec / 60)} min`;
 }
 
-export function radioControlView(c: RadioControlStatus, nowMs: number): RadioControlView {
+export function radioControlView(
+  c: RadioControlStatus,
+  nowMs: number,
+  offsetMin: number
+): RadioControlView {
   const pct = (m: number, n: number): number | null => (n === 0 ? null : Math.round((m / n) * 100));
   return {
     key: `${c.role}:${c.unknown_unit ? 'unknown' : c.control_code}`,
@@ -54,7 +58,7 @@ export function radioControlView(c: RadioControlStatus, nowMs: number): RadioCon
     symbol: SYMBOL[c.state],
     labelKey: `radio.state.${c.state}`,
     dateWarnings: c.date_mismatch_count,
-    lastHeard: c.last_heard_ms === null ? null : formatLocalTime(c.last_heard_ms),
+    lastHeard: c.last_heard_ms === null ? null : formatClockTime(c.last_heard_ms, offsetMin),
     agoMin:
       c.last_heard_ms === null ? null : Math.max(0, Math.floor((nowMs - c.last_heard_ms) / 60_000)),
     delayText: c.median_delay_ms === null ? null : formatDelay(c.median_delay_ms),
@@ -69,7 +73,7 @@ export function sortedRadioViews(status: RadioStatus): RadioControlView[] {
   const rank = (v: RadioControlView): number =>
     v.state === 'silent' ? 0 : v.state === 'few' ? 1 : v.dateWarnings > 0 || v.siacProblem ? 2 : 3;
   return status.controls
-    .map((c) => radioControlView(c, status.now_ms))
+    .map((c) => radioControlView(c, status.now_ms, status.clock_offset_min))
     .sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key, 'sv', { numeric: true }));
 }
 

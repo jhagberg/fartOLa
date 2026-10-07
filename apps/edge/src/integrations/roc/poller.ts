@@ -31,6 +31,7 @@ import { competitions } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
 import { insertEvent } from '../../si/eventInserter.ts';
 import { parseRocResponse, type RocRow } from './parse.ts';
+import { competitionClockOffsetMin } from '../../time/competitionClock.ts';
 import { placeTimeOfDay } from './place.ts';
 
 export const ROC_DEFAULT_URL = 'http://roc.olresultat.se/getpunches.asp';
@@ -139,6 +140,7 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
 
   type Cursor = {
     date: string;
+    clockOffsetMin: number | null;
     enabled: boolean;
     unitId: string | null;
     startId: number | null;
@@ -149,6 +151,7 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
     return handle.db
       .select({
         date: competitions.date,
+        clockOffsetMin: competitions.clockOffsetMin,
         enabled: competitions.rocEnabled,
         unitId: competitions.rocCompetitionId,
         startId: competitions.rocStartId,
@@ -213,14 +216,18 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
         return false;
       }
       for (const r of toStore) {
-        const placed = placeTimeOfDay(r.time, receivedAtMs);
+        const placedMs = placeTimeOfDay(
+          r.time,
+          receivedAtMs,
+          competitionClockOffsetMin(comp.date, comp.clockOffsetMin)
+        );
         const dateMismatch = r.date !== comp.date;
         try {
           insertEvent(
             handle,
             nodeId,
             'radio_punch',
-            placed.epochMs,
+            placedMs,
             {
               event_type: 'radio_punch',
               source: 'roc',
@@ -229,7 +236,6 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
               card_number: r.card,
               control_code: r.code,
               time_of_day: r.time,
-              wall_ms: placed.wallMs,
               received_at_ms: receivedAtMs,
               roc_date: r.date,
               date_mismatch: dateMismatch,

@@ -134,13 +134,6 @@
       "when": 1791763200000,
       "tag": "0019_competitions_roc",
       "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "6",
-      "when": 1791763200000,
-      "tag": "0019_competitions_roc_controls",
-      "breakpoints": true
     }
   ]
 }

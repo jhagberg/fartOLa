@@ -78,6 +78,8 @@ export interface RadioStatus {
   /** null when the poller is not running (tests, --no-bridge boots). */
   poll: RadioPollStatus | null;
   now_ms: number;
+  /** The competition clock's UTC offset in minutes (ADR-0017), to show times. */
+  clock_offset_min: number;
   window_min: number;
   silence_min: number;
   coverage_threshold: number;

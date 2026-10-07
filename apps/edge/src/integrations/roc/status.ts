@@ -10,8 +10,9 @@ import type { RadioStatus } from '@fartola/shared-types';
 
 import { competitions, events } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
-import { cardClockToWallMs, wallMsToEpochMs } from '../../projection/halfDayClockMath.ts';
-import { epochToWallClockMs } from '../../time/competitionClock.ts';
+import { cardClockToEpochMs } from '../../projection/halfDayClockMath.ts';
+import { competitionClockOffsetMin } from '../../time/competitionClock.ts';
+import { placeTimeOfDay } from './place.ts';
 import { cardTypeFromNumber } from '../../si/cardType.ts';
 import type { RocPollStatus } from './poller.ts';
 import {
@@ -48,12 +49,15 @@ export function buildRadioStatus(
       checkText: competitions.rocCheckCodes,
       finishText: competitions.rocFinishCodes,
       raceStartedAtMs: competitions.raceStartedAtMs,
+      date: competitions.date,
+      clockOffsetMin: competitions.clockOffsetMin,
     })
     .from(competitions)
     .where(eq(competitions.id, competitionId))
     .get();
   if (!comp) return null;
 
+  const offsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
   const radioControls = parseRocControls(comp.controlsText);
   const startCodes = parseRocControls(comp.startText);
   const checkCodes = parseRocControls(comp.checkText);
@@ -66,12 +70,15 @@ export function buildRadioStatus(
     .all()) {
     const p = e.payload;
     if (p.event_type !== 'radio_punch') continue;
+    // Placed again from the time of day and the receive time, as the poller
+    // does, so events from earlier builds (no stored placement) match too.
+    const timeMs = placeTimeOfDay(p.time_of_day, p.received_at_ms, offsetMin);
     radio.push({
       code: p.control_code,
       card: p.card_number,
-      wallMs: p.wall_ms,
+      timeMs,
       receivedMs: p.received_at_ms,
-      delayMs: p.received_at_ms - e.eventTimeMs,
+      delayMs: p.received_at_ms - timeMs,
       dateMismatch: p.date_mismatch,
     });
   }
@@ -104,13 +111,12 @@ export function buildRadioStatus(
       role?: 'start' | 'check' | 'finish'
     ): void => {
       if (clock === null) return;
-      const wallMs = cardClockToWallMs(clock, p.card_type, e.eventTimeMs);
+      const timeMs = cardClockToEpochMs(clock, p.card_type, e.eventTimeMs, offsetMin);
       card.push({
         code,
         ...(role ? { role, unit: clock.code ?? null } : {}),
         card: p.card_number,
-        wallMs,
-        epochMs: wallMsToEpochMs(wallMs),
+        timeMs,
         siac,
       });
     };
@@ -121,7 +127,6 @@ export function buildRadioStatus(
   }
 
   const controls = evaluateRadioWatchdog(radio, card, {
-    nowWallMs: epochToWallClockMs(nowMs),
     nowMs,
     expectedCodes: radioControls,
     roleCodes: { start: startCodes, check: checkCodes, finish: finishCodes },
@@ -153,6 +158,7 @@ export function buildRadioStatus(
             consecutive_failures: poll.consecutiveFailures,
           },
     now_ms: nowMs,
+    clock_offset_min: offsetMin,
     window_min: WATCHDOG_DEFAULTS.windowMin,
     silence_min: WATCHDOG_DEFAULTS.silenceMin,
     coverage_threshold: WATCHDOG_DEFAULTS.coverageThreshold,

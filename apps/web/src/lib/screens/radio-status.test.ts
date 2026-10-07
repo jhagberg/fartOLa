@@ -15,6 +15,7 @@ import {
   sortedRadioViews,
 } from './radio-status.ts';
 
+const OFFSET = 120;
 const NOW = Date.UTC(2026, 9, 4, 9, 30, 0);
 
 function control(over: Partial<RadioControlStatus>): RadioControlStatus {
@@ -55,6 +56,7 @@ function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null
     },
     poll,
     now_ms: NOW,
+    clock_offset_min: OFFSET,
     window_min: 20,
     silence_min: 10,
     coverage_threshold: 0.8,
@@ -66,7 +68,7 @@ describe('radioControlView', () => {
   it('gives every state a text label key and a symbol (never colour alone)', () => {
     const symbols = new Set<string>();
     for (const state of ['ok', 'few', 'silent'] as const) {
-      const v = radioControlView(control({ state }), NOW);
+      const v = radioControlView(control({ state }), NOW, OFFSET);
       expect(v.labelKey).toBe(`radio.state.${state}`);
       expect(v.symbol.length).toBeGreaterThan(0);
       symbols.add(v.symbol);
@@ -75,14 +77,20 @@ describe('radioControlView', () => {
   });
 
   it('shows minutes since last heard and coverage as matched/total', () => {
-    const v = radioControlView(control({ window_matched: 9, window_card_punches: 12 }), NOW);
+    const v = radioControlView(
+      control({ window_matched: 9, window_card_punches: 12 }),
+      NOW,
+      OFFSET
+    );
     expect(v.agoMin).toBe(3);
     expect(v.coverageText).toBe('9/12');
-    expect(radioControlView(control({ window_card_punches: 0 }), NOW).coverageText).toBeNull();
+    expect(
+      radioControlView(control({ window_card_punches: 0 }), NOW, OFFSET).coverageText
+    ).toBeNull();
   });
 
   it('carries the date warning count next to the state', () => {
-    expect(radioControlView(control({ date_mismatch_count: 4 }), NOW).dateWarnings).toBe(4);
+    expect(radioControlView(control({ date_mismatch_count: 4 }), NOW, OFFSET).dateWarnings).toBe(4);
   });
 });
 
@@ -104,7 +112,8 @@ describe('radio view extras', () => {
   it('a listed control never heard has no last-heard time', () => {
     const v = radioControlView(
       control({ last_heard_ms: null, median_delay_ms: null, listed: true, state: 'silent' }),
-      NOW
+      NOW,
+      OFFSET
     );
     expect(v.lastHeard).toBeNull();
     expect(v.agoMin).toBeNull();
@@ -113,8 +122,8 @@ describe('radio view extras', () => {
   it('formats the delay and flags SIAC', () => {
     expect(formatDelay(3000)).toBe('3 s');
     expect(formatDelay(-300_000)).toBe('5 min');
-    expect(radioControlView(control({ median_delay_ms: 2000 }), NOW).delayText).toBe('2 s');
-    expect(radioControlView(control({ siac_problem: true }), NOW).siacProblem).toBe(true);
+    expect(radioControlView(control({ median_delay_ms: 2000 }), NOW, OFFSET).delayText).toBe('2 s');
+    expect(radioControlView(control({ siac_problem: true }), NOW, OFFSET).siacProblem).toBe(true);
   });
   it('names the baseline in plain words', () => {
     expect(baselineKey(status([]))).toEqual({ key: 'radio.baseline.from', id: 1 });
@@ -136,7 +145,8 @@ describe('unit names and the SIAC warning numbers', () => {
         siac_card_punches: 25,
         siac_matched: 1,
       }),
-      NOW
+      NOW,
+      OFFSET
     );
     expect(unit20.nameKey).toBe('radio.name.finish');
     expect(unit20.key).toBe('finish:20');
@@ -144,11 +154,12 @@ describe('unit names and the SIAC warning numbers', () => {
     expect(unit20.siacPct).toBe(4);
     const unknown = radioControlView(
       control({ role: 'start', control_code: 0, unknown_unit: true }),
-      NOW
+      NOW,
+      OFFSET
     );
     expect(unknown.nameKey).toBe('radio.name.start.unknown');
     expect(unknown.key).toBe('start:unknown');
-    expect(radioControlView(control({}), NOW).key).toBe('control:78');
+    expect(radioControlView(control({}), NOW, OFFSET).key).toBe('control:78');
   });
   it('has Swedish texts for the unit names and the Mål enhet 20 warning', async () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
