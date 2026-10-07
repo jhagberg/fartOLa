@@ -114,6 +114,19 @@ describe('station codes of start, finish and check', () => {
     );
   });
 
+  test('PTD bit 6 adds 256 to a touch-free code too: 0xC1 + block 1 = 10 gives 266, 0x81 gives 10', () => {
+    const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
+    bytes.splice(0x10, 4, 0xc1, 3, 0x0e, 0x10);
+    bytes[0xa9] = 10;
+    const card: Decodable = new SiCard10(0);
+    card._decodeFromStorage(bytes);
+    assert.equal(card.raceResult.finishCode, 266);
+    bytes.splice(0x10, 4, 0x81, 3, 0x0e, 0x10);
+    const card2: Decodable = new SiCard10(0);
+    card2._decodeFromStorage(bytes);
+    assert.equal(card2.raceResult.finishCode, 10);
+  });
+
   test('toHalfDayClock carries touch_free only when true', () => {
     assert.equal(toHalfDayClock(100, 20, true)?.touch_free, true);
     assert.equal('touch_free' in (toHalfDayClock(100, 20, false) ?? {}), false);

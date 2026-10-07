@@ -12,7 +12,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { getRadioStatus } from '#lib/api/client.ts';
   import type { RadioStatus } from '@fartola/shared-types';
-  import { baselineKey, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
+  import { baselineKey, latestOnly, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
 
   interface Props {
     competitionId: string;
@@ -24,17 +24,25 @@
   let status = $state<RadioStatus | null>(null);
   let failed = $state(false);
 
+  /** Only the latest request may set the status: a late answer for the
+   * competition the operator left (or an older poll) is ignored. */
+  const request = latestOnly();
+
   async function load(): Promise<void> {
+    const isCurrent = request();
     try {
-      status = await getRadioStatus(competitionId);
+      const next = await getRadioStatus(competitionId);
+      if (!isCurrent()) return;
+      status = next;
       failed = false;
     } catch {
-      failed = true;
+      if (isCurrent()) failed = true;
     }
   }
 
   $effect(() => {
     void competitionId;
+    status = null; // never show the previous competition's controls
     void load();
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);

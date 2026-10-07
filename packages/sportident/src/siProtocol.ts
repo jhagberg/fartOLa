@@ -435,7 +435,12 @@ export const siStationCode = (
       cn: new SiInt([[recordOffset + 1]]),
       beacon: new SiInt([[beaconCodeOffset]]),
     }) as unknown as SiDataType<StationCodeParts>,
-    ({ ptd, cn, beacon }) => ((ptd & 0x80) !== 0 ? beacon : cn + 256 * ((ptd >> 6) & 1))
+    ({ ptd, cn, beacon }) => {
+      // Bit 6 is code bit 8 whichever byte holds the low byte (MeOS applies
+      // it after choosing, SportIdent.cpp:1932).
+      const low = (ptd & 0x80) !== 0 ? beacon : cn;
+      return low === undefined ? undefined : low + 256 * ((ptd >> 6) & 1);
+    }
   );
 
 /** True when the record's PTD bit 7 is set: a touch-free (Air+) punch. */
