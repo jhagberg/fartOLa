@@ -33,7 +33,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { desc, eq, asc } from 'drizzle-orm';
+import { desc, eq, asc, sql } from 'drizzle-orm';
 
 import {
   CompetitionCreateInput,
@@ -41,7 +41,7 @@ import {
   type CompetitionDTO,
   type ClassDTO,
 } from '@fartola/shared-types';
-import { competitions, classes } from '../db/schema.ts';
+import { competitions, classes, competitors } from '../db/schema.ts';
 import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -205,14 +205,37 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     // Plan 11 — null explicitly unlinks; positive integer links a new event.
     if ('eventor_event_id' in parsed.data)
       patch.eventorEventId = parsed.data.eventor_event_id ?? null;
-    // ADR-0012 — null clears the override (back to the date's default).
+    // ADR-0017 — null clears the override (back to the date's default).
     if (parsed.data.clock_offset_min !== undefined)
       patch.clockOffsetMin = parsed.data.clock_offset_min;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.
     if (Object.keys(patch).length > 0) {
-      app.fartolaDb.db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
+      const { db } = app.fartolaDb;
+      // ADR-0017: start times are defined on the competition clock. When
+      // the offset in force changes (override, or a date with another
+      // default), shift every stored start by the difference so it keeps
+      // its clock time: correcting the offset must not change a result.
+      const before = competitionClockOffsetMin(existing.date, existing.clockOffsetMin);
+      const after = competitionClockOffsetMin(
+        patch.date ?? existing.date,
+        patch.clockOffsetMin !== undefined ? patch.clockOffsetMin : existing.clockOffsetMin
+      );
+      const shiftMs = (after - before) * 60_000;
+      app.fartolaDb.sqlite.transaction(() => {
+        db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
+        if (shiftMs !== 0) {
+          db.update(competitors)
+            .set({ startTimeMs: sql`${competitors.startTimeMs} - ${shiftMs}` })
+            .where(eq(competitors.competitionId, id))
+            .run();
+          db.update(classes)
+            .set({ firstStartMs: sql`${classes.firstStartMs} - ${shiftMs}` })
+            .where(eq(classes.competitionId, id))
+            .run();
+        }
+      })();
       // The date and the override set the competition clock card times are
       // placed on: re-score.
       if (patch.date !== undefined || patch.clockOffsetMin !== undefined) {

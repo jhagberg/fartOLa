@@ -30,6 +30,7 @@ import { validateXml } from '../xml/validate.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import type { HalfDayClock } from '@fartola/sportident';
+import { clockToEpochMs, formatClockTime } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -496,6 +497,69 @@ describe('ResultList times on the competition clock (ADR-0012)', () => {
     assert.equal(r.Time, 20 * 60);
     assert.equal(r.StartTime, '2026-10-03T23:50:00+02:00');
     assert.equal(r.FinishTime, '2026-10-04T00:10:00+02:00');
+  });
+
+  // Starts are defined on the competition clock: correcting the offset
+  // keeps a drawn 01:50 at 01:50, so the result and the start-punch check
+  // are unchanged and only the exported instants move.
+  test('override +60 after a draw: the start stays 01:50, the result 80 min', async () => {
+    const date = '2026-03-29';
+    seedRun('drawn', date, [1, 50], [3, 10], Date.parse('2026-03-29T01:20:00Z'));
+    const draw = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions/drawn/lottning/drawn-h21',
+      payload: {
+        mode: 'Simultaneous',
+        firstStartMs: clockToEpochMs(date, 3600 + 50 * 60, 120),
+        intervalSec: 0,
+      },
+    });
+    assert.equal(draw.statusCode, 201, draw.body);
+    const view = () => ctx.app.projectionStore.recomputeNow('drawn')!.competitors.get('drawn-x')!;
+    const startText = async (): Promise<{ runner: string; first: string }> => {
+      const offset = (
+        (await ctx.app.inject({ method: 'GET', url: '/api/competitions/drawn' })).json() as {
+          competition: { clock_offset_min: number };
+        }
+      ).competition.clock_offset_min;
+      const runner = ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.id, 'drawn-x'))
+        .get()!;
+      const cls = ctx.handle.db.select().from(classes).where(eq(classes.id, 'drawn-h21')).get()!;
+      return {
+        runner: formatClockTime(runner.startTimeMs!, offset),
+        first: formatClockTime(cls.firstStartMs!, offset),
+      };
+    };
+    assert.equal(view().elapsed_time_ms, 80 * 60 * 1000);
+    assert.equal(view().late_start_ms, null);
+    assert.deepEqual(await startText(), { runner: '01:50:00', first: '01:50:00' });
+    const before = await result('drawn');
+
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/competitions/drawn',
+      payload: { clock_offset_min: 60 },
+    });
+    assert.equal(patch.statusCode, 200, patch.body);
+    assert.equal(view().elapsed_time_ms, 80 * 60 * 1000);
+    assert.equal(view().late_start_ms, null);
+    assert.equal(view().early_start_ms, null);
+    assert.deepEqual(await startText(), { runner: '01:50:00', first: '01:50:00' });
+    const after = await result('drawn');
+    assert.equal(after.Time, 80 * 60);
+    assert.equal(after.StartTime, '2026-03-29T01:50:00+01:00');
+    assert.equal(Date.parse(after.StartTime) - Date.parse(before.StartTime), 3600_000);
+
+    // A date with another default offset shifts the same way.
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/competitions/drawn',
+      payload: { clock_offset_min: null, date: '2026-06-01' }, // +60 → +120
+    });
+    assert.deepEqual(await startText(), { runner: '01:50:00', first: '01:50:00' });
   });
 
   // A night race dated the Sunday it ends, stations synced on CET the
