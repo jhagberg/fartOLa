@@ -534,7 +534,7 @@ function softLabel(read, t) {
   return t('soft.status.' + key);
 }
 
-function StatusPill({ status, t, small }) {
+function StatusPill({ status, label, t, small }) {
   // Status model in line with IOF / Eventor:
   //   OK · MP (missing punch) · DNF · DNS (did not start) · DQ (disqualified)
   //   · CANCEL · MAX (overtime / time cap)
@@ -546,7 +546,7 @@ function StatusPill({ status, t, small }) {
     : 'pend';
   return (
     <span className={'status ' + cls} style={small ? {fontSize: 10, padding: '2px 6px'} : null}>
-      {status}
+      {label ?? status}
     </span>
   );
 }
@@ -1174,10 +1174,17 @@ function ReceiptMockup({ read, t, tpl = 'classic' }) {
 }
 
 function WalkupModal({ t, cardNumber, classes, onCancel, onSave }) {
+  // Mirrors apps/web/src/lib/screens/WalkupModal.svelte: name, club, bana, card number,
+  // consent and an optional Hyrbricka block; Spara och bind validates and shows one error.
   const [name, setName] = useState('');
   const [club, setClub] = useState('');
-  const [cls, setCls] = useState(classes[0]?.id || '');
+  const [cls, setCls] = useState('');
   const [card, setCard] = useState(cardNumber || '');
+  const [consent, setConsent] = useState(false);
+  const [hired, setHired] = useState(false);
+  const [hc, setHc] = useState({ name: '', phone: '', email: '', note: '' });
+  const [error, setError] = useState(null);
+  const [confirmingClose, setConfirmingClose] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
 
   const onClubChange = (v) => {
@@ -1190,13 +1197,31 @@ function WalkupModal({ t, cardNumber, classes, onCancel, onSave }) {
     }
   };
 
-  const valid = name.trim().length >= 2 && cls && card;
+  const dirty = name !== '' || club !== '' || cls !== '' || consent || hired;
+  const close = () => { if (dirty) setConfirmingClose(true); else onCancel(); };
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (name.trim().length < 2) return setError(t('walk.err.name'));
+    if (!cls) return setError(t('walk.err.classRequired'));
+    if (!String(card).trim()) return setError(t('walk.err.cardRequired'));
+    if (!consent) return setError(t('walk.err.consent'));
+    if (hired && !hc.phone.trim() && !hc.email.trim()) return setError(t('walk.err.hyrbrickaContact'));
+    onSave({ name: name.trim(), club: club.trim(), cls, card });
+  };
 
   return (
-    <div className="modal-scrim" onClick={onCancel}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{width: 'min(560px, 100%)'}}>
+    <div className="modal-scrim" onClick={close}>
+      <style>{`
+        .walkup-form .consent-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--fg-muted); line-height: 1.4; cursor: pointer; }
+        .walkup-form .consent-row input { margin-top: 3px; flex-shrink: 0; }
+        .walkup-form .hired-fields { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; background: rgba(0,0,0,0.03); border-radius: var(--radius); }
+        .walkup-form .err { margin: 0; color: var(--dnf); font-size: 13px; }
+        .walkup-form .discard-confirm { padding: 10px 12px; background: var(--mp-soft); border: 1px solid var(--mp); border-radius: var(--radius); display: flex; flex-direction: column; gap: 8px; }
+        .walkup-form .discard-confirm p { margin: 0; font-size: 13px; }
+      `}</style>
+      <form className="modal walkup-form" noValidate onClick={e => e.stopPropagation()} onSubmit={submit} style={{width: 'min(560px, 100%)'}}>
         <div className="modal-head">
-          <span style={{width: 28, height: 28, borderRadius: 6, background: 'var(--dnf-soft)', color: 'var(--dnf)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700}}>⚠</span>
           <div>
             <h2>{t('walk.title')}</h2>
             <div className="muted" style={{fontSize: 13, marginTop: 2}}>{t('walk.desc')}</div>
@@ -1205,11 +1230,7 @@ function WalkupModal({ t, cardNumber, classes, onCancel, onSave }) {
         <div className="modal-body">
           <div style={{display: 'grid', gap: 16}}>
             <div className="field">
-              <label>{t('walk.card')}</label>
-              <input className="input mono" value={card} onChange={e => setCard(e.target.value)} inputMode="numeric" pattern="[0-9]*" />
-            </div>
-            <div className="field">
-              <label>{t('walk.name')} *</label>
+              <label>{t('walk.name')}</label>
               <input className="input" autoFocus placeholder={t('walk.name.ph')} value={name} onChange={e => setName(e.target.value)} />
             </div>
             <div className="field" style={{position: 'relative'}}>
@@ -1224,23 +1245,53 @@ function WalkupModal({ t, cardNumber, classes, onCancel, onSave }) {
               )}
             </div>
             <div className="field">
-              <label>{t('walk.class')} *</label>
+              <label>{t('walk.bana')}</label>
               <select className="select" value={cls} onChange={e => setCls(e.target.value)}>
+                <option value="" disabled>{t('walk.banaPlaceholder')}</option>
                 {classes.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} — {c.course} ({c.length} km)</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
+            <div className="field">
+              <label>{t('walk.card')}</label>
+              <input className="input mono" type="number" min="1" step="1" value={card} onChange={e => setCard(e.target.value)} />
+            </div>
+            <label className="consent-row">
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
+              <span>{t('walk.consent')}</span>
+            </label>
+            <label className="consent-row">
+              <input type="checkbox" checked={hired} onChange={e => setHired(e.target.checked)} />
+              <span>{t('walk.hyrbricka')}</span>
+            </label>
+            {hired && (
+              <div className="hired-fields">
+                {[['name', 'walk.hyrbricka.name', 'text'], ['phone', 'walk.hyrbricka.phone', 'tel'], ['email', 'walk.hyrbricka.email', 'email'], ['note', 'walk.hyrbricka.note', 'text']].map(([k, label, type]) => (
+                  <div className="field" key={k}>
+                    <label>{t(label)}</label>
+                    <input className="input" type={type} value={hc[k]} onChange={e => setHc({ ...hc, [k]: e.target.value })} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {error && <p className="err">{error}</p>}
+            {confirmingClose && (
+              <div className="discard-confirm" role="alert">
+                <p>{t('walk.discard.msg')}</p>
+                <div style={{display: 'flex', gap: 8, justifyContent: 'flex-end'}}>
+                  <button type="button" className="btn ghost" onClick={() => setConfirmingClose(false)}>{t('walk.discard.keep')}</button>
+                  <button type="button" className="btn" style={{background: 'var(--dnf)', borderColor: 'var(--dnf)', color: '#fff'}} onClick={onCancel}>{t('walk.discard.discard')}</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn ghost" onClick={onCancel}>{t('walk.cancel')}</button>
-          <button className="btn primary" disabled={!valid} onClick={() => valid && onSave({ name, club, cls, card })}
-            style={!valid ? {opacity: 0.5, cursor: 'not-allowed'} : null}>
-            {t('walk.save')}
-          </button>
+          <button type="button" className="btn ghost" onClick={close}>{t('walk.cancel')}</button>
+          <button type="submit" className="btn primary">{t('walk.save')}</button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -1284,13 +1335,7 @@ function EditCompetitorModal({ t, competitor, classes, onCancel, onSave }) {
     <div className="modal-scrim" onClick={!saving ? onCancel : undefined}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{width: 'min(520px, 100%)'}}>
         <div className="modal-head">
-          <span style={{width: 28, height: 28, borderRadius: 6, background: 'var(--accent-soft)', color: 'var(--accent-strong)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700}}>✎</span>
-          <div>
-            <h2>{t('ro.editTitle')}</h2>
-            <div className="muted" style={{fontSize: 13, marginTop: 2, fontFamily: 'var(--font-mono)'}}>
-              SI {competitor?.cardNumber}
-            </div>
-          </div>
+          <h2>{t('ro.editTitle')}</h2>
         </div>
         <div className="modal-body">
           <div style={{display: 'grid', gap: 16}}>
@@ -1306,7 +1351,7 @@ function EditCompetitorModal({ t, competitor, classes, onCancel, onSave }) {
               <label>{t('walk.class')}</label>
               <select className="select" value={cls} onChange={e => setCls(e.target.value)}>
                 {classes.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} — {c.course}</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>

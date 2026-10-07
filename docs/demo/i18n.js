@@ -360,6 +360,14 @@ window.STRINGS = {
 
 // Aligned with apps/web/src/lib/i18n/{sv,en}.json (copied verbatim, {{var}} interpolation)
 Object.assign(window.STRINGS.sv, {
+  'registration.manualEntry.invalid': 'Ogiltigt bricknummer — endast siffror, minst 1.',
+  'registration.dedupeToast': 'Brickan finns redan i kön (#{{card}})',
+  'walk.err.name': 'Namnet måste vara minst 2 tecken.',
+  'walk.err.classRequired': 'Välj en klass.',
+  'walk.err.cardRequired': 'Bricknummer krävs.',
+  'walk.discard.msg': 'Vill du verkligen avbryta? Det du har skrivit försvinner.',
+  'walk.discard.keep': 'Fortsätt skriva',
+  'walk.discard.discard': 'Kasta',
   'nav.registration': 'Registrering',
   'nav.hyrbrickor': 'Hyrbrickor',
   'home.new': '+ Ny tävling',
@@ -409,6 +417,14 @@ Object.assign(window.STRINGS.sv, {
 });
 
 Object.assign(window.STRINGS.en, {
+  'registration.manualEntry.invalid': 'Invalid card number — digits only, at least 1.',
+  'registration.dedupeToast': 'Card already queued (#{{card}})',
+  'walk.err.name': 'Name must be at least 2 characters.',
+  'walk.err.classRequired': 'Select a class.',
+  'walk.err.cardRequired': 'Card number required.',
+  'walk.discard.msg': 'Discard the form? Any typed values will be lost.',
+  'walk.discard.keep': 'Keep editing',
+  'walk.discard.discard': 'Discard',
   'nav.registration': 'Registration desk',
   'nav.hyrbrickor': 'Hired cards',
   'home.new': '+ New competition',
