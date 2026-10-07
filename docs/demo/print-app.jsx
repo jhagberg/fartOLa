@@ -56,15 +56,12 @@ function WizardPrint() {
             <div className="drop-zone has-file">
               <div className="icon">✓</div>
               <div style={{fontSize: 15, fontWeight: 600}}>Importerad: onsdag-bana-v20.xml</div>
-              <div className="mono" style={{fontSize: 12, marginTop: 6, color: 'var(--ok)'}}>Purple Pen · 6 klasser · 47 kontroller</div>
+              <div style={{fontSize: 12, marginTop: 6}}>Klicka för att byta fil</div>
             </div>
-            <div style={{marginTop: 16}}>
-              <div className="muted" style={{fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6}}>Skapade klasser</div>
-              <div className="class-chips" style={{display: 'flex', flexWrap: 'wrap', gap: 6}}>
-                {(window.MOCK_CLASSES || []).map(c => (
-                  <span key={c.id} className="class-chip">{c.name}</span>
-                ))}
-              </div>
+            <div style={{marginTop: 16, padding: '10px 14px', background: 'var(--bg-sunken)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: 13}}>
+              <div style={{fontWeight: 600}}>Purple Pen / IOF CourseData</div>
+              <div className="mono">onsdag-bana-v20.xml</div>
+              <div className="muted" style={{fontSize: 12, marginTop: 4}}>Klassantal + kontrollantal verifieras serverside i steg 3.</div>
             </div>
           </div>
           <div className="modal-foot">
@@ -107,30 +104,35 @@ function WalkupPrint() {
       <div style={{position: 'absolute', inset: 0, background: 'rgba(20,20,30,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24}}>
         <div className="modal" style={{width: 560, position: 'relative', boxShadow: '0 20px 60px rgba(0,0,0,0.25)'}}>
           <div className="modal-head">
-            <span style={{width: 28, height: 28, borderRadius: 6, background: 'var(--dnf-soft)', color: 'var(--dnf)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700}}>⚠</span>
             <div>
-              <h2>Walk-up registrering</h2>
-              <div className="muted" style={{fontSize: 13, marginTop: 2}}>Okänd bricka avläst. Registrera deltagaren och fortsätt.</div>
+              <h2>{tt('walk.title')}</h2>
+              <div className="muted" style={{fontSize: 13, marginTop: 2}}>{tt('walk.desc')}</div>
             </div>
           </div>
           <div className="modal-body">
             <div style={{display: 'grid', gap: 16}}>
               <div className="field">
-                <label>Bricknummer</label>
-                <input className="input mono" defaultValue="9128344" readOnly />
-              </div>
-              <div className="field">
-                <label>Namn *</label>
+                <label>{tt('walk.name')}</label>
                 <input className="input" defaultValue="Sara Lindgren" readOnly />
               </div>
               <div className="field">
-                <label>Klubb</label>
-                <input className="input" defaultValue="Stora Tuna OK" readOnly />
+                <label>{tt('walk.club')}</label>
+                <input className="input" defaultValue="StorTuna OK" readOnly />
               </div>
               <div className="field">
-                <label>Klass *</label>
-                <input className="input" defaultValue="D12 — Kort (2.4 km)" readOnly />
+                <label>{tt('walk.bana')}</label>
+                <input className="input" defaultValue="D10" readOnly />
               </div>
+              <div className="field">
+                <label>{tt('walk.card')}</label>
+                <input className="input mono" defaultValue="9128344" readOnly />
+              </div>
+              <label style={{display: 'flex', gap: 10, fontSize: 13, color: 'var(--fg-muted)'}}>
+                <input type="checkbox" checked readOnly style={{marginTop: 3}} /><span>{tt('walk.consent')}</span>
+              </label>
+              <label style={{display: 'flex', gap: 10, fontSize: 13, color: 'var(--fg-muted)'}}>
+                <input type="checkbox" readOnly style={{marginTop: 3}} /><span>{tt('walk.hyrbricka')}</span>
+              </label>
             </div>
           </div>
           <div className="modal-foot">
@@ -147,7 +149,7 @@ function WalkupPrint() {
 function ResultsPrint() {
   return (
     <div className="print-content">
-      <ResultsView t={tt} fullscreen={false} setFullscreen={noop} />
+      <ResultsView t={tt} fullscreen={false} setFullscreen={noop} initialClass="H21" />
     </div>
   );
 }
