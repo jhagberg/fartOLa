@@ -31,6 +31,24 @@ separate publish step. Their licenses still apply to the bundled code:
   fartOLa; it contains no code ported from MeOS or other copyleft sources
   (ADR-0001: ported MeOS code stays in the AGPL apps).
 
+## MeOS — ported code (GPL-3.0-or-later)
+
+Selected algorithms are translated from MeOS to TypeScript (ADR-0001,
+2026-10-06). Each such file starts with a `Ported from MeOS code/<file>`
+header and is listed here; `scripts/check-meos-attribution.sh` (in
+`pnpm lint`) fails when one is missing or when ported code appears in
+`packages/sportident` or `packages/shared-types`.
+
+- **Repository:** <https://github.com/melinsoftware/meos>
+- **Copyright:** (C) 2009-2026 Melin Software HB and contributors.
+- **License:** GPL-3.0-or-later (the MeOS source headers; the repository's
+  `LICENSE` file is AGPL-3.0). Combined with this AGPL-3.0-or-later program
+  under GPLv3 §13 / AGPLv3 §13.
+
+Ported files:
+
+- None yet.
+
 ## IOF Data Standard v3.0 — XSD bundled in `dist/xml/IOF.xsd`
 
 - **Publisher:** International Orienteering Federation (IOF)
