@@ -26,6 +26,7 @@ import { and, eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
 import type { DbHandle } from '../db/index.ts';
+import { suggestClassKind } from '../draw/classKind.ts';
 import { classes, controls, courses, courseControls } from '../db/schema.ts';
 import type { ParsedCourseData } from '../xml/parse.ts';
 
@@ -117,6 +118,7 @@ function doIngest(
       continue;
     }
     const id = crypto.randomUUID();
+    const kind = suggestClassKind(c.name);
     handle.db
       .insert(classes)
       .values({
@@ -125,6 +127,9 @@ function doIngest(
         name: c.name,
         shortName: c.short_name,
         noTiming: c.no_timing === true,
+        classKind: kind?.kind ?? null,
+        ageClass: kind?.ageClass ?? null,
+        classKindSource: kind === null ? null : 'name',
       })
       .run();
     classIdByName.set(c.name, id);

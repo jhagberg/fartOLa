@@ -25,6 +25,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 import * as schema from './schema.ts';
+import { suggestClassKind } from '../draw/classKind.ts';
 import {
   clockToEpochMs,
   competitionClockOffsetMin,
@@ -47,6 +48,7 @@ export function runMigrations(sqlite: Database.Database): void {
   // Before the legacy step: it skips the values that one converts.
   migrateStartsToFixedClock(sqlite);
   migrateStartTimesToEpoch(sqlite);
+  backfillClassKinds(sqlite);
 }
 
 /** 1970-01-08 in epoch ms. Any start time below it was written by the old
@@ -150,5 +152,26 @@ function migrateStartTimesToEpoch(sqlite: Database.Database): void {
   sqlite.transaction(() => {
     convert('competitors', 'start_time_ms');
     convert('classes', 'first_start_ms');
+  })();
+}
+
+/** Data migration for 0020: every class without a kind gets the one its
+ * SOFT name suggests (suggestClassKind, source 'name'); an unknown name
+ * stays without one. Idempotent: only rows without a source change, so an
+ * operator's choice is never overwritten. */
+function backfillClassKinds(sqlite: Database.Database): void {
+  const rows = sqlite
+    .prepare<[], { id: string; name: string }>(
+      'SELECT id, name FROM classes WHERE class_kind IS NULL AND class_kind_source IS NULL'
+    )
+    .all();
+  const update = sqlite.prepare(
+    "UPDATE classes SET class_kind = ?, age_class = ?, class_kind_source = 'name' WHERE id = ?"
+  );
+  sqlite.transaction(() => {
+    for (const r of rows) {
+      const s = suggestClassKind(r.name);
+      if (s !== null) update.run(s.kind, s.ageClass, r.id);
+    }
   })();
 }

@@ -18,6 +18,8 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
+import { eq } from 'drizzle-orm';
+import { runMigrations } from '../db/migrate.ts';
 import { competitions, classes } from '../db/schema.ts';
 
 interface Ctx {
@@ -211,6 +213,106 @@ describe('classes route (PATCH maxTimeSec)', () => {
       payload: { ignore_start_punch: true },
     });
     assert.equal(old.statusCode, 400, 'the Task 11 flag is gone');
+  });
+
+  test('SOFT TR 3.4.2: class kind — suggested from the name on create, none for an unknown name, in the DTO', async () => {
+    const create = async (payload: Record<string, unknown>) =>
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: `/api/competitions/${ctx.competitionId}/classes`,
+          payload,
+        })
+      ).json() as {
+        class_kind: string | null;
+        age_class: number | null;
+        class_kind_source: string | null;
+      };
+    const d12 = await create({ name: 'D12' });
+    assert.deepEqual(
+      [d12.class_kind, d12.age_class, d12.class_kind_source],
+      ['ungdom', 12, 'name']
+    );
+    const unknown = await create({ name: 'Lilla banan' });
+    assert.deepEqual([unknown.class_kind, unknown.class_kind_source], [null, null]);
+    const chosen = await create({ name: 'Knattar', class_kind: 'inskolning', age_class: null });
+    assert.deepEqual([chosen.class_kind, chosen.class_kind_source], ['inskolning', 'operator']);
+  });
+
+  test("SOFT TR 3.4.2: kinds preview — Eventor's ClassTypeId over the name; PUT confirms (source operator)", async (t) => {
+    ctx.handle.db
+      .update(competitions)
+      .set({ eventorEventId: 4711 })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO config (key, value) VALUES ('EVENTOR_API_KEY', 'KEY')`)
+      .run();
+    const lilla = crypto.randomUUID();
+    ctx.handle.db
+      .insert(classes)
+      .values({ id: lilla, competitionId: ctx.competitionId, name: 'Lilla banan' })
+      .run();
+    t.mock.method(globalThis, 'fetch', async (url: string | URL) => {
+      assert.match(String(url), /eventclasses\?eventId=4711$/);
+      return new Response(
+        '<EventClassList><EventClass><Name>Lilla banan</Name><ClassTypeId>19</ClassTypeId></EventClass>' +
+          '<EventClass><Name>H21</Name><ClassTypeId>17</ClassTypeId></EventClass></EventClassList>',
+        { status: 200 }
+      );
+    });
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/classes/kinds`,
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = res.json() as {
+      eventor: string;
+      items: Array<{ class_id: string; class_kind: string | null; suggestion: unknown }>;
+    };
+    assert.equal(body.eventor, 'used');
+    const lillaItem = body.items.find((i) => i.class_id === lilla)!;
+    assert.equal(lillaItem.class_kind, null, 'the preview writes nothing');
+    assert.deepEqual(lillaItem.suggestion, {
+      class_kind: 'oppen',
+      age_class: null,
+      source: 'eventor',
+    });
+
+    const put = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/competitions/${ctx.competitionId}/classes/kinds`,
+      payload: { items: [{ class_id: lilla, class_kind: 'oppen', age_class: null }] },
+    });
+    assert.equal(put.statusCode, 200, put.body);
+    const row = ctx.handle.db.select().from(classes).where(eq(classes.id, lilla)).get()!;
+    assert.deepEqual([row.classKind, row.classKindSource], ['oppen', 'operator']);
+    const bad = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/competitions/${ctx.competitionId}/classes/kinds`,
+      payload: { items: [{ class_id: 'nope', class_kind: 'oppen', age_class: null }] },
+    });
+    assert.equal(bad.statusCode, 400);
+  });
+
+  test('a class without a kind (before migration 0021) gets the name suggestion on startup; an operator choice stays', () => {
+    const id = crypto.randomUUID();
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO classes (id, competition_id, name) VALUES (?, ?, 'H21 Elit')`)
+      .run(id, ctx.competitionId);
+    ctx.handle.sqlite
+      .prepare(
+        `UPDATE classes SET class_kind = 'oppen', class_kind_source = 'operator' WHERE id = ?`
+      )
+      .run(ctx.classId);
+    runMigrations(ctx.handle.sqlite);
+    const row = (classId: string) =>
+      ctx.handle.db.select().from(classes).where(eq(classes.id, classId)).get()!;
+    assert.deepEqual(
+      [row(id).classKind, row(id).ageClass, row(id).classKindSource],
+      ['elit', 21, 'name']
+    );
+    assert.equal(row(ctx.classId).classKind, 'oppen', 'an operator choice is never overwritten');
   });
 
   test('PATCH with an empty body → 400', async () => {

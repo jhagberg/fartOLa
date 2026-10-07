@@ -134,6 +134,13 @@
       "when": 1791763200000,
       "tag": "0019_competitions_roc",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791849600000,
+      "tag": "0020_class_kind_and_level",
+      "breakpoints": true
     }
   ]
 }

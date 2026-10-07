@@ -82,6 +82,32 @@ const POSITIVE_INT = z.number().int().positive();
 // UI-SPEC §"Auto-print toggle" defaults auto_print to false (OFF).
 // ---------------------------------------------------------------------------
 
+/** SOFT class category (TR 3.4.6 klasstyp/underkategori, TR 3.4.9): age
+ * classes are 'ungdom' (D/H10–16), 'junior' (D/H18–20), 'senior' (D/H21)
+ * or 'veteran' (D/H35+); 'elit' is D/H18 Elit, D/H20 Elit, D/H21 Elit;
+ * open classes are 'oppen', with 'inskolning' kept apart because rules
+ * name it (TR 7.4.1). Stored per class (classes.class_kind). */
+export const ClassKind = z.enum([
+  'elit',
+  'ungdom',
+  'junior',
+  'senior',
+  'veteran',
+  'oppen',
+  'inskolning',
+]);
+export type ClassKind = z.infer<typeof ClassKind>;
+
+/** Where a class kind came from: Eventor's ClassTypeId, the SOFT name
+ * patterns, or the operator. */
+export const ClassKindSource = z.enum(['eventor', 'name', 'operator']);
+export type ClassKindSource = z.infer<typeof ClassKindSource>;
+
+/** Competition level (SOFT TR 3.3.1: nivå 1–3 need SOFT/OF approval; nivå 4
+ * is närtävlingar incl. motionsorientering, freely designed) or a training. */
+export const CompetitionLevel = z.enum(['niva1', 'niva2', 'niva3', 'niva4', 'traning']);
+export type CompetitionLevel = z.infer<typeof CompetitionLevel>;
+
 export const CompetitionDTO = z.object({
   id: UUID,
   name: z.string().min(1),
@@ -109,6 +135,8 @@ export const CompetitionDTO = z.object({
    * zone's offset at local noon of `date`. Every time of day shown, read
    * off a card or exchanged (IOF, MOP) is epoch + this offset. */
   clock_offset_min: z.number().int(),
+  /** Competition level; null = not set (rules that need it refuse). */
+  level: CompetitionLevel.nullable().optional(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 
@@ -138,6 +166,8 @@ export const CompetitionPatchInput = z.object({
    * or stations synced on the other offset. null = back to the date's
    * default. */
   clock_offset_min: z.number().int().min(-720).max(840).nullable().optional(),
+  /** Competition level (SOFT TR 3.3.1); null clears it. */
+  level: CompetitionLevel.nullable().optional(),
 });
 export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 
@@ -162,6 +192,12 @@ export const ClassDTO = z.object({
   no_timing: z.boolean(),
   /** 02.1-14 Task 14: which start the running time is measured from. */
   start_method: StartMethod,
+  /** SOFT class category; null = not chosen yet. Omitted where not needed. */
+  class_kind: ClassKind.nullable().optional(),
+  /** The D/H age of an age class (the youngest for a merged class, TR
+   * 3.4.7); null for open classes and when unknown. */
+  age_class: z.number().int().positive().nullable().optional(),
+  class_kind_source: ClassKindSource.nullable().optional(),
   /** 02.1-14 Task 4: the course this class runs (classes.course_id). NULL =
    * not assigned; readers fall back to the course whose class_id is this
    * class. Omitted where the course is not needed. */
@@ -172,6 +208,9 @@ export type ClassDTO = z.infer<typeof ClassDTO>;
 export const ClassCreateInput = z.object({
   name: z.string().min(1).max(120),
   short_name: z.string().max(40).nullable().optional(),
+  /** Default: the SOFT-name suggestion (suggestClassKind); none for an unknown name. */
+  class_kind: ClassKind.optional(),
+  age_class: z.number().int().positive().nullable().optional(),
 });
 export type ClassCreateInput = z.infer<typeof ClassCreateInput>;
 
