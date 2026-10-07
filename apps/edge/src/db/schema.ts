@@ -204,6 +204,10 @@ export type EventPayload =
       control_code: number;
       /** 'HH:MM:SS' as sent by ROC (local wall clock, no zone). */
       time_of_day: string;
+      /** When we received the row (epoch ms). "Last heard" and the delivery
+       * delay use this, not the punch's time of day: a backlog arrives late
+       * with old times. */
+      received_at_ms: number;
       /** 'YYYY-MM-DD' ROC stamped the row with; kept to flag a sender whose
        * clock is off (date_mismatch), never to place or drop the punch. */
       roc_date: string;
@@ -282,6 +286,8 @@ export const competitions = sqliteTable('competitions', {
   rocStartId: integer('roc_start_id'),
   /** Last ROC row id received (a restart resumes after it). */
   rocLastId: integer('roc_last_id'),
+  /** Expected radio control codes, comma separated ('52,78,100'); NULL = none listed. */
+  rocControls: text('roc_controls'),
 });
 
 // ---------------------------------------------------------------------------

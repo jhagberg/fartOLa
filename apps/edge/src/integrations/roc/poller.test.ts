@@ -18,6 +18,8 @@ const DATE = '2026-10-04';
 const NOON = localToEpochMs(DATE, 12 * 3600);
 
 function setup(opts: { enabled?: boolean; startId?: number | null } = {}): DbHandle {
+  // Default: a start id of 1, i.e. baseline already taken. Pass null for a first poll.
+  const startId = opts.startId === undefined ? 1 : opts.startId;
   const handle = openDatabase(':memory:');
   handle.sqlite
     .prepare(
@@ -25,7 +27,7 @@ function setup(opts: { enabled?: boolean; startId?: number | null } = {}): DbHan
          roc_competition_id, roc_enabled, roc_start_id)
        VALUES (?, 'C1', ?, 'classic', 0, 0, '2380', ?, ?)`
     )
-    .run(COMP, DATE, opts.enabled === false ? 0 : 1, opts.startId ?? null);
+    .run(COMP, DATE, opts.enabled === false ? 0 : 1, startId);
   return handle;
 }
 
@@ -72,22 +74,57 @@ describe('ROC poller', () => {
     assert.equal(new URL(urls[0]!).searchParams.get('lastId'), '0');
   });
 
-  test('skips history by id (first row with the competition date), not by timestamp', async () => {
-    const handle = setup();
+  test('baseline: on enable, every row that exists is history, whatever its date', async () => {
+    const handle = setup({ startId: null });
+    const { fetchImpl, urls } = fakeFetch([
+      [
+        '10;78;9000001;2026-10-04 10:00:00',
+        '11;78;9000002;2026-09-20 10:00:05',
+        '12;78;9000003;2026-10-03 10:00:00',
+      ].join('\r\n'),
+      [
+        '13;78;9000004;2026-10-04 10:00:07',
+        '14;78;9000005;2026-10-03 10:00:09', // a sender with yesterday's date
+      ].join('\r\n'),
+    ]);
+    const p = poller(handle, fetchImpl);
+    const first = await p.pollOnce(COMP);
+    assert.equal(first?.skipped, 3);
+    assert.equal(first?.inserted, 0);
+    const row = handle.db.select().from(competitions).where(eq(competitions.id, COMP)).get()!;
+    assert.equal(row.rocStartId, 13);
+    assert.equal(row.rocLastId, 12);
+    const second = await p.pollOnce(COMP);
+    assert.equal(new URL(urls[1]!).searchParams.get('lastId'), '12');
+    assert.equal(second?.inserted, 2);
+    assert.equal(second?.dateMismatches, 1);
+  });
+
+  test('baseline on an empty ROC: rows arriving afterwards are all stored', async () => {
+    const handle = setup({ startId: null });
+    const { fetchImpl } = fakeFetch(['', '1;78;9000001;2026-10-03 09:00:00']);
+    const p = poller(handle, fetchImpl);
+    await p.pollOnce(COMP);
+    const row = handle.db.select().from(competitions).where(eq(competitions.id, COMP)).get()!;
+    assert.deepEqual([row.rocStartId, row.rocLastId], [1, 0]);
+    const second = await p.pollOnce(COMP);
+    assert.equal(second?.inserted, 1);
+    assert.equal(second?.dateMismatches, 1);
+  });
+
+  test('a morning whose first rows are all wrong-dated: all stored with date_mismatch, none skipped', async () => {
+    const handle = setup({ startId: 100 });
     const { fetchImpl } = fakeFetch([
       [
-        '10;78;9000001;2026-09-20 10:00:00',
-        '11;78;9000002;2026-09-20 10:00:05',
-        '12;78;9000003;2026-10-04 10:00:00',
-        '13;78;9000004;2026-10-04 10:00:07',
+        '100;78;9000001;2026-10-03 09:00:00',
+        '101;78;9000002;2026-10-03 09:00:03',
+        '102;100;9000003;2026-10-03 09:00:05',
       ].join('\r\n'),
     ]);
     const batch = await poller(handle, fetchImpl).pollOnce(COMP);
-    assert.equal(batch?.skipped, 2);
-    assert.equal(batch?.inserted, 2);
-    const row = handle.db.select().from(competitions).where(eq(competitions.id, COMP)).get()!;
-    assert.equal(row.rocStartId, 12);
-    assert.equal(row.rocLastId, 13);
+    assert.equal(batch?.skipped, 0);
+    assert.equal(batch?.inserted, 3);
+    assert.ok(radioEvents(handle).every((r) => r.p['date_mismatch'] === true));
   });
 
   test('a configured start id wins and the first request asks from startId - 1', async () => {

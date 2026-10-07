@@ -6,9 +6,11 @@
 // (2026-10-04, 18h50m behind) which the filter then hides.
 //
 // - Rows from before the competition are skipped by id, never by timestamp.
-//   The ROC date is read exactly once, on the very first poll with no stored
-//   state, to find where today's rows start (competitions.roc_start_id,
-//   or set by hand). After that every decision is by id.
+//   The baseline never looks at the row date: the first poll after ROC is
+//   switched on (no stored start id) takes everything that exists then as
+//   history (start id = highest id + 1) and stores it in
+//   competitions.roc_start_id; every row after that counts, whatever its
+//   date. An explicit start id set by the operator wins.
 // - Only the time of day is used (place.ts); a row whose date is not the
 //   competition date is stored with date_mismatch=true, never dropped.
 // - Dedup on (card, code, time of day) via the idempotency key and the unique
@@ -164,11 +166,11 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
       malformed,
     };
 
-    if (baseline && fresh.length > 0) {
-      // First ever poll: today's rows start at the first row with the
-      // competition date; with none, everything so far is history.
-      const firstToday = fresh.find((r) => r.date === comp.date);
-      startId = firstToday ? firstToday.id : fresh[fresh.length - 1]!.id + 1;
+    if (baseline) {
+      // Everything that exists now is history. Rows that arrive from the next
+      // poll on count, also when ROC is empty now (start id 1, last id 0).
+      const maxNow = fresh.length > 0 ? fresh[fresh.length - 1]!.id : 0;
+      startId = maxNow + 1;
     }
 
     const toStore: RocRow[] = [];
@@ -194,6 +196,7 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
             card_number: r.card,
             control_code: r.code,
             time_of_day: r.time,
+            received_at_ms: receivedAtMs,
             roc_date: r.date,
             date_mismatch: dateMismatch,
           },
@@ -209,7 +212,7 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
 
     // After the inserts: a crash in between re-fetches the rows and the
     // unique index swallows the repeats.
-    const maxId = fresh.length > 0 ? fresh[fresh.length - 1]!.id : null;
+    const maxId = baseline ? startId! - 1 : fresh.length > 0 ? fresh[fresh.length - 1]!.id : null;
     if (maxId !== null || startId !== comp.startId) {
       handle.db
         .update(competitions)

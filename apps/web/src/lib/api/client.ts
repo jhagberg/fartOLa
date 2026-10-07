@@ -1131,7 +1131,12 @@ export function getRadioStatus(competitionId: string): Promise<RadioStatus> {
 /** PATCH /api/competitions/:id/radio/settings — answers with the new status. */
 export function setRadioSettings(
   competitionId: string,
-  body: { enabled?: boolean; roc_competition_id?: string | null; start_id?: number | null }
+  body: {
+    enabled?: boolean;
+    roc_competition_id?: string | null;
+    start_id?: number | null;
+    radio_controls?: number[];
+  }
 ): Promise<RadioStatus> {
   return apiFetch<RadioStatus>(
     `/api/competitions/${encodeURIComponent(competitionId)}/radio/settings`,

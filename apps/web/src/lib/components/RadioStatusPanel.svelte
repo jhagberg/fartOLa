@@ -12,7 +12,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { getRadioStatus } from '#lib/api/client.ts';
   import type { RadioStatus } from '@fartola/shared-types';
-  import { rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
+  import { baselineKey, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
 
   interface Props {
     competitionId: string;
@@ -45,6 +45,7 @@
   });
 
   const views = $derived(status ? sortedRadioViews(status) : []);
+  const baseline = $derived(status ? baselineKey(status) : null);
   const linkProblem = $derived(status ? rocLinkProblem(status) : null);
 </script>
 
@@ -62,6 +63,11 @@
         {/if}
       </span>
     </header>
+    {#if baseline}
+      <p class="baseline muted" data-testid="radio-baseline">
+        {t(baseline.key, { id: baseline.id })}
+      </p>
+    {/if}
     {#if views.length === 0}
       <p class="empty">{t('radio.none')}</p>
     {:else}
@@ -79,8 +85,21 @@
                 {t('radio.dateWarning', { n: v.dateWarnings })}
               </span>
             {/if}
+            {#if v.siacProblem}
+              <span class="state" data-testid="radio-siac-problem">
+                <span aria-hidden="true">!</span>
+                {t('radio.siacProblem')}
+              </span>
+            {/if}
             <span class="when muted">
-              {t('radio.lastHeard', { time: v.lastHeard, min: v.agoMin })}
+              {#if v.lastHeard === null}
+                {t('radio.neverHeard')}
+              {:else}
+                {t('radio.lastHeard', { time: v.lastHeard, min: v.agoMin })}
+              {/if}
+              {#if v.delayText}
+                · {t('radio.delay', { text: v.delayText })}
+              {/if}
               {#if v.coverageText}
                 · {t('radio.coverage', { text: v.coverageText })}
               {/if}
@@ -115,6 +134,12 @@
   }
   .muted {
     color: var(--fg-muted);
+  }
+  .baseline {
+    margin: 0;
+    padding: 8px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
   }
   .empty {
     margin: 0;

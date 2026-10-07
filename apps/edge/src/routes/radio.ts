@@ -7,7 +7,7 @@
 //     shared-types RadioStatus). Read-only.
 //
 //   PATCH /api/competitions/:id/radio/settings
-//     { enabled?, roc_competition_id?, start_id? }. A suffixed write route,
+//     { enabled?, roc_competition_id?, start_id?, radio_controls? }. A suffixed write route,
 //     so the event-code gate in server.ts applies. Changing the ROC id
 //     forgets the stored start/last id (they belong to the old unit).
 //
@@ -30,6 +30,8 @@ const SettingsInput = z
     roc_competition_id: z.string().trim().regex(/^\d+$/).nullable().optional(),
     /** First ROC row id of the competition; null = work it out on the next poll. */
     start_id: z.number().int().nonnegative().nullable().optional(),
+    /** Expected radio control codes; [] clears the list. */
+    radio_controls: z.array(z.number().int().positive()).max(100).optional(),
   })
   .strict();
 
@@ -59,7 +61,12 @@ export default async function registerRadioRoutes(app: FastifyInstance): Promise
         .get();
       if (!cur) return reply.code(404).send({ error: 'competition not found' });
 
-      const { enabled, roc_competition_id: unitId, start_id: startId } = parsed.data;
+      const {
+        enabled,
+        roc_competition_id: unitId,
+        start_id: startId,
+        radio_controls: radioControls,
+      } = parsed.data;
       const nextUnit = unitId === undefined ? cur.unitId : unitId;
       if ((enabled ?? cur.enabled) && !nextUnit) {
         return reply.code(400).send({ error: 'roc_competition_id_required' });
@@ -75,6 +82,10 @@ export default async function registerRadioRoutes(app: FastifyInstance): Promise
       if (startId !== undefined) {
         set.rocStartId = startId;
         set.rocLastId = null;
+      }
+      if (radioControls !== undefined) {
+        const codes = [...new Set(radioControls)].sort((a, b) => a - b);
+        set.rocControls = codes.length > 0 ? codes.join(',') : null;
       }
       if (Object.keys(set).length > 0) {
         app.fartolaDb.db.update(competitions).set(set).where(eq(competitions.id, id)).run();

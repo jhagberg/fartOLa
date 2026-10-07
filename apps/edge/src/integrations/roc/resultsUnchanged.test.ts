@@ -32,8 +32,8 @@ describe('radio punches and results', () => {
     handle.sqlite
       .prepare(
         `INSERT INTO competitions (id, name, date, receipt_template, auto_print, created_at_ms,
-           roc_competition_id, roc_enabled, race_started_at_ms)
-         VALUES (?, 'C1', ?, 'classic', 0, 0, '2380', 1, ?)`
+           roc_competition_id, roc_enabled, roc_start_id, race_started_at_ms)
+         VALUES (?, 'C1', ?, 'classic', 0, 0, '2380', 1, 1, ?)`
       )
       .run(COMP, DATE, NOON - 3600_000);
     handle.db.insert(classes).values({ id: 'cls', competitionId: COMP, name: 'H21' }).run();

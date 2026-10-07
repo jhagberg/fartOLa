@@ -6,7 +6,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
-import { radioControlView, rocLinkProblem, sortedRadioViews } from './radio-status.ts';
+import {
+  baselineKey,
+  formatDelay,
+  radioControlView,
+  rocLinkProblem,
+  sortedRadioViews,
+} from './radio-status.ts';
 
 const NOW = Date.UTC(2026, 9, 4, 9, 30, 0);
 
@@ -15,10 +21,17 @@ function control(over: Partial<RadioControlStatus>): RadioControlStatus {
     control_code: 78,
     state: 'ok',
     last_heard_ms: NOW - 3 * 60_000,
+    median_delay_ms: 2000,
+    listed: false,
     received: 40,
     window_card_punches: 12,
     window_matched: 12,
     coverage: 1,
+    siac_card_punches: 0,
+    siac_matched: 0,
+    other_card_punches: 12,
+    other_matched: 12,
+    siac_problem: false,
     date_mismatch_count: 0,
     ...over,
   };
@@ -26,7 +39,13 @@ function control(over: Partial<RadioControlStatus>): RadioControlStatus {
 
 function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null): RadioStatus {
   return {
-    settings: { enabled: true, roc_competition_id: '2380', start_id: 1, last_id: 2 },
+    settings: {
+      enabled: true,
+      roc_competition_id: '2380',
+      start_id: 1,
+      last_id: 2,
+      radio_controls: [],
+    },
     poll,
     now_ms: NOW,
     window_min: 20,
@@ -71,6 +90,30 @@ describe('sortedRadioViews', () => {
       ])
     );
     expect(out.map((v) => v.code)).toEqual([4, 3, 2, 1]);
+  });
+});
+
+describe('radio view extras', () => {
+  it('a listed control never heard has no last-heard time', () => {
+    const v = radioControlView(
+      control({ last_heard_ms: null, median_delay_ms: null, listed: true, state: 'silent' }),
+      NOW
+    );
+    expect(v.lastHeard).toBeNull();
+    expect(v.agoMin).toBeNull();
+    expect(v.delayText).toBeNull();
+  });
+  it('formats the delay and flags SIAC', () => {
+    expect(formatDelay(3000)).toBe('3 s');
+    expect(formatDelay(-300_000)).toBe('5 min');
+    expect(radioControlView(control({ median_delay_ms: 2000 }), NOW).delayText).toBe('2 s');
+    expect(radioControlView(control({ siac_problem: true }), NOW).siacProblem).toBe(true);
+  });
+  it('names the baseline in plain words', () => {
+    expect(baselineKey(status([]))).toEqual({ key: 'radio.baseline.from', id: 1 });
+    const pending = status([]);
+    pending.settings.start_id = null;
+    expect(baselineKey(pending).key).toBe('radio.baseline.pending');
   });
 });
 
@@ -131,6 +174,15 @@ describe('radio i18n keys', () => {
     'radio.linkOk',
     'radio.linkProblem',
     'radio.loadError',
+    'radio.siacProblem',
+    'radio.neverHeard',
+    'radio.delay',
+    'radio.baseline.from',
+    'radio.baseline.pending',
+    'settings.radio.startId',
+    'settings.radio.startIdHelp',
+    'settings.radio.controls',
+    'settings.radio.controlsHelp',
     'settings.radio.title',
     'settings.radio.description',
     'settings.radio.enabled',
@@ -149,5 +201,6 @@ describe('radio i18n keys', () => {
     }
     expect(sv['radio.state.few']).toBe('Få stämplingar');
     expect(sv['radio.state.silent']).toBe('Tyst');
+    expect(sv['radio.baseline.from']).toContain('{{id}}');
   });
 });

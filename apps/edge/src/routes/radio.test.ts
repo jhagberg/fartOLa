@@ -56,6 +56,7 @@ describe('radio routes', () => {
       roc_competition_id: null,
       start_id: null,
       last_id: null,
+      radio_controls: [],
     });
     assert.equal(body.poll, null);
     assert.deepEqual(body.controls, []);
@@ -81,6 +82,20 @@ describe('radio routes', () => {
     assert.equal(explicit.json<RadioStatus>().settings.start_id, 77);
   });
 
+  it('settings: expected radio controls are stored sorted and shown as listed', async () => {
+    const res = await patch({ radio_controls: [100, 52, 52] });
+    assert.deepEqual(res.json<RadioStatus>().settings.radio_controls, [52, 100]);
+    assert.deepEqual(
+      res.json<RadioStatus>().controls.map((c) => [c.control_code, c.listed]),
+      [
+        [52, true],
+        [100, true],
+      ]
+    );
+    const cleared = await patch({ radio_controls: [] });
+    assert.deepEqual(cleared.json<RadioStatus>().settings.radio_controls, []);
+  });
+
   it('settings: a write from another machine needs the event code', async () => {
     const res = await patch({ enabled: false }, '10.0.0.5');
     assert.equal(res.statusCode, 403);
@@ -103,6 +118,7 @@ describe('radio routes', () => {
           card_number: 9_000_000 + i,
           control_code: 78,
           time_of_day: '10:00:00',
+          received_at_ms: now - 60_000 * (i + 1),
           roc_date: '2020-01-01',
           date_mismatch: true,
         },
@@ -115,6 +131,6 @@ describe('radio routes', () => {
     assert.equal(c!.received, 3);
     assert.equal(c!.date_mismatch_count, 3);
     assert.equal(c!.state, 'ok');
-    assert.ok(Math.abs(c!.last_heard_ms - (now - 60_000)) < 1000);
+    assert.ok(Math.abs(c!.last_heard_ms! - (now - 60_000)) < 1000);
   });
 });

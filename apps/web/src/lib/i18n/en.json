@@ -616,5 +616,14 @@
   "settings.radio.save": "Save",
   "settings.radio.saved": "Saved.",
   "settings.radio.invalid": "The ROC id must be a number.",
-  "settings.radio.saveError": "Could not save."
+  "settings.radio.saveError": "Could not save.",
+  "radio.siacProblem": "SIAC is not getting through – check the Air+ setting",
+  "radio.neverHeard": "Nothing heard from this control yet",
+  "radio.delay": "delay {{text}}",
+  "radio.baseline.from": "Fetching punches from ROC id {{id}} onwards",
+  "radio.baseline.pending": "The ROC starting point is set at the first fetch: what already exists counts as old",
+  "settings.radio.startId": "Start from ROC id (optional)",
+  "settings.radio.startIdHelp": "If empty, everything already in ROC counts as old when fetching starts, whatever its date. Enter an id to fetch from that id onwards.",
+  "settings.radio.controls": "Expected radio controls (codes, comma separated)",
+  "settings.radio.controlsHelp": "A listed control that is not heard at all shows as Silent as soon as someone has punched there. Example: 52, 78, 100."
 }

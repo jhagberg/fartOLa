@@ -6,14 +6,20 @@
 //   - last heard, punches received;
 //   - coverage: of the read-out card punches at the control in the last M
 //     minutes, the share with a radio punch from the same card within ±2 s;
-//   - silent: nothing heard for N minutes while read-out cards passed the
-//     control in the last hour AFTER the last radio punch. (Card punches that
+//   - silent: nothing RECEIVED for N minutes while read-out cards passed the
+//     control in the last hour AFTER the last radio punch was received. A
+//     control on the expected list that never sent anything is silent as
+//     soon as card punches at it exist. (Card punches that
 //     the radio did hear before it went quiet say nothing about the link, and
 //     a control that is simply quiet late in the day must not alarm.)
 //   - few: coverage under the threshold, with at least MIN_SAMPLE card
 //     punches in the window (three runners, one missed, is not a trend).
-// Only controls heard at least once are radio controls; a control that never
-// got through cannot be told from one without a transmitter.
+// Controls that sent at least once, plus the listed ones, are shown.
+// Last heard and silence use the time we received a punch; matching against
+// card punches uses the punch's own time. median_delay_ms (received minus
+// punch time over the last M min) shows a backlog or a wrong sender clock.
+// SIAC (touch-free) coverage is split out: a link that drops them while
+// forwarding ordinary cards is flagged (siac_problem).
 // The date mismatch count is reported next to the state, not as a state.
 
 import type { RadioControlStatus } from '@fartola/shared-types';
@@ -21,7 +27,10 @@ import type { RadioControlStatus } from '@fartola/shared-types';
 export interface RadioPunchIn {
   code: number;
   card: number;
+  /** The punch's time of day on the competition wall clock. */
   wallMs: number;
+  /** When we received it, same scale. */
+  receivedWallMs: number;
   dateMismatch: boolean;
 }
 
@@ -29,6 +38,8 @@ export interface CardPunchIn {
   code: number;
   card: number;
   wallMs: number;
+  /** SIAC card (touch-free punching). */
+  siac?: boolean;
 }
 
 export interface WatchdogParams {
@@ -40,6 +51,8 @@ export interface WatchdogParams {
   /** Coverage under this is "few". */
   coverageThreshold?: number;
   matchToleranceMs?: number;
+  /** Expected radio control codes. */
+  expectedCodes?: readonly number[];
 }
 
 export const WATCHDOG_DEFAULTS = {
@@ -49,6 +62,9 @@ export const WATCHDOG_DEFAULTS = {
   matchToleranceMs: 2000,
   /** Card punches in the window needed before coverage is judged. */
   minSample: 5,
+  /** SIAC problem: SIAC coverage under this while the others' is at least
+   * `coverageThreshold`, with `minSample` of each. */
+  siacThreshold: 0.5,
   /** How far back card punches count as "runners are passing". */
   silenceLookbackMin: 60,
 } as const;
@@ -82,22 +98,49 @@ export function evaluateRadioWatchdog(
     else radioByCode.set(p.code, [p]);
   }
 
+  const expected = new Set(params.expectedCodes ?? []);
+  for (const code of expected) if (!radioByCode.has(code)) radioByCode.set(code, []);
+
+  const share = (matched: number, total: number): number => (total === 0 ? 1 : matched / total);
+
   const out: RadioControlStatus[] = [];
   for (const [code, punches] of radioByCode) {
-    const lastHeard = Math.max(...punches.map((p) => p.wallMs));
+    const lastHeard =
+      punches.length === 0 ? null : Math.max(...punches.map((p) => p.receivedWallMs));
     const cardHere = cardUnique.filter((p) => p.code === code && p.wallMs <= nowWallMs);
 
     const inWindow = cardHere.filter((p) => p.wallMs >= nowWallMs - windowMin * MIN_MS);
-    const matched = inWindow.filter((c) =>
-      punches.some((r) => r.card === c.card && Math.abs(r.wallMs - c.wallMs) <= tol)
-    );
+    const isMatched = (c: CardPunchIn): boolean =>
+      punches.some((r) => r.card === c.card && Math.abs(r.wallMs - c.wallMs) <= tol);
+    const matched = inWindow.filter(isMatched);
+    const siacIn = inWindow.filter((p) => p.siac === true);
+    const otherIn = inWindow.filter((p) => p.siac !== true);
+    const siacMatched = siacIn.filter(isMatched).length;
+    const otherMatched = otherIn.filter(isMatched).length;
+    const siacProblem =
+      siacIn.length >= WATCHDOG_DEFAULTS.minSample &&
+      otherIn.length >= WATCHDOG_DEFAULTS.minSample &&
+      share(siacMatched, siacIn.length) < WATCHDOG_DEFAULTS.siacThreshold &&
+      share(otherMatched, otherIn.length) >= threshold;
+
+    const delays = punches
+      .filter((p) => p.receivedWallMs >= nowWallMs - windowMin * MIN_MS)
+      .map((p) => p.receivedWallMs - p.wallMs)
+      .sort((a, b) => a - b);
+    const medianDelay =
+      delays.length === 0
+        ? null
+        : delays.length % 2 === 1
+          ? delays[(delays.length - 1) / 2]!
+          : (delays[delays.length / 2 - 1]! + delays[delays.length / 2]!) / 2;
 
     const unheardRecent = cardHere.some(
       (p) =>
         p.wallMs >= nowWallMs - WATCHDOG_DEFAULTS.silenceLookbackMin * MIN_MS &&
-        p.wallMs > lastHeard + tol
+        (lastHeard === null || p.wallMs > lastHeard)
     );
-    const silent = lastHeard < nowWallMs - silenceMin * MIN_MS && unheardRecent;
+    const silent =
+      (lastHeard === null || lastHeard < nowWallMs - silenceMin * MIN_MS) && unheardRecent;
     const coverage = inWindow.length === 0 ? null : matched.length / inWindow.length;
     const few =
       coverage !== null && inWindow.length >= WATCHDOG_DEFAULTS.minSample && coverage < threshold;
@@ -106,10 +149,17 @@ export function evaluateRadioWatchdog(
       control_code: code,
       state: silent ? 'silent' : few ? 'few' : 'ok',
       last_heard_ms: lastHeard,
+      median_delay_ms: medianDelay,
+      listed: expected.has(code),
       received: punches.length,
       window_card_punches: inWindow.length,
       window_matched: matched.length,
       coverage,
+      siac_card_punches: siacIn.length,
+      siac_matched: siacMatched,
+      other_card_punches: otherIn.length,
+      other_matched: otherMatched,
+      siac_problem: siacProblem,
       date_mismatch_count: punches.filter((p) => p.dateMismatch).length,
     });
   }

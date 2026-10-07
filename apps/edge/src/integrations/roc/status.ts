@@ -11,6 +11,7 @@ import { competitions, events } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
 import { cardClockToWallMs, wallMsToEpochMs } from '../../projection/halfDayClockMath.ts';
 import { epochToWallClockMs } from '../../time/competitionClock.ts';
+import { cardTypeFromNumber } from '../../si/cardType.ts';
 import type { RocPollStatus } from './poller.ts';
 import {
   evaluateRadioWatchdog,
@@ -18,6 +19,16 @@ import {
   type CardPunchIn,
   type RadioPunchIn,
 } from './watchdog.ts';
+
+/** '52,78,100' → [52, 78, 100]; anything that is not a code is dropped. */
+export function parseRocControls(text: string | null): number[] {
+  if (!text) return [];
+  const codes = text
+    .split(',')
+    .map((x) => Number(x.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(codes)].sort((a, b) => a - b);
+}
 
 export function buildRadioStatus(
   handle: DbHandle,
@@ -31,6 +42,7 @@ export function buildRadioStatus(
       unitId: competitions.rocCompetitionId,
       startId: competitions.rocStartId,
       lastId: competitions.rocLastId,
+      controlsText: competitions.rocControls,
       raceStartedAtMs: competitions.raceStartedAtMs,
     })
     .from(competitions)
@@ -38,6 +50,7 @@ export function buildRadioStatus(
     .get();
   if (!comp) return null;
 
+  const radioControls = parseRocControls(comp.controlsText);
   const radio: RadioPunchIn[] = [];
   for (const e of handle.db
     .select({ eventTimeMs: events.eventTimeMs, payload: events.payload })
@@ -50,6 +63,7 @@ export function buildRadioStatus(
       code: p.control_code,
       card: p.card_number,
       wallMs: epochToWallClockMs(e.eventTimeMs),
+      receivedWallMs: epochToWallClockMs(p.received_at_ms),
       dateMismatch: p.date_mismatch,
     });
   }
@@ -78,13 +92,18 @@ export function buildRadioStatus(
         code: punch.code,
         card: p.card_number,
         wallMs: cardClockToWallMs(punch, p.card_type, e.eventTimeMs),
+        siac: cardTypeFromNumber(p.card_number) === 'SIAC',
       });
     }
   }
 
   const controls = evaluateRadioWatchdog(radio, card, {
     nowWallMs: epochToWallClockMs(nowMs),
-  }).map((c) => ({ ...c, last_heard_ms: wallMsToEpochMs(c.last_heard_ms) }));
+    expectedCodes: radioControls,
+  }).map((c) => ({
+    ...c,
+    last_heard_ms: c.last_heard_ms === null ? null : wallMsToEpochMs(c.last_heard_ms),
+  }));
 
   return {
     settings: {
@@ -92,6 +111,7 @@ export function buildRadioStatus(
       roc_competition_id: comp.unitId,
       start_id: comp.startId,
       last_id: comp.lastId,
+      radio_controls: radioControls,
     },
     poll:
       poll === null

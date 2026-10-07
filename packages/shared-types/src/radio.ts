@@ -12,9 +12,15 @@ export interface RadioControlStatus {
    * passed after the last radio punch. few: under the coverage threshold
    * over the last M minutes. ok otherwise. */
   state: RadioControlState;
-  /** Epoch ms of the latest radio punch heard (its time of day, placed on
-   * the competition clock). */
-  last_heard_ms: number;
+  /** Epoch ms when we last RECEIVED a radio punch for this control (not the
+   * punch's time of day: a backlog carries old times). null = none yet. */
+  last_heard_ms: number | null;
+  /** Median of receive time minus punch time over the last M minutes, ms;
+   * null when nothing was received in the window. Large = backlog or a
+   * sender with a wrong clock. */
+  median_delay_ms: number | null;
+  /** The control is on the competition's list of expected radio controls. */
+  listed: boolean;
   /** Radio punches received at this control, whole competition. */
   received: number;
   /** Read-out card punches at this control in the last M minutes, and how
@@ -23,6 +29,14 @@ export interface RadioControlStatus {
   window_matched: number;
   /** window_matched / window_card_punches; null when there are none. */
   coverage: number | null;
+  /** The window coverage split by card type: SIAC (touch-free) and others. */
+  siac_card_punches: number;
+  siac_matched: number;
+  other_card_punches: number;
+  other_matched: number;
+  /** SIAC coverage far below the others' (SIAC < 50 % while others >= 80 %,
+   * at least 5 of each): touch-free punches are not forwarded. */
+  siac_problem: boolean;
   /** Radio punches whose date is not the competition date. */
   date_mismatch_count: number;
 }
@@ -34,6 +48,8 @@ export interface RadioSettings {
   /** First ROC row id of the competition; null until known. */
   start_id: number | null;
   last_id: number | null;
+  /** Expected radio control codes; a listed one with no radio punch is silent. */
+  radio_controls: number[];
 }
 
 export interface RadioPollStatus {
