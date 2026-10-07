@@ -139,6 +139,10 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       timingFormat: 'seconds',
       maxTimeSec: null,
       clockOffsetMin: null,
+      rocCompetitionId: null,
+      rocEnabled: false,
+      rocStartId: null,
+      rocLastId: null,
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
     return reply.code(201).send(competitionRowToDTO(row));
