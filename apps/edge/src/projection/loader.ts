@@ -17,7 +17,7 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-08-PLAN.md task 1
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09 D-11 D-12
 
-import { and, eq, asc, inArray } from 'drizzle-orm';
+import { and, eq, ne, asc, inArray } from 'drizzle-orm';
 
 import {
   events,
@@ -84,7 +84,9 @@ export function loadCompetitionInputs(handle: DbHandle, competitionId: string): 
   const eventsRows = handle.db
     .select()
     .from(events)
-    .where(eq(events.competitionId, competitionId))
+    // Radio punches (ROC) never change results; leaving them out keeps the
+    // reduce input small on a day with thousands of them.
+    .where(and(eq(events.competitionId, competitionId), ne(events.eventType, 'radio_punch')))
     .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
     .all();
 

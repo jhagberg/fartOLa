@@ -101,6 +101,15 @@ export type {
   SkogisStats,
 } from './skogis.ts';
 
+// --- Radio controls (ROC input + watchdog) ---------------------------------
+export type {
+  RadioControlState,
+  RadioControlStatus,
+  RadioSettings,
+  RadioPollStatus,
+  RadioStatus,
+} from './radio.ts';
+
 // --- Result statuses as SOFT names them (TA till TR 7.8.2) -----------------
 export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
 export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
