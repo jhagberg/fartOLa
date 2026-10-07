@@ -6,15 +6,20 @@
 // Phase 2.1 D-03.
 
 import crypto from 'node:crypto';
-import type { DrawRunner, DrawResult } from './types.ts';
+import type { DrawRunner, DrawResult, RngFn, VacantPosition } from './types.ts';
+import { placeVacancies } from './vacancies.ts';
 
 export interface DrawRandomOptions {
+  /** Number of vacant (null) slots to insert (SOFT TR 7.3.2). Defaults to 0. */
+  vacantSlots?: number;
+  /** Where the vacant slots go (default 'Mixed', see vacancies.ts). */
+  vacantPosition?: VacantPosition;
   /**
    * Optional RNG injection for reproducible tests.
    * Signature: (min: number, max: number) => number (returns integer in [min, max)).
    * Defaults to crypto.randomInt (CSPRNG).
    */
-  rngFn?: (min: number, max: number) => number;
+  rngFn?: RngFn;
 }
 
 /**
@@ -46,5 +51,8 @@ export function drawRandom(runners: DrawRunner[], opts: DrawRandomOptions = {}):
     if (order[i]!.club !== null && order[i]!.club === order[i + 1]!.club) adjacencyCount++;
   }
 
-  return { order, adjacencyCount };
+  return {
+    order: placeVacancies(order, opts.vacantSlots ?? 0, opts.vacantPosition ?? 'Mixed', rng),
+    adjacencyCount,
+  };
 }

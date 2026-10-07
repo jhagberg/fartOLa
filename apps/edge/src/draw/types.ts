@@ -24,3 +24,11 @@ export interface DrawResult {
   order: DrawSlot[];
   adjacencyCount: number;
 }
+
+/** Random integer in [min, max). Every draw defaults to crypto.randomInt
+ * (SOFT TR 7.5.2); tests inject a seeded generator. */
+export type RngFn = (min: number, max: number) => number;
+
+/** Where vacant places go in a drawn class: MeOS's three positions
+ * (oEvent::VacantPosition, MeOS code/oEvent.h:540-544). */
+export type VacantPosition = 'Mixed' | 'First' | 'Last';

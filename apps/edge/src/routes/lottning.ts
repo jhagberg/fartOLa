@@ -54,6 +54,8 @@ const LottningInput = z
     firstStartMs: StartTimeMs.unwrap(),
     intervalSec: z.number().int().min(0),
     vacantSlots: z.number().int().nonnegative().optional(),
+    /** Where vacancies go (MeOS VacantPosition). Default 'Mixed'. */
+    vacantPosition: z.enum(['Mixed', 'First', 'Last']).optional(),
   })
   .refine(
     (data) => {
@@ -83,7 +85,13 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       if (!parsed.success) {
         return reply.code(400).send(issuesToErrors(parsed.error.issues));
       }
-      const { mode, firstStartMs, intervalSec, vacantSlots = 0 } = parsed.data;
+      const {
+        mode,
+        firstStartMs,
+        intervalSec,
+        vacantSlots = 0,
+        vacantPosition = 'Mixed',
+      } = parsed.data;
 
       // Cross-competition pre-flight: verify class belongs to this competition.
       const classRow = app.fartolaDb.db
@@ -110,9 +118,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       // Run the draw algorithm.
       let drawResult;
       if (mode === 'SOFT') {
-        drawResult = drawSOFT(runnerList, { vacantSlots });
+        drawResult = drawSOFT(runnerList, { vacantSlots, vacantPosition });
       } else if (mode === 'Random') {
-        drawResult = drawRandom(runnerList);
+        drawResult = drawRandom(runnerList, { vacantSlots, vacantPosition });
       } else {
         // Simultaneous
         drawResult = drawSimultaneous(runnerList);
