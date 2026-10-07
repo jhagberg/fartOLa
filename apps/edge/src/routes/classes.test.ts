@@ -295,7 +295,7 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.equal(bad.statusCode, 400);
   });
 
-  test('a class without a kind (before migration 0021) gets the name suggestion on startup; an operator choice stays', () => {
+  test('a class without a kind (before migration 0020) gets the name suggestion on startup; an operator choice stays', () => {
     const id = crypto.randomUUID();
     ctx.handle.sqlite
       .prepare(`INSERT INTO classes (id, competition_id, name) VALUES (?, ?, 'H21 Elit')`)
