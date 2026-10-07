@@ -438,7 +438,8 @@ export const siStationCode = (
     ({ ptd, cn, beacon }) => {
       // Bit 6 is code bit 8 whichever byte holds the low byte (MeOS applies
       // it after choosing, SportIdent.cpp:1932).
-      const low = (ptd & 0x80) !== 0 ? beacon : cn;
+      // An unwritten block-1 byte reads 0xEE (erased card memory): no code.
+      const low = (ptd & 0x80) !== 0 ? (beacon === 0xee ? undefined : beacon) : cn;
       return low === undefined ? undefined : low + 256 * ((ptd >> 6) & 1);
     }
   );

@@ -121,7 +121,10 @@ export class SiCard9 extends ModernSiCard {
     return this.typeSpecificGetPage(0)
       .then((page0) => {
         this.storage.splice(bytesPerPage * 0, bytesPerPage, ...page0);
-        if ((this.storage.get('punchCount')?.value ?? 0) <= punchesPerPage * 0) {
+        if (
+          (this.storage.get('punchCount')?.value ?? 0) <= punchesPerPage * 0 &&
+          !this.needsBlock1()
+        ) {
           throw new ReadFinishedException();
         }
         return this.typeSpecificGetPage(1);
