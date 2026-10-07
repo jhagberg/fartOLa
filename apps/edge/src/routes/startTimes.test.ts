@@ -255,6 +255,59 @@ describe('start times as events', () => {
     assert.deepEqual(column(), shifted);
   });
 
+  test('start times fold in write order: a laptop clock set back does not revert a later edit', async (t) => {
+    assert.equal(
+      (
+        await post(`/lottning/${ctx.classId}`, {
+          mode: 'SOFT',
+          firstStartMs: at(10),
+          intervalSec: 60,
+        })
+      ).statusCode,
+      201
+    );
+    const now = Date.now();
+    t.mock.method(Date, 'now', () => now - 120_000);
+    const edit = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${ctx.ids[0]}/start-time`,
+      payload: { start_time_ms: at(12) },
+    });
+    assert.equal(edit.statusCode, 200, edit.body);
+    assert.equal(column().get(ctx.ids[0]!), at(12));
+    assertProjectionMatchesColumn();
+    const edited = column();
+    rebuildStartTimeCache(ctx.handle);
+    assert.deepEqual(column(), edited, 'a restart keeps the edit');
+  });
+
+  test('a clock shift cannot be undone (409): it is not a start-time decision', async () => {
+    assert.equal(
+      (
+        await post(`/lottning/${ctx.classId}`, {
+          mode: 'SOFT',
+          firstStartMs: at(10),
+          intervalSec: 60,
+        })
+      ).statusCode,
+      201
+    );
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}`,
+      payload: { clock_offset_min: 60 },
+    });
+    const shift = (await history()).items.find((i) => i.cause === 'clock_shift')!;
+    const before = column();
+    const res = await post('/start-times/undo', {
+      node_id: shift.node_id,
+      local_seq: shift.local_seq,
+    });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.equal((res.json() as { error: string }).error, 'clock_shift_not_undoable');
+    assert.deepEqual(column(), before);
+  });
+
   test('a write that changes nothing writes no event', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',

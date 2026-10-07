@@ -66,6 +66,10 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
       const all = startEvents(competitionId);
       const target = all.find((e) => e.nodeId === node_id && e.localSeq === local_seq);
       if (!target) return reply.code(404).send({ error: 'start_times_event_not_found' });
+      // The offset change that caused it stays; undoing the starts alone would
+      // leave every start off by the shift.
+      if (target.payload.cause === 'clock_shift')
+        return reply.code(409).send({ error: 'clock_shift_not_undoable' });
       if (
         all.some(
           (e) => e.payload.undoes?.node_id === node_id && e.payload.undoes.local_seq === local_seq

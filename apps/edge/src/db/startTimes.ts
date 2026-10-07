@@ -135,7 +135,7 @@ export function rebuildStartTimeCache(handle: DbHandle): number {
     .select({ competitionId: events.competitionId, payload: events.payload })
     .from(events)
     .where(eq(events.eventType, 'start_times_set'))
-    .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
+    .orderBy(asc(events.localSeq), asc(events.nodeId))
     .all();
   if (rows.length === 0) return 0;
   const start = new Map<string, number | null>();
