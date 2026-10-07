@@ -23,11 +23,13 @@ separate publish step. Their licenses still apply to the bundled code:
   lists `per-magnusson/sportident-python` (GPL — reference only, no code
   copied) and `sdenier/GecoSI` (GPL — reference only).
 
-### @fartola/shared-types — AGPL-3.0-or-later
+### @fartola/shared-types — MIT
 
 - **Repository:** <https://github.com/jhagberg/fartOLa> (this monorepo,
   `packages/shared-types/`)
-- **License:** AGPL-3.0-or-later (same as the application).
+- **License:** MIT (see `packages/shared-types/LICENSE`). Authored for
+  fartOLa; it contains no code ported from MeOS or other copyleft sources
+  (ADR-0001: ported MeOS code stays in the AGPL apps).
 
 ## IOF Data Standard v3.0 — XSD bundled in `dist/xml/IOF.xsd`
 
