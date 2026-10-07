@@ -113,6 +113,29 @@ For native ROC input in fartOLa:
   card number range (`cardTypeFromNumber`).
 - A club-owned radio set would let all of this be tested without
   race-day pressure.
+## Status 2026-10-07 (branch feat/roc-input)
+
+Done, for ROC input (roc.olresultat.se):
+
+- [x] Native ROC input: `apps/edge/src/integrations/roc/` polls
+  `unitId` + `lastId` only (never `date`/`time`), 5 s with backoff,
+  `lastId` stored on the competition so a restart resumes, history skipped
+  by id (first row with the competition date, or a set start id).
+- [x] Time of day only, placed like card times; a row with another date is
+  stored with `date_mismatch` and counted per control, never dropped.
+- [x] Dedup on (card, code, time of day) (event `radio_punch`, unique index).
+- [x] Watchdog (pure, `watchdog.ts`): per control last heard, received,
+  coverage over the last 20 min (same card, ±2 s), silence (10 min),
+  date-mismatch count. `GET /api/competitions/:id/radio/status`.
+- [x] Settings (`PATCH .../radio/settings`) and a small status panel in the
+  readout view; text plus symbol per control.
+- [ ] Not done: sound/alert and phone push, speaker view (later task).
+- [ ] Not done: per-sender delay ("Leveranstid från ROC"), ROC rows carry no
+  sender name; per-sender warnings need another source.
+- [ ] Not done: jSh/SRR radio input (gateway model, protocol, heartbeat).
+- [ ] Not done: tune thresholds on real data; a radio control that never got
+  a single punch through is not listed (the watchdog only knows controls it
+  has heard).
 
 ## Open questions
 
