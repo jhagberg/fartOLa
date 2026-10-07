@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "svelte-kit sync && tsc --noEmit",
+    "typecheck": "svelte-kit sync && tsc --noEmit && svelte-check",
     "lint": "eslint src"
   },
   "dependencies": {
