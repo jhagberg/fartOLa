@@ -9,8 +9,10 @@
 //
 // MOP time semantics (RESEARCH Pitfall 5):
 //   - All times are in tenths of a second (1/10 s), NOT milliseconds.
-//   - start (base @st): tenths since midnight on the competition clock
-//     (epoch + the competition's fixed offset, ADR-0012).
+//   - start (base @st): tenths since midnight of the competition date on
+//     the competition clock (epoch + its fixed offset, ADR-0017), not
+//     wrapped at 24 h: a start at 00:05 the next day is 867000 (mop.xsd
+//     `st`: relative to midnight of the day the competition started).
 //   - rt (running time, base @rt): elapsed in tenths. Math.round(elapsed_ms / 100).
 //
 // MOP status codes: MeOS, the reference MOP sender, writes its RunnerStatus
@@ -26,7 +28,7 @@
 
 import { XMLBuilder } from 'fast-xml-parser';
 import type { CompetitionState, PunchStatus } from '../../projection/types.ts';
-import { epochToClockSeconds } from '../../time/competitionClock.ts';
+import { clockToEpochMs } from '../../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -142,6 +144,7 @@ export function buildMopXml(input: MopBuildInput): string {
     }));
 
   // ---- <cmp> ---------------------------------------------------------------
+  const midnightMs = clockToEpochMs(competition.date, 0, competition.clockOffsetMin);
   const cmpEls = Array.from(state.competitors.values()).map((cv) => {
     const stat = mopStat(cv.status, cv.no_timing);
     const orgId = cv.club ? (clubIdByName.get(cv.club) ?? null) : null;
@@ -154,12 +157,10 @@ export function buildMopXml(input: MopBuildInput): string {
     if (orgId !== null) {
       baseAttrs['@_org'] = orgId;
     }
-    // Start time in tenths of a second since midnight on the competition
-    // clock (MOP `st`); start_time_ms is epoch ms.
+    // Start time in tenths of a second since the competition date's
+    // midnight on the competition clock (MOP `st`); start_time_ms is epoch ms.
     if (cv.start_time_ms !== null) {
-      baseAttrs['@_st'] = Math.round(
-        epochToClockSeconds(cv.start_time_ms, competition.clockOffsetMin) * 10
-      );
+      baseAttrs['@_st'] = Math.round((cv.start_time_ms - midnightMs) / 100);
     }
     // Running time in tenths. 02.1-14 Task 9: none for an untimed class
     // (MeOS infoserver.cpp sends rt=0 for StatusNoTiming).
