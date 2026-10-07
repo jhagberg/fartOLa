@@ -286,7 +286,7 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
       seconds_in_half_day: 591,
       half_day: 1,
       weekday: null,
-      code: 117, // station code (CN) of the finish unit, new field
+      code: 629, // station code of the finish unit: CN 117 + PTD bits 6-7 (= 2) * 256
     });
     const halves = payload.punches.map((p) => p.half_day);
     assert.equal(halves[0], 0, 'first punch 11:29 is AM');

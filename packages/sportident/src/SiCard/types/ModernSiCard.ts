@@ -18,7 +18,7 @@
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN byte next to each PTD) read into startCode/finishCode/checkCode.
+//   - Start/finish/check station codes (CN byte next to each PTD, plus PTD bits 6-7 as code bits 8-9, so codes above 255) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
@@ -130,9 +130,9 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
-  startCode: new SiInt([[0x0d]]),
-  finishCode: new SiInt([[0x11]]),
-  checkCode: new SiInt([[0x09]]),
+  startCode: siPunchCode(0x0c),
+  finishCode: siPunchCode(0x10),
+  checkCode: siPunchCode(0x08),
   punchCount: new SiInt([[0x16]]),
   punches: new SiModified(
     new SiArray(

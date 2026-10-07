@@ -57,6 +57,25 @@ describe('station codes of start, finish and check', () => {
     );
   });
 
+  test('codes above 255 use the PTD bits: 259, 266 and 278 on SI10 and 259 on SI6', () => {
+    // PTD 0x41 (bit 0 PM, bits 6-7 = 1 -> +256), CN 3 / 10 / 22.
+    const bytes = si10.storageData.map((b) => b ?? 0xee);
+    bytes.splice(0x0c, 4, 0x41, 3, 0x0e, 0x10);
+    bytes.splice(0x10, 4, 0x41, 10, 0x0e, 0x10);
+    bytes.splice(0x08, 4, 0x41, 22, 0x0e, 0x10);
+    const card: Decodable = new SiCard10(0);
+    card._decodeFromStorage(bytes);
+    assert.deepEqual(
+      [card.raceResult.startCode, card.raceResult.finishCode, card.raceResult.checkCode],
+      [259, 266, 278]
+    );
+    const six = new Array<number>(0x400).fill(0xee);
+    six.splice(0x18, 4, 0x41, 3, 0x0e, 0x10);
+    const card6: Decodable = new SiCard6(0);
+    card6._decodeFromStorage(six);
+    assert.equal(card6.raceResult.startCode, 259);
+  });
+
   test('a missing time carries no code', () => {
     const bytes = si10.storageData.map((b) => b ?? 0xee);
     bytes.splice(0x0c, 4, 0x00, 0x03, 0xee, 0xee); // start empty, CN left behind
