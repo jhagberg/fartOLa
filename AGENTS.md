@@ -58,23 +58,22 @@ pnpm e2e        # when you touch the web app or routes
   out of the repo, also as test fixtures. Tests use synthetic data.
 - **Never commit secrets.** API keys go in environment variables or the
   settings screen.
-- **SOFT rulebook over MeOS.** Where they differ, fartOLa follows SOFT
-  (ADR-0011). A rule claimed as met (`UPPFYLLD`) in
-  `.planning/compliance/soft-regelverk-2026.md` must name a test that
-  exists.
-- **Licences.** The apps are AGPL-3.0-or-later; `packages/sportident` and
-  `packages/shared-types` are MIT and must stay free of copyleft code.
-  - Code ported from `sportident.js` keeps its "Ported from" header.
-  - Code ported from MeOS (allowed, ADR-0001) goes only into `apps/edge`
-    or `apps/web`, with the MeOS header and a line in
-    `apps/edge/NOTICE.md`.
-  - New files start with `// Authored for fartola. Not ported from upstream.`
-- **UI (ADR-0016).** Show what will happen before, and what did after;
-  undo rather than "are you sure"; switching view never loses anything;
-  plain Swedish; status never by colour alone. Don't copy MeOS screens.
-- **Times.** Read ADR-0012 before touching start times or card clocks.
-- **Database.** Drizzle migrations are hand-written; the `when` values in
-  `apps/edge/drizzle/meta/_journal.json` must be strictly increasing.
+- **Read the decision before you touch the area.** The ADRs in
+  `docs/decisions/` are the rules; the ones that catch people most often:
+
+| Before you touch …                                | Read                                                                                                                             |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| results, statuses, draw, anything a rule decides  | [ADR-0011](docs/decisions/0011-follow-soft-rulebook-over-meos-with-gated-rule-matrix.md) SOFT over MeOS, rule matrix             |
+| start times, card clocks, time zones              | [ADR-0012](docs/decisions/0012-competition-time-on-local-wall-clock.md)                                                          |
+| code taken from MeOS or `sportident.js`, licences | [ADR-0001](docs/decisions/0001-reimplement-do-not-fork-meos.md), [ADR-0005](docs/decisions/0005-sportident-code-isolated-mit.md) |
+| any screen                                        | [ADR-0016](docs/decisions/0016-simple-clear-ui-not-meos-parity.md)                                                               |
+| the event log, projection, database               | [ADR-0003](docs/decisions/0003-event-sourcing-as-core-data-model.md)                                                             |
+| writes, access, event codes                       | [ADR-0010](docs/decisions/0010-event-admin-codes-trust-model.md)                                                                 |
+
+- **Two checks the ADRs rely on:** new files start with
+  `// Authored for fartola. Not ported from upstream.` (or the header of
+  the code they were ported from), and Drizzle migrations are hand-written
+  with strictly increasing `when` in `apps/edge/drizzle/meta/_journal.json`.
 
 ## Where things are decided
 
