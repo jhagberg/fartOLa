@@ -27,22 +27,37 @@
 // courses" path.)
 //
 // Duplicate card_number: if a competitor with the same card_number already
-// exists in the competition, the new row is skipped (silent no-op). The
+// exists in the competition, the new row is skipped. The
 // D-11 partial unique index would otherwise abort the whole transaction
 // with a constraint error; the pre-flight SELECT keeps the failure mode
 // graceful for the bulk-import path.
+//
+// 02.1-14 Task 6: no silent drops — every skipped row is returned in
+// `skipped` with its 1-based PersonEntry position and the reason.
 //
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-05-PLAN.md task 2
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-M4
 //   (EntryList consent semantics — pending_first_read + null)
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
 import type { DbHandle } from '../db/index.ts';
 import { classes, clubs, competitors } from '../db/schema.ts';
 import type { ParsedEntryList } from '../xml/parse.ts';
+
+/** One import row that was not applied (02.1-14 Task 6). `row` is the 1-based
+ * position of the PersonEntry / PersonStart in the file. `no_start_time` is
+ * StartList-only: the row had no StartTime to apply. */
+export interface SkippedImportRow {
+  row: number;
+  name: string;
+  class: string;
+  card: number | null;
+  /** duplicate_runner: StartList only — two imported rows matched one runner. */
+  reason: 'unknown_class' | 'duplicate_card' | 'duplicate_runner' | 'no_match' | 'no_start_time';
+}
 
 export interface EntryImportResult {
   competitors_created: number;
@@ -56,6 +71,10 @@ export interface EntryImportResult {
    * Importera sees "X redan importerade" instead of a bare "0 löpare
    * importerade" that looks like Eventor returned nothing. */
   competitors_skipped_duplicate: number;
+  /** Entries skipped because their class does not exist in the competition. */
+  competitors_skipped_unknown_class: number;
+  /** Every skipped entry, in file order. */
+  skipped: SkippedImportRow[];
 }
 
 export interface EntryImportOpts {
@@ -83,6 +102,7 @@ function doIngest(
   const missing = new Set<string>();
   let competitorsCreated = 0;
   let competitorsSkippedDuplicate = 0;
+  const skipped: SkippedImportRow[] = [];
   // Bulk-upsert distinct club names ONCE after the competitor loop instead
   // of per-row inside it (PR #3 review — Gemini medium). For an EntryList
   // with N competitors sharing K distinct clubs, this drops to K writes
@@ -96,14 +116,28 @@ function doIngest(
   // — small data-retention drift between the accepted competitor set and
   // the autocomplete table.
   const distinctClubs = new Set<string>();
+  // 02.1-14 Task 9: classes the EntryList marks resultListMode=
+  // "UnorderedNoTimes". Only turned on, never off (as MeOS readClass).
+  const noTimingClassIds = new Set<string>();
 
-  for (const e of data.competitors) {
+  for (const [i, e] of data.competitors.entries()) {
+    const skip = (reason: SkippedImportRow['reason']): void => {
+      skipped.push({
+        row: e.row ?? i + 1,
+        name: e.name,
+        class: e.class_name,
+        card: e.card_number,
+        reason,
+      });
+    };
     const classId = classIdByName.get(e.class_name);
     if (!classId) {
-      missing.add(e.class_name);
+      if (e.class_name.length > 0) missing.add(e.class_name);
+      skip('unknown_class');
       continue;
     }
-    // D-11 pre-flight duplicate-card check (silent skip on duplicate).
+    if (e.class_no_timing === true) noTimingClassIds.add(classId);
+    // D-11 pre-flight duplicate-card check (reported skip on duplicate).
     if (e.card_number !== null) {
       const dup = handle.db
         .select({ id: competitors.id })
@@ -114,6 +148,7 @@ function doIngest(
         .get();
       if (dup) {
         competitorsSkippedDuplicate++;
+        skip('duplicate_card');
         continue;
       }
     }
@@ -128,6 +163,7 @@ function doIngest(
         club: e.club,
         classId,
         cardNumber: e.card_number,
+        eventorPersonId: e.eventor_person_id ?? null,
         consentAtMs: null,
         consentStatus: 'pending_first_read',
         scrubbedAtMs: null,
@@ -135,6 +171,9 @@ function doIngest(
       .run();
     competitorsCreated++;
     if (e.club !== null && e.club.length > 0) distinctClubs.add(e.club);
+  }
+  for (const id of noTimingClassIds) {
+    handle.db.update(classes).set({ noTiming: true }).where(eq(classes.id, id)).run();
   }
   for (const clubName of distinctClubs) {
     handle.db
@@ -162,6 +201,8 @@ function doIngest(
     competitors_created: competitorsCreated,
     classes_missing: [...missing],
     competitors_skipped_duplicate: competitorsSkippedDuplicate,
+    competitors_skipped_unknown_class: skipped.length - competitorsSkippedDuplicate,
+    skipped,
   };
 }
 
@@ -177,6 +218,8 @@ export function ingestEntryList(
     competitors_created: 0,
     classes_missing: [],
     competitors_skipped_duplicate: 0,
+    competitors_skipped_unknown_class: 0,
+    skipped: [],
   };
   handle.sqlite.transaction(() => {
     result = doIngest(handle, competitionId, data, nowMs);

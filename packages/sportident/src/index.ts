@@ -51,8 +51,11 @@ export { proto } from './constants.ts';
 // --- Card decoders (side-effect imports populate the registries) ------------
 export { BaseSiCard } from './SiCard/BaseSiCard.ts';
 export { SiCard5 } from './SiCard/types/SiCard5.ts';
+export { SiCard6 } from './SiCard/types/SiCard6.ts';
+export { SiCard8 } from './SiCard/types/SiCard8.ts';
 export { SiCard9 } from './SiCard/types/SiCard9.ts';
 export { SiCard10 } from './SiCard/types/SiCard10.ts';
+export { SiCard11 } from './SiCard/types/SiCard11.ts';
 export { SIAC } from './SiCard/types/SIAC.ts';
 export { ModernSiCard } from './SiCard/types/ModernSiCard.ts';
 export type { IRaceResultData, IPunch } from './SiCard/IRaceResultData.ts';
@@ -74,3 +77,16 @@ export type {
 } from './output/ndjson.ts';
 export { emitDiagnostic } from './output/diagnostics.ts';
 export { inferCardType } from './SiCard/cardTypeFromNumber.ts';
+
+// --- Backup readout (Phase 2.1 Plan 06 — kvar-i-skogen) --------------------
+export {
+  readBackupMemory,
+  readCoupledBackupMemory,
+  CoupledStationAsleepError,
+  parseBackupBlock,
+  parseBackupPointerFrame,
+  parseBackupDataFrame,
+  BLOCK_SIZE,
+  MAX_ITERATIONS,
+} from './SiStation/readBackup.ts';
+export type { BackupRecord, CoupledReadOptions } from './SiStation/readBackup.ts';

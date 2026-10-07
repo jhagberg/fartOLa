@@ -10,7 +10,7 @@
   - .planning/phases/02-4-klubbs-mvp/02-07-PLAN.md task 3
 -->
 <script lang="ts">
-  import SettingsView from '$lib/screens/SettingsView.svelte';
+  import SettingsView from '#lib/screens/SettingsView.svelte';
 </script>
 
 <SettingsView />

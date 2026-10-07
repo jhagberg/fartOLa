@@ -18,14 +18,14 @@
   - 01-UI-SPEC.md §"Receipt templates" — Kids is monochrome procedural
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     skogisFromInput,
     skogisGeometry,
     skogisDisplayName,
     SKOGIS_INK,
     SKOGIS_PAPER,
-  } from '$lib/skogis/skogis.ts';
+  } from '#lib/skogis/skogis.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read }: ReceiptTemplateProps = $props();
@@ -499,7 +499,7 @@
   <div class="kids-subtitle">{subtitle}</div>
   <div class="kids-time">{read.elapsed}</div>
   <div class="kids-meta">
-    {read.status} · {ctrlCount}
+    {read.statusLabel} · {ctrlCount}
     {t('rcpt.kids.controls')}{read.place ? ` · ${t('rcpt.place').toLowerCase()} ${read.place}` : ''}
   </div>
 </div>

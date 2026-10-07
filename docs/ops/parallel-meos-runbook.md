@@ -242,14 +242,25 @@ Either way, the bridge log should now show
 
 ### 6. Configure MeOS to talk to fartOLa
 
+First, on the fartOLa laptop: **Inställningar → MeOS-koppling** → type
+a password → **Spara**. (Decision revised 2026-10-05: D-MIP-1 / D-MOP-4
+used to be "no password, closed club LAN", but anyone on the LAN could
+then read all entries via `/mip` and add runners via `/mop`.) Without a
+password, `/mip` and `/mop` answer only the fartOLa laptop itself; the
+MeOS laptop gets `HTTP Error 403`. A wrong or missing password gives
+`HTTP Error 401`. If you really want MeOS without a password, tick
+**Tillåt MeOS utan lösenord** — then everyone on the network can read
+all entries and add runners (fartOLa logs a warning at startup).
+`MEOS_PASSWORD` in `~/.env.fartola` overrides the UI value.
+
 On the MeOS laptop, open MeOS:
 
 1. **Tools → Online → Configure MIP / MOP** (exact menu path varies
    slightly by MeOS version).
 2. Set the **MIP URL**: `http://<fartola-ip>:3000/mip`
-   - No password — D-MIP-1 (closed club LAN).
+   - Password: the one set in fartOLa.
 3. Set the **MOP URL**: `http://<fartola-ip>:3000/mop`
-   - No password — D-MOP-4.
+   - Password: the same.
 4. Set the **poll interval** to 5-10 seconds. Lower = snappier, higher =
    less LAN chatter.
 5. Click **Save / OK**. Some MeOS versions don't persist this config
@@ -596,8 +607,8 @@ configuration target is the same:
 
 Fields to fill: MIP URL + MOP URL (both `http://<fartola-ip>:3000/...`)
 
-- poll interval (5-10s). Password fields stay blank for 4-klubbs
-  (D-MIP-1, D-MOP-4 — closed club LAN).
+- poll interval (5-10s). Password fields: the MeOS-koppling password set
+  in fartOLa (D-MIP-1 / D-MOP-4 revised 2026-10-05 — no longer blank).
 
 ---
 

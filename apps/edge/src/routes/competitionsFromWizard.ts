@@ -63,6 +63,10 @@ const FromWizardSchema = z.object({
     name: z.string().min(1).max(255),
     content_base64: z.string().min(1),
   }),
+  /** Plan 11 — optional Eventor event ID set by the wizard quickstart path.
+   * When present, stored on the competition row so ImportRunnersView can
+   * show the linked-event card and the competition list can show the chip. */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 
 const MAX_DECODED_BYTES = 5 * 1024 * 1024;
@@ -81,7 +85,7 @@ export default async function registerCompetitionsFromWizard(app: FastifyInstanc
     if (!parsed.success) {
       return reply.code(400).send(issuesToErrors(parsed.error.issues));
     }
-    const { name, date, xml_file } = parsed.data;
+    const { name, date, xml_file, eventor_event_id } = parsed.data;
 
     if (xml_file.name.includes('..') || isAbsolute(xml_file.name)) {
       return reply.code(400).send({ error: 'bad_filename' });
@@ -142,6 +146,8 @@ export default async function registerCompetitionsFromWizard(app: FastifyInstanc
             receiptTemplate: 'classic',
             autoPrint: false,
             createdAtMs: now,
+            // Plan 11 — persist Eventor linkage from the wizard quickstart path.
+            eventorEventId: eventor_event_id ?? null,
           })
           .run();
         if (parsedXml.kind === 'CourseData') {

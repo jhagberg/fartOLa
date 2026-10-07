@@ -212,6 +212,201 @@ describe('POST /api/competitions/:id/competitors/:competitorId/manual-dnf', () =
   });
 });
 
+describe('POST /api/competitions/:id/competitors/:competitorId/status (idempotency)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('Phase-2.1: POST /status with same status → 200 idempotent (no duplicate event)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // First assertion: 201
+    const res1 = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'DNS', reason: 'no-show' },
+    });
+    assert.equal(res1.statusCode, 201);
+
+    // Second identical assertion: 200 (idempotent)
+    const res2 = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'DNS', reason: 'no-show' },
+    });
+    assert.equal(res2.statusCode, 200);
+    const body2 = res2.json() as { idempotent: boolean };
+    assert.equal(body2.idempotent, true);
+
+    // Only ONE manual_status_set event should exist.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    assert.equal(evtRows.filter((e) => e.eventType === 'manual_status_set').length, 1);
+  });
+
+  test('Phase-2.1: POST /clear-status when already null → 200 idempotent', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // No manual status set → manual_status is null → should be idempotent
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/clear-status`,
+      payload: {},
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { idempotent: boolean };
+    assert.equal(body.idempotent, true);
+
+    // No clear_manual_status event should exist.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    assert.equal(evtRows.filter((e) => e.eventType === 'clear_manual_status').length, 0);
+  });
+
+  test('Phase-2.1: POST /clear-status rejects unexpected body fields (strict)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/clear-status`,
+      payload: { unexpected_field: 'oops' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+});
+
+// 02.1-14 Task 10: the secretariat can set "Felstämplad" (MP) by hand, e.g.
+// for a runner who went home without reading out (MeOS allows it).
+describe('POST /api/competitions/:id/competitors/:competitorId/status MP (02.1-14 Task 10)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('MP is accepted → 201 and the projection shows MP', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/status`,
+      payload: { status: 'MP', reason: 'Gick hem utan att läsa ut' },
+    });
+    assert.equal(res.statusCode, 201);
+    const view = ctx.app.projectionStore.recomputeNow(competitionId)?.competitors.get(competitorId);
+    assert.equal(view?.status, 'MP');
+    assert.equal(view?.manual_status, 'MP');
+  });
+});
+
+describe('POST /api/competitions/:id/competitors/:competitorId/void-leg', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('Phase-2.1: void-leg → 201 with leg_voided event; projection.voided_legs contains code', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42 },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { local_seq: number };
+    assert.ok(body.local_seq > 0);
+
+    // Event row inserted.
+    const evtRows = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all();
+    const voidRow = evtRows.find((e) => e.eventType === 'leg_voided');
+    assert.ok(voidRow);
+    const payload = voidRow.payload as { control_code: number; max_seconds?: unknown };
+    assert.equal(payload.control_code, 42);
+    assert.equal('max_seconds' in payload, false);
+
+    // Projection reflects voided leg.
+    const projection = ctx.app.projectionStore.recomputeNow(competitionId);
+    const view = projection?.competitors.get(competitorId);
+    assert.ok(view);
+    assert.deepEqual(view.voided_legs, [42]);
+  });
+
+  test('Phase-2.1: void-leg with invalid body → 400', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 'not-a-number' },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  // SOFT TR 4.20.10 (2026-07-01): results may not be built from split
+  // times, so a voided leg never shortens the running time and the route
+  // no longer takes a time cap. A caller still sending one gets 400
+  // instead of a silently ignored field.
+  test('void-leg with a max_seconds time cap → 400 (TR 4.20.10)', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42, max_seconds: 60 },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  test('Phase-2.1: void-leg for unknown competitor → 404', async () => {
+    const { competitionId } = await seedCompetitionAndCompetitor(ctx.app);
+    const bogus = '00000000-0000-0000-0000-000000000000';
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${bogus}/void-leg`,
+      payload: { control_code: 31 },
+    });
+    assert.equal(res.statusCode, 404);
+  });
+
+  test('Phase-2.1: unvoid-leg → 201 with leg_unvoided event; voided_legs cleared', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // First void.
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/void-leg`,
+      payload: { control_code: 42 },
+    });
+    // Then unvoid.
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/unvoid-leg`,
+      payload: { control_code: 42 },
+    });
+    assert.equal(res.statusCode, 201);
+
+    const projection = ctx.app.projectionStore.recomputeNow(competitionId);
+    const view = projection?.competitors.get(competitorId);
+    assert.ok(view);
+    assert.deepEqual(view.voided_legs, []);
+  });
+});
+
 describe('POST /api/competitions/:id/competitors/:competitorId/un-dnf', () => {
   let ctx: Ctx;
 
@@ -289,5 +484,145 @@ describe('POST /api/competitions/:id/competitors/:competitorId/un-dnf', () => {
       payload: {},
     });
     assert.equal(res.statusCode, 404);
+  });
+});
+
+// SOFT TA till TR 7.8.2: unread is not "not started". The operator sets the
+// runners with no read-out and no status to DNS ("Ej start") — MeOS "Sätt
+// okända löpare utan registrering till <Ej Start>" (TabRunner.cpp:974-986)
+// — and can undo exactly those.
+describe('POST /api/competitions/:id/unread-dns (+ /undo)', () => {
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('SOFT TA till TR 7.8.2: "Sätt ej utlästa till Ej start" sets DNS only for unread runners without a status; undo clears exactly those; the final export follows', async () => {
+    const { competitionId, classId } = await seedCompetitionAndCompetitor(ctx.app);
+    const add = async (name: string, card: number | null): Promise<string> => {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/competitors',
+        payload: {
+          competition_id: competitionId,
+          name,
+          club: null,
+          class_id: classId,
+          card_number: card,
+          consent: true,
+        },
+      });
+      assert.equal(res.statusCode, 201);
+      return (res.json() as { id: string }).id;
+    };
+    const read = await add('Lisa Lastrup', 101);
+    const unread = await add('Olle Olast', 102);
+    const dnf = await add('Bror Brot', null);
+    const ownDns = await add('Ebba Egen', null);
+    const setStatus = (id: string, status: string, reason: string) =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${competitionId}/competitors/${id}/status`,
+        payload: { status, reason },
+      });
+    assert.equal(
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: `/api/competitions/${competitionId}/start-race`,
+        })
+      ).statusCode,
+      201
+    );
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'test-node',
+        localSeq: 9001,
+        competitionId,
+        eventType: 'card_read',
+        eventTimeMs: Date.now() + 1000,
+        recordedAtMs: Date.now() + 1000,
+        payload: {
+          event_type: 'card_read',
+          card_number: 101,
+          card_type: 'SI10',
+          start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+          finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 1800, weekday: null },
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
+    assert.equal((await setStatus(dnf, 'DNF', 'Bröt vid 3:an')).statusCode, 201);
+    assert.equal((await setStatus(ownDns, 'DNS', 'Återbud vid starten')).statusCode, 201);
+
+    const view = (id: string) =>
+      ctx.app.projectionStore.recomputeNow(competitionId)!.competitors.get(id)!;
+    const pending = async (): Promise<number> => {
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${competitionId}/export/preview?status=Final`,
+      });
+      return (res.json() as { summary: { pending_count: number } }).summary.pending_count;
+    };
+    const finalXml = async (): Promise<string> =>
+      (
+        await ctx.app.inject({
+          method: 'GET',
+          url: `/api/competitions/${competitionId}/export?format=iof30&status=Final`,
+        })
+      ).body;
+    const statusOf = (xml: string, family: string): string | null => {
+      const at = xml.indexOf(`<Family>${family}</Family>`);
+      if (at === -1) return null;
+      return /<Status>(\w+)<\/Status>/.exec(xml.slice(at))![1]!;
+    };
+
+    // Before: the unread runner (and the seeded Anna, also unread) are left
+    // out of the final list and counted.
+    assert.equal(view(unread).status, 'PEND');
+    assert.equal(await pending(), 2);
+    assert.equal(statusOf(await finalXml(), 'Olast'), null);
+
+    const set = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/unread-dns`,
+    });
+    assert.equal(set.statusCode, 201);
+    assert.equal((set.json() as { count: number }).count, 2);
+    assert.equal(view(unread).status, 'DNS');
+    assert.equal(view(unread).manual_dnf_reason, 'Ej utläst: satt till Ej start');
+    assert.equal(view(read).status, 'OK');
+    assert.equal(view(dnf).status, 'DNF');
+    assert.equal(view(ownDns).manual_dnf_reason, 'Återbud vid starten');
+    assert.equal(await pending(), 0);
+    let xml = await finalXml();
+    assert.equal(statusOf(xml, 'Olast'), 'DidNotStart');
+    assert.equal(statusOf(xml, 'Lastrup'), 'OK');
+    assert.equal(statusOf(xml, 'Brot'), 'DidNotFinish');
+
+    const undo = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/unread-dns/undo`,
+    });
+    assert.equal(undo.statusCode, 201);
+    assert.equal((undo.json() as { count: number }).count, 2);
+    assert.equal(view(unread).status, 'PEND');
+    assert.equal(view(ownDns).status, 'DNS', "the operator's own DNS stays");
+    assert.equal(view(dnf).status, 'DNF');
+    assert.equal(await pending(), 2);
+    xml = await finalXml();
+    assert.equal(statusOf(xml, 'Olast'), null);
+    assert.equal(statusOf(xml, 'Egen'), 'DidNotStart');
   });
 });

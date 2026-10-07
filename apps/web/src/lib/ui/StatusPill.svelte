@@ -20,8 +20,18 @@
   so operators get the explanation on hover (desktop), long-press (touch),
   or via screen reader (aria-describedby).
 -->
+<script module lang="ts">
+  // Module-level counter for unique aria-describedby IDs. Multiple pills on
+  // the same page (e.g. ResultsTable with 40 runners) previously all shared
+  // id="status-tip-{status}" — any two OK pills pointed at the same <span>,
+  // which violates the uniqueness contract of `id`. Using a module-level
+  // incrementing counter gives each instance its own ID regardless of how
+  // many pills share the same status value.
+  let instanceCount = 0;
+</script>
+
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   type Status = 'OK' | 'MP' | 'DNF' | 'PEND' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
 
@@ -37,6 +47,9 @@
 
   let { status, label, small = false, tooltip = true }: Props = $props();
 
+  // Capture this instance's id suffix at construction time.
+  const instanceId = ++instanceCount;
+
   // Class is lower-case to match the sketch CSS hooks; that keeps the
   // contrast-high mode's `border: 1.5px solid currentColor;` overlay
   // simple to retain.
@@ -44,7 +57,7 @@
   const tipText = $derived(
     tooltip ? t(`rcpt.status.tooltip.${status.toLowerCase()}`) : ''
   );
-  const describedBy = $derived(tooltip ? `status-tip-${status.toLowerCase()}` : undefined);
+  const describedBy = $derived(tooltip ? `status-tip-${instanceId}` : undefined);
 </script>
 
 <span class={klass} title={tipText || undefined} aria-describedby={describedBy}>

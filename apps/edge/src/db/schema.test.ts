@@ -81,10 +81,9 @@ describe('schema: cold-start table inventory', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          SqliteMasterRow
-        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         .all();
       const names = rows.map((r) => r.name).filter((n) => !n.startsWith('sqlite_'));
       // __drizzle_migrations is created by the migrator; assert it exists separately.
@@ -163,10 +162,9 @@ describe('schema: competitors.consent_status (C-M4)', () => {
         )
         .run();
       const row = handle.sqlite
-        .prepare<
-          unknown[],
-          CompetitorRow
-        >('SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?')
+        .prepare<unknown[], CompetitorRow>(
+          'SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?'
+        )
         .get('comp1');
       assert.ok(row, 'expected row for comp1');
       assert.equal(row.consent_status, 'explicit');
@@ -194,10 +192,9 @@ describe('schema: competitors.consent_status (C-M4)', () => {
         )
         .run();
       const row = handle.sqlite
-        .prepare<
-          unknown[],
-          CompetitorRow
-        >('SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?')
+        .prepare<unknown[], CompetitorRow>(
+          'SELECT id, consent_status, consent_at_ms, scrubbed_at_ms FROM competitors WHERE id=?'
+        )
         .get('comp2');
       assert.ok(row);
       assert.equal(row.consent_status, 'pending_first_read');
@@ -239,10 +236,9 @@ describe('schema (phase 2): six new tables present after migration', () => {
     const handle = openDatabase(':memory:');
     try {
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          SqliteMasterRow
-        >("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         .all();
       const names = rows.map((r) => r.name);
       for (const expected of PHASE2_TABLES) {
@@ -305,10 +301,9 @@ describe('schema (phase 2): competitors.source column', () => {
         )
         .run();
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          { id: string; source: string }
-        >('SELECT id, source FROM competitors WHERE id IN (?, ?) ORDER BY id')
+        .prepare<unknown[], { id: string; source: string }>(
+          'SELECT id, source FROM competitors WHERE id IN (?, ?) ORDER BY id'
+        )
         .all('p2-comp2', 'p2-comp3');
       assert.equal(rows.length, 2);
       assert.equal(rows[0]?.source, 'entrylist');
@@ -345,10 +340,9 @@ describe('schema (phase 2): hired_cards compound PK', () => {
         )
         .run('c2', 12345, 2);
       const rows = handle.sqlite
-        .prepare<
-          unknown[],
-          { competition_id: string }
-        >('SELECT competition_id FROM hired_cards ORDER BY competition_id')
+        .prepare<unknown[], { competition_id: string }>(
+          'SELECT competition_id FROM hired_cards ORDER BY competition_id'
+        )
         .all();
       assert.equal(rows.length, 2);
     } finally {
@@ -418,6 +412,143 @@ describe('schema (phase 2): eventor_competitors indexes', () => {
         .sort((a, b) => a.seqno - b.seqno)
         .map((c) => c.name);
       assert.deepEqual(cols, ['family_name', 'given_name']);
+    } finally {
+      handle.close();
+    }
+  });
+});
+
+describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', () => {
+  test('course_replacements table exists with unique index', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const rows = handle.sqlite
+        .prepare<unknown[], SqliteMasterRow>(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        .all();
+      const names = rows.map((r) => r.name);
+      assert.ok(
+        names.includes('course_replacements'),
+        `course_replacements missing in ${names.join(',')}`
+      );
+      // Unique index must exist.
+      const indexes = handle.sqlite
+        .prepare<unknown[], PragmaIndexListRow>('PRAGMA index_list(course_replacements)')
+        .all();
+      const uniqueIdx = indexes.find(
+        (i) => i.name === 'course_replacements_unique' && i.unique === 1
+      );
+      assert.ok(
+        uniqueIdx,
+        `course_replacements_unique index not found in ${JSON.stringify(indexes)}`
+      );
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('classes has first_start_ms, start_interval_sec, max_time_sec columns (nullable)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all();
+      for (const col of ['first_start_ms', 'start_interval_sec', 'max_time_sec']) {
+        const found = cols.find((c) => c.name === col);
+        assert.ok(found, `classes.${col} column missing`);
+        assert.equal(found.notnull, 0, `classes.${col} must be nullable`);
+      }
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('classes has course_id column (nullable FK → courses, 02.1-14 Task 4)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const col = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all()
+        .find((c) => c.name === 'course_id');
+      assert.ok(col, 'classes.course_id column missing');
+      assert.equal(col.notnull, 0, 'classes.course_id must be nullable');
+      const fk = handle.sqlite
+        .prepare<unknown[], { table: string; from: string; on_delete: string }>(
+          'SELECT "table", "from", on_delete FROM pragma_foreign_key_list(\'classes\')'
+        )
+        .all()
+        .find((f) => f.from === 'course_id');
+      assert.equal(fk?.table, 'courses');
+      assert.equal(fk?.on_delete, 'SET NULL');
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('classes has no_timing column (NOT NULL, default 0, 02.1-14 Task 9)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const col = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all()
+        .find((c) => c.name === 'no_timing');
+      assert.ok(col, 'classes.no_timing column missing');
+      assert.equal(col.notnull, 1, 'classes.no_timing must be NOT NULL');
+      assert.equal(col.dflt_value, 'false');
+    } finally {
+      handle.close();
+    }
+  });
+
+  test("classes has start_method column (NOT NULL, default 'auto', 02.1-14 Task 14)", () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(classes)')
+        .all();
+      const col = cols.find((c) => c.name === 'start_method');
+      assert.ok(col, 'classes.start_method column missing');
+      assert.equal(col.notnull, 1, 'classes.start_method must be NOT NULL');
+      assert.equal(col.dflt_value, "'auto'");
+      assert.equal(
+        cols.find((c) => c.name === 'ignore_start_punch'),
+        undefined,
+        'Task 11 ignore_start_punch replaced by start_method'
+      );
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('competitors has start_time_ms column (nullable)', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(competitors)')
+        .all();
+      const col = cols.find((c) => c.name === 'start_time_ms');
+      assert.ok(col, 'competitors.start_time_ms column missing');
+      assert.equal(col.notnull, 0, 'competitors.start_time_ms must be nullable');
+    } finally {
+      handle.close();
+    }
+  });
+
+  test('competitions has liveresultat_id, liveresultat_pwd, eventor_event_id, timing_format columns', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const cols = handle.sqlite
+        .prepare<unknown[], PragmaTableInfoRow>('PRAGMA table_info(competitions)')
+        .all();
+      for (const col of ['liveresultat_id', 'liveresultat_pwd', 'eventor_event_id']) {
+        const found = cols.find((c) => c.name === col);
+        assert.ok(found, `competitions.${col} column missing`);
+        assert.equal(found.notnull, 0, `competitions.${col} must be nullable`);
+      }
+      const timingFmt = cols.find((c) => c.name === 'timing_format');
+      assert.ok(timingFmt, 'competitions.timing_format column missing');
+      assert.equal(timingFmt.dflt_value, "'seconds'", "timing_format default must be 'seconds'");
     } finally {
       handle.close();
     }

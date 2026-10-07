@@ -44,16 +44,22 @@ import { XMLParser } from 'fast-xml-parser';
 export interface ParsedCourseData {
   kind: 'CourseData';
   event_name: string;
-  /** Classes typically live under <Event><Class> in IOF 3.0 CourseData. */
-  classes: Array<{ id: string; name: string; short_name: string | null }>;
+  /** Classes typically live under <Event><Class> in IOF 3.0 CourseData.
+   * `no_timing` is set when the class has resultListMode="UnorderedNoTimes"
+   * (02.1-14 Task 9). */
+  classes: Array<{ id: string; name: string; short_name: string | null; no_timing?: boolean }>;
   /** Controls live under <RaceCourseData><Control>. */
   controls: Array<{ code: number }>;
   courses: Array<{
     id: string;
     name: string;
     /** Class name that this course is assigned to (via
-     * ClassCourseAssignment.ClassName), or null if no assignment. */
+     * ClassCourseAssignment.ClassName), or null if no assignment. When
+     * several classes share the course this is the last one (legacy). */
     class_id_ref: string | null;
+    /** 02.1-14 Task 4: every class assigned to this course, in document
+     * order. Omitted by hand-built inputs; readers fall back to class_id_ref. */
+    class_refs?: string[];
     length_m: number | null;
     climb_m: number | null;
     /** Control codes in CourseControl-sequence order. We ONLY include
@@ -68,6 +74,9 @@ export interface ParsedEntryList {
   kind: 'EntryList';
   event_name: string;
   competitors: Array<{
+    /** 1-based PersonEntry position in the file, for skip reports
+     * (02.1-14 Task 6). Absent when the list was not parsed from a file. */
+    row?: number;
     /** "Given Family" — the wire shape the schema's competitors.name expects. */
     name: string;
     /** <Organisation><Name>, or null if absent. */
@@ -75,15 +84,19 @@ export interface ParsedEntryList {
     /** <Class><Name> — name only; IDs vary between systems. The ingester
      * matches by class name against the competition's classes table. */
     class_name: string;
+    /** 02.1-14 Task 9: the entry's <Class resultListMode="UnorderedNoTimes">. */
+    class_no_timing?: boolean;
     /** Numeric SI card number from <ControlCard punchingSystem="SI">.
      * Non-SI cards or empty card values become null. */
     card_number: number | null;
+    /** SOFT TA till TR 7.8.3: the person's id in Eventor (Person/Id), so
+     * the ResultList export can link results. Absent when not parsed. */
+    eventor_person_id?: number | null;
   }>;
 }
 
 export type ParsedXml =
-  | { kind: 'CourseData'; data: ParsedCourseData }
-  | { kind: 'EntryList'; data: ParsedEntryList };
+  { kind: 'CourseData'; data: ParsedCourseData } | { kind: 'EntryList'; data: ParsedEntryList };
 
 // ---------------------------------------------------------------------------
 // Parser instance — safe-by-default for untrusted input. Configured once at
@@ -199,6 +212,29 @@ function asInt(x: unknown): number | null {
   return Math.trunc(n);
 }
 
+/** SOFT TA till TR 7.8.3: the Eventor person id from Person/Id. Eventor's
+ * IOF 3.0 output types it "Sweden" (eventor/__fixtures__/
+ * competitors-sample.xml); untyped and "Eventor" are accepted as in
+ * xml/iofImport.ts. Other types and non-numeric ids (another system's, or an
+ * anonymised export's "R0001") are not Eventor's. */
+const EVENTOR_ID_TYPES = new Set(['Sweden', 'Eventor']);
+function eventorPersonId(person: RawNode): number | null {
+  for (const id of toArray(person?.Id as unknown)) {
+    const node = typeof id === 'object' && id !== null ? (id as Record<string, unknown>) : null;
+    const type = node === null ? null : asString(node['@_type']);
+    if (type !== null && !EVENTOR_ID_TYPES.has(type)) continue;
+    const n = asInt(node === null ? id : node['#text']);
+    if (n !== null && n > 0) return n;
+  }
+  return null;
+}
+
+/** 02.1-14 Task 9: <Class resultListMode="UnorderedNoTimes"> is a class
+ * without timing (MeOS iof30interface.cpp readClass → setNoTiming). */
+function isNoTiming(klass: RawNode): boolean {
+  return klass?.['@_resultListMode'] === 'UnorderedNoTimes';
+}
+
 function normalizeCourseData(raw: RawNode): ParsedCourseData {
   const node = raw ?? {};
   const event = (node.Event ?? {}) as RawNode;
@@ -218,7 +254,12 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
     if (!name || seenClassNames.has(name)) continue;
     seenClassNames.add(name);
     const id = asString(c.Id) ?? name;
-    classes.push({ id, name, short_name: asString(c.ShortName) });
+    classes.push({
+      id,
+      name,
+      short_name: asString(c.ShortName),
+      ...(isNoTiming(c) ? { no_timing: true } : {}),
+    });
   }
 
   // RaceCourseData (1..n). We flatten controls + courses across races; for
@@ -228,9 +269,10 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
   const controls: ParsedCourseData['controls'] = [];
   const seenCodes = new Set<number>();
   const courses: ParsedCourseData['courses'] = [];
-  // Map <ClassCourseAssignment>: CourseName → ClassName so we can fill
-  // class_id_ref on the course rows.
-  const classByCourseName = new Map<string, string>();
+  // Map <ClassCourseAssignment>: CourseName → ClassNames so we can fill
+  // class_id_ref / class_refs on the course rows. Many classes may share a
+  // course, so every assignment is kept (02.1-14 Task 4).
+  const classesByCourseName = new Map<string, string[]>();
 
   for (const rcd of rcdArr) {
     if (!rcd) continue;
@@ -239,7 +281,10 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
       if (!a) continue;
       const courseName = asString(a.CourseName);
       const className = asString(a.ClassName);
-      if (courseName && className) classByCourseName.set(courseName, className);
+      if (!courseName || !className) continue;
+      const refs = classesByCourseName.get(courseName) ?? [];
+      if (!refs.includes(className)) refs.push(className);
+      classesByCourseName.set(courseName, refs);
     }
 
     for (const ctl of toArray(rcd.Control as RawNode | RawNode[])) {
@@ -279,10 +324,12 @@ function normalizeCourseData(raw: RawNode): ParsedCourseData {
         const code = asInt(first);
         if (code !== null) control_codes.push(code);
       }
+      const classRefs = classesByCourseName.get(name) ?? [];
       courses.push({
         id,
         name,
-        class_id_ref: classByCourseName.get(name) ?? null,
+        class_id_ref: classRefs[classRefs.length - 1] ?? null,
+        class_refs: classRefs,
         length_m: lengthM,
         climb_m: climbM,
         control_codes,
@@ -307,7 +354,7 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
   const entries = toArray(node.PersonEntry as RawNode | RawNode[]);
   const competitors: ParsedEntryList['competitors'] = [];
 
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
     if (!e) continue;
     const person = (e.Person ?? {}) as RawNode;
     const personName = (person?.Name ?? {}) as RawNode;
@@ -324,8 +371,9 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
     // assigns to the first preference.
     const classArr = toArray(e.Class as RawNode | RawNode[]);
     const klass = classArr[0] ?? {};
+    // An entry without a class is kept; the ingester reports it as
+    // unknown_class instead of dropping it silently (02.1-14 Task 6).
     const class_name = asString((klass as RawNode)?.Name) ?? '';
-    if (class_name.length === 0) continue;
 
     // ControlCard — keep only SI cards. The element is mixed content:
     // simpleContent extension of xsd:string with @punchingSystem attribute.
@@ -352,7 +400,15 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
       }
     }
 
-    competitors.push({ name, club, class_name, card_number });
+    competitors.push({
+      row: i + 1,
+      name,
+      club,
+      class_name,
+      ...(isNoTiming(klass as RawNode) ? { class_no_timing: true } : {}),
+      card_number,
+      eventor_person_id: eventorPersonId(person),
+    });
   }
 
   return { kind: 'EntryList', event_name: eventName, competitors };

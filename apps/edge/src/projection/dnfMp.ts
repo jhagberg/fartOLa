@@ -16,9 +16,12 @@
 //     contains only control-station punches — the decoder layer already
 //     separates start/finish/check at the storage→raceResult boundary.
 //
-//   - Elapsed time = diffMs(payload.start, payload.finish) from
-//     halfDayClockMath.ts. Caller wraps the call; we return null when
-//     either half-day clock is null.
+//   - Elapsed time = finish − start on the local wall-clock timeline, where
+//     start follows the class's start method (startWallMs below, 02.1-14
+//     Task 14); card clocks are placed on that timeline by cardClockToWallMs
+//     (halfDayClockMath.ts) relative to the read time (02.1-14 Task 3), a
+//     drawn start by epochToWallClockMs. No DST arithmetic, like MeOS.
+//     Null when there is no finish or no start of either kind.
 //
 // Per CONTEXT D-12 (punch-only DNF, no time-auto-DNF in Phase 1) and
 // UI-SPEC §"Manual DNF override" (manual_dnf wins). The manual override is
@@ -33,12 +36,28 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { diffMs } from './halfDayClockMath.ts';
+import type { Class } from '../db/types.ts';
+import { epochToWallClockMs, wallClockToEpochMs } from '../time/competitionClock.ts';
+import { cardClockToWallMs } from './halfDayClockMath.ts';
+
+/** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
+export type StartMethod = Class['startMethod'];
 
 export interface DetectInput {
   start: HalfDayClock | null;
   finish: HalfDayClock | null;
   punches: readonly NdjsonPunch[];
+  /** card_read payload card_type; 'SI5' has no AM/PM bit (02.1-14 Task 3). */
+  cardType: string;
+  /** Host time of the read (event_time_ms); anchors the card clock. */
+  readAtMs: number;
+  /** Drawn start (competitors.start_time_ms, epoch ms); null = open start. */
+  drawnStartMs: number | null;
+  /** competitors.start_wall_ms: the same start as a wall-clock time, when it
+   * was set as one (see drawnStartWallMs). */
+  drawnStartWallMs?: number | null;
+  /** The class's start method (02.1-14 Task 14). */
+  startMethod: StartMethod;
 }
 
 export interface StatusResult {
@@ -49,6 +68,63 @@ export interface StatusResult {
   elapsed_time_ms: number | null;
 }
 
+/** Replacement controls (D-15): expected code → codes that also count for it. */
+export type ControlAlternatives = ReadonlyMap<number, readonly number[]>;
+
+export interface CourseMatch {
+  /** Per expected position, the index of the punch matched to it, or -1. */
+  matched: number[];
+  missing: number[];
+  out_of_order: number[];
+  extra: number[];
+}
+
+/**
+ * Match the course controls in order as a subsequence of the punched codes —
+ * the orienteering rule MeOS applies (02.1-14 Task 2). Walk the expected
+ * codes; each is matched greedily at the first punch after the previous
+ * match whose code is the expected one or one of its replacement controls
+ * (D-15, single level — no chaining). Repeated controls (butterflies) simply
+ * match again later in the punch list.
+ *   - missing:      expected codes with no punch after the previous match
+ *   - out_of_order: missing codes that were punched (or replaced), but only
+ *                   before the previous match (informational; also in missing)
+ *   - extra:        punches not used by the match (informational — stray
+ *                   controls, double punches, out-of-order punches)
+ */
+export function matchCourse(
+  punchedCodes: readonly number[],
+  expectedControlCodes: readonly number[],
+  alternatives?: ControlAlternatives
+): CourseMatch {
+  const used = new Array<boolean>(punchedCodes.length).fill(false);
+  const matched: number[] = [];
+  const missing: number[] = [];
+  const outOfOrder: number[] = [];
+  let next = 0;
+  for (const code of expectedControlCodes) {
+    const alts = alternatives?.get(code);
+    const fits = (c: number): boolean => c === code || (alts !== undefined && alts.includes(c));
+    let idx = -1;
+    for (let i = next; i < punchedCodes.length; i++) {
+      if (fits(punchedCodes[i]!)) {
+        idx = i;
+        break;
+      }
+    }
+    matched.push(idx);
+    if (idx === -1) {
+      missing.push(code);
+      if (punchedCodes.some(fits)) outOfOrder.push(code);
+      continue;
+    }
+    used[idx] = true;
+    next = idx + 1;
+  }
+  const extra = punchedCodes.filter((_, i) => !used[i]);
+  return { matched, missing, out_of_order: outOfOrder, extra };
+}
+
 /**
  * Classify a single card_read against the expected course controls.
  *
@@ -57,16 +133,19 @@ export interface StatusResult {
  * controls but no finish stamp is genuinely DNF (operator killed the
  * read before the finish punch, or the cable was yanked mid-read).
  *
- * Gate 2 (OK/MP): `input.finish !== null` → compare `input.punches`
- * (control-station punches only — Phase 0 decoder separates start/finish/
- * check at the storage→raceResult boundary) against `expectedControlCodes`
- * in order. OK = exact match; MP = any divergence with diff arrays.
+ * Gate 2 (OK/MP): `input.finish !== null` → `expectedControlCodes` must
+ * appear in order as a subsequence of `input.punches` (matchCourse; control-
+ * station punches only — Phase 0 decoder separates start/finish/check at the
+ * storage→raceResult boundary). Extra punches never cause MP; only missing
+ * codes do.
  */
 export function detectStatus(
   input: DetectInput,
-  expectedControlCodes: readonly number[]
+  expectedControlCodes: readonly number[],
+  alternatives?: ControlAlternatives
 ): StatusResult {
-  const elapsed = diffMs(input.start, input.finish);
+  const raw = rawElapsedMs(input);
+  const elapsed = raw === null ? null : officialMs(raw);
 
   // Gate 1: no finish stamp → DNF, regardless of punches[] contents.
   if (input.finish === null) {
@@ -79,79 +158,110 @@ export function detectStatus(
     };
   }
 
-  // Gate 2: order-match expected vs actual control punches.
-  //
-  // Phase 1 invariant: each control code appears at most once in a course
-  // and at most once on a clean card_read (a competitor doesn't re-punch
-  // the same control). Under this invariant the diff splits cleanly:
-  //   - missing: expected codes NOT present in actual at all
-  //   - extra:   actual codes NOT present in expected (strays)
-  //   - out_of_order: a code present in BOTH but punched too early (it
-  //     "jumped ahead" of the next-expected code, which then catches up
-  //     after the swap). Only the LEADING punch of each swap is reported
-  //     so a single 32/33 transposition surfaces as one out-of-order
-  //     entry, not two.
-  //
-  // Walk both sequences. When they mismatch:
-  //   (a) if expected[ei] appears later in actual[ai..], the leading
-  //       actual[ai] is out-of-order (or extra if not in expected).
-  //   (b) otherwise expected[ei] is missing.
-  // Codes already attributed to out-of-order do NOT then surface as
-  // missing later in the walk (the C-H2 review's "single transposition"
-  // shape).
-  const expected = [...expectedControlCodes];
-  const actual = input.punches.map((p) => p.code);
-  const expectedSet = new Set(expected);
-  const missing: number[] = [];
-  const extra: number[] = [];
-  const outOfOrder: number[] = [];
-  const outOfOrderSet = new Set<number>();
-  let ei = 0;
-  let ai = 0;
-  while (ei < expected.length || ai < actual.length) {
-    if (ei < expected.length && ai < actual.length && expected[ei] === actual[ai]) {
-      ei++;
-      ai++;
-      continue;
-    }
-    if (ei < expected.length && ai < actual.length) {
-      if (actual.slice(ai).includes(expected[ei]!)) {
-        const code = actual[ai]!;
-        if (expectedSet.has(code)) {
-          outOfOrder.push(code);
-          outOfOrderSet.add(code);
-        } else {
-          extra.push(code);
-        }
-        ai++;
-        continue;
-      }
-      // expected[ei] is missing unless we already reported it as out-of-order.
-      if (!outOfOrderSet.has(expected[ei]!)) missing.push(expected[ei]!);
-      ei++;
-      continue;
-    }
-    if (ei < expected.length) {
-      if (!outOfOrderSet.has(expected[ei]!)) missing.push(expected[ei]!);
-      ei++;
-      continue;
-    }
-    if (ai < actual.length) {
-      const code = actual[ai]!;
-      if (expectedSet.has(code)) outOfOrder.push(code);
-      else extra.push(code);
-      ai++;
-      continue;
-    }
-  }
-
-  const status: 'OK' | 'MP' =
-    missing.length === 0 && extra.length === 0 && outOfOrder.length === 0 ? 'OK' : 'MP';
+  // Gate 2 (02.1-14 Task 2): in-order subsequence match.
+  const match = matchCourse(
+    input.punches.map((p) => p.code),
+    expectedControlCodes,
+    alternatives
+  );
   return {
-    status,
-    missing_codes: missing,
-    extra_codes: extra,
-    out_of_order_codes: outOfOrder,
+    status: match.missing.length === 0 ? 'OK' : 'MP',
+    missing_codes: match.missing,
+    extra_codes: match.extra,
+    out_of_order_codes: match.out_of_order,
     elapsed_time_ms: elapsed,
   };
+}
+
+/** What the start is resolved from. */
+type StartInput = Pick<
+  DetectInput,
+  'start' | 'cardType' | 'readAtMs' | 'drawnStartMs' | 'drawnStartWallMs' | 'startMethod'
+>;
+
+/** The runner's start time on the local wall-clock timeline. A start set as
+ * a wall-clock time (competitors.start_wall_ms) counts as is while
+ * start_time_ms is still its epoch: a station time in the hour skipped when
+ * DST starts (02:00:54 on 2026-03-29) has no epoch that reads back as it.
+ * Any writer that changed start_time_ms since makes it stale. */
+export function drawnStartWallMs(
+  input: Pick<StartInput, 'drawnStartMs' | 'drawnStartWallMs'>
+): number | null {
+  const { drawnStartMs: epoch, drawnStartWallMs: wall } = input;
+  if (epoch === null) return null;
+  if (wall != null && wallClockToEpochMs(wall).includes(epoch)) return wall;
+  return epochToWallClockMs(epoch);
+}
+
+/** The start punch on the local wall-clock timeline. */
+function startPunchWallMs(input: StartInput): number | null {
+  return input.start === null
+    ? null
+    : cardClockToWallMs(input.start, input.cardType, input.readAtMs);
+}
+
+/** The start a running time is measured from, on the local wall-clock
+ * timeline (epochToWallClockMs's scale), by the class's start method
+ * (02.1-14 Task 14). Null when there is none (missing start).
+ *   - start_time:  the runner's start time; the punch is ignored. A late
+ *                  runner keeps the original start time (SOFT TR 4.18.9
+ *                  (2026-07-01)); the secretariat sets a new one for the
+ *                  organiser's mistake.
+ *   - start_punch: the start punch, else the start time (MeOS,
+ *                  oRunner.cpp:1331-1344; SOFT TR 4.18.16 (2026-07-01)).
+ *   - auto:        start_time when the runner has a start time, else the
+ *                  punch (fri starttid in open classes, SOFT TR 7.4.3
+ *                  (2026-07-01)). */
+export function startWallMs(input: StartInput): number | null {
+  const punch = startPunchWallMs(input);
+  const drawn = drawnStartWallMs(input);
+  switch (input.startMethod) {
+    case 'start_time':
+      return drawn;
+    case 'start_punch':
+      return punch ?? drawn;
+    case 'auto':
+      return drawn ?? punch;
+  }
+}
+
+/** Late / early start punch for the jury (02.1-14 Task 14), only where the
+ * time runs from the start time (start_time, or auto with a start time):
+ * a punch more than 60 s after the start time is a late start (SOFT TR
+ * 4.18.9 (2026-07-01), TA "Sen start": original start time applies), a
+ * punch before it a possible false start (SOFT TR 8.2.8 (2026-07-01)).
+ * Warnings only; the time is not changed. Both in ms, positive. */
+export const LATE_START_GRACE_MS = 60_000;
+export function startPunchWarning(input: StartInput): {
+  late_start_ms: number | null;
+  early_start_ms: number | null;
+} {
+  const none = { late_start_ms: null, early_start_ms: null };
+  if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
+    return none;
+  }
+  const diff = startPunchWallMs(input)! - drawnStartWallMs(input)!;
+  if (diff > LATE_START_GRACE_MS) return { late_start_ms: diff, early_start_ms: null };
+  if (diff < 0) return { late_start_ms: null, early_start_ms: -diff };
+  return none;
+}
+
+/** The official time: whole seconds, a fraction rounded to the nearest
+ * second, half up (SOFT TR 4.20.7 (2026-07-01): "avrundning till hel
+ * sekund"). Places, MAX, exports, MOP and receipts all use it. */
+export function officialMs(ms: number): number {
+  return Math.round(ms / 1000) * 1000;
+}
+
+/** Running time = finish − start on the local wall-clock timeline (02.1-14
+ * Task 3); start per startWallMs above. Unrounded: detectStatus rounds it to
+ * the official time. Null without a finish or any start. */
+export function rawElapsedMs(input: DetectInput): number | null {
+  if (input.finish === null) return null;
+  const start = startWallMs(input);
+  if (start === null) return null;
+  const elapsed = cardClockToWallMs(input.finish, input.cardType, input.readAtMs) - start;
+  // A finish before the start (wrong day / wrong drawn time) is no time,
+  // not a winning negative one.
+  return elapsed >= 0 ? elapsed : null;
 }

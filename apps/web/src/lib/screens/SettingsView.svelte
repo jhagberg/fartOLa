@@ -23,6 +23,11 @@
      save on next boot. The input stays editable — the operator can
      still queue a config-table override that env will trump.
 
+  MeOS-koppling (D-MOP-4 / D-MIP-1 revised 2026-10-05): password for
+  GET /mip + POST /mop (never shown, only "set"), and the explicit
+  "Tillåt MeOS utan lösenord" choice with its warning. Without either,
+  MeOS only works from this machine.
+
   Locked by:
   - .planning/phases/02-4-klubbs-mvp/02-07-PLAN.md task 3
   - apps/edge/src/routes/settings.ts (the REST surface)
@@ -30,14 +35,26 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     listIntegrations,
     setIntegration,
+    getMeosSettings,
+    setMeosSettings,
+    type MeosSettings,
     type IntegrationStatus,
     type IntegrationSource,
-  } from '$lib/api/client.ts';
-  import Button from '$lib/ui/Button.svelte';
+    listEventCodes,
+    generateEventCode,
+    revokeEventCode,
+    type EventCodeSummary,
+    getLiveresultatCredentials,
+    setLiveresultatCredentials,
+    clearLiveresultatCredentials,
+    type LiveresultatCredentials,
+  } from '#lib/api/client.ts';
+  import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
+  import Button from '#lib/ui/Button.svelte';
 
   // Per-row UI state. Keyed by integration key so we can find a row
   // fast on save and so adding a Phase-3 key needs no extra wiring.
@@ -60,7 +77,39 @@
 
   onMount(() => {
     void fetchAll();
+    void fetchMeos();
   });
+
+  // MeOS-koppling.
+  let meos: MeosSettings | null = $state(null);
+  let meosDraft = $state('');
+  let meosSaving = $state(false);
+  let meosToast: RowState['toast'] = $state(null);
+
+  async function fetchMeos(): Promise<void> {
+    try {
+      meos = await getMeosSettings();
+    } catch {
+      meos = null;
+    }
+  }
+
+  async function saveMeos(body: {
+    meos_password?: string;
+    meos_allow_without_password?: boolean;
+  }): Promise<void> {
+    meosSaving = true;
+    meosToast = null;
+    try {
+      meos = await setMeosSettings(body);
+      meosToast = body.meos_password === '' ? 'cleared' : 'saved';
+      meosDraft = '';
+    } catch {
+      meosToast = 'error';
+    } finally {
+      meosSaving = false;
+    }
+  }
 
   async function fetchAll(): Promise<void> {
     loading = true;
@@ -147,6 +196,140 @@
     if (state === 'error') return t('settings.integrations.saveError');
     return null;
   }
+
+  // ---------------------------------------------------------------------------
+  // Hjälpkoder (event admin codes)
+  // ---------------------------------------------------------------------------
+
+  let helperCodes: EventCodeSummary[] = $state([]);
+  let helperCodesLoading = $state(false);
+  let generatingCode = $state(false);
+  let revokingId: string | null = $state(null);
+  /** id → revealed plaintext code (visible for 30s) */
+  let revealedCodes: Record<string, string> = $state({});
+  /** id → setTimeout handle */
+  const revealTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  const currentCompId = $derived(activeCompetition.id);
+
+  async function loadHelperCodes(): Promise<void> {
+    if (!currentCompId) return;
+    helperCodesLoading = true;
+    try {
+      const r = await listEventCodes(currentCompId);
+      helperCodes = r.codes;
+    } catch {
+      // soft fail — list stays stale
+    } finally {
+      helperCodesLoading = false;
+    }
+  }
+
+  async function handleGenerate(): Promise<void> {
+    if (!currentCompId || generatingCode) return;
+    generatingCode = true;
+    try {
+      const generated = await generateEventCode(currentCompId);
+      // Show the plaintext code immediately for 30 seconds.
+      revealedCodes[generated.id] = generated.code;
+      if (revealTimers[generated.id]) clearTimeout(revealTimers[generated.id]);
+      revealTimers[generated.id] = setTimeout(() => {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete revealedCodes[generated.id];
+      }, 30_000);
+      await loadHelperCodes();
+    } catch {
+      // soft fail
+    } finally {
+      generatingCode = false;
+    }
+  }
+
+  async function handleRevoke(codeId: string): Promise<void> {
+    if (!currentCompId || revokingId) return;
+    revokingId = codeId;
+    try {
+      await revokeEventCode(currentCompId, codeId);
+      await loadHelperCodes();
+    } catch {
+      // soft fail
+    } finally {
+      revokingId = null;
+    }
+  }
+
+  function formatExpiry(ms: number): string {
+    return new Date(ms).toLocaleDateString('sv-SE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  }
+
+  $effect(() => {
+    // Reload helper codes whenever the active competition changes.
+    void currentCompId;
+    void loadHelperCodes();
+  });
+
+  // ---- Liveresultat (SOFT TR 7.7.1) ----------------------------------------
+  let live: LiveresultatCredentials | null = $state(null);
+  let liveId = $state('');
+  /** Write-only: never prefilled; the server only says whether one is set. */
+  let livePwd = $state('');
+  let liveBusy = $state(false);
+  let liveErr: string | null = $state(null);
+
+  async function loadLive(): Promise<void> {
+    live = null;
+    liveErr = null;
+    if (!currentCompId) return;
+    try {
+      live = await getLiveresultatCredentials(currentCompId);
+      liveId = live.liveresultat_id ?? '';
+      livePwd = '';
+    } catch {
+      // soft fail — section shows "not configured"
+    }
+  }
+
+  async function saveLive(): Promise<void> {
+    if (!currentCompId || liveBusy) return;
+    if (!/^\d+$/.test(liveId.trim()) || livePwd.length === 0) {
+      liveErr = t('settings.liveresultat.invalid');
+      return;
+    }
+    liveBusy = true;
+    liveErr = null;
+    try {
+      live = await setLiveresultatCredentials(currentCompId, liveId.trim(), livePwd);
+      livePwd = '';
+    } catch {
+      liveErr = t('settings.liveresultat.saveError');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  async function clearLive(): Promise<void> {
+    if (!currentCompId || liveBusy) return;
+    liveBusy = true;
+    liveErr = null;
+    try {
+      live = await clearLiveresultatCredentials(currentCompId);
+      liveId = '';
+      livePwd = '';
+    } catch {
+      liveErr = t('settings.liveresultat.saveError');
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  $effect(() => {
+    void currentCompId;
+    void loadLive();
+  });
 </script>
 
 <section class="settings-view" data-testid="settings-view">
@@ -240,9 +423,226 @@
       </ul>
     {/if}
   </section>
+
+  <section class="card" data-testid="meos-settings-section">
+    <header class="section-head">
+      <h2>{t('settings.meos.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.meos.desc')}</p>
+
+    {#if meos === null}
+      <p class="muted">{t('settings.integrations.loading')}</p>
+    {:else}
+      <label class="label" for="meos-password-input">{t('settings.meos.password')}</label>
+      <div class="input-line">
+        <input
+          id="meos-password-input"
+          class="key-input"
+          type="password"
+          placeholder={meos.has_meos_password
+            ? t('settings.meos.passwordSet')
+            : t('settings.meos.passwordNotSet')}
+          bind:value={meosDraft}
+          autocomplete="new-password"
+          spellcheck="false"
+          data-testid="meos-password-input"
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={meosSaving || (meosDraft.length === 0 && !meos.has_meos_password)}
+          onclick={() => void saveMeos({ meos_password: meosDraft })}
+          data-testid="meos-password-save"
+        >
+          {meosSaving
+            ? t('settings.integrations.saving')
+            : meosDraft.length === 0 && meos.has_meos_password
+              ? t('settings.integrations.clear')
+              : t('settings.integrations.save')}
+        </Button>
+      </div>
+
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={meos.meos_allow_without_password}
+          disabled={meosSaving}
+          onchange={(e) =>
+            void saveMeos({ meos_allow_without_password: e.currentTarget.checked })}
+          data-testid="meos-allow-checkbox"
+        />
+        {t('settings.meos.allowWithoutPassword')}
+      </label>
+      <p class="banner" data-testid="meos-allow-warning">{t('settings.meos.allowWarning')}</p>
+
+      {#if toastLabel(meosToast)}
+        <p
+          class="toast"
+          class:toast-err={meosToast === 'error'}
+          role="status"
+          aria-live="polite"
+          data-testid="meos-settings-toast"
+        >
+          {toastLabel(meosToast)}
+        </p>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Hjälpkoder section                                                   -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="helper-codes-section">
+    <header class="section-head">
+      <h2>{t('settings.helperCodes.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.helperCodes.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted" data-testid="helper-codes-no-competition">
+        {t('settings.helperCodes.noCompetition')}
+      </p>
+    {:else}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={generatingCode}
+          onclick={() => void handleGenerate()}
+          data-testid="helper-codes-generate"
+        >
+          {generatingCode
+            ? t('settings.helperCodes.generating')
+            : t('settings.helperCodes.generate')}
+        </Button>
+      </div>
+
+      {#if helperCodesLoading && helperCodes.length === 0}
+        <p class="muted">{t('settings.integrations.loading')}</p>
+      {:else if helperCodes.length === 0}
+        <p class="muted" data-testid="helper-codes-empty">{t('settings.helperCodes.empty')}</p>
+      {:else}
+        <ul class="code-list">
+          {#each helperCodes as code (code.id)}
+            <li
+              class="code-row"
+              class:revoked={code.revoked_at_ms !== null}
+              data-testid="helper-code-row"
+            >
+              <div class="code-meta">
+                {#if revealedCodes[code.id]}
+                  <span class="code-reveal" data-testid="helper-code-revealed">
+                    {t('settings.helperCodes.revealed')}
+                    <span class="code-mono">{revealedCodes[code.id]}</span>
+                  </span>
+                {:else}
+                  <span class="code-masked" data-testid="helper-code-masked">{code.masked_code}</span>
+                {/if}
+                <span class="code-expiry muted small">
+                  {code.revoked_at_ms !== null
+                    ? t('settings.helperCodes.revoked')
+                    : `${t('settings.helperCodes.expires')} ${formatExpiry(code.expires_at_ms)}`}
+                </span>
+              </div>
+              {#if code.revoked_at_ms === null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={revokingId === code.id}
+                  onclick={() => void handleRevoke(code.id)}
+                  data-testid="helper-code-revoke"
+                >
+                  {revokingId === code.id
+                    ? t('settings.helperCodes.revoking')
+                    : t('settings.helperCodes.revoke')}
+                </Button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" data-testid="liveresultat-section">
+    <header class="section-head">
+      <h2>{t('settings.liveresultat.title')}</h2>
+      <span class="muted small" data-testid="liveresultat-state">
+        {live?.liveresultat_id && live.has_password
+          ? t('settings.liveresultat.active')
+          : t('settings.liveresultat.inactive')}
+      </span>
+    </header>
+    <p class="desc muted small">{t('settings.liveresultat.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
+    {:else}
+      <div class="live-form">
+        <label>
+          <span>{t('settings.liveresultat.id')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            bind:value={liveId}
+            data-testid="liveresultat-id"
+          />
+        </label>
+        <label>
+          <span>{t('settings.liveresultat.password')}</span>
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={live?.has_password ? t('settings.liveresultat.passwordSet') : ''}
+            bind:value={livePwd}
+            data-testid="liveresultat-password"
+          />
+        </label>
+      </div>
+      {#if liveErr}
+        <p class="err" role="alert">{liveErr}</p>
+      {/if}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={liveBusy}
+          onclick={() => void saveLive()}
+          data-testid="liveresultat-save"
+        >
+          {t('settings.liveresultat.save')}
+        </Button>
+        {#if live?.liveresultat_id || live?.has_password}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={liveBusy}
+            onclick={() => void clearLive()}
+            data-testid="liveresultat-clear"
+          >
+            {t('settings.liveresultat.clear')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
+  </section>
 </section>
 
 <style>
+  .live-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+  .live-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 200px;
+  }
   .settings-view {
     display: flex;
     flex-direction: column;
@@ -361,5 +761,54 @@
   }
   .toast-err {
     color: var(--dnf);
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--fs-label);
+  }
+  .generate-row {
+    display: flex;
+    align-items: center;
+  }
+  .code-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+  .code-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) 0;
+    border-top: 1px solid var(--border);
+  }
+  .code-row:first-child {
+    border-top: none;
+  }
+  .code-row.revoked {
+    opacity: 0.5;
+  }
+  .code-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .code-masked,
+  .code-reveal {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+  }
+  .code-mono {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .code-expiry {
+    font-size: 12px;
   }
 </style>

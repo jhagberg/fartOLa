@@ -59,9 +59,18 @@ function doIngest(
   // synthesised class takes the course's own name (e.g. "Vit", "Grön").
   // The course's class_id_ref is rewritten to point at the synthesised
   // class so step (3) below wires it up correctly.
+  //
+  // 02.1-14: with zero <Class> elements but ClassCourseAssignment entries,
+  // the assigned classes are created by name instead (as MeOS does); the
+  // course-name fallback only fires when there are no assignments at all.
+  const refsOf = (cr: ParsedCourseData['courses'][number]): string[] =>
+    cr.class_refs ?? (cr.class_id_ref ? [cr.class_id_ref] : []);
   let effectiveClasses = data.classes;
   let effectiveCourses = data.courses;
-  if (data.classes.length === 0 && data.courses.length > 0) {
+  const assignedClassNames = [...new Set(data.courses.flatMap(refsOf))];
+  if (data.classes.length === 0 && assignedClassNames.length > 0) {
+    effectiveClasses = assignedClassNames.map((name) => ({ id: '', name, short_name: null }));
+  } else if (data.classes.length === 0 && data.courses.length > 0) {
     const seenNames = new Set<string>();
     const synthesised: ParsedCourseData['classes'] = [];
     for (const cr of data.courses) {
@@ -77,7 +86,11 @@ function doIngest(
       synthesised.push({ id: '', name: cr.name, short_name: null });
     }
     effectiveClasses = synthesised;
-    effectiveCourses = data.courses.map((cr) => ({ ...cr, class_id_ref: cr.name }));
+    effectiveCourses = data.courses.map((cr) => ({
+      ...cr,
+      class_id_ref: cr.name,
+      class_refs: [cr.name],
+    }));
   }
 
   // (1) Classes — reuse existing by name within the same competition.
@@ -94,7 +107,15 @@ function doIngest(
     classIdByName.set(row.name, row.id);
   }
   for (const c of effectiveClasses) {
-    if (classIdByName.has(c.name)) continue;
+    const existingId = classIdByName.get(c.name);
+    if (existingId !== undefined) {
+      // 02.1-14 Task 9: the import only ever turns no-timing on, as MeOS
+      // (iof30interface.cpp readClass); clearing it is an operator PATCH.
+      if (c.no_timing === true) {
+        handle.db.update(classes).set({ noTiming: true }).where(eq(classes.id, existingId)).run();
+      }
+      continue;
+    }
     const id = crypto.randomUUID();
     handle.db
       .insert(classes)
@@ -103,6 +124,7 @@ function doIngest(
         competitionId,
         name: c.name,
         shortName: c.short_name,
+        noTiming: c.no_timing === true,
       })
       .run();
     classIdByName.set(c.name, id);
@@ -144,6 +166,14 @@ function doIngest(
       })
       .run();
     coursesCreated++;
+
+    // 02.1-14 Task 4: classes point at courses (many classes per course).
+    // courses.class_id above stays populated for back-compat only.
+    for (const className of refsOf(cr)) {
+      const cid = classIdByName.get(className);
+      if (cid === undefined) continue;
+      handle.db.update(classes).set({ courseId: id }).where(eq(classes.id, cid)).run();
+    }
 
     for (let i = 0; i < cr.control_codes.length; i++) {
       const code = cr.control_codes[i];

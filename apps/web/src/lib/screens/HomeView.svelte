@@ -27,10 +27,10 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { listCompetitions } from '$lib/api/client.ts';
-  import { t } from '$lib/i18n/index.ts';
+  import { listCompetitions } from '#lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { CompetitionDTO } from '@fartola/shared-types';
-  import CompetitionCard from '$lib/components/CompetitionCard.svelte';
+  import CompetitionCard from '#lib/components/CompetitionCard.svelte';
 
   let competitions: CompetitionDTO[] = $state([]);
   let loaded = $state(false);

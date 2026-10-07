@@ -11,7 +11,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import ExportView from '$lib/screens/ExportView.svelte';
+  import ExportView from '#lib/screens/ExportView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

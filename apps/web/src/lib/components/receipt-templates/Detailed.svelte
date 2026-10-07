@@ -15,7 +15,7 @@
   Locked by 01-13-PLAN.md task 1.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read }: ReceiptTemplateProps = $props();
@@ -60,7 +60,7 @@
 
 <div class="rcpt-sep"></div>
 <div class="rcpt-row rcpt-total">
-  <span>{t('rcpt.total')}</span><span>{read.elapsed} {read.status}</span>
+  <span>{t('rcpt.total')}</span><span>{read.elapsed} {read.statusLabel}</span>
 </div>
 {#if read.place}
   <div class="rcpt-row">

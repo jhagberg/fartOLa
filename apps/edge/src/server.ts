@@ -38,8 +38,10 @@ import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 
 import { registerHealthRoute } from './routes/health.ts';
 import registerDevRoutes from './routes/dev.ts';
@@ -47,6 +49,7 @@ import registerCompetitions from './routes/competitions.ts';
 import registerClasses from './routes/classes.ts';
 import registerCourses from './routes/courses.ts';
 import registerCompetitors from './routes/competitors.ts';
+import registerMissingStarts from './routes/missingStarts.ts';
 import registerClubs from './routes/clubs.ts';
 import registerImportRoutes from './routes/import.ts';
 import registerCompetitionsFromWizard from './routes/competitionsFromWizard.ts';
@@ -63,9 +66,19 @@ import registerHiredCardsRoutes from './routes/hiredCards.ts';
 import registerSettingsRoutes from './routes/settings.ts';
 import registerMipRoute from './integrations/meos/mip.ts';
 import registerMopRoute from './integrations/meos/mop.ts';
-import { LOGGER_REDACT_OPTIONS } from './log/redact.ts';
+import registerLottningRoutes from './routes/lottning.ts';
+import registerLiveresultatRoutes from './routes/liveresultat.ts';
+import registerEventorPushRoutes from './routes/eventorPush.ts';
+import registerCheckunitRoutes from './routes/checkunit.ts';
+import registerEventCodesRoutes from './routes/event-codes.ts';
+import registerAccessRoute from './routes/access.ts';
+import { LOGGER_REDACT_OPTIONS, LOGGER_SERIALIZERS } from './log/redact.ts';
+import { verifyCookie } from './auth/event-code.ts';
+import { getOrCreateSigningSecret } from './routes/event-codes.ts';
 import wsPlugin from './ws/index.ts';
 import type { DbHandle } from './db/index.ts';
+import { competitors, eventCodes } from './db/schema.ts';
+import { resolveMeosAccess } from './config/secrets.ts';
 import type { PrinterSink } from './print/sink.ts';
 import { createStdoutPrinterSink } from './print/stdout-sink.ts';
 import type { ChannelName } from '@fartola/shared-types';
@@ -172,16 +185,23 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
   // (tests) we keep the silent path. When they pass an object (the
   // streaming test that captures pino chunks for assertion), we merge
   // redact on top of their config so the caller's stream still wins.
+  // The req serializer masks secret query parameters (MeOS `?pwd=`) in
+  // the URL every request is logged with.
   let loggerOpt: BuildServerOpts['logger'] | Record<string, unknown>;
   if (opts.logger === false) {
     loggerOpt = false;
   } else if (typeof opts.logger === 'object' && opts.logger !== null) {
+    const callerOpts = opts.logger as Record<string, unknown>;
     loggerOpt = {
-      ...(opts.logger as Record<string, unknown>),
+      ...callerOpts,
       redact: LOGGER_REDACT_OPTIONS,
+      serializers: {
+        ...(callerOpts['serializers'] as Record<string, unknown> | undefined),
+        ...LOGGER_SERIALIZERS,
+      },
     };
   } else {
-    loggerOpt = { redact: LOGGER_REDACT_OPTIONS };
+    loggerOpt = { redact: LOGGER_REDACT_OPTIONS, serializers: LOGGER_SERIALIZERS };
   }
   const app = fastify({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,8 +217,9 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
   // CLI) so the MeOS parallel-run laptop can open the SPA over LAN.
   // Same-origin Host header is the implicit trust anchor — Fastify only
   // serves bound interfaces, so an attacker on the LAN must already be
-  // on the LAN, which is the explicit Phase 2.0 trust model (D-MIP-1 /
-  // D-MOP-4 no-auth closed-LAN posture).
+  // on the LAN (Phase 2.0 trust model). The MeOS endpoints' no-auth
+  // posture (D-MIP-1 / D-MOP-4) was revised on 2026-10-05: they take a
+  // password, or stay on this machine (integrations/meos/access.ts).
   const corsOrigin: Array<RegExp> = [
     /^http:\/\/127\.0\.0\.1(:\d+)?$/,
     /^http:\/\/localhost(:\d+)?$/,
@@ -235,6 +256,35 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // allow-list can permit LAN origins when the operator explicitly
     // opted in. Default false (loopback only). Code-review F-001 fix.
     app.decorate('fartolaAllowLan', opts.allowLan === true);
+
+    // Snapshot this host's own interface addresses at boot (operator-self
+    // bypass — see fartolaIsOperatorMachine). Only consulted when allowLan is
+    // set; loopback-only binds never see a non-loopback source. A mid-session
+    // IP change (DHCP/Wi-Fi switch) needs a restart to refresh this set.
+    const localInterfaceAddresses = new Set<string>();
+    for (const addrs of Object.values(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        localInterfaceAddresses.add(addr.address);
+      }
+    }
+    // The operator machine: loopback, or (allowLan only) this host's own
+    // interface addresses — the operator may open the UI via THIS laptop's
+    // own LAN IP (the URL run-local.sh prints), in which case the socket
+    // source is one of this host's addresses, not loopback. A real helper
+    // machine always has a *different* source IP, so trusting our own
+    // addresses doesn't widen LAN access. socket.remoteAddress only — never
+    // X-Forwarded-For (header spoofing, T-02.1-27). Used by the write gate
+    // below and the MeOS endpoints (integrations/meos/access.ts).
+    app.decorate('fartolaIsOperatorMachine', (remoteAddr: string | undefined): boolean => {
+      if (remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1') {
+        return true;
+      }
+      if (opts.allowLan !== true || remoteAddr === undefined) return false;
+      const normalizedAddr = remoteAddr.startsWith('::ffff:')
+        ? remoteAddr.slice('::ffff:'.length)
+        : remoteAddr;
+      return localInterfaceAddresses.has(normalizedAddr);
+    });
 
     await app.register(wsPlugin);
 
@@ -274,6 +324,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerClasses);
     await app.register(registerCourses);
     await app.register(registerCompetitors);
+    await app.register(registerMissingStarts);
     await app.register(registerClubs);
     // Phase 2.0 Plan 02-02 — Eventor lookup + status (walk-up autocomplete).
     // Mounted after registerClubs since the lookup parallels clubs autocomplete.
@@ -303,13 +354,192 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerSettingsRoutes);
     // Phase 2.0 Plan 02-03 — MIP server (GET /mip). Mounted at the ROOT,
     // not /api/*, because MeOS hard-codes its poll URL and won't add a
-    // prefix. D-MIP-1: no auth (closed club LAN).
+    // prefix. D-MIP-1 (revised 2026-10-05): MeOS password, see access.ts.
     await app.register(registerMipRoute);
     // Phase 2.0 Plan 02-04 — MOP receiver (POST /mop). Same root-mount
-    // posture as MIP — MeOS hard-codes its push URL. D-MOP-4: no auth,
-    // always-on; D-MOP-1..3 govern the shadow-table writes and auto-merge.
+    // posture as MIP — MeOS hard-codes its push URL. D-MOP-4 (revised
+    // 2026-10-05): MeOS password, see access.ts; D-MOP-1..3 govern the
+    // shadow-table writes and auto-merge.
     await app.register(registerMopRoute);
+    await app.register(registerLottningRoutes);
+    await app.register(registerLiveresultatRoutes);
+    // Phase 2.1 Plan 02.1-08 — Eventor results + startlist push.
+    // POST /api/competitions/:id/eventor/push-results|push-startlist.
+    await app.register(registerEventorPushRoutes);
+    // Phase 2.1 Plan 02.1-06 — Kvar-i-skogen check-unit backup readout.
+    // POST /api/competitions/:id/checkunit/snapshot.
+    await app.register(registerCheckunitRoutes);
+    // Phase 2.1 Plan 02.1-12 — Admin event-code routes (localhost-only).
+    // POST/GET /api/competitions/:id/event-codes, POST revoke.
+    await app.register(registerEventCodesRoutes);
+    // Phase 2.1 Plan 02.1-12 — POST /access (open to LAN — auth endpoint).
+    // Rate-limited; sets signed HttpOnly cookie scoped to competitionId.
+    await app.register(registerAccessRoute);
+
+    // Cache the signing secret once at startup — avoids a DB hit on every
+    // authenticated write request.
+    const eventCodeSigningSecret = getOrCreateSigningSecret(app);
+
+    // D-MOP-4 / D-MIP-1 revised 2026-10-05: running MeOS without a password
+    // is the operator's explicit choice — say so once at startup.
+    const meosAccess = resolveMeosAccess(opts.dbHandle);
+    if (meosAccess.password === undefined && meosAccess.allowWithoutPassword) {
+      app.log.warn(
+        'MeOS-koppling utan lösenord är tillåten: alla på nätverket kan läsa alla anmälda via /mip och lägga till löpare via /mop'
+      );
+    }
+
+    // Phase 2.1 Plan 02.1-12 — Blanket preHandler gate on every write
+    // (POST/PATCH/PUT/DELETE) that changes a competition's data, for
+    // non-localhost requests without a valid signed cookie (T-02.1-27 /
+    // T-02.1-27b).
+    //
+    // Localhost bypass: uses socket.remoteAddress ONLY. X-Forwarded-For is
+    // EXPLICITLY IGNORED to prevent header spoofing (T-02.1-27 mitigation).
+    // When allowLan is set, requests from THIS host's own interface IPs also
+    // bypass (operator opening the UI via the laptop's LAN IP) — see the gate.
+    //
+    // Cookie competitionId scope: the cookie payload's cid field must match
+    // the competition the write targets. Mismatch → 403
+    // cookie_competition_mismatch (T-02.1-25b mitigation — helper
+    // authenticated for comp A cannot write to comp B).
+    //
+    // The target competition comes from the matched route (gatedCompetitionId):
+    // the :id of /api/competitions/:id[/**], the competitor row's competition
+    // for /api/competitors/:id[/**], and the validated body's competition_id
+    // for POST /api/competitors. New routes under those prefixes are protected
+    // without an inventory update. It runs as a preHandler (not onRequest) so
+    // the body is parsed for the POST /api/competitors case.
+    const gatedCompetitionId = (
+      routeUrl: string | undefined,
+      params: Record<string, string | undefined>,
+      body: unknown
+    ): string | undefined => {
+      if (routeUrl === undefined) return undefined; // unmatched → 404, nothing to protect
+      if (routeUrl === '/api/competitions/:id' || routeUrl.startsWith('/api/competitions/:id/')) {
+        // /api/competitions/:id/event-codes routes are admin-only
+        // (localhost-gated) routes with their own localhost check.
+        if (routeUrl.startsWith('/api/competitions/:id/event-codes')) return undefined;
+        return params['id'];
+      }
+      if (routeUrl === '/api/competitors/:id' || routeUrl.startsWith('/api/competitors/:id/')) {
+        // Unknown competitor → the route itself answers 404 without writing.
+        return app.fartolaDb.db
+          .select({ competitionId: competitors.competitionId })
+          .from(competitors)
+          .where(eq(competitors.id, params['id'] ?? ''))
+          .get()?.competitionId;
+      }
+      if (routeUrl === '/api/competitors') {
+        const cid = (body as { competition_id?: unknown } | null | undefined)?.competition_id;
+        // Missing/invalid competition_id → the route answers 400 without writing.
+        return typeof cid === 'string' ? cid : undefined;
+      }
+      return undefined;
+    };
+
+    // Install- and session-level writes with no competition of their own:
+    // API keys, which competition SI reads go to, creating competitions. Only
+    // the operator machine may make them; a helper's event code is scoped to
+    // one competition and never reaches these. The FARTOLA_DEV tools under
+    // /api/__dev/ and /api/__admin/ (simulated reads, backup, retention,
+    // Eventor refresh) are operator-only too: run-local.sh enables them by
+    // default on a LAN bind.
+    const OPERATOR_ONLY_WRITES = new Set([
+      '/api/settings/integrations',
+      '/api/settings/meos',
+      '/api/sessions/active-competition',
+      '/api/sessions/reconnect-bridge',
+      '/api/competitions',
+      '/api/competitions/from-wizard',
+    ]);
+
+    app.addHook('preHandler', async (request, reply) => {
+      if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method.toUpperCase())) return;
+      const routeUrl = request.routeOptions.url ?? '';
+      const operatorOnly =
+        OPERATOR_ONLY_WRITES.has(routeUrl) ||
+        routeUrl.startsWith('/api/__dev/') ||
+        routeUrl.startsWith('/api/__admin/');
+      const routeCompetitionId = gatedCompetitionId(
+        request.routeOptions.url,
+        request.params as Record<string, string | undefined>,
+        request.body
+      );
+      if (routeCompetitionId === undefined && !operatorOnly) return;
+
+      // Operator machine (loopback, or this host's own LAN IP with allowLan)
+      // — socket.remoteAddress only, never XFF. Helpers use the cookie below.
+      if (app.fartolaIsOperatorMachine(request.socket.remoteAddress)) return;
+
+      if (operatorOnly) return reply.code(403).send({ error: 'operator_only' });
+      if (routeCompetitionId === undefined) return; // operator-only handled above
+
+      // Non-localhost: require a valid signed cookie.
+      const rawCookie = request.headers.cookie;
+      const cookieValue = rawCookie
+        ? rawCookie
+            .split(';')
+            .map((s) => s.trim())
+            .find((s) => s.startsWith('fartola_event_code='))
+            ?.slice('fartola_event_code='.length)
+        : undefined;
+
+      if (!cookieValue) {
+        return reply.code(403).send({ error: 'event_code_required' });
+      }
+
+      const payload = verifyCookie(cookieValue, routeCompetitionId, eventCodeSigningSecret);
+
+      if (!payload) {
+        // Either signature invalid, expired, or competitionId mismatch.
+        // Check if signature is valid for SOME competition to distinguish
+        // mismatch from tampered/missing.
+        // For simplicity: if cookie parses but cid doesn't match, return mismatch.
+        // Otherwise, return event_code_required (don't leak why verification failed).
+        //
+        // To distinguish: try verifying without the cid check — not exposed by
+        // verifyCookie API. Instead, check if cookie looks structurally valid
+        // (two dot-separated base64url parts) and report mismatch, otherwise
+        // report missing.
+        const parts = cookieValue.split('.');
+        if (parts.length === 2 && parts[0] && parts[1]) {
+          // Structurally valid cookie but failed verification — likely cid mismatch
+          // or signature tampered. Report competition_mismatch for UX clarity on
+          // the most common case (helper navigating between competitions).
+          return reply.code(403).send({ error: 'cookie_competition_mismatch' });
+        }
+        return reply.code(403).send({ error: 'event_code_required' });
+      }
+
+      // Verified. payload.competitionId already matches routeCompetitionId
+      // (verifyCookie enforces this). The code the cookie was issued for must
+      // still be active: revoking (or deleting/expiring) a code cuts off its
+      // cookies immediately, not at the cookie's own expiry.
+      const code = app.fartolaDb.db
+        .select({ id: eventCodes.id })
+        .from(eventCodes)
+        .where(
+          and(
+            eq(eventCodes.id, payload.codeId),
+            eq(eventCodes.competitionId, routeCompetitionId),
+            isNull(eventCodes.revokedAtMs),
+            gt(eventCodes.expiresAtMs, Date.now())
+          )
+        )
+        .get();
+      if (!code) return reply.code(403).send({ error: 'event_code_required' });
+    });
+
     await app.register(registerDevRoutes);
+  }
+
+  // Plan 04 (D-02 / REQ-OPS-004) — per-reader lifecycle array. Decorated
+  // unconditionally (even when no dbHandle is provided) so /api/health always
+  // returns a valid readers array. The bin overwrites this after listen() with
+  // real lifecycles; tests and --no-bridge boots stay at empty array.
+  if (!app.hasDecorator('bridgeLifecycles')) {
+    app.decorate('bridgeLifecycles', []);
   }
 
   await registerHealthRoute(app);
@@ -364,5 +594,11 @@ declare module 'fastify' {
      * GET /api/bridge/status so a fresh page-load can prime its
      * StationCard before any connection_changed envelope arrives. */
     bridgeState: 'opening' | 'open' | 'closed' | 'error';
+    /** True when a request's socket source is the operator machine: loopback,
+     * or (allowLan) one of this host's own interface addresses. */
+    fartolaIsOperatorMachine: (remoteAddr: string | undefined) => boolean;
   }
 }
+
+// sessions.ts owns the declarations for activeCompetitionId, reconnectBridge,
+// and bridgeLifecycles. No re-declaration here to avoid duplicate augmentation.

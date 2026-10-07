@@ -1,6 +1,8 @@
 // Ported from allestuetsmerweh/sportident.js — packages/sportident/src/SiCard/types/modernSiCardExamples.ts
 // Upstream: https://github.com/allestuetsmerweh/sportident.js (MIT License)
 // Specifically: the `getCardWith64Punches` modern export. cardData + storageData copied byte-for-byte.
+// fartOLa: times whose punch record has PTD bit 0 (PM) set are +43200 vs upstream,
+// because fartOLa decodes the PM flag and upstream does not.
 // punchCount = 64 (0x40), card number 7050892 (SI10 range). Exercises the multi-page punch
 // read sequence: typeSpecificReadPunches issues GET_SI8 page 4 AND page 5 (codex review #3).
 // See packages/sportident/NOTICE.md for cumulative attribution.
@@ -48,9 +50,9 @@ export const fixture: SiCardSample & { name: string } = {
     uid: 0x772a4299,
     cardSeries: 'SiCard10',
     cardNumber: 7050892,
-    startTime: 8721,
+    startTime: 51921,
     finishTime: null,
-    checkTime: 8735,
+    checkTime: 51935,
     punchCount: 64,
     punches: range(64).map(() => ({ code: 32, time: 8224 })),
     cardHolder: {

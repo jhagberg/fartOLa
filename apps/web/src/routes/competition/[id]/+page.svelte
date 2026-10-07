@@ -19,7 +19,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import NewCompetitionWizard from '$lib/screens/NewCompetitionWizard.svelte';
+  import NewCompetitionWizard from '#lib/screens/NewCompetitionWizard.svelte';
 
   const id = $derived(page.params['id'] ?? '');
   const wizardFlag = $derived(page.url.searchParams.get('wizard') === '1');
@@ -29,7 +29,7 @@
     // Non-wizard navigation: bounce to readout. Avoid bouncing while
     // the wizard overlay is the intended view.
     if (!isWizardRoute && id && id !== '_new') {
-      void goto(`/competition/${id}/readout`, { replaceState: true });
+      void goto(`/competition/${id}/readout`, { replace: true });
     }
   });
 </script>

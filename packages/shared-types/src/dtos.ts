@@ -94,6 +94,16 @@ export const CompetitionDTO = z.object({
    * clock instant. Frontend uses this to render the phase pill and
    * enable/disable the "Starta tävling" CTA. */
   race_started_at_ms: z.number().int().nonnegative().nullable(),
+  /** Phase 2.1 D-17 — display format for elapsed times. 'seconds' is the
+   * default; 'tenths' enables one-decimal rendering for sprint events. */
+  timing_format: z.enum(['seconds', 'tenths']).default('seconds'),
+  /** Phase 2.1 Plan 11 — linked Eventor event ID. NULL = not linked to
+   * any Eventor event. Set by the wizard Eventor quickstart or by
+   * PATCH /api/competitions/:id with eventor_event_id. */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
+  /** SOFT TR 4.21.1 — the competition's max time in seconds, the same for
+   * all classes. NULL = none. Set via PUT /api/competitions/:id/max-time. */
+  max_time_sec: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 
@@ -102,6 +112,9 @@ export const CompetitionCreateInput = z.object({
   date: ISO_DATE,
   receipt_template: RECEIPT_TEMPLATE.optional(),
   auto_print: z.boolean().optional(),
+  /** Phase 2.1 Plan 11 — optional Eventor event ID to link on creation
+   * (e.g. set by the wizard Eventor quickstart path). */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionCreateInput = z.infer<typeof CompetitionCreateInput>;
 
@@ -110,6 +123,11 @@ export const CompetitionPatchInput = z.object({
   date: ISO_DATE.optional(),
   receipt_template: RECEIPT_TEMPLATE.optional(),
   auto_print: z.boolean().optional(),
+  /** Phase 2.1 D-17 — toggle subsecond display for sprint events. */
+  timing_format: z.enum(['seconds', 'tenths']).optional(),
+  /** Phase 2.1 Plan 11 — link (positive integer) or unlink (null) an
+   * Eventor event. PATCH with null removes an existing link. */
+  eventor_event_id: z.number().int().positive().nullable().optional(),
 });
 export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 
@@ -117,11 +135,27 @@ export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 // Class — mutable config table, always nested under a competition.
 // ---------------------------------------------------------------------------
 
+/** 02.1-14 Task 14 — which start a class's running times are measured from:
+ * 'auto' = the runner's start time when there is one, else the start punch;
+ * 'start_time' = the start time only (start punch ignored, SOFT TR 4.18.9
+ * (2026-07-01)); 'start_punch' = the start punch, else the start time (MeOS). */
+export const StartMethod = z.enum(['auto', 'start_time', 'start_punch']);
+export type StartMethod = z.infer<typeof StartMethod>;
+
 export const ClassDTO = z.object({
   id: UUID,
   competition_id: UUID,
   name: z.string().min(1),
   short_name: z.string().nullable(),
+  /** 02.1-14 Task 9: class without timing (IOF resultListMode=
+   * "UnorderedNoTimes") — no running time or place is shown. */
+  no_timing: z.boolean(),
+  /** 02.1-14 Task 14: which start the running time is measured from. */
+  start_method: StartMethod,
+  /** 02.1-14 Task 4: the course this class runs (classes.course_id). NULL =
+   * not assigned; readers fall back to the course whose class_id is this
+   * class. Omitted where the course is not needed. */
+  course_id: z.string().nullable().optional(),
 });
 export type ClassDTO = z.infer<typeof ClassDTO>;
 
@@ -185,6 +219,11 @@ export const CompetitorDTO = z.object({
   consent_at_ms: z.number().int().nonnegative().nullable(),
   consent_status: z.enum(['explicit', 'pending_first_read', 'confirmed_on_read']),
   scrubbed_at_ms: z.number().int().nullable(),
+  /** Phase 2.1 — epoch ms of assigned start time from lottning. NULL when
+   * no start time has been drawn yet. Written by the lottning route (Plan
+   * 02.1-02); this field makes it available at the /competitors endpoint
+   * for display in the runners list and readout views. */
+  start_time_ms: z.number().int().nonnegative().nullable(),
 });
 export type CompetitorDTO = z.infer<typeof CompetitorDTO>;
 
@@ -324,18 +363,46 @@ export type UnDnfInput = z.infer<typeof UnDnfInput>;
 //
 // IOF v3 mapping (apps/edge/src/xml/iofExport.ts):
 //   DNF → DidNotFinish | DNS → DidNotStart | DQ → Disqualified
-//   CANCEL → Cancelled | MAX → OverTime
+//   CANCEL → Cancelled | MAX → OverTime | MP → MissingPunch
+// MP can be set by hand as in MeOS (02.1-14 Task 10).
 // ---------------------------------------------------------------------------
 
 export const ManualStatusInput = z.object({
-  status: z.enum(['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX']),
+  status: z.enum(['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX', 'MP']),
   reason: z.string().min(1).max(500),
 });
 export type ManualStatusInput = z.infer<typeof ManualStatusInput>;
 
-/** Clearing the override takes no body — symmetric with UnDnfInput. */
-export const ClearManualStatusInput = z.object({}).passthrough();
+/** Clearing the override takes no body — symmetric with UnDnfInput. Strict
+ * so unexpected body fields are rejected (02-11 LOW: was passthrough()). */
+export const ClearManualStatusInput = z.object({}).strict();
 export type ClearManualStatusInput = z.infer<typeof ClearManualStatusInput>;
+
+// ---------------------------------------------------------------------------
+// Phase 2.1 (D-16) — voided-leg REST inputs.
+//
+// POST /api/competitions/:id/competitors/:cid/void-leg
+//   body: { control_code: number, reason?: string }
+//   The control is not required for this runner; the running time is not
+//   changed, so there is no time cap (SOFT TR 4.20.10: no results built from
+//   split times). Strict, so a caller still sending max_seconds gets 400.
+//
+// POST /api/competitions/:id/competitors/:cid/unvoid-leg
+//   body: { control_code: number }
+// ---------------------------------------------------------------------------
+
+export const VoidLegInput = z
+  .object({
+    control_code: z.number().int().positive(),
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
+export type VoidLegInput = z.infer<typeof VoidLegInput>;
+
+export const UnvoidLegInput = z.object({
+  control_code: z.number().int().positive(),
+});
+export type UnvoidLegInput = z.infer<typeof UnvoidLegInput>;
 
 // ---------------------------------------------------------------------------
 // Club — walk-up autocomplete cache.
@@ -372,6 +439,14 @@ export type EventorLookupCandidate = z.infer<typeof EventorLookupCandidate>;
 
 export const EventorLookupHit = EventorLookupCandidate.extend({
   hit: z.literal(true),
+  /** Number of alternative Eventor competitors for the same SI card that were
+   * NOT selected by the disambiguation algorithm. 0 = unique match (no
+   * ambiguity). >0 = resolved by recency/context but alternatives exist.
+   * The WalkupModal renders a "+N andra chip" when this is >0. */
+  alternatives: z.number().int().min(0),
+  /** All candidates including the winner, populated when alternatives > 0.
+   * Used by the WalkupModal chip popover without a second round-trip. */
+  allCandidates: z.array(EventorLookupCandidate),
 });
 export type EventorLookupHit = z.infer<typeof EventorLookupHit>;
 
@@ -476,13 +551,25 @@ export const HiredCardOpen = z.object({
 export type HiredCardOpen = z.infer<typeof HiredCardOpen>;
 
 // ---------------------------------------------------------------------------
-// Health — plan 01 baseline. Kept here so apps/edge keeps a single import
-// surface for shared schemas + types.
+// Health — plan 01 baseline. Plan 04 adds per-reader status (REQ-OPS-004).
 // ---------------------------------------------------------------------------
+
+export const ReaderStatusDTO = z.object({
+  path: z.string(),
+  position: z.string().nullable(),
+  connected: z.boolean(),
+  /** Epoch-ms of the last card_read event on this reader, or null if none
+   * since boot. */
+  last_punch_at: z.number().int().nullable(),
+});
+export type ReaderStatusDTO = z.infer<typeof ReaderStatusDTO>;
 
 export const HealthDTO = z.object({
   status: z.literal('ok'),
   node_id: z.string(),
   uptime_ms: z.number(),
+  /** Plan 04 (D-01 / REQ-OPS-004) — per-reader status. Empty array when
+   * --no-bridge is set. One entry per --serial flag. */
+  readers: z.array(ReaderStatusDTO),
 });
 export type HealthDTO = z.infer<typeof HealthDTO>;

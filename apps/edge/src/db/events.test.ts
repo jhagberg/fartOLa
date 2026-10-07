@@ -9,7 +9,7 @@
 //
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H1
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -123,10 +123,9 @@ describe('events: append-only invariant', () => {
     const handle = openDatabase(':memory:');
     try {
       const triggers = handle.sqlite
-        .prepare<
-          unknown[],
-          TriggerRow
-        >("SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('events_no_update', 'events_no_delete') ORDER BY name")
+        .prepare<unknown[], TriggerRow>(
+          "SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('events_no_update', 'events_no_delete') ORDER BY name"
+        )
         .all();
       assert.equal(
         triggers.length,

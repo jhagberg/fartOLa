@@ -26,6 +26,7 @@ import type {
   CompetitorCreateInput,
   ClassDTO,
   ClassCreateInput,
+  StartMethod,
   CourseDTO,
   CourseCreateInput,
   ClubDTO,
@@ -135,6 +136,23 @@ export function getCompetition(
   return apiFetch(`/api/competitions/${encodeURIComponent(id)}`);
 }
 
+/** 02.1-14 Task 5 — control codes voided course-wide (MeOS "Bad" control). */
+export function listVoidedControls(competitionId: string): Promise<{ control_codes: number[] }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/voided-controls`);
+}
+
+/** POST voids `code` for every course in the competition; DELETE unvoids it. */
+export function setControlVoided(
+  competitionId: string,
+  code: number,
+  voided: boolean
+): Promise<{ local_seq: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/voided-controls/${code}`,
+    { method: voided ? 'POST' : 'DELETE' }
+  );
+}
+
 export function createCompetition(body: CompetitionCreateInput): Promise<CompetitionDTO> {
   return apiFetch<CompetitionDTO>('/api/competitions', { method: 'POST', body });
 }
@@ -144,6 +162,28 @@ export function patchCompetition(id: string, body: CompetitionPatchInput): Promi
     method: 'PATCH',
     body,
   });
+}
+
+/** SOFT TR 4.21.1 — set (seconds) or clear (null) the competition's max
+ * time, the same for all classes. 409 max_time_locked after the first start
+ * (TR 4.21.2). */
+export function setCompetitionMaxTime(
+  id: string,
+  maxTimeSec: number | null
+): Promise<CompetitionDTO> {
+  return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/max-time`, {
+    method: 'PATCH',
+    body: { max_time_sec: maxTimeSec },
+  });
+}
+
+/** Whole minutes from the max-time field → seconds. '' → null (no max
+ * time); anything but a positive whole number → undefined (invalid). */
+export function maxTimeMinutesToSec(raw: string): number | null | undefined {
+  const s = raw.trim();
+  if (s === '') return null;
+  if (!/^\d+$/.test(s) || Number(s) === 0) return undefined;
+  return Number(s) * 60;
 }
 
 /** Phase 2.1 — flip the race-phase gate. Idempotent: returns the existing
@@ -182,6 +222,8 @@ export interface CreateFromWizardInput {
   name: string;
   date: string;
   xml_file: { name: string; content_base64: string };
+  /** Plan 11 — optional Eventor event ID to link on creation. */
+  eventor_event_id?: number | null;
 }
 
 export interface CreateFromWizardOk {
@@ -397,7 +439,7 @@ export function unDnf(competitionId: string, competitorId: string): Promise<{ lo
 // call setManualStatus() so the operator can pick any of the five states.
 // ---------------------------------------------------------------------------
 
-export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
 export function setManualStatus(
   competitionId: string,
@@ -501,6 +543,8 @@ export type ExportStatus = 'Final' | 'Provisional';
 export interface ExportPreviewSummary {
   class_count: number;
   person_result_count: number;
+  /** Runners left out: no result yet (never read out). SOFT TA till TR 7.8.2. */
+  pending_count: number;
   status: ExportStatus;
 }
 
@@ -511,8 +555,7 @@ export interface ExportPreviewError {
 }
 
 export type ExportPreviewResult =
-  | { valid: true; summary: ExportPreviewSummary }
-  | { valid: false; errors: ExportPreviewError[] };
+  { valid: true; summary: ExportPreviewSummary } | { valid: false; errors: ExportPreviewError[] };
 
 /** Preview the IOF XML 3.0 export for a competition. Returns valid=true
  * with summary counts on XSD pass, or valid=false with line-numbered
@@ -524,6 +567,16 @@ export function exportPreview(
   return apiFetch<ExportPreviewResult>(
     `/api/competitions/${encodeURIComponent(competitionId)}/export/preview`,
     { query: { status } }
+  );
+}
+
+/** SOFT TA till TR 7.8.2: "Sätt ej utlästa till Ej start" — DNS for every
+ * runner with no read-out and no status (MeOS "Sätt okända löpare utan
+ * registrering till <Ej Start>"); `undo` clears exactly those. */
+export function setUnreadDns(competitionId: string, undo = false): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/unread-dns${undo ? '/undo' : ''}`,
+    { method: 'POST', body: {} }
   );
 }
 
@@ -551,12 +604,19 @@ export function listClubs(prefix?: string, limit?: number): Promise<{ clubs: Clu
 // ---------------------------------------------------------------------------
 
 /** GET /api/eventor/lookup?si_card=N — cache lookup for the bricka-scan
- * pre-fill flow. Returns { hit: true, ... } for a unique match,
- * { hit: 'many', candidates } when the cache holds duplicate rows for the
- * card (family-shared / replacement / rental pool), or { hit: false }. */
-export function lookupEventorBySiCard(siCard: number): Promise<EventorLookupResult> {
+ * pre-fill flow. Returns { hit: true, alternatives: N, ... } for a resolved
+ * match (unique or recency/context resolved), { hit: 'many', candidates } when
+ * same-competition disambiguation is needed, or { hit: false }.
+ *
+ * Pass `competitionId` to enable context-aware disambiguation: the backend will
+ * prefer a runner registered in that competition and return 'many' if multiple
+ * are registered for the same card. */
+export function lookupEventorBySiCard(
+  siCard: number,
+  competitionId?: string | null
+): Promise<EventorLookupResult> {
   return apiFetch<EventorLookupResult>('/api/eventor/lookup', {
-    query: { si_card: siCard },
+    query: competitionId ? { si_card: siCard, competition_id: competitionId } : { si_card: siCard },
   });
 }
 
@@ -633,6 +693,25 @@ export interface EventorEventListItem {
   clock: string | null;
 }
 
+/** GET /api/eventor/events/:id — fetch metadata for a single Eventor event.
+ *
+ * Used by the wizard Eventor quickstart to validate a typed event ID and
+ * prefill name + date. Returns structured event metadata on success.
+ * Throws ApiError on 400 (invalid id), 403 (forbidden), 404 (not found),
+ * 502 (eventor down), 503 (no API key). */
+export interface EventorEventMeta {
+  eventId: number;
+  name: string;
+  /** ISO date YYYY-MM-DD. */
+  startDate: string;
+  /** Organising club/organisation name; may be null. */
+  organisation: string | null;
+}
+
+export function getEventorEvent(eventId: number): Promise<EventorEventMeta> {
+  return apiFetch<EventorEventMeta>(`/api/eventor/events/${encodeURIComponent(String(eventId))}`);
+}
+
 export function listEventorEvents(opts: {
   fromDate: string;
   toDate?: string;
@@ -701,6 +780,27 @@ export function setIntegration(
   });
 }
 
+/** MeOS integration (GET /mip, POST /mop) access. The password is never
+ * returned, only whether one is set (D-MOP-4 revised 2026-10-05). */
+export interface MeosSettings {
+  has_meos_password: boolean;
+  meos_allow_without_password: boolean;
+}
+
+/** GET /api/settings/meos. */
+export function getMeosSettings(): Promise<MeosSettings> {
+  return apiFetch<MeosSettings>('/api/settings/meos');
+}
+
+/** PUT /api/settings/meos — empty meos_password clears it. Operator machine
+ * only. */
+export function setMeosSettings(body: {
+  meos_password?: string;
+  meos_allow_without_password?: boolean;
+}): Promise<MeosSettings> {
+  return apiFetch<MeosSettings>('/api/settings/meos', { method: 'PUT', body });
+}
+
 // ---------------------------------------------------------------------------
 // Hired cards (Hyrbricka — Phase 2.0 Plan 02-05)
 // ---------------------------------------------------------------------------
@@ -731,6 +831,163 @@ export function returnHiredCard(
 }
 
 // ---------------------------------------------------------------------------
+// Lottning — start-time draw (Phase 2.1 Plan 02.1-02 routes)
+// ---------------------------------------------------------------------------
+
+export interface LottningBody {
+  mode: 'SOFT' | 'Random' | 'Simultaneous';
+  /** Epoch ms of the first start (all start times are epoch ms). */
+  firstStartMs: number;
+  intervalSec: number;
+  vacantSlots?: number;
+}
+
+export interface StartListEntry {
+  id: string;
+  name: string;
+  club: string | null;
+  card_number: number | null;
+  /** Epoch ms; null = not drawn. */
+  start_time_ms: number | null;
+}
+
+export interface LottningResponse {
+  class: {
+    id: string;
+    name: string;
+    /** Epoch ms. */
+    first_start_ms: number | null;
+    start_interval_sec: number | null;
+    max_time_sec: number | null;
+  };
+  start_list: StartListEntry[];
+}
+
+/** POST /api/competitions/:id/lottning/:classId — draw start times for a class.
+ * Returns { drawn: N } where N is the number of competitors assigned times. */
+export function postLottning(
+  competitionId: string,
+  classId: string,
+  body: LottningBody
+): Promise<{ drawn: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}`,
+    { method: 'POST', body }
+  );
+}
+
+/** GET /api/competitions/:id/lottning/:classId — fetch the current start list
+ * for a class, sorted by start_time_ms ascending. */
+export function getLottning(competitionId: string, classId: string): Promise<LottningResponse> {
+  return apiFetch<LottningResponse>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}`
+  );
+}
+
+/** PATCH /api/competitions/:id/classes/:classId — update class settings
+ * (max_time_sec, no_timing, start_method). Owned by Plan 02.1-02; this plan only consumes it. */
+export function patchClass(
+  competitionId: string,
+  classId: string,
+  body: { maxTimeSec?: number | null; no_timing?: boolean; start_method?: StartMethod }
+): Promise<{ ok: true }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/classes/${encodeURIComponent(classId)}`,
+    { method: 'PATCH', body }
+  );
+}
+
+/** PATCH /api/competitions/:id/competitors/:competitorId/start-time —
+ * update a competitor's individual start_time_ms (epoch ms, null clears;
+ * D-07 per-runner edit). Returns the updated competitor. */
+export function patchCompetitorStartTime(
+  competitionId: string,
+  competitorId: string,
+  startTimeMs: number | null
+): Promise<CompetitorDTO> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}/start-time`,
+    { method: 'PATCH', body: { start_time_ms: startTimeMs } }
+  );
+}
+
+/** PATCH …/start-time with a local wall-clock start 'YYYY-MM-DDTHH:MM:SS'
+ * — the card's clock, which epoch ms cannot hold in the hour skipped when
+ * DST starts (missing-start editing). */
+export function patchCompetitorStartWall(
+  competitionId: string,
+  competitorId: string,
+  startWall: string
+): Promise<CompetitorDTO> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}/start-time`,
+    { method: 'PATCH', body: { start_wall: startWall } }
+  );
+}
+
+/** 02.1-14 Task 15 — one runner without a start (GET …/missing-starts).
+ * The *_wall fields are the same times as local wall-clock strings
+ * 'YYYY-MM-DDTHH:MM:SS', the scale the running time is computed on. */
+export interface MissingStartItem {
+  competitor_id: string;
+  name: string;
+  club: string | null;
+  class_id: string;
+  class_name: string;
+  card_number: number | null;
+  status: string;
+  check_ms: number | null;
+  suggested_start_ms: number | null;
+  finish_ms: number;
+  check_wall: string | null;
+  suggested_start_wall: string | null;
+  finish_wall: string;
+}
+
+/** The day's check → start numbers + the runners without a start. */
+export interface MissingStartsResponse {
+  n: number;
+  median_ms: number | null;
+  mean_ms: number | null;
+  offset_ms: number;
+  items: MissingStartItem[];
+}
+
+/** GET /api/competitions/:id/missing-starts (02.1-14 Task 15). */
+export function listMissingStarts(competitionId: string): Promise<MissingStartsResponse> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/missing-starts`);
+}
+
+/** POST /api/competitions/:id/missing-starts/apply — all or nothing. */
+export function applyMissingStarts(
+  competitionId: string,
+  items: Array<{ competitor_id: string; start_wall: string }>
+): Promise<{ updated: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/missing-starts/apply`, {
+    method: 'POST',
+    body: { items },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Eventor push (Phase 2.1 Plan 02.1-08)
+// ---------------------------------------------------------------------------
+
+export function postEventorPushResults(competitionId: string): Promise<{ url: string }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/eventor/push-results`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+export function postEventorPushStartlist(competitionId: string): Promise<{ url: string }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/eventor/push-startlist`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Sessions (active competition pointer + bridge reconnect)
 // ---------------------------------------------------------------------------
 
@@ -755,6 +1012,132 @@ export function reconnectBridge(): Promise<{ status: string }> {
 
 export function getBridgeStatus(): Promise<{ state: 'opening' | 'open' | 'closed' | 'error' }> {
   return apiFetch('/api/bridge/status');
+}
+
+// ---------------------------------------------------------------------------
+// Checkunit snapshot (Phase 2.1 Plan 02.1-06 — kvar-i-skogen)
+// ---------------------------------------------------------------------------
+
+export interface CheckunitSnapshotResult {
+  /** SI card numbers read from the check-unit backup memory (started). */
+  cardNumbers: number[];
+  /** SI card numbers that have physically returned (card_read with finish
+   * punch). NOT based on computed status — only physical finish reads. */
+  returnedCardNumbers: number[];
+  /** True when the check-unit's backup memory wrapped around (older records
+   * may be missing). The UI warns the operator when this flag is set. */
+  overflow: boolean;
+  /** Total number of card numbers returned (convenience field). */
+  readCount: number;
+}
+
+/** POST /api/competitions/:id/checkunit/snapshot
+ * Reads the BSF8 check-unit backup memory via the active SI bridge reader.
+ * Optional `reader` query param selects which reader to use when multiple are
+ * connected (defaults to the first available reader). */
+export function postCheckunitSnapshot(
+  competitionId: string,
+  opts: { reader?: string } = {}
+): Promise<CheckunitSnapshotResult> {
+  const query: Record<string, string> = {};
+  if (opts.reader !== undefined) query['reader'] = opts.reader;
+  return apiFetch<CheckunitSnapshotResult>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/checkunit/snapshot`,
+    { method: 'POST', body: {}, ...(Object.keys(query).length > 0 ? { query } : {}) }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Event codes — admin surface (Plan 02.1-12 / D-18)
+// ---------------------------------------------------------------------------
+
+export interface EventCodeSummary {
+  /** UUID of the event code row. */
+  id: string;
+  /** Masked preview, e.g. `sän****27`. Full plaintext NEVER returned by GET. */
+  masked_code: string;
+  /** Epoch ms when this code expires. */
+  expires_at_ms: number;
+  /** Epoch ms when the operator revoked this code; null = still active. */
+  revoked_at_ms: number | null;
+}
+
+export interface GeneratedEventCode {
+  id: string;
+  /** Full plaintext code — returned ONCE at generation time only. */
+  code: string;
+  expires_at_ms: number;
+}
+
+/** POST /api/competitions/:id/event-codes — generate a fresh code.
+ * Returns the plaintext code exactly once; re-fetching is not possible. */
+export function generateEventCode(competitionId: string): Promise<GeneratedEventCode> {
+  return apiFetch<GeneratedEventCode>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes`,
+    { method: 'POST', body: {} }
+  );
+}
+
+/** GET /api/competitions/:id/event-codes — list masked codes for the competition. */
+export function listEventCodes(competitionId: string): Promise<{ codes: EventCodeSummary[] }> {
+  return apiFetch<{ codes: EventCodeSummary[] }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes`
+  );
+}
+
+/** POST /api/competitions/:id/event-codes/:codeId/revoke — revoke an active code. */
+export function revokeEventCode(competitionId: string, codeId: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/event-codes/${encodeURIComponent(codeId)}/revoke`,
+    { method: 'POST', body: {} }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Liveresultat credentials (SOFT TR 7.7.1). The password is write-only: the
+// API answers with has_password, never the password.
+// ---------------------------------------------------------------------------
+
+export interface LiveresultatCredentials {
+  liveresultat_id: string | null;
+  has_password: boolean;
+}
+
+function liveresultatUrl(competitionId: string): string {
+  return `/api/competitions/${encodeURIComponent(competitionId)}/liveresultat/credentials`;
+}
+
+export function getLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId));
+}
+
+/** Set the id and password; the server then starts pushing. */
+export function setLiveresultatCredentials(
+  competitionId: string,
+  liveresultatId: string,
+  password: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), {
+    method: 'PATCH',
+    body: { liveresultat_id: liveresultatId, liveresultat_pwd: password },
+  });
+}
+
+/** Clear both; pushing stops. */
+export function clearLiveresultatCredentials(
+  competitionId: string
+): Promise<LiveresultatCredentials> {
+  return apiFetch<LiveresultatCredentials>(liveresultatUrl(competitionId), { method: 'DELETE' });
+}
+
+/** POST /access — authenticate with an event code; sets a signed HttpOnly cookie. */
+export function postAccess(competitionId: string, code: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>('/access', {
+    method: 'POST',
+    body: { competition_id: competitionId, code },
+  });
 }
 
 // ---------------------------------------------------------------------------

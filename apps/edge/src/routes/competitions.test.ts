@@ -26,6 +26,8 @@ import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
+import { competitors, events } from '../db/schema.ts';
+import { loadCompetitionInputs } from '../projection/loader.ts';
 import type { FastifyInstance } from 'fastify';
 
 interface Ctx {
@@ -347,5 +349,260 @@ describe('competitions REST CRUD', () => {
       payload: {},
     });
     assert.equal(res.statusCode, 404);
+  });
+
+  // Plan 02.1-11 — eventor_event_id linkage
+
+  test('Plan 11: POST /api/competitions with eventor_event_id stores and echoes it', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Eventor Linked', date: '2026-06-01', eventor_event_id: 42001 },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { id: string; eventor_event_id: number | null };
+    assert.equal(body.eventor_event_id, 42001);
+
+    // GET should also return it.
+    const getRes = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${body.id}` });
+    const detail = getRes.json() as { competition: { eventor_event_id: number | null } };
+    assert.equal(detail.competition.eventor_event_id, 42001);
+  });
+
+  test('Plan 11: POST /api/competitions without eventor_event_id returns null', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'No Eventor', date: '2026-06-02' },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { eventor_event_id: number | null };
+    assert.equal(body.eventor_event_id, null);
+  });
+
+  test('Plan 11: PATCH /api/competitions/:id with eventor_event_id links', async () => {
+    const createRes = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Patch Link', date: '2026-06-03' },
+    });
+    const { id } = createRes.json() as { id: string };
+
+    const patchRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}`,
+      payload: { eventor_event_id: 55000 },
+    });
+    assert.equal(patchRes.statusCode, 200);
+    const patched = patchRes.json() as { eventor_event_id: number | null };
+    assert.equal(patched.eventor_event_id, 55000);
+  });
+
+  test('Plan 11: PATCH /api/competitions/:id with null eventor_event_id unlinks', async () => {
+    const createRes = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Unlink Test', date: '2026-06-04', eventor_event_id: 99001 },
+    });
+    const { id } = createRes.json() as { id: string };
+
+    // Verify it's linked first.
+    const linked = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` });
+    assert.equal(
+      (linked.json() as { competition: { eventor_event_id: number | null } }).competition
+        .eventor_event_id,
+      99001
+    );
+
+    // Unlink via PATCH.
+    const patchRes = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}`,
+      payload: { eventor_event_id: null },
+    });
+    assert.equal(patchRes.statusCode, 200);
+    const unlinked = patchRes.json() as { eventor_event_id: number | null };
+    assert.equal(unlinked.eventor_event_id, null);
+  });
+  // SOFT TR 4.21.1 / 4.21.2 — one max time for the whole competition.
+  async function createComp(): Promise<string> {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Maxtid', date: '2026-10-04' },
+    });
+    return (res.json() as { id: string }).id;
+  }
+
+  test('SOFT TR 4.21.1: PATCH max-time sets one max time for the competition, used for every class', async () => {
+    const id = await createComp();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: 150 * 60 },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal((res.json() as { max_time_sec: number }).max_time_sec, 9000);
+    const got = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` });
+    assert.equal(
+      (got.json() as { competition: { max_time_sec: number } }).competition.max_time_sec,
+      9000
+    );
+    // The projection reads it for every class (the reducer test covers the
+    // MAX status itself).
+    assert.equal(loadCompetitionInputs(ctx.handle, id)?.max_time_sec, 9000);
+    const cleared = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: null },
+    });
+    assert.equal((cleared.json() as { max_time_sec: number | null }).max_time_sec, null);
+    const bad = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: -5 },
+    });
+    assert.equal(bad.statusCode, 400);
+  });
+
+  test('SOFT TR 4.21.1: via the routes, the competition max time decides MAX in every class, over a class value', async () => {
+    const id = await createComp();
+    const set = (url: string, payload: object) => ctx.app.inject({ method: 'PATCH', url, payload });
+    const classIds: string[] = [];
+    for (const name of ['H21', 'D21']) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${id}/classes`,
+        payload: { name },
+      });
+      classIds.push((res.json() as { id: string }).id);
+    }
+    // D21 has its own 900 s; the competition max time is 600 s.
+    assert.equal(
+      (await set(`/api/competitions/${id}/classes/${classIds[1]}`, { maxTimeSec: 900 })).statusCode,
+      200
+    );
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 600 })).statusCode,
+      200
+    );
+    assert.equal(
+      (await ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/start-race` }))
+        .statusCode,
+      201
+    );
+    // A 700 s run in each class.
+    classIds.forEach((classId, i) => {
+      ctx.handle.db
+        .insert(competitors)
+        .values({ id: `cmp-${i}`, competitionId: id, name: `R${i}`, classId, cardNumber: 100 + i })
+        .run();
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId: 'test-node',
+          localSeq: 1000 + i,
+          competitionId: id,
+          eventType: 'card_read',
+          eventTimeMs: Date.now() + 1000,
+          recordedAtMs: Date.now() + 1000,
+          payload: {
+            event_type: 'card_read',
+            card_number: 100 + i,
+            card_type: 'SI10',
+            start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+            finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 700, weekday: null },
+            check: null,
+            clear: null,
+            punch_count: 0,
+            punches: [],
+            card_holder: null,
+          },
+        })
+        .run();
+    });
+    ctx.app.projectionStore.markDirty(id);
+    const res = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}/results` });
+    assert.equal(res.statusCode, 200);
+    const rows = (
+      res.json() as { classes: Array<{ class_name: string; rows: Array<{ status: string }> }> }
+    ).classes.map((c) => [c.class_name, c.rows.map((r) => r.status)]);
+    assert.deepEqual(rows.sort(), [
+      ['D21', ['MAX']],
+      ['H21', ['MAX']],
+    ]);
+  });
+
+  test('SOFT TR 4.21.2: the max time cannot be changed after the first start (409)', async () => {
+    const id = await createComp();
+    const set = (url: string, payload: object) => ctx.app.inject({ method: 'PATCH', url, payload });
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 5400 })).statusCode,
+      200
+    );
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classUrl = `/api/competitions/${id}/classes/${(cls.json() as { id: string }).id}`;
+
+    await ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/start-race` });
+
+    const locked = await set(`/api/competitions/${id}/max-time`, { max_time_sec: 7200 });
+    assert.equal(locked.statusCode, 409);
+    assert.deepEqual(locked.json(), { error: 'max_time_locked' });
+    // The class override is locked too; other class settings are not.
+    assert.equal((await set(classUrl, { maxTimeSec: 7200 })).statusCode, 409);
+    assert.equal((await set(classUrl, { no_timing: true })).statusCode, 200);
+    // Re-sending the stated value is not a change.
+    assert.equal(
+      (await set(`/api/competitions/${id}/max-time`, { max_time_sec: 5400 })).statusCode,
+      200
+    );
+  });
+
+  test('SOFT TR 4.21.2: the lock survives reset-race (started once = first start has happened)', async () => {
+    const id = await createComp();
+    const maxTime = (sec: number) =>
+      ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/competitions/${id}/max-time`,
+        payload: { max_time_sec: sec },
+      });
+    const post = (action: string) =>
+      ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/${action}` });
+    assert.equal((await maxTime(5400)).statusCode, 200);
+    assert.equal((await post('start-race')).statusCode, 201);
+    assert.equal((await maxTime(7200)).statusCode, 409);
+    assert.equal((await post('reset-race')).statusCode, 201);
+    const after = await maxTime(7200);
+    assert.equal(after.statusCode, 409);
+    assert.deepEqual(after.json(), { error: 'max_time_locked' });
+  });
+
+  test('SOFT TR 4.21.2: a drawn start time that has passed counts as the first start', async () => {
+    const id = await createComp();
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${id}/classes`,
+      payload: { name: 'H21' },
+    });
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'cmp-1',
+        competitionId: id,
+        name: 'Anna',
+        classId: (cls.json() as { id: string }).id,
+        startTimeMs: Date.now() - 60_000,
+      })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: 5400 },
+    });
+    assert.equal(res.statusCode, 409);
   });
 });

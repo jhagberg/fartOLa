@@ -47,11 +47,11 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { t } from '$lib/i18n/index.ts';
-  import { tweaks } from '$lib/stores/tweaks.svelte.ts';
-  import { bridgeStatus } from '$lib/stores/bridgeStatus.svelte.ts';
-  import { resultsChannel } from '@fartola/shared-types';
-  import { createCardSubscription } from '$lib/services/cardSubscription.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { tweaks } from '#lib/stores/tweaks.svelte.ts';
+  import { bridgeStatus } from '#lib/stores/bridgeStatus.svelte.ts';
+  import { resultsChannel, formatLocalTime } from '@fartola/shared-types';
+  import { createCardSubscription } from '#lib/services/cardSubscription.ts';
   import type {
     CompetitionDTO,
     ClassDTO,
@@ -74,25 +74,31 @@
     getBridgeStatus,
     lookupEventorBySiCard,
     returnHiredCard,
-  } from '$lib/api/client.ts';
-  import type { EventorLookupHit } from '@fartola/shared-types';
-  import LatestReadCard from '$lib/components/LatestReadCard.svelte';
-  import PunchGrid from '$lib/components/PunchGrid.svelte';
-  import SplitsTable from '$lib/components/SplitsTable.svelte';
-  import HistoryList from '$lib/components/HistoryList.svelte';
-  import ReceiptMirror from '$lib/components/ReceiptMirror.svelte';
-  import WalkupModal from '$lib/screens/WalkupModal.svelte';
-  import EditCompetitorModal from '$lib/components/EditCompetitorModal.svelte';
-  import ConsentConfirmationToast from '$lib/components/ConsentConfirmationToast.svelte';
-  import HyrbrickaToast from '$lib/components/HyrbrickaToast.svelte';
-  import type { ReceiptTemplate } from '$lib/components/receipt-templates/types.ts';
+  } from '#lib/api/client.ts';
+  import type { EventorLookupHit, EventorLookupMany } from '@fartola/shared-types';
+  import LatestReadCard from '#lib/components/LatestReadCard.svelte';
+  import PunchGrid from '#lib/components/PunchGrid.svelte';
+  import SplitsTable from '#lib/components/SplitsTable.svelte';
+  import HistoryList from '#lib/components/HistoryList.svelte';
+  import ReceiptMirror from '#lib/components/ReceiptMirror.svelte';
+  import WalkupModal from '#lib/screens/WalkupModal.svelte';
+  import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
+  import ConsentConfirmationToast from '#lib/components/ConsentConfirmationToast.svelte';
+  import HyrbrickaToast from '#lib/components/HyrbrickaToast.svelte';
+  import type { ReceiptTemplate } from '#lib/components/receipt-templates/types.ts';
   import {
     type ReadoutResponse,
     type ReadoutHistoryRow,
     type ReadoutStatus,
     historyKey,
     formatTimeOfDay,
+    formatElapsed,
+    formatElapsedTenths,
     toReceiptRead,
+    readElapsedMs,
+    missingStartHint,
+    startWarning,
+    setStartFromInput,
   } from './readout-types.ts';
 
   interface Props {
@@ -142,10 +148,10 @@
   });
 
   // Phase 2.0 Plan 02-02 — fetch the Eventor cache lookup whenever the
-  // walkup card changes so the modal can pre-fill name + klubb. Stored
-  // as an EventorLookupHit (null when miss/network-down) so the modal's
-  // eventorHint prop can be passed without further reshaping.
-  let eventorHint: EventorLookupHit | null = $state(null);
+  // walkup card changes so the modal can pre-fill name + klubb.
+  // Plan 02.1-10: also passes 'many' results so WalkupModal auto-opens the
+  // disambiguation picker for same-competition shared cards.
+  let eventorHint: EventorLookupHit | EventorLookupMany | null = $state(null);
   let _lastLookedUpCard: number | null = $state(null);
   $effect(() => {
     // Re-evaluate when walkupCard changes.
@@ -164,14 +170,12 @@
     _lastLookedUpCard = n;
     void (async () => {
       try {
-        const r = await lookupEventorBySiCard(n);
-        // Only auto-fill the modal when the cache resolves to exactly one
-        // candidate. 'many' shapes (family-shared / replacement / rental
-        // cards) must NOT auto-prefill — picking one arbitrarily would
-        // silently mis-attribute the runner. The operator can still type
-        // the name into the SmartRunnerSearch box, which surfaces a
-        // disambiguation list against the same card number.
-        eventorHint = r.hit === true ? r : null;
+        const r = await lookupEventorBySiCard(n, competitionId);
+        // Pass hit: true (single resolved) and hit: 'many' (same-competition
+        // shared card) to the modal. WalkupModal handles both: auto-fills on
+        // hit: true and auto-opens the picker on hit: 'many'.
+        // hit: false (miss) clears the hint so the form starts empty.
+        eventorHint = r.hit === false ? null : r;
       } catch {
         eventorHint = null;
       }
@@ -236,6 +240,12 @@
     return history[0] ?? null;
   });
 
+  /** Format a start_time_ms value (epoch ms) as HH:MM:SS competition local time. */
+  function formatStartTimeMs(ms: number | null | undefined): string {
+    if (ms == null) return '—';
+    return formatLocalTime(ms);
+  }
+
   /** Build the LatestReadCard input. */
   const latestReadProp = $derived.by(() => {
     const row = currentRow;
@@ -247,13 +257,32 @@
       name: row.competitor_name,
       cls: cls?.name ?? '—',
       club: competitor?.club ?? null,
-      startTime: '—',
+      startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),
-      elapsed: '—',
+      elapsed: (() => {
+        const elapsedMs = readElapsedMs(
+          row,
+          competitor?.start_time_ms ?? null,
+          cls?.start_method ?? 'auto'
+        );
+        // 02.1-14 Task 9: no running time for a class without timing.
+        if (elapsedMs === null || cls?.no_timing) return '—';
+        return competition?.timing_format === 'tenths'
+          ? formatElapsedTenths(elapsedMs)
+          : formatElapsed(elapsedMs);
+      })(),
       status: row.status as ReadoutStatus,
+      // Phase 2.1 (plan 13): pass manual_status through so LatestReadCard
+      // can distinguish auto-DNF (no clear button) from operator override.
+      manual_status: row.manual_status,
       place: null,
       unknown: row.unmatched,
       competitorId: row.competitor_id,
+      // 02.1-14 Task 13: "Saknar starttid" + suggestion.
+      missingStart: row.missing_start,
+      missingStartHint: missingStartHint(row),
+      // 02.1-14 Task 14: late / early start punch (jury warning).
+      startWarning: startWarning(row),
     };
   });
 
@@ -264,18 +293,13 @@
     if (!row || row.unmatched) return null;
     const competitor = row.competitor_id ? competitorsById.get(row.competitor_id) : null;
     const cls = competitor ? classesById.get(competitor.class_id) : null;
-    // Elapsed in ms: finish - start (or first-punch fallback) on the
-    // half-day clock; add a half-day's worth of seconds if the delta
-    // wraps negative.
-    let elapsedMs: number | null = null;
-    if (row.finish_seconds_in_half_day !== null) {
-      const base = row.start_seconds_in_half_day ?? row.punches[0]?.seconds_in_half_day ?? null;
-      if (base !== null) {
-        let delta = row.finish_seconds_in_half_day - base;
-        if (delta < 0) delta += 43200;
-        elapsedMs = delta * 1000;
-      }
-    }
+    // Elapsed: finish − start per the class's start method, like the
+    // projection.
+    const elapsedMs = readElapsedMs(
+      row,
+      competitor?.start_time_ms ?? null,
+      cls?.start_method ?? 'auto'
+    );
     return toReceiptRead({
       row,
       className: cls?.name ?? '—',
@@ -285,6 +309,7 @@
       competitionDate: competition?.date ?? '',
       elapsedMs,
       place: null,
+      noTiming: cls?.no_timing ?? false,
     });
   });
 
@@ -632,6 +657,23 @@
     }
   }
 
+  // 02.1-14 Task 13: "Sätt starttid" on a read without a start. The time is
+  // placed on the card's wall clock, before the read's finish.
+  async function onSetStartTimeHandler(competitorId: string, text: string): Promise<void> {
+    const row = currentRow;
+    if (!row) return;
+    try {
+      const result = await setStartFromInput(competitionId, competitorId, text, row.finish_wall);
+      if (result !== 'ok') {
+        toast(t(result === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime'));
+        return;
+      }
+      await Promise.all([refetchReadout(), refetchCompetitors()]);
+    } catch (err) {
+      toast(`${t('err.network')} (${(err as Error).message})`);
+    }
+  }
+
   async function onToggleAutoPrint(): Promise<void> {
     const next = !autoPrint;
     autoPrint = next;
@@ -739,6 +781,7 @@
       onManualStatus={(id, status, reason) => void onManualStatusHandler(id, status, reason)}
       onClearManualStatus={(id) => void onClearManualStatusHandler(id)}
       onEdit={(id) => { editingCompetitorId = id; }}
+      onSetStartTime={(id, text) => void onSetStartTimeHandler(id, text)}
     >
       {#snippet controls()}
         {#if latestReadProp && !latestReadProp.unknown && receiptRead && receiptRead.punches.length > 0}

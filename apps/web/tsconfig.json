@@ -1,13 +1,8 @@
 {
-  "extends": ["./.svelte-kit/tsconfig.json", "../../tsconfig.json"],
+  "extends": ["$app/tsconfig", "../../tsconfig.json"],
   "compilerOptions": {
     "rootDir": ".",
-    "resolveJsonModule": true
+    "types": ["$app/types", "node"]
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.svelte",
-    ".svelte-kit/ambient.d.ts",
-    ".svelte-kit/non-ambient.d.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.svelte"]
 }

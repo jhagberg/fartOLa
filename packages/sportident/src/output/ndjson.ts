@@ -41,15 +41,7 @@ export interface NdjsonBase {
 }
 
 export type CardType =
-  | 'SI5'
-  | 'SI8'
-  | 'SI9'
-  | 'SI10'
-  | 'SI11'
-  | 'SIAC'
-  | 'PCARD'
-  | 'TCARD'
-  | 'FCARD';
+  'SI5' | 'SI6' | 'SI8' | 'SI9' | 'SI10' | 'SI11' | 'SIAC' | 'PCARD' | 'TCARD' | 'FCARD';
 
 export type ConnectionState = 'opening' | 'open' | 'closed' | 'error';
 
@@ -112,11 +104,7 @@ export interface FrameErrorEvent extends NdjsonBase {
 }
 
 export type NdjsonEvent =
-  | ConnectionChangedEvent
-  | CardInsertedEvent
-  | CardReadEvent
-  | CardRemovedEvent
-  | FrameErrorEvent;
+  ConnectionChangedEvent | CardInsertedEvent | CardReadEvent | CardRemovedEvent | FrameErrorEvent;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -125,6 +113,7 @@ export type NdjsonEvent =
 /** Map a card instance's constructor name to its public card_type label. */
 const TYPE_MAP: Record<string, CardType> = {
   SiCard5: 'SI5',
+  SiCard6: 'SI6',
   SiCard8: 'SI8',
   SiCard9: 'SI9',
   SiCard10: 'SI10',

@@ -184,10 +184,15 @@ export function attachBridge(station: SiMainStation, opts: BridgeOpts): Attached
       .where(eq(classesTable.id, competitorRow.classId))
       .get();
     if (!classRow) return;
+    // 02.1-14 Task 4: class.course_id first, legacy courses.class_id fallback.
     const courseRow = opts.handle.db
       .select()
       .from(courses)
-      .where(and(eq(courses.competitionId, activeId), eq(courses.classId, classRow.id)))
+      .where(
+        classRow.courseId !== null
+          ? eq(courses.id, classRow.courseId)
+          : and(eq(courses.competitionId, activeId), eq(courses.classId, classRow.id))
+      )
       .get();
     const controlCodes: number[] = [];
     if (courseRow) {

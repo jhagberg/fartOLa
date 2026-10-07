@@ -27,13 +27,15 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import { WsClient } from '$lib/ws/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { WsClient } from '#lib/ws/client.ts';
   import { resultsChannel, type WsEnvelope } from '@fartola/shared-types';
-  import type { CompetitionDTO, ClassDTO, CourseDTO } from '@fartola/shared-types';
-  import { getCompetition, getResults } from '$lib/api/client.ts';
-  import ClassTabs from '$lib/components/ClassTabs.svelte';
-  import ResultsTable from '$lib/components/ResultsTable.svelte';
+  import type { CompetitionDTO, ClassDTO, CourseDTO, SoftStatus } from '@fartola/shared-types';
+  import { getCompetition, getResults } from '#lib/api/client.ts';
+  import ClassTabs from '#lib/components/ClassTabs.svelte';
+  import ResultsTable from '#lib/components/ResultsTable.svelte';
+  import MissingStartsPanel from '#lib/components/MissingStartsPanel.svelte';
+  import { resultGroups } from './class-course.ts';
 
   interface ResultRow {
     competitor_id: string;
@@ -43,6 +45,7 @@
     elapsed_time_ms: number | null;
     place: number | null;
     behind_leader_ms: number | null;
+    soft_status: SoftStatus;
   }
 
   interface ResultsClass {
@@ -70,7 +73,6 @@
 
   // --- state ----------------------------------------------------------------
   let competition: CompetitionDTO | null = $state(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let courses: CourseDTO[] = $state([]);
   let classesMeta: ClassDTO[] = $state([]);
   /** Per-class rows keyed by class_id; class_id 'ALL' is the aggregate
@@ -98,14 +100,10 @@
     for (const rows of classRows.values()) n += rows.length;
     return n;
   });
-  const activeRows = $derived.by<ResultRow[]>(() => {
-    if (activeId === 'ALL') {
-      const merged: ResultRow[] = [];
-      for (const rows of classRows.values()) merged.push(...rows);
-      return merged;
-    }
-    return classRows.get(activeId) ?? [];
-  });
+  /** SOFT TR 7.8.2: one table per class, each under its heading with course
+   * and length — also in the default "all classes" view. */
+  const groups = $derived(resultGroups(activeId, classesMeta, classRows, courses, t('res.course')));
+  const activeRows = $derived(groups.flatMap((g) => g.rows));
   const finishedCount = $derived(activeRows.filter((r) => r.status === 'OK').length);
   const updatedLabel = $derived.by(() => {
     if (updatedAtMs === null) return '—';
@@ -283,9 +281,21 @@
 
   <ClassTabs classes={tabItems} {totalCount} {activeId} onSelect={onTabSelect} />
 
-  <div class="table-wrap">
-    <ResultsTable rows={activeRows} {flashIds} />
-  </div>
+  {#each groups as g (g.classId)}
+    <h2 class="class-course" data-testid="results-class-course">{g.heading}</h2>
+    <div class="table-wrap">
+      <ResultsTable rows={g.rows} {flashIds} />
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <ResultsTable rows={[]} {flashIds} />
+    </div>
+  {/each}
+
+  <!-- 02.1-14 Task 15: secretariat sets missing start times (not on the projector) -->
+  {#if !fullscreen}
+    <MissingStartsPanel {competitionId} refreshKey={updatedAtMs} />
+  {/if}
 
   {#if competition}
     <p class="comp-meta">{competition.name} · {competition.date}</p>
@@ -298,6 +308,11 @@
     flex-direction: column;
     gap: 16px;
     height: 100%;
+  }
+  .class-course {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
   }
   .res-head {
     display: flex;

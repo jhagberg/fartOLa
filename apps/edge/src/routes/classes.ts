@@ -16,12 +16,33 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { z } from 'zod';
 
-import { ClassCreateInput, type ClassDTO } from '@fartola/shared-types';
+import { ClassCreateInput, StartMethod, type ClassDTO } from '@fartola/shared-types';
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+import { maxTimeLocked } from './_maxTime.ts';
+
+// Phase 2.1 D-08: PATCH class route for maxTimeSec editing — a per-class
+// max time, used only when the competition has none (SOFT TR 4.21.1 wants
+// one value for all classes, so it is for non-sanctioned use).
+// Backend ownership here (consumed by Plan 05 UI).
+// 02.1-14 Task 9: also no_timing (snake_case like the ClassDTO field), and
+// Task 14 start_method. Each field is optional; only the fields sent are
+// updated.
+const PatchClassInput = z
+  .object({
+    maxTimeSec: z.number().int().positive().nullable().optional(),
+    no_timing: z.boolean().optional(),
+    start_method: StartMethod.optional(),
+  })
+  .strict()
+  .refine(
+    (b) => b.maxTimeSec !== undefined || b.no_timing !== undefined || b.start_method !== undefined,
+    { message: 'maxTimeSec, no_timing or start_method required' }
+  );
 
 function classRowToDTO(row: Class): ClassDTO {
   return {
@@ -29,6 +50,8 @@ function classRowToDTO(row: Class): ClassDTO {
     competition_id: row.competitionId,
     name: row.name,
     short_name: row.shortName,
+    no_timing: row.noTiming,
+    start_method: row.startMethod,
   };
 }
 
@@ -54,6 +77,57 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
     return { classes: rows.map(classRowToDTO) };
   });
 
+  // PATCH /api/competitions/:id/classes/:classId — update class settings.
+  // Phase 2.1 D-08: maxTimeSec for the class time cap.
+  // T-02.1 cross-competition pre-flight: verify class belongs to competition → 404.
+  app.patch<{ Params: { id: string; classId: string } }>(
+    '/api/competitions/:id/classes/:classId',
+    async (req, reply) => {
+      const { id: competitionId, classId } = req.params;
+
+      const parsed = PatchClassInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+
+      // Cross-competition pre-flight.
+      const classRow = app.fartolaDb.db
+        .select({ id: classes.id })
+        .from(classes)
+        .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
+        .get();
+      if (!classRow) {
+        return reply.code(404).send({ error: 'class_not_found' });
+      }
+
+      const { maxTimeSec, no_timing, start_method } = parsed.data;
+      // SOFT TR 4.21.2: no max time change after the first start.
+      if (maxTimeSec !== undefined && maxTimeLocked(app.fartolaDb, competitionId, Date.now())) {
+        const current = app.fartolaDb.db
+          .select({ maxTimeSec: classes.maxTimeSec })
+          .from(classes)
+          .where(eq(classes.id, classId))
+          .get();
+        if (current?.maxTimeSec !== maxTimeSec) {
+          return reply.code(409).send({ error: 'max_time_locked' });
+        }
+      }
+      app.fartolaDb.db
+        .update(classes)
+        .set({
+          ...(maxTimeSec !== undefined ? { maxTimeSec } : {}),
+          ...(no_timing !== undefined ? { noTiming: no_timing } : {}),
+          ...(start_method !== undefined ? { startMethod: start_method } : {}),
+        })
+        .where(eq(classes.id, classId))
+        .run();
+
+      app.projectionStore.markDirty(competitionId);
+
+      return reply.code(200).send({ ok: true });
+    }
+  );
+
   // POST /api/competitions/:id/classes — create a class.
   app.post<{ Params: { id: string } }>('/api/competitions/:id/classes', async (req, reply) => {
     const { id } = req.params;
@@ -73,6 +147,14 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       competitionId: id,
       name: parsed.data.name,
       shortName: parsed.data.short_name ?? null,
+      // Phase 2.1 D-05/D-08: new nullable columns; null on creation.
+      firstStartMs: null,
+      startIntervalSec: null,
+      maxTimeSec: null,
+      // 02.1-14 Task 4: assigned by course import / course creation.
+      courseId: null,
+      noTiming: false,
+      startMethod: 'auto',
     };
     app.fartolaDb.db.insert(classes).values(row).run();
     return reply.code(201).send(classRowToDTO(row));

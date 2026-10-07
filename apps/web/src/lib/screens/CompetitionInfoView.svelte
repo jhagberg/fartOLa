@@ -16,16 +16,23 @@
      auto_print)
 
   No course/control mutation surface here — XML re-import via /import is
-  the canonical path for that. We just *show* what's there.
+  the canonical path for that. We just *show* what's there. Exception
+  (02.1-14 Task 5): clicking a control chip voids/unvoids that control
+  for the whole competition (GET/POST/DELETE .../voided-controls).
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import {
     getCompetition,
     listCompetitors,
+    listVoidedControls,
+    maxTimeMinutesToSec,
     patchCompetition,
-  } from '$lib/api/client.ts';
+    setCompetitionMaxTime,
+    setControlVoided,
+    ApiError,
+  } from '#lib/api/client.ts';
   import { goto } from '$app/navigation';
   import type {
     CompetitionDTO,
@@ -44,6 +51,7 @@
   let classes: ClassDTO[] = $state([]);
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
+  let voidedCodes: number[] = $state([]);
   let loading = $state(true);
   let loadError: string | null = $state(null);
 
@@ -54,10 +62,14 @@
   let formDate = $state('');
   let formTemplate: CompetitionDTO['receipt_template'] = $state('classic');
   let formAutoPrint = $state(false);
+  let formTimingFormat: 'seconds' | 'tenths' = $state('seconds');
   let saving = $state(false);
   let saveErr: string | null = $state(null);
   let savedToast: string | null = $state(null);
   let savedTimer: ReturnType<typeof setTimeout> | null = null;
+  // SOFT TR 4.21.1: one max time for the competition, in whole minutes.
+  let formMaxTimeMin = $state('');
+  let maxTimeErr: string | null = $state(null);
 
   const dirty = $derived.by(() => {
     const c = competition;
@@ -66,7 +78,8 @@
       formName.trim() !== c.name ||
       formDate !== c.date ||
       formTemplate !== c.receipt_template ||
-      formAutoPrint !== c.auto_print
+      formAutoPrint !== c.auto_print ||
+      formTimingFormat !== c.timing_format
     );
   });
 
@@ -99,26 +112,40 @@
     loading = true;
     loadError = null;
     try {
-      const [detail, compsRes] = await Promise.all([
+      const [detail, compsRes, voidedRes] = await Promise.all([
         getCompetition(competitionId) as Promise<{
           competition: CompetitionDTO;
           classes: ClassDTO[];
           courses: CourseDTO[];
         }>,
         listCompetitors(competitionId),
+        listVoidedControls(competitionId),
       ]);
       competition = detail.competition;
       classes = detail.classes;
       courses = detail.courses;
       competitors = compsRes.competitors;
+      voidedCodes = voidedRes.control_codes;
       formName = detail.competition.name;
       formDate = detail.competition.date;
       formTemplate = detail.competition.receipt_template;
       formAutoPrint = detail.competition.auto_print;
+      formTimingFormat = detail.competition.timing_format;
+      formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
     } finally {
       loading = false;
+    }
+  }
+
+  async function toggleVoided(code: number): Promise<void> {
+    const voided = !voidedCodes.includes(code);
+    try {
+      await setControlVoided(competitionId, code, voided);
+      voidedCodes = voided ? [...voidedCodes, code] : voidedCodes.filter((c) => c !== code);
+    } catch (e) {
+      loadError = (e as Error).message ?? 'void failed';
     }
   }
 
@@ -132,6 +159,7 @@
         date: formDate,
         receipt_template: formTemplate,
         auto_print: formAutoPrint,
+        timing_format: formTimingFormat,
       });
       competition = updated;
       flashSaved();
@@ -139,6 +167,28 @@
       saveErr = (e as Error).message ?? 'save failed';
     } finally {
       saving = false;
+    }
+  }
+
+  function maxTimeToMinutes(sec: number | null | undefined): string {
+    return sec === null || sec === undefined ? '' : String(Math.round(sec / 60));
+  }
+
+  async function saveMaxTime(): Promise<void> {
+    maxTimeErr = null;
+    const sec = maxTimeMinutesToSec(formMaxTimeMin);
+    if (sec === undefined) {
+      maxTimeErr = t('info.maxTime.invalid');
+      return;
+    }
+    try {
+      competition = await setCompetitionMaxTime(competitionId, sec);
+      flashSaved();
+    } catch (e) {
+      maxTimeErr =
+        e instanceof ApiError && e.status === 409
+          ? t('info.maxTime.locked')
+          : ((e as Error).message ?? 'save failed');
     }
   }
 
@@ -205,6 +255,13 @@
           />
           <span>{t('info.fields.autoPrint')}</span>
         </label>
+        <label class="field">
+          <span>{t('settings.timing.label')}</span>
+          <select bind:value={formTimingFormat} data-testid="info-timing-format">
+            <option value="seconds">{t('settings.timing.seconds')}</option>
+            <option value="tenths">{t('settings.timing.tenths')}</option>
+          </select>
+        </label>
       </div>
       <div class="card-foot">
         {#if saveErr}
@@ -218,6 +275,40 @@
           data-testid="info-save"
         >
           {saving ? t('info.saving') : t('info.save')}
+        </button>
+      </div>
+    </section>
+
+    <!-- Max time (SOFT TR 4.21.1–4.21.2) -->
+    <section class="card">
+      <header class="card-head">
+        <h2>{t('info.maxTime.heading')}</h2>
+      </header>
+      <div class="card-body">
+        <label class="field">
+          <span>{t('info.maxTime.label')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            placeholder="150"
+            bind:value={formMaxTimeMin}
+            data-testid="info-max-time"
+          />
+        </label>
+        <p class="hint">{t('info.maxTime.hint')}</p>
+      </div>
+      <div class="card-foot">
+        {#if maxTimeErr}
+          <p class="err" role="alert">{maxTimeErr}</p>
+        {/if}
+        <button
+          type="button"
+          class="btn primary"
+          onclick={() => void saveMaxTime()}
+          disabled={formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
+          data-testid="info-max-time-save"
+        >
+          {t('info.save')}
         </button>
       </div>
     </section>
@@ -284,9 +375,20 @@
               {:else}
                 <ol class="course-controls">
                   {#each crs.controls as ctrl (ctrl.order_idx)}
-                    <li class="ctrl-chip mono">
-                      <span class="ctrl-idx">{ctrl.order_idx + 1}</span>
-                      <span class="ctrl-code">{ctrl.control_code}</span>
+                    {@const voided = voidedCodes.includes(ctrl.control_code)}
+                    <li>
+                      <button
+                        type="button"
+                        class="ctrl-chip mono"
+                        class:voided
+                        aria-pressed={voided}
+                        title={t(voided ? 'info.courses.unvoidControl' : 'info.courses.voidControl')}
+                        onclick={() => toggleVoided(ctrl.control_code)}
+                        data-testid="info-ctrl-chip"
+                      >
+                        <span class="ctrl-idx">{ctrl.order_idx + 1}</span>
+                        <span class="ctrl-code">{ctrl.control_code}</span>
+                      </button>
                     </li>
                   {/each}
                 </ol>
@@ -517,6 +619,12 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 12px;
+    color: inherit;
+    cursor: pointer;
+  }
+  .ctrl-chip.voided {
+    text-decoration: line-through;
+    opacity: 0.6;
   }
   .ctrl-idx {
     color: var(--fg-muted);

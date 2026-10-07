@@ -41,6 +41,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 
+import { formatWallClock } from '@fartola/shared-types';
 import {
   events,
   competitors as competitorsTable,
@@ -50,6 +51,7 @@ import {
   courseControls,
   controls,
 } from '../db/schema.ts';
+import { cardClockToWallMs } from '../projection/halfDayClockMath.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
 
@@ -106,6 +108,29 @@ interface HistoryRow {
   /** Ordered expected control codes for the competitor's course.
    * Empty array when the competitor's class has no course. */
   expected_codes: number[];
+  /** Phase 2.1 (plan 13) — mirrors CompetitorView.manual_status. Non-null
+   * when the operator set an override via the manual_status_set event.
+   * null means the status is auto-detected (from card_read + course).
+   * The UI uses this to distinguish auto-DNF (no clear button) from
+   * manual-DNF (clear button visible). */
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** 02.1-14 Task 13 — mirrors CompetitorView.missing_start /
+   * suggested_start_ms / suggested_start_offset_ms: the competitor's latest
+   * read has no start of either kind; the suggestion is check + offset. */
+  missing_start: boolean;
+  suggested_start_ms: number | null;
+  suggested_start_offset_ms: number | null;
+  /** The suggestion and this read's finish as local wall-clock strings
+   * 'YYYY-MM-DDTHH:MM:SS' (the card's clock, the scale the running time is
+   * computed on): the UI resolves an edited start before the finish on it,
+   * also in the hour skipped when DST starts. */
+  suggested_start_wall: string | null;
+  finish_wall: string | null;
+  /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
+   * early_start_ms: start punch late (> 60 s) or early against the start
+   * time in a class timed from it. Warnings for the jury only. */
+  late_start_ms: number | null;
+  early_start_ms: number | null;
 }
 
 /** Pull a displayable name out of the SI card's firmware-side
@@ -275,6 +300,25 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           extra_codes: view?.extra_codes ?? [],
           out_of_order_codes: view?.out_of_order_codes ?? [],
           expected_codes: competitor ? (expectedByClassId.get(competitor.classId) ?? []) : [],
+          // Phase 2.1 (plan 13) — expose manual_status so the web client can
+          // distinguish auto-DNF (manual_status=null) from operator-set DNF
+          // (manual_status='DNF'). Null for unmatched / pre-read cards.
+          manual_status: view?.manual_status ?? null,
+          missing_start: view?.missing_start ?? false,
+          suggested_start_ms: view?.suggested_start_ms ?? null,
+          suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
+          suggested_start_wall:
+            view?.suggested_start_wall_ms == null
+              ? null
+              : formatWallClock(view.suggested_start_wall_ms),
+          finish_wall:
+            payload.finish === null
+              ? null
+              : formatWallClock(
+                  cardClockToWallMs(payload.finish, payload.card_type, e.eventTimeMs)
+                ),
+          late_start_ms: view?.late_start_ms ?? null,
+          early_start_ms: view?.early_start_ms ?? null,
         };
       });
 

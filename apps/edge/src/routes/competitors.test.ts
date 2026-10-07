@@ -26,6 +26,7 @@
 
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { buildServer, type BroadcastSink } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -35,6 +36,7 @@ import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import type { ChannelName } from '@fartola/shared-types';
 import { eq } from 'drizzle-orm';
+import { localToEpochMs } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -188,6 +190,41 @@ describe('competitors walk-up registration', () => {
     assert.equal(res.statusCode, 400);
     const body = res.json() as { errors: { path: string }[] };
     assert.ok(body.errors.some((e) => e.path === 'consent'));
+  });
+
+  test('SOFT TR 4.14.4: a walk-up entry stores the consent (explicit, with its time)', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const before = Date.now();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: { competition_id: competitionId, name: 'Vera', class_id: classId, consent: true },
+    });
+    const after = Date.now();
+    assert.equal(res.statusCode, 201);
+    const row = ctx.handle.db
+      .select({ at: competitors.consentAtMs, status: competitors.consentStatus })
+      .from(competitors)
+      .where(eq(competitors.id, (res.json() as { id: string }).id))
+      .get();
+    assert.equal(row?.status, 'explicit');
+    assert.ok(
+      row?.at !== null && row!.at! >= before && row!.at! <= after,
+      `consentAtMs ${row?.at}`
+    );
+  });
+
+  test('SOFT TR 7.5.1: a walk-up entry without a name is rejected (empty or whitespace → 400)', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    for (const name of ['', '   ', undefined]) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/competitors',
+        payload: { competition_id: competitionId, name, class_id: classId, consent: true },
+      });
+      assert.equal(res.statusCode, 400, JSON.stringify(name));
+    }
+    assert.equal(ctx.handle.db.select().from(competitors).all().length, 0);
   });
 
   test('test 4: POST with consent: false → 400', async () => {
@@ -950,5 +987,170 @@ describe('Phase 2.0 — hired_card extension (Plan 02-02)', () => {
     assert.equal(second.statusCode, 409);
     const rows = ctx.handle.db.select().from(hiredCards).all();
     assert.equal(rows.length, 0, '409 must not leave a stray hired_cards row');
+  });
+});
+
+// Item G (02.1-14 follow-up): the web's patchCompetitorStartTime target.
+describe('PATCH /api/competitions/:id/competitors/:competitorId/start-time', () => {
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  async function seedRunner(): Promise<{ competitionId: string; competitorId: string }> {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: { competition_id: competitionId, name: 'Anna', class_id: classId, consent: true },
+    });
+    return { competitionId, competitorId: (res.json() as { id: string }).id };
+  }
+
+  const patch = (competitionId: string, competitorId: string, payload: unknown) =>
+    ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/start-time`,
+      payload: payload as Record<string, unknown>,
+    });
+
+  const START = Date.parse('2026-05-22T08:00:00Z');
+
+  test('sets start_time_ms and returns the competitor DTO; null clears it', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const res = await patch(competitionId, competitorId, { start_time_ms: START });
+    assert.equal(res.statusCode, 200);
+    const dto = res.json() as { id: string; start_time_ms: number | null };
+    assert.equal(dto.id, competitorId);
+    assert.equal(dto.start_time_ms, START);
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, competitorId))
+      .get();
+    assert.equal(row?.startTimeMs, START);
+
+    const cleared = await patch(competitionId, competitorId, { start_time_ms: null });
+    assert.equal(cleared.statusCode, 200);
+    assert.equal((cleared.json() as { start_time_ms: number | null }).start_time_ms, null);
+    const after = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, competitorId))
+      .get();
+    assert.equal(after?.startTimeMs, null);
+  });
+
+  test('SOFT TR 4.18.9: a late start keeps the original start time; a new start set via PATCH (organiser error) is what the time runs from', async () => {
+    const at = (sec: number): number => localToEpochMs('2026-05-22', sec);
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Sen Starter',
+        class_id: classId,
+        card_number: 4242,
+        consent: true,
+      },
+    });
+    const competitorId = (created.json() as { id: string }).id;
+    // Drawn 10:00:00; punched start 10:22:06; finish 10:52:00.
+    assert.equal(
+      (await patch(competitionId, competitorId, { start_time_ms: at(36_000) })).statusCode,
+      200
+    );
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET race_started_at_ms = 1 WHERE id = ?')
+      .run(competitionId);
+    const clock = (sec: number) => ({
+      half_day: 0 as const,
+      seconds_in_half_day: sec,
+      weekday: null,
+    });
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'test-node',
+        localSeq: 1,
+        competitionId,
+        eventType: 'card_read',
+        eventTimeMs: at(39_600),
+        recordedAtMs: at(39_600),
+        payload: {
+          event_type: 'card_read',
+          card_number: 4242,
+          card_type: 'SI10',
+          start: clock(36_000 + 22 * 60 + 6),
+          finish: clock(36_000 + 52 * 60),
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
+    const row = async () => {
+      // The PATCH marks the projection dirty (debounced); recompute now.
+      ctx.app.projectionStore.recomputeNow(competitionId);
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${competitionId}/results`,
+      });
+      return (res.json() as { classes: Array<{ rows: Array<{ elapsed_time_ms: number | null }> }> })
+        .classes[0]!.rows[0]!;
+    };
+    // Own fault: the original start time applies (52:00), with a late-start warning.
+    assert.equal((await row()).elapsed_time_ms, 52 * 60 * 1000);
+    assert.ok(
+      (ctx.app.projectionStore.recomputeNow(competitionId)!.competitors.get(competitorId)!
+        .late_start_ms ?? 0) > 60_000
+    );
+    // Organiser error: the secretariat sets the new start 10:22:00 → 30:00.
+    const moved = await patch(competitionId, competitorId, { start_time_ms: at(36_000 + 22 * 60) });
+    assert.equal(moved.statusCode, 200);
+    assert.equal((await row()).elapsed_time_ms, 30 * 60 * 1000);
+  });
+
+  test('bad value → 400', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    // Local ms-since-midnight (the old base), fractions, strings, missing.
+    for (const body of [
+      { start_time_ms: 36_000_000 },
+      { start_time_ms: START + 0.5 },
+      { start_time_ms: String(START) },
+      {},
+    ]) {
+      const res = await patch(competitionId, competitorId, body);
+      assert.equal(res.statusCode, 400, JSON.stringify(body));
+    }
+  });
+
+  test('operator-guarded: a LAN client without an event-code cookie → 403', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/start-time`,
+      payload: { start_time_ms: START },
+      remoteAddress: '10.0.0.5',
+    });
+    assert.equal(res.statusCode, 403);
+  });
+
+  test('unknown competitor (or one from another competition) → 404', async () => {
+    const { competitionId, competitorId } = await seedRunner();
+    const other = await seedCompetitionAndClass(ctx.app);
+    const unknown = await patch(competitionId, crypto.randomUUID(), { start_time_ms: START });
+    assert.equal(unknown.statusCode, 404);
+    const cross = await patch(other.competitionId, competitorId, { start_time_ms: START });
+    assert.equal(cross.statusCode, 404);
   });
 });

@@ -19,7 +19,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/state';
-  import ReadoutView from '$lib/screens/ReadoutView.svelte';
+  import ReadoutView from '#lib/screens/ReadoutView.svelte';
 
   const competitionId = $derived(page.params['id'] ?? '');
 </script>

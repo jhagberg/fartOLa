@@ -15,7 +15,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed } from '../templates.ts';
+import { formatElapsed, receiptTime } from '../templates.ts';
 import { generateKidsBitmap } from '../kids-svg-to-bitmap.ts';
 
 export default async function kids(printer: ThermalPrinterLike, data: ReceiptData): Promise<void> {
@@ -71,7 +71,11 @@ export default async function kids(printer: ThermalPrinterLike, data: ReceiptDat
   printer.println(`KART ${stats?.kart ?? '—'}  TUR  ${stats?.tur ?? '—'}`);
   printer.drawLine();
 
-  printer.println(`Tid: ${formatElapsed(data.competitor.elapsed_time_ms)}`);
+  printer.println(
+    data.competitor.status === 'OK' && !data.competitor.no_timing
+      ? `Tid: ${formatElapsed(data.competitor.elapsed_time_ms)}`
+      : receiptTime(data.competitor)
+  );
   if (data.placeContext.place !== null) {
     printer.println(`Plats ${data.placeContext.place} av ${data.placeContext.class_rows.length}`);
   }

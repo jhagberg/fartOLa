@@ -12,7 +12,7 @@
   Locked by 01-13-PLAN.md task 1.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read }: ReceiptTemplateProps = $props();
@@ -34,7 +34,7 @@
 
 <div class="hero">
   <div class="hero-time">{read.elapsed}</div>
-  <div class="hero-label">{t('rcpt.total')} · {read.status}</div>
+  <div class="hero-label">{t('rcpt.total')} · {read.statusLabel}</div>
 </div>
 <div class="rcpt-sep"></div>
 
@@ -55,7 +55,7 @@
     <span>{isLeader ? '—' : (read.progress.behind ?? '+0:00')}</span>
   </div>
 {:else}
-  <div class="rcpt-row"><b>Status</b><span>{read.status}</span></div>
+  <div class="rcpt-row"><b>Status</b><span>{read.statusLabel}</span></div>
 {/if}
 
 <div class="rcpt-sep"></div>

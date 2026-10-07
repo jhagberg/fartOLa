@@ -49,10 +49,27 @@
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 
-import { ManualDnfInput, ManualStatusInput, readoutChannel } from '@fartola/shared-types';
-import { competitors as competitorsTable } from '../db/schema.ts';
+import {
+  ManualDnfInput,
+  ManualStatusInput,
+  ClearManualStatusInput,
+  VoidLegInput,
+  UnvoidLegInput,
+  readoutChannel,
+} from '@fartola/shared-types';
+import { competitors as competitorsTable, type EventPayload } from '../db/schema.ts';
+import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
+
+/** The reason "Sätt ej utlästa till Ej start" writes; undo clears only
+ * DNS with this reason (SOFT TA till TR 7.8.2). */
+export const UNREAD_DNS_REASON = 'Ej utläst: satt till Ej start';
+
+type ManualStatusPayload = Extract<
+  EventPayload,
+  { event_type: 'manual_status_set' | 'clear_manual_status' }
+>;
 
 export default async function registerManualRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string; competitorId: string } }>(
@@ -131,7 +148,7 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   // Phase 2.0 — generalized manual-status override.
   //
   //   POST /api/competitions/:id/competitors/:competitorId/status
-  //        body: { status: 'DNF'|'DNS'|'DQ'|'CANCEL'|'MAX', reason: string }
+  //        body: { status: 'DNF'|'DNS'|'DQ'|'CANCEL'|'MAX'|'MP', reason: string }
   //
   //   POST /api/competitions/:id/competitors/:competitorId/clear-status
   //        body: {} (presence is the action)
@@ -162,6 +179,14 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         )
         .get();
       if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      // Idempotency: if the current projection already has the same manual_status
+      // asserted, skip the event insertion and return 200 (not 201).
+      const projection = app.projectionStore.recomputeNow(competitionId);
+      const view = projection?.competitors.get(competitorId);
+      if (view?.manual_status === parsed.data.status) {
+        return reply.code(200).send({ idempotent: true });
+      }
 
       const r = insertEvent(
         app.fartolaDb,
@@ -194,6 +219,11 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
     '/api/competitions/:id/competitors/:competitorId/clear-status',
     async (req, reply) => {
       const { id: competitionId, competitorId } = req.params;
+      // Reject unexpected body fields (02-11 LOW: was passthrough, now strict).
+      const parsedBody = ClearManualStatusInput.safeParse(req.body ?? {});
+      if (!parsedBody.success) {
+        return reply.code(400).send(issuesToErrors(parsedBody.error.issues));
+      }
       const competitor = app.fartolaDb.db
         .select({ id: competitorsTable.id })
         .from(competitorsTable)
@@ -205,6 +235,13 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         )
         .get();
       if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      // Idempotency: if manual_status is already null, return 200 without event.
+      const projection = app.projectionStore.recomputeNow(competitionId);
+      const view = projection?.competitors.get(competitorId);
+      if (view !== undefined && view.manual_status === null) {
+        return reply.code(200).send({ idempotent: true });
+      }
 
       const r = insertEvent(
         app.fartolaDb,
@@ -221,6 +258,193 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
       });
       app.projectionStore.markDirty(competitionId);
       return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Phase 2.1 (D-16) — voided-leg routes.
+  //
+  //   POST /api/competitions/:id/competitors/:cid/void-leg
+  //   POST /api/competitions/:id/competitors/:cid/unvoid-leg
+  //
+  // A voided leg means "approve without this control" for one runner; the
+  // running time is never reduced (SOFT TR 4.20.10, decided 2026-10-05), so
+  // the body takes no time cap.
+  //
+  // Both endpoints follow the same pattern as the manual-status routes:
+  //   1. Cross-competition pre-flight (404 if competitor not in competition).
+  //   2. Zod-validate body.
+  //   3. Insert event via insertEvent.
+  //   4. Broadcast on readout channel.
+  //   5. markDirty for projection recompute.
+  //
+  // T-02.1-01 mitigation: control_code is validated as integer by Zod;
+  // competitor ownership is verified by the cross-competition pre-flight.
+  // ---------------------------------------------------------------------------
+
+  app.post<{ Params: { id: string; competitorId: string } }>(
+    '/api/competitions/:id/competitors/:competitorId/void-leg',
+    async (req, reply) => {
+      const { id: competitionId, competitorId } = req.params;
+      const parsed = VoidLegInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+      const competitor = app.fartolaDb.db
+        .select({ id: competitorsTable.id })
+        .from(competitorsTable)
+        .where(
+          and(
+            eq(competitorsTable.id, competitorId),
+            eq(competitorsTable.competitionId, competitionId)
+          )
+        )
+        .get();
+      if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      const r = insertEvent(
+        app.fartolaDb,
+        app.fartolaNodeId,
+        'leg_voided',
+        Date.now(),
+        {
+          event_type: 'leg_voided',
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+          ...(parsed.data.reason !== undefined ? { reason: parsed.data.reason } : {}),
+        },
+        competitionId
+      );
+      app.wsBroadcast(readoutChannel(competitionId), {
+        type: 'leg_voided',
+        payload: {
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+        },
+        seq: r.local_seq,
+      });
+      app.projectionStore.markDirty(competitionId);
+      return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  app.post<{ Params: { id: string; competitorId: string } }>(
+    '/api/competitions/:id/competitors/:competitorId/unvoid-leg',
+    async (req, reply) => {
+      const { id: competitionId, competitorId } = req.params;
+      const parsed = UnvoidLegInput.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+      const competitor = app.fartolaDb.db
+        .select({ id: competitorsTable.id })
+        .from(competitorsTable)
+        .where(
+          and(
+            eq(competitorsTable.id, competitorId),
+            eq(competitorsTable.competitionId, competitionId)
+          )
+        )
+        .get();
+      if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+      const r = insertEvent(
+        app.fartolaDb,
+        app.fartolaNodeId,
+        'leg_unvoided',
+        Date.now(),
+        {
+          event_type: 'leg_unvoided',
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+        },
+        competitionId
+      );
+      app.wsBroadcast(readoutChannel(competitionId), {
+        type: 'leg_unvoided',
+        payload: {
+          competitor_id: competitorId,
+          control_code: parsed.data.control_code,
+        },
+        seq: r.local_seq,
+      });
+      app.projectionStore.markDirty(competitionId);
+      return reply.code(201).send({ local_seq: r.local_seq });
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // SOFT TA till TR 7.8.2 — "Sätt ej utlästa till Ej start".
+  //
+  //   POST /api/competitions/:id/unread-dns       → { count }
+  //   POST /api/competitions/:id/unread-dns/undo  → { count }
+  //
+  // Unread is not "not started", so nothing infers DNS. The operator sets
+  // every runner with no read-out and no status to DNS, as MeOS "Sätt okända
+  // löpare utan registrering till <Ej Start>" (TabRunner.cpp:974-986). The
+  // fixed reason marks these, so undo clears exactly them (still DNS with
+  // that reason and still no read-out).
+  // ---------------------------------------------------------------------------
+  const bulk = (
+    competitionId: string,
+    pick: (v: CompetitorView) => boolean,
+    payload: (competitorId: string) => ManualStatusPayload
+  ): number | null => {
+    const state = app.projectionStore.recomputeNow(competitionId);
+    if (state === null) return null;
+    const ids = [...state.competitors.values()].filter(pick).map((v) => v.id);
+    const written = app.fartolaDb.sqlite.transaction(() =>
+      ids.map((id) => {
+        const p = payload(id);
+        return {
+          p,
+          r: insertEvent(
+            app.fartolaDb,
+            app.fartolaNodeId,
+            p.event_type,
+            Date.now(),
+            p,
+            competitionId
+          ),
+        };
+      })
+    )();
+    for (const { p, r } of written) {
+      const { event_type: type, ...rest } = p;
+      app.wsBroadcast(readoutChannel(competitionId), { type, payload: rest, seq: r.local_seq });
+    }
+    if (ids.length > 0) app.projectionStore.markDirty(competitionId);
+    return ids.length;
+  };
+
+  app.post<{ Params: { id: string } }>('/api/competitions/:id/unread-dns', async (req, reply) => {
+    const count = bulk(
+      req.params.id,
+      (v) => v.status === 'PEND' && v.manual_status === null && v.card_read_history.length === 0,
+      (competitorId) => ({
+        event_type: 'manual_status_set',
+        competitor_id: competitorId,
+        status: 'DNS',
+        reason: UNREAD_DNS_REASON,
+      })
+    );
+    if (count === null) return reply.code(404).send({ error: 'competition_not_found' });
+    return reply.code(201).send({ count });
+  });
+
+  app.post<{ Params: { id: string } }>(
+    '/api/competitions/:id/unread-dns/undo',
+    async (req, reply) => {
+      const count = bulk(
+        req.params.id,
+        (v) =>
+          v.manual_status === 'DNS' &&
+          v.manual_dnf_reason === UNREAD_DNS_REASON &&
+          v.card_read_history.length === 0,
+        (competitorId) => ({ event_type: 'clear_manual_status', competitor_id: competitorId })
+      );
+      if (count === null) return reply.code(404).send({ error: 'competition_not_found' });
+      return reply.code(201).send({ count });
     }
   );
 }

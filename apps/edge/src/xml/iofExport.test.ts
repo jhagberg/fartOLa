@@ -10,7 +10,9 @@
 //   5. W-5 empty competition VALID — zero ClassResult children, validateXml
 //      accepts, @status still emitted.
 //   6. Competitor with null club has no Organisation element.
-//   7. Status mapping for OK/MP/DNF (PEND omitted entirely).
+//   7. Status mapping for OK/MP/DNF (PEND omitted from every list and
+//      counted as pending: unread is not "not started", SOFT TA till TR
+//      7.8.2).
 //   8. Round-trip parse via fast-xml-parser confirms structural fields.
 //
 // Locked by:
@@ -29,10 +31,13 @@ import {
   splitName,
   statusForXml,
   resultListStatusFor,
+  buildStartListXml,
+  validateAndBuildStartList,
   type ExportInput,
+  type StartListInput,
 } from './iofExport.ts';
 import type { CompetitionState, CompetitorView, ResultView } from '../projection/types.ts';
-import type { CompetitionDTO, ClassDTO } from '@fartola/shared-types';
+import { softStatus, type CompetitionDTO, type ClassDTO } from '@fartola/shared-types';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // PATTERNS S-5: HERE-based path resolution. The frozen-fixture lives next to
@@ -62,13 +67,28 @@ function makeCompetition(): CompetitionDTO {
     auto_print: false,
     created_at_ms: 1_716_120_000_000,
     race_started_at_ms: null,
+    timing_format: 'seconds',
   };
 }
 
 function makeClasses(): ClassDTO[] {
   return [
-    { id: 'cls-h21', competition_id: 'comp-stortuna-tisdag', name: 'H21', short_name: null },
-    { id: 'cls-d21', competition_id: 'comp-stortuna-tisdag', name: 'D21', short_name: null },
+    {
+      id: 'cls-h21',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'H21',
+      short_name: null,
+      no_timing: false,
+      start_method: 'auto',
+    },
+    {
+      id: 'cls-d21',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'D21',
+      short_name: null,
+      no_timing: false,
+      start_method: 'auto',
+    },
   ];
 }
 
@@ -98,6 +118,15 @@ function makeCompetitorView(
     elapsed_time_ms: partial.elapsed_time_ms,
     manual_dnf_reason: null,
     manual_status: null,
+    voided_legs: [],
+    start_time_ms: null,
+    no_timing: false,
+    missing_start: false,
+    suggested_start_ms: null,
+    suggested_start_wall_ms: null,
+    suggested_start_offset_ms: null,
+    late_start_ms: null,
+    early_start_ms: null,
   };
 }
 
@@ -154,6 +183,7 @@ function makeSeededState(): CompetitionState {
     competitors,
     results_by_class,
     pending_unknown_cards: [],
+    check_to_start: { n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000 },
     last_event_seq: 0,
   };
 }
@@ -167,6 +197,7 @@ function rowFor(c: CompetitorView, place: number | null): ResultView {
     elapsed_time_ms: c.elapsed_time_ms,
     place,
     behind_leader_ms: null,
+    soft_status: softStatus(c.status),
   };
 }
 
@@ -250,7 +281,9 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     state.competitors.set(pendCia.id, pendCia);
     state.results_by_class.set('cls-d21', [rowFor(pendCia, null)]);
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    // Provisional: PEND may still be out in the forest (Final reports it
+    // as DidNotStart, see the SOFT TA till TR 7.8.2 test).
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     assert.equal(summary.class_count, 1);
     assert.ok(xml.includes('<Name>H21</Name>'));
     assert.ok(!xml.includes('<Name>D21</Name>'));
@@ -263,6 +296,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
       competitors: new Map(),
       results_by_class: new Map(),
       pending_unknown_cards: [],
+      check_to_start: { n: 0, median_ms: null, mean_ms: null, offset_ms: 114_000 },
       last_event_seq: 0,
     };
     const { xml, summary } = buildResultListXml(makeInput({ state: emptyState }));
@@ -354,13 +388,110 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     const h21Rows = state.results_by_class.get('cls-h21')!;
     h21Rows.push(rowFor(dani, null));
 
-    const { xml, summary } = buildResultListXml(makeInput({ state }));
+    const { xml, summary } = buildResultListXml(makeInput({ state, status: 'Provisional' }));
     // PEND not emitted → total person_result_count unchanged from the seed (3).
     assert.equal(summary.person_result_count, 3);
     assert.ok(!xml.includes('Danielsson'), 'PEND competitor must not appear');
     assert.ok(xml.includes('<Status>OK</Status>'));
     assert.ok(xml.includes('<Status>MissingPunch</Status>'));
     assert.ok(xml.includes('<Status>DidNotFinish</Status>'));
+  });
+
+  test('SOFT TA till TR 7.8.2: unread is not "not started" — the final ResultList leaves an unread runner out and counts them; only an operator DNS is DidNotStart', async () => {
+    const state = makeSeededState();
+    const unread = (id: string, name: string, status: CompetitorView['status']) => {
+      const v = makeCompetitorView({
+        id,
+        name,
+        club: 'StorTuna OK',
+        class_id: 'cls-h21',
+        card_number: null,
+        status,
+        elapsed_time_ms: null,
+      });
+      state.competitors.set(v.id, v);
+      state.results_by_class.get('cls-h21')!.push(rowFor(v, null));
+    };
+    unread('cmp-dani', 'Dani Danielsson', 'PEND');
+    unread('cmp-eva', 'Eva Eriksson', 'DNS');
+
+    const res = await validateAndBuild(makeInput({ state, status: 'Final' }));
+    assert.equal(res.valid, true, `XSD-invalid output: ${JSON.stringify(res)}`);
+    if (!res.valid) return;
+    assert.ok(!res.build.xml.includes('Danielsson'), 'an unread runner is not published');
+    assert.equal(res.build.summary.pending_count, 1);
+    assert.equal(res.build.summary.person_result_count, 4);
+    const evaXml = res.build.xml.slice(res.build.xml.indexOf('Eriksson'));
+    assert.match(
+      evaXml.slice(0, evaXml.indexOf('</PersonResult>')),
+      /<Status>DidNotStart<\/Status>/
+    );
+    // The other IOF statuses are unchanged.
+    assert.ok(res.build.xml.includes('<Status>MissingPunch</Status>'));
+    assert.ok(res.build.xml.includes('<Status>DidNotFinish</Status>'));
+  });
+
+  test('SOFT TA till TR 7.8.3: the ResultList carries Eventor person ids, course length and start/finish times, and validates against IOF.xsd', async () => {
+    const state = makeSeededState();
+    // Anna (OK) read out: drawn start 10:00:00, finish punch 10:12:00 local
+    // (2026-05-19, CEST = UTC+2), read at 10:15.
+    const readAt = Date.parse('2026-05-19T08:15:00Z');
+    const anna = {
+      ...state.competitors.get('cmp-anna')!,
+      start_time_ms: Date.parse('2026-05-19T08:00:00Z'),
+      card_read_history: [
+        {
+          event_time_ms: readAt,
+          card_number: 7501853,
+          card_type: 'SI10',
+          punches: [],
+          start: null,
+          finish: { seconds_in_half_day: 10 * 3600 + 12 * 60, half_day: 0 as const, weekday: null },
+        },
+      ],
+    };
+    state.competitors.set(anna.id, anna);
+    const course = {
+      id: 'crs-a',
+      competition_id: 'comp-stortuna-tisdag',
+      name: 'Bana A',
+      class_id: null,
+      length_m: 4200,
+      climb_m: 85,
+      controls: [
+        { control_code: 31, order_idx: 0 },
+        { control_code: 32, order_idx: 1 },
+      ],
+    };
+    const classes = makeClasses().map((c) =>
+      c.id === 'cls-h21' ? { ...c, course_id: 'crs-a' } : c
+    );
+    const res = await validateAndBuild(
+      makeInput({
+        state,
+        classes,
+        courses: [course],
+        eventorPersonIds: new Map([['cmp-anna', 12345]]),
+      })
+    );
+    if (!res.valid) assert.fail(`XSD-invalid: ${JSON.stringify(res.errors)}`);
+    const xml = res.build.xml;
+    // Person > Id (type "Sweden", as Eventor writes it) before Name.
+    assert.match(xml, /<Person>\s*<Id type="Sweden">12345<\/Id>\s*<Name>\s*<Family>Andersson/);
+    // Only runners with a known id get one.
+    assert.equal(xml.match(/<Id /g)?.length, 1);
+    // TR 7.8.2: the class's course with its length.
+    assert.match(
+      xml,
+      /<Course>\s*<Name>Bana A<\/Name>\s*<Length>4200<\/Length>\s*<Climb>85<\/Climb>\s*<NumberOfControls>2<\/NumberOfControls>\s*<\/Course>/
+    );
+    // D21 has no course: no Course element for it.
+    assert.equal(xml.match(/<Course>/g)?.length, 1);
+    // Start and finish as xsd:dateTime.
+    assert.match(
+      xml,
+      /<StartTime>2026-05-19T08:00:00.000Z<\/StartTime>\s*<FinishTime>2026-05-19T08:12:00.000Z<\/FinishTime>\s*<Time>720<\/Time>/
+    );
   });
 
   test('test 8: round-trip parse confirms structural fields', () => {
@@ -460,5 +591,244 @@ describe('iofExport — helper functions', () => {
   test('resultListStatusFor maps the export-status toggle to the IOF @status enum', () => {
     assert.equal(resultListStatusFor('Final'), 'Complete');
     assert.equal(resultListStatusFor('Provisional'), 'Snapshot');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildStartListXml tests (Task 1 — Plan 02.1-03)
+// ---------------------------------------------------------------------------
+
+function makeStartListInput(overrides: Partial<StartListInput> = {}): StartListInput {
+  return {
+    competition: {
+      id: 'comp-stortuna-tisdag',
+      name: 'StorTuna Tisdag',
+      date: '2026-05-19',
+      receipt_template: 'classic',
+      auto_print: false,
+      created_at_ms: 1_716_120_000_000,
+      race_started_at_ms: null,
+      timing_format: 'seconds',
+    },
+    classes: [
+      {
+        name: 'H21',
+        competitors: [
+          {
+            name: 'Anna Andersson',
+            club: 'StorTuna OK',
+            startTimeMs: 1_716_148_200_000,
+            bibNumber: '101',
+          },
+          {
+            name: 'Bo Berg',
+            club: 'StorTuna OK',
+            startTimeMs: 1_716_148_260_000,
+            bibNumber: '102',
+          },
+          { name: 'Cia Carlsson', club: null, startTimeMs: 1_716_148_320_000 },
+        ],
+      },
+      {
+        name: 'D21',
+        competitors: [
+          { name: 'Dani Danielsson', club: 'FK Hök', startTimeMs: 1_716_148_200_000 },
+          { name: 'Erik Eriksson', club: null, startTimeMs: 1_716_148_260_000 },
+          { name: 'Fia Forsberg', club: 'StorTuna OK', startTimeMs: 1_716_148_320_000 },
+        ],
+      },
+    ],
+    status: 'Final',
+    creator: 'fartOLa test v0.0',
+    now: () => new Date('2026-05-19T18:30:00.000Z'),
+    ...overrides,
+  };
+}
+
+describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
+  test('test 1: produces valid IOF XML 3.0 with ClassStart and PersonStart elements', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: '@_',
+      parseAttributeValue: false,
+    });
+    const parsed = parser.parse(xml) as {
+      StartList: {
+        '@_iofVersion': string;
+        Event: { Name: string };
+        ClassStart: unknown;
+      };
+    };
+    assert.equal(parsed.StartList['@_iofVersion'], '3.0');
+    assert.equal(parsed.StartList.Event.Name, 'StorTuna Tisdag');
+    assert.ok(
+      xml.includes('<ClassStart>') || xml.includes('<ClassStart ') || xml.includes('ClassStart'),
+      'must have ClassStart elements'
+    );
+    assert.ok(xml.includes('PersonStart'), 'must have PersonStart elements');
+  });
+
+  test('test 2: StartTime values end with Z suffix (UTC ISO format)', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    // Extract all StartTime values from the XML
+    const startTimeRegex = /<StartTime>([^<]+)<\/StartTime>/g;
+    const matches = [...xml.matchAll(startTimeRegex)];
+    assert.ok(matches.length > 0, 'must have at least one StartTime element');
+    for (const match of matches) {
+      const val = match[1]!;
+      assert.ok(val.endsWith('Z'), `StartTime "${val}" must end with Z suffix`);
+    }
+  });
+
+  test('test 3: validateXml returns valid=true against bundled IOF.xsd', async () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    const v = await import('./validate.ts').then((m) => m.validateXml(xml));
+    if (!v.valid) {
+      const msgs = v.errors.map((e) => `${e.line ?? '?'}: ${e.message}`).join('\n');
+      assert.fail(`StartList XML failed XSD validation:\n${msgs}`);
+    }
+    assert.equal(v.valid, true);
+  });
+
+  test('test 4: competitor with null startTimeMs is excluded from the StartList', () => {
+    const input = makeStartListInput({
+      classes: [
+        {
+          name: 'H21',
+          competitors: [
+            { name: 'Anna Andersson', startTimeMs: 1_716_148_200_000 },
+            { name: 'Bo Berg', startTimeMs: null }, // not drawn
+          ],
+        },
+      ],
+    });
+    const { xml, summary } = buildStartListXml(input);
+    assert.ok(!xml.includes('Berg'), 'null startTimeMs competitor must not appear in output');
+    assert.ok(xml.includes('Andersson'), 'drawn competitor must appear');
+    assert.equal(summary.person_start_count, 1);
+  });
+
+  test('test 5: competitor with club is wrapped in Organisation element with type="Club"', () => {
+    const { xml } = buildStartListXml(makeStartListInput());
+    assert.ok(xml.includes('<Organisation type="Club">'), 'must have Organisation type="Club"');
+    assert.ok(xml.includes('StorTuna OK'), 'must include club name');
+  });
+
+  test('test 6: CANCEL competitor is excluded from StartList (IOF XSD has no Status in PersonRaceStart)', () => {
+    // NOTE: The IOF XML 3.0 PersonRaceStart element does NOT include a Status
+    // child (unlike PersonRaceResult). Including <Status>Cancelled</Status> in
+    // PersonRaceStart would fail XSD validation. The correct behavior for a
+    // CANCEL competitor in a StartList is exclusion — the competitor is not
+    // announced at all. This mirrors how PEND is excluded from ResultList.
+    //
+    // D-14 (CANCEL → Cancelled) applies only to buildResultListXml, not
+    // buildStartListXml. The existing Phase 2.0 test already covers D-14 for
+    // the ResultList.
+    const input = makeStartListInput({
+      classes: [
+        {
+          name: 'H21',
+          competitors: [
+            { name: 'Anna Andersson', startTimeMs: 1_716_148_200_000, status: 'CANCEL' },
+            { name: 'Bo Berg', startTimeMs: 1_716_148_260_000 },
+          ],
+        },
+      ],
+    });
+    const { xml, summary } = buildStartListXml(input);
+    assert.ok(!xml.includes('Andersson'), 'CANCEL competitor must not appear in StartList');
+    assert.ok(xml.includes('Berg'), 'non-cancelled competitor must still appear');
+    assert.equal(summary.person_start_count, 1, 'only 1 non-cancelled drawn competitor');
+  });
+
+  test('test 6b: buildResultListXml CANCEL maps to Cancelled (D-14 regression)', async () => {
+    // This is already covered in the Phase 2.0 test above but we re-assert
+    // the specific wording per plan D-14 requirement.
+    const state = makeSeededState();
+    const cancel = makeCompetitorView({
+      id: 'cmp-cancel-d14',
+      name: 'Gustav Gren',
+      club: null,
+      class_id: 'cls-h21',
+      card_number: 9000001,
+      status: 'CANCEL',
+      elapsed_time_ms: null,
+    });
+    state.competitors.set(cancel.id, cancel);
+    state.results_by_class.get('cls-h21')!.push(rowFor(cancel, null));
+    const res = await validateAndBuild(makeInput({ state }));
+    assert.equal(res.valid, true);
+    if (res.valid) {
+      assert.ok(
+        res.build.xml.includes('<Status>Cancelled</Status>'),
+        'D-14: CANCEL must emit Cancelled in ResultList too'
+      );
+    }
+  });
+
+  test('validateAndBuildStartList returns valid=true for a well-formed StartList', async () => {
+    const res = await validateAndBuildStartList(makeStartListInput());
+    if (!res.valid) {
+      const msgs = res.errors
+        .map((e: { line: number | null; message: string }) => `${e.line ?? '?'}: ${e.message}`)
+        .join('\n');
+      assert.fail(`validateAndBuildStartList failed:\n${msgs}`);
+    }
+    assert.equal(res.valid, true);
+    if (res.valid) {
+      assert.equal(res.build.summary.class_count, 2);
+      assert.equal(res.build.summary.person_start_count, 6);
+    }
+  });
+});
+
+// 02.1-14 Task 9: an untimed class mirrors Eventor's ResultList —
+// <Class resultListMode="UnorderedNoTimes">, no Time / Position per runner.
+describe('buildResultListXml — class without timing (02.1-14 Task 9)', () => {
+  function noTimingInput(): ExportInput {
+    const state = makeSeededState();
+    const cia = makeCompetitorView({
+      id: 'cmp-cia',
+      name: 'Cia Carlsson',
+      class_id: 'cls-d21',
+      status: 'OK',
+      elapsed_time_ms: 900_000,
+    });
+    state.competitors.set(cia.id, cia);
+    // Place 1 on purpose: the export itself must drop it for this class.
+    state.results_by_class.set('cls-d21', [rowFor(cia, 1)]);
+    const classes = makeClasses().map((c) => (c.id === 'cls-d21' ? { ...c, no_timing: true } : c));
+    return makeInput({ state, classes });
+  }
+
+  test('untimed class gets resultListMode and no Time/Position; timed class keeps them', async () => {
+    const input = noTimingInput();
+    const result = await validateAndBuild(input);
+    if (!result.valid) assert.fail(result.errors.map((e) => e.message).join('\n'));
+    const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }).parse(
+      result.build.xml
+    ) as {
+      ResultList: {
+        ClassResult: Array<{
+          Class: { Name: string; '@_resultListMode'?: string };
+          PersonResult:
+            { Result: Record<string, unknown> } | Array<{ Result: Record<string, unknown> }>;
+        }>;
+      };
+    };
+    const byName = new Map(parsed.ResultList.ClassResult.map((c) => [c.Class.Name, c]));
+    const d21 = byName.get('D21')!;
+    assert.equal(d21.Class['@_resultListMode'], 'UnorderedNoTimes');
+    const ciaResult = (d21.PersonResult as { Result: Record<string, unknown> }).Result;
+    assert.equal(ciaResult.Time, undefined);
+    assert.equal(ciaResult.Position, undefined);
+    assert.equal(ciaResult.Status, 'OK');
+
+    const h21 = byName.get('H21')!;
+    assert.equal(h21.Class['@_resultListMode'], undefined);
+    const anna = (h21.PersonResult as Array<{ Result: Record<string, unknown> }>)[0]!.Result;
+    assert.equal(anna.Time, 720);
+    assert.equal(anna.Position, 1);
   });
 });

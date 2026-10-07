@@ -50,6 +50,11 @@ export function openDatabase(dbPath: string): DbHandle {
   sqlite.pragma('foreign_keys = ON');
   sqlite.pragma('cache_size = -32000');
   sqlite.pragma('temp_store = MEMORY');
+  // Multi-reader concurrent inserts from multiple BridgeLifecycle instances
+  // can race on the same SQLite file. busy_timeout lets a writer retry for
+  // up to 5 s before returning SQLITE_BUSY (WAL already allows one writer +
+  // concurrent readers; this covers the brief write-lock contention window).
+  sqlite.pragma('busy_timeout = 5000');
   runMigrations(sqlite);
   const db = drizzle(sqlite, { schema });
   return {

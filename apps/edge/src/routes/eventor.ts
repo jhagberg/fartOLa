@@ -42,6 +42,7 @@ import {
   searchClubsByName,
 } from '../eventor/lookup.ts';
 import { listEventorEvents } from '../eventor/events.ts';
+import { fetchEventorEvent } from '../eventor/fetchEvent.ts';
 import { eventorCompetitors, config as configTable } from '../db/schema.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { resolveSecret, resolveSecretSource } from '../config/secrets.ts';
@@ -60,6 +61,11 @@ const LookupQuery = z.object({
   // Stora Tuna OK isn't drowned by ranked homonyms from other clubs).
   club_id: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(50).optional(),
+  // Optional competition ID for context-aware SI card disambiguation
+  // (Plan 02.1-10, reserved for future use when competitors.eventor_person_id
+  // FK is available). Accepts any non-empty string (not UUID-only) because
+  // competition IDs are arbitrary text PKs in the schema.
+  competition_id: z.string().min(1).max(256).optional(),
 });
 
 const ClubsQuery = z.object({
@@ -87,13 +93,14 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
       q?: string;
       club_id?: string;
       limit?: string;
+      competition_id?: string;
     };
   }>('/api/eventor/lookup', async (req, reply) => {
     const parsed = LookupQuery.safeParse(req.query);
     if (!parsed.success) {
       return reply.code(400).send(issuesToErrors(parsed.error.issues));
     }
-    const { si_card, prefix, q, club_id, limit } = parsed.data;
+    const { si_card, prefix, q, club_id, limit, competition_id } = parsed.data;
 
     // Mutual-exclusion gate — exactly one of si_card / prefix / q must
     // be supplied. We keep the old `conflicting_query` / `missing_query`
@@ -109,7 +116,7 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
     }
 
     if (si_card !== undefined) {
-      return lookupBySiCard(app.fartolaDb, si_card);
+      return lookupBySiCard(app.fartolaDb, si_card, competition_id ?? null);
     }
     if (q !== undefined) {
       const suggestions = searchCompetitorsByName(app.fartolaDb, q, limit ?? 20, club_id);
@@ -174,6 +181,46 @@ export default async function registerEventorRoutes(app: FastifyInstance): Promi
       }
     }
   );
+
+  // GET /api/eventor/events/:id — fetch metadata for a single Eventor event.
+  //
+  // Used by the wizard Eventor quickstart to validate an event ID the
+  // operator typed and to prefill name + date. Path param is validated
+  // as a positive integer. Delegates to fetchEventorEvent() which calls
+  // GET /api/event/:id on the Eventor API with the ApiKey header.
+  //
+  // Error mapping:
+  //   404 → not_found (Eventor returned 404 or event ID doesn't exist)
+  //   403 → forbidden (API key rejected by Eventor)
+  //   key absent → no_key (503)
+  //   network failure → eventor_down (502)
+  //
+  // T-02.1-22: wizard validates event ID via this call before persisting it
+  // on the competition row — ensures the ID belongs to a real Eventor event.
+  app.get<{ Params: { id: string } }>('/api/eventor/events/:id', async (req, reply) => {
+    const eventId = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(eventId) || eventId <= 0) {
+      return reply.code(400).send({ error: 'invalid_event_id' });
+    }
+    const apiKey = resolveSecret(app.fartolaDb, 'EVENTOR_API_KEY');
+    if (!apiKey || apiKey.length === 0) {
+      return reply.code(503).send({ error: 'no_key' });
+    }
+    try {
+      const event = await fetchEventorEvent({ apiKey, eventId });
+      return event;
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      if (msg.includes('not_found') || msg.includes('404')) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      if (msg.includes('forbidden') || msg.includes('403')) {
+        return reply.code(403).send({ error: 'forbidden' });
+      }
+      app.log.warn({ err: msg, eventId }, 'eventor event fetch failed');
+      return reply.code(502).send({ error: 'eventor_down', detail: msg });
+    }
+  });
 
   app.get('/api/eventor/status', async () => {
     // Request-time env eval — closure captures process.env which is mutable

@@ -198,3 +198,111 @@ describe('Plan 02-07 — /installningar route mounts SettingsView', () => {
     expect(src).toMatch(/screens\/SettingsView\.svelte/);
   });
 });
+
+// SOFT TR 7.7.1: the liveresultat id and password are set and cleared from
+// Inställningar; the password is write-only.
+describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('SOFT TR 7.7.1: settings set and clear the liveresultat id and password', async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ liveresultat_id: '1234', has_password: true }), {
+          status: 200,
+        })
+    ) as unknown as typeof fetch;
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const { getLiveresultatCredentials, setLiveresultatCredentials, clearLiveresultatCredentials } =
+      await import('../api/client.ts');
+    expect(await setLiveresultatCredentials('c 1', '1234', 'hemligt')).toEqual({
+      liveresultat_id: '1234',
+      has_password: true,
+    });
+    await getLiveresultatCredentials('c 1');
+    await clearLiveresultatCredentials('c 1');
+    const calls = fetchMock.mock.calls.map((c) => {
+      const init = c[1] as RequestInit | undefined;
+      return [
+        String(c[0]),
+        init?.method,
+        init?.body === undefined ? null : JSON.parse(String(init.body)),
+      ];
+    });
+    const url = '/api/competitions/c%201/liveresultat/credentials';
+    expect(calls).toEqual([
+      [url, 'PATCH', { liveresultat_id: '1234', liveresultat_pwd: 'hemligt' }],
+      [url, 'GET', null],
+      [url, 'DELETE', null],
+    ]);
+  });
+
+  it('sv + en have the liveresultat keys; the hint cites the rule', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    for (const key of [
+      'settings.liveresultat.title',
+      'settings.liveresultat.description',
+      'settings.liveresultat.id',
+      'settings.liveresultat.password',
+      'settings.liveresultat.save',
+      'settings.liveresultat.clear',
+    ]) {
+      expect(sv[key], key).toBeTruthy();
+      expect(en[key], key).toBeTruthy();
+    }
+    expect(sv['settings.liveresultat.description']).toContain('TR 7.7.1');
+  });
+});
+
+// D-MOP-4 / D-MIP-1 revised 2026-10-05: the MeOS integration password, and
+// the explicit "allow MeOS without password" choice with its warning.
+describe('MeOS-koppling — i18n + API client', () => {
+  const MEOS_KEYS = [
+    'settings.meos.title',
+    'settings.meos.desc',
+    'settings.meos.password',
+    'settings.meos.passwordSet',
+    'settings.meos.passwordNotSet',
+    'settings.meos.allowWithoutPassword',
+    'settings.meos.allowWarning',
+  ] as const;
+
+  it('sv.json and en.json have the MeOS keys; the warning says what opening it means', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    for (const key of MEOS_KEYS) {
+      expect(sv[key], `missing sv key ${key}`).toBeTruthy();
+      expect(en[key], `missing en key ${key}`).toBeTruthy();
+    }
+    expect(sv['settings.meos.title']).toBe('MeOS-koppling');
+    expect(sv['settings.meos.allowWithoutPassword']).toBe('Tillåt MeOS utan lösenord');
+    expect(sv['settings.meos.allowWarning']).toMatch(/alla på nätverket/i);
+    expect(sv['settings.meos.allowWarning']).toMatch(/löpare/);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('getMeosSettings GETs and setMeosSettings PUTs /api/settings/meos', async () => {
+    const reply = { has_meos_password: true, meos_allow_without_password: false };
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify(reply), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    global.fetch = fetchMock;
+    const { getMeosSettings, setMeosSettings } = await import('../api/client.ts');
+    expect(await getMeosSettings()).toEqual(reply);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/settings/meos');
+    await setMeosSettings({ meos_password: 'hemligt' });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe('/api/settings/meos');
+    const init = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({ meos_password: 'hemligt' });
+  });
+});

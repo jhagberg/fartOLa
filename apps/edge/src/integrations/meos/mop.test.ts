@@ -29,8 +29,9 @@
 //   - Test 11 (Pitfall 7 gzip 'P' byte): first byte 'P' (0x50) → 200 MOPStatus NOZIP.
 //   - Test 12 (T-FILE-IMPORT DOCTYPE): POST body containing <!DOCTYPE → 200 ERROR;
 //     meos_* tables UNCHANGED.
-//   - Test 13 (no auth): POST with no headers + with pwd=anything both succeed
-//     (D-MOP-4).
+//   - Test 13: no password set, localhost: POST with no pwd + with
+//     pwd=anything both succeed (D-MOP-4 revised 2026-10-05 — the password
+//     and LAN cases are in access.test.ts).
 //
 // Locked by:
 // - .planning/phases/02-4-klubbs-mvp/02-04-PLAN.md task 2
@@ -540,7 +541,7 @@ describe('POST /mop — integrations/meos/mop', () => {
     );
   });
 
-  test('test 13: no auth — works with no pwd AND with pwd=anything (D-MOP-4)', async () => {
+  test('test 13: no password set, localhost — works with no pwd AND with pwd=anything', async () => {
     const r1 = await postMop(ctx, COMPLETE_XML);
     assert.equal(r1.status, 200);
 

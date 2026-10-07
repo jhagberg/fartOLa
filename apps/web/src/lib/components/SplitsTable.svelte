@@ -12,7 +12,7 @@
   - 01-UI-SPEC.md §"Tweaks panel" — density='high' shows this surface
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { ReceiptPunch } from './receipt-templates/types.ts';
 
   interface Props {

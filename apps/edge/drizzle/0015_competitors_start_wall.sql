@@ -1,0 +1,11 @@
+-- Migration 0015 — competitors.start_wall_ms (Codex third review of #51, finding 3)
+--
+-- A start time set as a local wall-clock time, on the wall-clock timeline
+-- card clocks are scored on (projection/halfDayClockMath.ts), next to its
+-- epoch ms in start_time_ms. Needed for a wall time in the hour skipped
+-- when DST starts: SI stations never switch, so a station time 02:00:54 on
+-- 2026-03-29 is real, but no epoch ms reads back as it. Scoring uses it only
+-- while start_time_ms is still its epoch (any later writer makes it stale).
+--
+-- Hand-written like 0011–0014, no snapshot.
+ALTER TABLE `competitors` ADD `start_wall_ms` integer;

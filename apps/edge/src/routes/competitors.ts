@@ -70,9 +70,16 @@ import crypto from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { CompetitorCreateInput, type CompetitorDTO, readoutChannel } from '@fartola/shared-types';
+import {
+  CompetitorCreateInput,
+  type CompetitorDTO,
+  parseWallClock,
+  readoutChannel,
+} from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
+import type { DrizzleDb } from '../db/index.ts';
 import type { Competitor } from '../db/types.ts';
+import { wallMsToEpochMs } from '../projection/halfDayClockMath.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 // C-M4 — PATCH /api/competitors/:id consent-confirmation body schema.
@@ -97,6 +104,48 @@ const PatchProfileSchema = z
     card_number: z.number().int().positive().nullable().optional(),
   })
   .strict();
+
+// PATCH /api/competitions/:id/competitors/:competitorId/start-time body
+// (02.1-14): one runner's drawn start as epoch ms, or null to clear it. The
+// > 1e12 floor rejects the old local ms-since-midnight base. Shared with
+// the missing-starts batch (Task 15, routes/missingStarts.ts).
+export const StartTimeMs = z.number().int().gt(1e12).nullable();
+/** …or as a local wall-clock time 'YYYY-MM-DDTHH:MM:SS' (no offset), on the
+ * timeline card clocks are scored on: the only form that can name a station
+ * time in the hour skipped when DST starts (Codex third review of #51). */
+export const StartWall = z
+  .string()
+  .refine((s) => parseWallClock(s) !== null, 'expected local YYYY-MM-DDTHH:MM:SS');
+const PatchStartTimeSchema = z.union([
+  z.object({ start_time_ms: StartTimeMs }).strict(),
+  z.object({ start_wall: StartWall }).strict(),
+]);
+
+/** A validated { start_time_ms } or { start_wall } as the two columns. */
+export function startColumns(input: { start_time_ms: number | null } | { start_wall: string }): {
+  startTimeMs: number | null;
+  startWallMs: number | null;
+} {
+  if ('start_time_ms' in input) return { startTimeMs: input.start_time_ms, startWallMs: null };
+  const startWallMs = parseWallClock(input.start_wall)!;
+  return { startTimeMs: wallMsToEpochMs(startWallMs), startWallMs };
+}
+
+/** Set one runner's start time; undefined when the competitor is not in
+ * this competition. The caller marks the projection dirty. */
+export function setCompetitorStartTime(
+  db: DrizzleDb,
+  competitionId: string,
+  competitorId: string,
+  start: { startTimeMs: number | null; startWallMs: number | null }
+): Competitor | undefined {
+  return db
+    .update(competitors)
+    .set(start)
+    .where(and(eq(competitors.competitionId, competitionId), eq(competitors.id, competitorId)))
+    .returning()
+    .get();
+}
 
 /** True when err is a SQLite UNIQUE-constraint violation on
  * competitors.card_number — i.e. the D-11 partial unique index
@@ -129,6 +178,7 @@ function competitorRowToDTO(row: Competitor): CompetitorDTO {
     consent_at_ms: row.consentAtMs,
     consent_status: row.consentStatus,
     scrubbed_at_ms: row.scrubbedAtMs,
+    start_time_ms: row.startTimeMs ?? null,
   };
 }
 
@@ -292,6 +342,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         consent_at_ms: target.consentAtMs,
         consent_status: target.consentStatus,
         scrubbed_at_ms: target.scrubbedAtMs,
+        start_time_ms: target.startTimeMs ?? null,
       };
       return reply.code(200).send(dto);
     }
@@ -523,6 +574,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       consent_at_ms: now,
       consent_status: 'explicit',
       scrubbed_at_ms: null,
+      start_time_ms: null,
     };
     return reply.code(201).send(dto);
   });
@@ -712,6 +764,29 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         .orderBy(asc(competitors.name))
         .all();
       return { competitors: rows.map(competitorRowToDTO) };
+    }
+  );
+
+  // PATCH /api/competitions/:id/competitors/:competitorId/start-time — set or
+  // clear one runner's drawn start (LottningView's per-runner edit). The
+  // operator write gate in server.ts covers this path.
+  app.patch<{ Params: { id: string; competitorId: string } }>(
+    '/api/competitions/:id/competitors/:competitorId/start-time',
+    async (req, reply) => {
+      const { id, competitorId } = req.params;
+      const parsed = PatchStartTimeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      }
+      const row = setCompetitorStartTime(
+        app.fartolaDb.db,
+        id,
+        competitorId,
+        startColumns(parsed.data)
+      );
+      if (!row) return reply.code(404).send({ error: 'competitor_not_found' });
+      app.projectionStore.markDirty(id);
+      return competitorRowToDTO(row);
     }
   );
 

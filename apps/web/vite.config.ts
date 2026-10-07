@@ -1,17 +1,29 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Vite config for the SvelteKit SPA. Two responsibilities:
-//   1. Dev-server proxy: /api/* → http://localhost:3000 (Fastify) and
+// Vite config for the SvelteKit SPA. Three responsibilities:
+//   1. SvelteKit config (SvelteKit 3 reads it from the sveltekit() plugin;
+//      svelte.config.js is no longer used). SPA mode via
+//      @sveltejs/adapter-static with fallback: '200.html' — the edge bridge
+//      (apps/edge) serves the built apps/web/build/ directory and falls back
+//      to 200.html on any non-API/non-WS path so SvelteKit's client-side
+//      router can take over. strict: false because dynamic-route data (e.g.
+//      competition/[id]) is loaded at runtime via REST; SvelteKit's
+//      prerender pass would otherwise warn on unprerendered dynamic routes.
+//      Locked by .planning/phases/01-single-laptop-training-mvp/01-RESEARCH.md
+//      §"svelte.config.js" + Pitfall 1.
+//   2. Dev-server proxy: /api/* → http://localhost:3000 (Fastify) and
 //      /ws → ws://localhost:3000 (WebSocket upgrade). Locked by
 //      .planning/phases/01-single-laptop-training-mvp/01-RESEARCH.md
 //      Pitfall 2 — without these, the dev experience can't reach the
 //      bridge.
-//   2. Vitest config inlined (test block). RESEARCH §"validation
+//   3. Vitest config inlined (test block). RESEARCH §"validation
 //      architecture" allows vitest config to live inside vite.config.ts;
 //      vitest.config.ts re-exports this file so the planner's
 //      file-presence intent is preserved.
 
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
 // Edge API port — defaults to the production-tarball default (3000). The
@@ -22,7 +34,13 @@ import { defineConfig } from 'vite';
 const FARTOLA_EDGE_PORT = process.env['FARTOLA_EDGE_PORT'] ?? '3000';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [
+    sveltekit({
+      preprocess: vitePreprocess(),
+      adapter: adapter({ fallback: '200.html', strict: false }),
+      prerender: { entries: [] },
+    }),
+  ],
   server: {
     proxy: {
       '/api': {

@@ -14,6 +14,8 @@
 //     number | null` (raw seconds-in-half-day, matching upstream's fixture shape —
 //     full wall-clock reconstruction needs the event date and is Phase 1's job).
 //   - SiCard11/PCard cardNumber path retained from upstream (4-byte arr2cardNumber).
+//   - siPunchCode(): punch control code including the PTD's code bits 8-9 (upstream
+//     reads the CN byte only, so controls above 255 came out modulo 256).
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from './constants.ts';
@@ -163,11 +165,7 @@ export const CRC16 = (str: number[]): [number, number] => {
  * without intercepting stdout/stderr.
  */
 export type FrameErrorCode =
-  | 'crc_mismatch'
-  | 'bad_etx'
-  | 'bad_stx'
-  | 'truncated'
-  | 'buffer_overflow';
+  'crc_mismatch' | 'bad_etx' | 'bad_stx' | 'truncated' | 'buffer_overflow';
 
 export interface FrameError {
   error_code: FrameErrorCode;
@@ -360,7 +358,8 @@ export const render = (message: SiMessage): number[] => {
 
 // --- SiTime / SiTimestamp ---------------------------------------------------
 // SiTime models the half-day clock primitive on every SI card (seconds since
-// midnight or midday, 0..43199). `null` represents `proto.NO_TIME` (0xEEEE)
+// midnight or midday, 0..43199). Cards with a PTD byte (SI6, SI8+) also say
+// AM or PM; given that byte, SiTime returns seconds since midnight instead. `null` represents `proto.NO_TIME` (0xEEEE)
 // which means "no punch yet". Wall-clock reconstruction needs the event date
 // and is Phase 1's job — Phase 0 emits raw seconds.
 //
@@ -372,12 +371,20 @@ export type SiTimestamp = number | null;
 
 export class SiTime extends SiDataType<SiTimestamp> {
   private readonly intField: SiInt | undefined;
+  private readonly ptdField: SiInt | undefined;
   public intParts: [[number], [number]] | undefined;
 
-  constructor(intParts: [[number], [number]] | undefined) {
+  /**
+   * `ptdOffset` is the PTD byte of the punch record on cards that have one
+   * (SI6, SI8 and later; not SI5). Its bit 0 is the PM flag, so a PM time
+   * comes back as seconds since midnight (43200..86399) — which
+   * `toHalfDayClock` then splits into `half_day: 1`.
+   */
+  constructor(intParts: [[number], [number]] | undefined, ptdOffset?: number) {
     super();
     this.intParts = intParts;
     this.intField = intParts === undefined ? undefined : new SiInt(intParts);
+    this.ptdField = ptdOffset === undefined ? undefined : new SiInt([[ptdOffset]]);
   }
 
   typeSpecificExtractFromData(data: SiStorageData): SiTimestamp | undefined {
@@ -385,6 +392,18 @@ export class SiTime extends SiDataType<SiTimestamp> {
     const timeInt = this.intField.typeSpecificExtractFromData(data);
     if (timeInt === proto.NO_TIME) return null;
     if (timeInt === undefined || timeInt > SI_TIME_CUTOFF) return undefined;
-    return timeInt;
+    const ptd = this.ptdField?.typeSpecificExtractFromData(data);
+    return ptd !== undefined && (ptd & 0x01) === 1 ? timeInt + SI_TIME_CUTOFF : timeInt;
   }
 }
+
+// --- Punch control code -------------------------------------------------------
+// A PTD punch record (SI6, SI8, SI9, SI10, SI11, SIAC) is
+// [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bits 6-7
+// hold bits 8-9, so code = cn + ((ptd & 0xc0) << 2) — up to 1023 (cf. SIReader's
+// sireader2.py). Upstream sportident.js reads the CN byte only.
+
+/** Storage field for the control code of the PTD punch record at `punchOffset`. */
+export const siPunchCode = (punchOffset: number): SiInt =>
+  // SiInt concatenates parts little-endian: CN → bits 0-7, PTD bits 6-7 → bits 8-9.
+  new SiInt([[punchOffset + 1], [punchOffset, 6, 8]]);

@@ -15,10 +15,11 @@
 // - .planning/phases/01-single-laptop-training-mvp/01-07-PLAN.md
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09 D-11 D-12
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md
 // - REQ-EVT-003 / REQ-EVT-004 (reducer is pure + idempotent)
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
+import type { SoftStatus } from '@fartola/shared-types';
 
 // Phase 2.0 extension (2026-05-18): four operator-flagged states added on
 // top of the auto-detected PEND/OK/MP/DNF set. Each maps to an IOF v3
@@ -32,10 +33,11 @@ import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 export type PunchStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
 
 /** Subset of PunchStatus an operator can assert via manual_status_set.
- * Auto-detected states (PEND/OK/MP) are NEVER operator-asserted — they fall
- * out of dnfMp.detectStatus naturally. DNF stays asserter-allowed for back-
- * compat with the legacy manual_dnf event. */
-export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+ * PEND/OK are never operator-asserted — they fall out of dnfMp.detectStatus.
+ * DNF stays asserter-allowed for back-compat with the legacy manual_dnf
+ * event. MP can be set by hand as in MeOS ("Felstämplad", e.g. a runner who
+ * went home without reading out — 02.1-14 Task 10). */
+export type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
 /** One competitor's projected view — what readout + receipts render. */
 export interface CompetitorView {
@@ -51,6 +53,8 @@ export interface CompetitorView {
   card_read_history: Array<{
     event_time_ms: number;
     card_number: number;
+    /** card_read payload card_type — SI5 has no AM/PM bit (02.1-14 Task 3). */
+    card_type: string;
     punches: NdjsonPunch[];
     start: HalfDayClock | null;
     finish: HalfDayClock | null;
@@ -76,6 +80,38 @@ export interface CompetitorView {
    * card_read. When set, the reducer skips auto-detection (the override
    * wins until cleared via clear_manual_status). */
   manual_status: ManualStatus | null;
+  /** Phase 2.1 (D-16): control codes voided by leg_voided events. Sorted
+   * ascending for deterministic snapshots. Voiding a leg removes it from
+   * the course-match check and subtracts the leg duration from elapsed. */
+  voided_legs: number[];
+  /** Phase 2.1 (D-05): assigned start time for the competitor (epoch ms),
+   * NULL when no start time has been drawn. Loaded from competitors.start_time_ms. */
+  start_time_ms: number | null;
+  /** 02.1-14 Task 9: the competitor's class has no timing (MeOS NoTiming).
+   * elapsed_time_ms is still computed, but public surfaces (results, MOP,
+   * export, receipts) must not show it. */
+  no_timing: boolean;
+  /** 02.1-14 Task 13: the latest read has a finish but no start under the
+   * class's start method (Task 14), so there is no running time or place (MeOS would
+   * silently time from ZeroTime). Status is still detected (OK/MP). */
+  missing_start: boolean;
+  /** 02.1-14 Task 13: suggested start (epoch ms) for a missing start = the
+   * card's check punch + suggested_start_offset_ms. Null without a check
+   * punch or when the start is not missing. */
+  suggested_start_ms: number | null;
+  /** The same suggestion on the local wall-clock timeline (the card's own
+   * clock): what the operator applies. In the hour skipped when DST starts
+   * it differs from suggested_start_ms by that hour. */
+  suggested_start_wall_ms: number | null;
+  /** The check → start punch gap used: the median over the competition's
+   * runners with both, or 1:54 when fewer than 10. Null with no suggestion. */
+  suggested_start_offset_ms: number | null;
+  /** 02.1-14 Task 14: where the time runs from the start time, a start
+   * punch more than 60 s after it (ms after the start time; "Sen start",
+   * SOFT TR 4.18.9 (2026-07-01)). A warning only — the time is unchanged. */
+  late_start_ms: number | null;
+  /** Same, a start punch before the start time (ms before it; "Tjuvstart?"). */
+  early_start_ms: number | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection
@@ -86,10 +122,16 @@ export interface ResultView {
   club: string | null;
   status: PunchStatus;
   elapsed_time_ms: number | null;
-  /** 1-based place among OK competitors; null for MP/DNF/PEND. */
+  /** 1-based place among OK competitors; null for MP/DNF/PEND and for every
+   * row of a class without timing (02.1-14 Task 9, which also nulls
+   * elapsed_time_ms and behind_leader_ms here). */
   place: number | null;
   /** ms behind the leader for OK rows; null otherwise. */
   behind_leader_ms: number | null;
+  /** The status as SOFT names it in a published result list (TA till TR
+   * 7.8.2, TR 4.21.3), live: a runner not read out is EJ_UTLAST here and
+   * "Ej start" only in the final ResultList export. */
+  soft_status: SoftStatus;
 }
 
 /** Top-level reducer output. Maps are used (not arrays) so callers can
@@ -102,6 +144,16 @@ export interface CompetitionState {
    * Drives the walk-up modal (UI-SPEC §"Walk-up modal"). Sorted ascending
    * for deterministic snapshots. */
   pending_unknown_cards: number[];
+  /** 02.1-14 Task 15: the check → start punch gaps of the runners read so
+   * far with both (latest in-race read each): n, median and mean (null
+   * when n = 0), and the offset the missing-start suggestions use (the
+   * median, or 1:54 when n < 10). */
+  check_to_start: {
+    n: number;
+    median_ms: number | null;
+    mean_ms: number | null;
+    offset_ms: number;
+  };
   /** Highest local_seq of any event consumed by this projection — plan 08
    * uses this to skip already-applied events on incremental rebuilds. */
   last_event_seq: number;

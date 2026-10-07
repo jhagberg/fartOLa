@@ -141,9 +141,8 @@ export default async function registerEventorImportRoutes(app: FastifyInstance):
       try {
         const result = ingestEntryList(app.fartolaDb, competitionId, parsedXml.data, Date.now());
         const autoBind = autoBindNewCompetitors(app.fartolaDb, competitionId, app.fartolaNodeId);
-        if (autoBind.bound.length > 0) {
-          app.projectionStore.markDirty(competitionId);
-        }
+        // New runners (and any new bindings) change the cached results.
+        app.projectionStore.markDirty(competitionId);
         return reply.code(201).send({
           kind: 'EntryList',
           ...result,

@@ -10,7 +10,7 @@
   Locked by 01-13-PLAN.md task 1.
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import type { ReceiptTemplateProps } from './types.ts';
 
   let { read }: ReceiptTemplateProps = $props();
@@ -33,7 +33,7 @@
       {t('rcpt.place')} <b>{read.place}</b>
       {t('rcpt.of')} {read.progress.finishedInClass} {t('rcpt.finished')}
     {:else}
-      <b>{read.status}</b>
+      <b>{read.statusLabel}</b>
     {/if}
   </div>
   {#if !isLeader && read.status === 'OK' && read.progress.behind}

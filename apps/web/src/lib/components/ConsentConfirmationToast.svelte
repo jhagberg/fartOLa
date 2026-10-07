@@ -16,9 +16,9 @@
   - REQ-PRIV-001 (consent literal flow)
 -->
 <script lang="ts">
-  import { confirmConsent } from '$lib/api/client.ts';
-  import { t } from '$lib/i18n/index.ts';
-  import Button from '$lib/ui/Button.svelte';
+  import { confirmConsent } from '#lib/api/client.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/Button.svelte';
 
   interface Props {
     competitorId: string;

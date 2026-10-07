@@ -101,11 +101,16 @@ export default async function registerPrintRoute(
         .get();
       if (!classRow) return reply.code(404).send({ error: 'class_not_found' });
 
-      // Course: pick the course whose class_id matches; null if none.
+      // Course: the class's course_id (02.1-14 Task 4), else the legacy
+      // course whose class_id matches; null if none.
       const courseRow = app.fartolaDb.db
         .select()
         .from(courses)
-        .where(and(eq(courses.competitionId, competitionId), eq(courses.classId, classRow.id)))
+        .where(
+          classRow.courseId !== null
+            ? eq(courses.id, classRow.courseId)
+            : and(eq(courses.competitionId, competitionId), eq(courses.classId, classRow.id))
+        )
         .get();
       // Control codes (ordered) for the course, when one exists.
       const controlCodes: number[] = [];

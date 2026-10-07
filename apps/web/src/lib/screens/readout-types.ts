@@ -12,7 +12,19 @@
 //
 // Locked by 01-13-PLAN.md task 2 + interfaces.
 
-import type { ReceiptRead, ReceiptPunch } from '$lib/components/receipt-templates/types.ts';
+import {
+  epochToLocalSeconds,
+  formatWallClock,
+  parseTimeOfDay,
+  parseWallClock,
+  softStatus,
+  startBeforeFinishWallMs,
+  type SoftStatus,
+  type StartMethod,
+} from '@fartola/shared-types';
+import { patchCompetitorStartWall } from '#lib/api/client.ts';
+import { t } from '#lib/i18n/index.ts';
+import type { ReceiptRead, ReceiptPunch } from '#lib/components/receipt-templates/types.ts';
 
 export type ReadoutStatus = 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
 
@@ -60,6 +72,26 @@ export interface ReadoutHistoryRow {
   /** Ordered expected control codes for the competitor's course; empty
    * when the class has no course or the card is unmatched. */
   expected_codes: number[];
+  /** Phase 2.1 (plan 13) — mirrors CompetitorView.manual_status. Non-null
+   * when the current status was set by an operator override. null means
+   * the status is auto-detected from card_read + course. The UI uses this
+   * to show the clear button only for manual overrides, not for auto-DNF. */
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  /** 02.1-14 Task 13 — the competitor's latest read has a finish but no
+   * start punch and no drawn start; suggested start = check + offset (both
+   * null without a check punch). */
+  missing_start: boolean;
+  suggested_start_ms: number | null;
+  suggested_start_offset_ms: number | null;
+  /** The suggestion and this read's finish as local wall-clock strings
+   * 'YYYY-MM-DDTHH:MM:SS' — the card's clock, the scale the running time is
+   * computed on (null without one). */
+  suggested_start_wall: string | null;
+  finish_wall: string | null;
+  /** 02.1-14 Task 14 — start punch more than 60 s after / before the start
+   * time in a class timed from it (ms, positive). Jury warnings only. */
+  late_start_ms: number | null;
+  early_start_ms: number | null;
 }
 
 export interface ReadoutResponse {
@@ -74,6 +106,104 @@ export interface ReadoutResponse {
  * the flashIn animation lookup. */
 export function historyKey(row: ReadoutHistoryRow): string {
   return `${row.event_time_ms}-${row.local_seq}`;
+}
+
+const HALF_DAY_SEC = 43200;
+
+/** Running time for a read: finish − start, as the edge projection computes
+ * it (dnfMp.startMs, 02.1-14 Task 14): the class's start method picks the
+ * start — 'auto' the start time if any, else the punch; 'start_time' the
+ * start time only; 'start_punch' the punch, else the start time.
+ * No start at all → null; the old first-punch fallback showed a misleading
+ * time. Card clocks are compared modulo 12 h (runs under 12 h), so SI5 cards
+ * without a PM bit work too. */
+export function readElapsedMs(
+  row: Pick<ReadoutHistoryRow, 'finish_seconds_in_half_day' | 'start_seconds_in_half_day'>,
+  drawnStartMs: number | null,
+  startMethod: StartMethod = 'auto'
+): number | null {
+  if (row.finish_seconds_in_half_day === null) return null;
+  const drawn = drawnStartMs === null ? null : epochToLocalSeconds(drawnStartMs) % HALF_DAY_SEC;
+  const punch = row.start_seconds_in_half_day;
+  const base =
+    startMethod === 'start_time'
+      ? drawn
+      : startMethod === 'start_punch'
+        ? (punch ?? drawn)
+        : (drawn ?? punch);
+  if (base === null) return null;
+  const delta = (row.finish_seconds_in_half_day - base) % HALF_DAY_SEC;
+  return Math.round((delta < 0 ? delta + HALF_DAY_SEC : delta) * 1000);
+}
+
+/** 02.1-14 Task 13: the parts of "Check 10:19:37 + 1:54 → 10:21:31" for a
+ * missing start, or null when the start is not missing or there is no
+ * suggestion (no check punch). */
+export function missingStartHint(
+  row: Pick<
+    ReadoutHistoryRow,
+    'missing_start' | 'suggested_start_wall' | 'suggested_start_offset_ms'
+  >
+): { check: string; offset: string; suggested: string } | null {
+  const { suggested_start_offset_ms: offset } = row;
+  const suggested =
+    row.suggested_start_wall === null ? null : parseWallClock(row.suggested_start_wall);
+  if (!row.missing_start || suggested === null || offset === null) return null;
+  return {
+    check: wallTimeOfDay(suggested - offset),
+    offset: formatElapsed(offset),
+    suggested: wallTimeOfDay(suggested),
+  };
+}
+
+/** Wall-clock ms → 'HH:MM:SS'. */
+export function wallTimeOfDay(wallMs: number): string {
+  return formatWallClock(wallMs).slice(11, 19);
+}
+
+/** 02.1-14 Task 14: "Sen start +3:12" / "Tjuvstart? −0:05" for the read-out
+ * card — an i18n key and the difference — or null. */
+export function startWarning(
+  row: Pick<ReadoutHistoryRow, 'late_start_ms' | 'early_start_ms'>
+): { key: 'ro.lateStart' | 'ro.earlyStart'; diff: string } | null {
+  if (row.late_start_ms !== null)
+    return { key: 'ro.lateStart', diff: formatElapsed(row.late_start_ms) };
+  if (row.early_start_ms !== null) {
+    return { key: 'ro.earlyStart', diff: formatElapsed(row.early_start_ms) };
+  }
+  return null;
+}
+
+/** An edited start: on the wall-clock timeline, or why not. */
+export type StartEntry = { wallMs: number } | { error: 'invalid' | 'after_finish' };
+
+/** 'HH:MM' or 'HH:MM:SS' → a start on the finish's wall-clock timeline
+ * (`finishWall` 'YYYY-MM-DDTHH:MM:SS', as the backend computes the running
+ * time): the latest such time not after the finish, so 23:50 against a
+ * finish at 00:10 is the day before; more than 12 h before it means the
+ * start is after the finish. No epoch arithmetic, so DST nights are no
+ * different. */
+export function resolveStartInput(text: string, finishWall: string | null): StartEntry {
+  const seconds = parseTimeOfDay(text);
+  const finish = finishWall === null ? null : parseWallClock(finishWall);
+  if (seconds === null || finish === null) return { error: 'invalid' };
+  const wallMs = startBeforeFinishWallMs(seconds, finish);
+  return wallMs === null ? { error: 'after_finish' } : { wallMs };
+}
+
+/** 02.1-14 Task 13: "Sätt starttid" — PATCH the edited start time as a
+ * wall-clock time. Sends nothing when the text is not a time, or the start
+ * would be after the finish. */
+export async function setStartFromInput(
+  competitionId: string,
+  competitorId: string,
+  text: string,
+  finishWall: string | null
+): Promise<'ok' | 'invalid' | 'after_finish'> {
+  const entry = resolveStartInput(text, finishWall);
+  if ('error' in entry) return entry.error;
+  await patchCompetitorStartWall(competitionId, competitorId, formatWallClock(entry.wallMs));
+  return 'ok';
 }
 
 /** Format `ms` (UTC epoch millis) as `HH:MM:SS` in the local timezone.
@@ -95,6 +225,21 @@ export function formatElapsed(ms: number | null): string {
   const s = totalSec % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Format elapsed duration with one decimal place for sprint/tenths display
+ * (D-17). Returns `M:SS.t` or `H:MM:SS.t`. The tenths digit is computed
+ * from the sub-second ms remainder so display is consistent with the
+ * internal ms precision. */
+export function formatElapsedTenths(ms: number | null): string {
+  if (ms === null || ms < 0) return '—';
+  const tenths = Math.floor((ms % 1000) / 100);
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
+  return `${m}:${String(s).padStart(2, '0')}.${tenths}`;
 }
 
 /** Format split as `M:SS` from a duration in half-day seconds. */
@@ -207,6 +352,28 @@ export function rawPunchesToReceipt(
 
 /** Build a ReceiptRead for the LatestReadCard + ReceiptMirror from a
  * history row + competition meta. */
+/** The label a published surface (results screen, receipts) shows for a
+ * status: SOFT's names, TA till TR 7.8.2 / TR 4.21.3. The operator's own
+ * views keep the detailed status.* labels (Felstämpling, Bröt …). */
+export function softStatusLabel(key: SoftStatus): string {
+  return t(`soft.status.${key}`);
+}
+
+/** What a results-table row shows (TA till TR 7.8.2): place and time only
+ * for an approved timed run; every status row carries SOFT's name instead. */
+export function resultRowCells(r: {
+  soft_status: SoftStatus;
+  place: number | null;
+  elapsed_time_ms: number | null;
+}): { place: string; time: string; label: string } {
+  const timed = r.soft_status === 'OK';
+  return {
+    place: timed && r.place !== null ? String(r.place) : '—',
+    time: timed ? formatElapsed(r.elapsed_time_ms) : '—',
+    label: softStatusLabel(r.soft_status),
+  };
+}
+
 export function toReceiptRead(input: {
   row: ReadoutHistoryRow;
   className: string;
@@ -217,8 +384,10 @@ export function toReceiptRead(input: {
   punches?: ReceiptPunch[];
   elapsedMs?: number | null;
   place?: number | null;
+  /** 02.1-14 Task 9: class without timing — no running or split times. */
+  noTiming?: boolean;
 }): ReceiptRead {
-  const punches: ReceiptPunch[] =
+  const allPunches: ReceiptPunch[] =
     input.punches ??
     rawPunchesToReceipt(
       input.row.punches,
@@ -226,6 +395,9 @@ export function toReceiptRead(input: {
       input.row.finish_seconds_in_half_day,
       input.row.expected_codes
     );
+  const punches = input.noTiming
+    ? allPunches.map((p) => ({ ...p, split: '—', time: '—' }))
+    : allPunches;
   return {
     cardNumber: input.row.card_number,
     name: input.row.competitor_name ?? 'Okänd',
@@ -234,8 +406,11 @@ export function toReceiptRead(input: {
     club: input.club,
     startTime: '—',
     readTime: formatTimeOfDay(input.row.event_time_ms),
-    elapsed: formatElapsed(input.elapsedMs ?? null),
+    elapsed: formatElapsed(input.noTiming ? null : (input.elapsedMs ?? null)),
     status: input.row.status,
+    statusLabel: softStatusLabel(
+      softStatus(input.row.status, { noTiming: input.noTiming === true })
+    ),
     place: input.place ?? null,
     punches,
     progress: {

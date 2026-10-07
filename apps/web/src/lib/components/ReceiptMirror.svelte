@@ -17,7 +17,7 @@
   - 01-UI-SPEC.md §"Receipt templates" (6 LOCKED arms)
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
+  import { t } from '#lib/i18n/index.ts';
   import ReceiptPaper from './ReceiptPaper.svelte';
   import Classic from './receipt-templates/Classic.svelte';
   import Standing from './receipt-templates/Standing.svelte';

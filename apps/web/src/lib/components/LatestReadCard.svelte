@@ -18,6 +18,16 @@
     - The parent re-fetches /readout on either action and the
       StatusPill flips in-place via the WS results_update broadcast.
 
+  Late / early start (02.1-14 Task 14): in a class timed from the start
+  time, a start punch more than 60 s late shows "Sen start +3:12" and one
+  before the start time "Tjuvstart? −0:05" — for the jury; the time is not
+  changed (SOFT TR 4.18.9 (2026-07-01)).
+
+  Missing start (02.1-14 Task 13): a finished read with neither a start
+  punch nor a drawn start shows "Saknar starttid", the suggestion (check +
+  median → start), a time field prefilled with it, and "Sätt starttid"
+  (fires onSetStartTime with the edited text).
+
   Locked by:
   - 01-13-PLAN.md task 2
   - 01-UI-SPEC.md §"Manual DNF override" (reversible; reason 1..500)
@@ -25,9 +35,9 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { t } from '$lib/i18n/index.ts';
-  import StatusPill from '$lib/ui/StatusPill.svelte';
-  import PulseDot from '$lib/ui/PulseDot.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import StatusPill from '#lib/ui/StatusPill.svelte';
+  import PulseDot from '#lib/ui/PulseDot.svelte';
 
   interface Read {
     cardNumber: number;
@@ -38,13 +48,24 @@
     readTime: string;
     elapsed: string;
     status: 'OK' | 'MP' | 'DNF' | 'PEND' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+    /** Phase 2.1 (plan 13): non-null when the current status was asserted
+     * by the operator via manual_status_set. null means auto-detected
+     * (from card_read + course). Used to decide whether the clear button
+     * should appear — auto-DNF shows an explanation popover instead. */
+    manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
     place: number | null;
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
     competitorId: string | null;
+    /** 02.1-14 Task 13: no start punch and no drawn start. */
+    missingStart: boolean;
+    /** Suggested start (check + median); null without a check punch. */
+    missingStartHint: { check: string; offset: string; suggested: string } | null;
+    /** 02.1-14 Task 14: late / early start punch against the start time. */
+    startWarning: { key: 'ro.lateStart' | 'ro.earlyStart'; diff: string } | null;
   }
 
-  type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+  type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
 
   interface Props {
     /** null = waiting state. */
@@ -65,6 +86,8 @@
     /** Phase 2.0 clear-override — preferred over onUnDnf when supplied. */
     onClearManualStatus?: (competitorId: string) => void;
     onEdit?: (competitorId: string) => void;
+    /** 02.1-14 Task 13: "Sätt starttid" with the edited HH:MM[:SS] text. */
+    onSetStartTime?: (competitorId: string, text: string) => void;
     /** Snippet that renders either PunchGrid or SplitsTable (parent
      * owns the density toggle). */
     controls?: Snippet;
@@ -82,34 +105,47 @@
     onManualStatus,
     onClearManualStatus,
     onEdit,
+    onSetStartTime,
     controls,
   }: Props = $props();
 
+  // 02.1-14 Task 13: the start-time field is prefilled with the suggestion
+  // and reset only when the suggestion changes (not on every re-render).
+  const suggestedStart = $derived(read?.missingStartHint?.suggested ?? '');
+  let startInput = $state('');
+  $effect(() => {
+    startInput = suggestedStart;
+  });
+
   // Manual-status popover state. Defaults to DNF so the existing test path
   // (manual-dnf-btn → dnf-reason-input → dnf-confirm) keeps producing a DNF.
-  const MANUAL_STATUSES: ManualStatus[] = ['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX'];
+  // 02.1-14 Task 10: MP ("Felstämplad") can be set by hand, as in MeOS.
+  const MANUAL_STATUSES: ManualStatus[] = ['DNF', 'DNS', 'DQ', 'CANCEL', 'MAX', 'MP'];
   const REASON_BY_STATUS: Record<ManualStatus, string> = {
     DNF: 'Bröt loppet',
     DNS: 'Kom inte till start',
     DQ: 'Diskvalificerad',
     CANCEL: 'Återbud',
     MAX: 'Maxtid passerad',
+    MP: 'Felstämplad',
   };
 
   let dnfOpen = $state(false);
   let dnfReason = $state('');
   let pickedStatus = $state<ManualStatus>('DNF');
 
-  // True when the current row already carries an operator-asserted override.
-  // In that case the primary button is a single-click "clear", matching the
-  // pre-Phase-2.0 un-DNF UX.
-  function isOverridden(s: Read['status']): boolean {
-    return s === 'DNF' || s === 'DNS' || s === 'DQ' || s === 'CANCEL' || s === 'MAX';
+  // True when the current row carries an OPERATOR-ASSERTED override.
+  // Phase 2.1 fix: use manual_status (non-null = operator set) rather than
+  // checking the computed status value — auto-DNF (manual_status=null,
+  // status='DNF') should NOT show the clear button; only manual overrides
+  // should show it (02-11 MEDIUM: auto-DNF vs manual-DNF distinction).
+  function isOverridden(r: Read): boolean {
+    return r.manual_status !== null;
   }
 
   function toggleDnf(): void {
     if (!read || !read.competitorId) return;
-    if (isOverridden(read.status)) {
+    if (isOverridden(read)) {
       // Single-click clear — preserves the pre-Phase-2.0 un-DNF gesture.
       if (onClearManualStatus) onClearManualStatus(read.competitorId);
       else onUnDnf?.(read.competitorId);
@@ -224,6 +260,40 @@
         </div>
       </div>
 
+      {#if read.startWarning}
+        <div class="start-warning mono" role="status" data-testid="start-warning">
+          ⚠ {t(read.startWarning.key, { diff: read.startWarning.diff })}
+        </div>
+      {/if}
+
+      {#if read.missingStart && read.competitorId}
+        <div class="missing-start" role="alert" data-testid="missing-start">
+          <b>⚠ {t('ro.missingStart')}</b>
+          {#if read.missingStartHint}
+            <span class="mono" data-testid="missing-start-hint">
+              {t('ro.missingStart.hint', read.missingStartHint)}
+            </span>
+          {/if}
+          <input
+            type="text"
+            class="dnf-input mono start-input"
+            placeholder="HH:MM:SS"
+            aria-label={t('ro.missingStart.set')}
+            bind:value={startInput}
+            data-testid="missing-start-input"
+          />
+          <button
+            type="button"
+            class="btn primary sm"
+            disabled={startInput.trim().length === 0}
+            data-testid="missing-start-save"
+            onclick={() => read.competitorId && onSetStartTime?.(read.competitorId, startInput)}
+          >
+            {t('ro.missingStart.set')}
+          </button>
+        </div>
+      {/if}
+
       {@render controls?.()}
     </div>
 
@@ -253,7 +323,7 @@
             data-testid="manual-dnf-btn"
             onclick={toggleDnf}
           >
-            {isOverridden(read.status) ? t('ro.undnf') : t('ro.dnf')}
+            {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
           </button>
           {#if dnfOpen}
             <div class="dnf-pop" role="dialog">
@@ -536,6 +606,30 @@
     border-radius: var(--radius);
     padding: 0 10px;
     font-family: var(--font-ui);
+  }
+  .missing-start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    color: var(--dnf);
+    font-size: 14px;
+  }
+  .start-warning {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--mp);
+    border-radius: var(--radius);
+    color: var(--mp);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .start-input {
+    width: 9ch;
   }
   .dnf-actions {
     display: flex;

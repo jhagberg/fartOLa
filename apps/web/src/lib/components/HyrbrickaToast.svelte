@@ -24,8 +24,8 @@
     Hyrbricka toast"
 -->
 <script lang="ts">
-  import { t } from '$lib/i18n/index.ts';
-  import Button from '$lib/ui/Button.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/Button.svelte';
 
   interface Props {
     cardNumber: number;

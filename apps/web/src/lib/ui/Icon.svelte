@@ -29,7 +29,9 @@
     | 'edit'
     | 'info'
     | 'chevron-right'
-    | 'chevron-down';
+    | 'chevron-down'
+    | 'shuffle'
+    | 'alert-triangle';
 
   interface Props {
     name: IconName;
@@ -133,5 +135,17 @@
   {:else if name === 'chevron-down'}
     <!-- dropdown affordance — competition pill switcher -->
     <path d="m6 9 6 6 6-6" />
+  {:else if name === 'shuffle'}
+    <!-- shuffle / random-draw — Lottning nav item -->
+    <path d="M16 3h5v5" />
+    <path d="m21 3-9 9" />
+    <path d="M16 21h5v-5" />
+    <path d="m21 21-9-9" />
+    <path d="M3 3h5" />
+    <path d="m3 21 9-9" />
+  {:else if name === 'alert-triangle'}
+    <!-- warning triangle — kvar-i-skogen safety nav item -->
+    <path d="m10.29 3.86-8.57 14.87A1 1 0 0 0 2.57 20h18.86a1 1 0 0 0 .85-1.27L13.71 3.86a1 1 0 0 0-3.42 0z" />
+    <path d="M12 9v4M12 17h0" />
   {/if}
 </svg>

@@ -9,7 +9,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed, formatGap } from '../templates.ts';
+import { formatGap, rowTime } from '../templates.ts';
 
 export default async function top4(printer: ThermalPrinterLike, data: ReceiptData): Promise<void> {
   printer.alignCenter();
@@ -30,7 +30,7 @@ export default async function top4(printer: ThermalPrinterLike, data: ReceiptDat
   for (const row of top) {
     const place = row.place ?? '—';
     const placeStr = String(place).padEnd(3, ' ');
-    const time = formatElapsed(row.elapsed_time_ms).padStart(7, ' ');
+    const time = rowTime(row).padStart(7, ' ');
     const highlight = row.competitor_id === data.competitor.id;
     if (highlight) printer.bold(true);
     printer.println(`${placeStr} ${row.name.slice(0, 18).padEnd(18, ' ')} ${time}`);
@@ -44,7 +44,7 @@ export default async function top4(printer: ThermalPrinterLike, data: ReceiptDat
     printer.println('Din placering:');
     const row = rows[thisIdx] as (typeof rows)[number];
     printer.bold(true);
-    printer.leftRight(`${row.place ?? '—'}. ${row.name}`, formatElapsed(row.elapsed_time_ms));
+    printer.leftRight(`${row.place ?? '—'}. ${row.name}`, rowTime(row));
     printer.bold(false);
     const gap = formatGap(row.behind_leader_ms);
     if (gap.length > 0) printer.println(gap);

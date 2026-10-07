@@ -96,6 +96,15 @@
   </NavItem>
 
   <NavItem
+    active={route === 'lottning'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('lottning')}
+  >
+    {#snippet icon()}<Icon name="shuffle" />{/snippet}
+    {t('nav.lottning')}
+  </NavItem>
+
+  <NavItem
     active={route === 'results'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('results')}
@@ -121,6 +130,25 @@
   >
     {#snippet icon()}<Icon name="key" />{/snippet}
     {t('nav.hyrbrickor')}
+  </NavItem>
+
+  <NavItem
+    active={route === 'eventor-publish'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('eventor-publish')}
+  >
+    {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
+    {t('nav.eventor')}
+    {#snippet badge()}Eventor{/snippet}
+  </NavItem>
+
+  <NavItem
+    active={route === 'kvariskov'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('kvariskov')}
+  >
+    {#snippet icon()}<Icon name="alert-triangle" />{/snippet}
+    {t('nav.kvariskov')}
   </NavItem>
 
   <NavItem

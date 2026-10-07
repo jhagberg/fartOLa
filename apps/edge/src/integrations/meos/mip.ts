@@ -14,8 +14,10 @@
 //   </MIPData>
 //
 // Locked decisions honored:
-//   - D-MIP-1: NO auth. `pwd` query param is silently ignored. Closed club
-//     LAN posture for 4-klubbs; Phase 2.1 will gate sanctioned events.
+//   - D-MIP-1 (revised 2026-10-05): was "NO auth, closed club LAN". /mip
+//     hands out every entry, so it now takes the MeOS password (`pwd`) when
+//     one is set, else only this machine unless the operator explicitly
+//     allows MeOS without a password (meosAccessHook, access.ts).
 //   - D-MIP-2: `lastid` = events.local_seq. Zero new state — we read the
 //     Phase 1 events table directly with WHERE local_seq > input_lastid.
 //   - D-MIP-3: only <entry> on bind + <entry> re-emit on card-replace.
@@ -66,13 +68,15 @@ import {
 import type { EventPayload } from '../../db/schema.ts';
 import { issuesToErrors } from '../../routes/_zod-errors.ts';
 import { MIP_NS, coerceInt } from './shared.ts';
+import { refreshClassCache } from './classCache.ts';
+import { meosAccessHook } from './access.ts';
 
 const ACTIVE_COMP_KEY = 'active_competition_id';
 
 // Zod schema — strict integers only. We accept the conventional MIP-spec
 // names AND a couple of pragmatic aliases (`x-lastid`, `x-competition`)
-// that some MIP test harnesses use. `pwd` is ignored (D-MIP-1) but allowed
-// in the schema so it doesn't trip 400.
+// that some MIP test harnesses use. `pwd` is checked by meosAccessHook
+// (access.ts) before this handler; allowed here so it doesn't trip 400.
 const MipQuery = z.object({
   competition: z.coerce.number().int().nonnegative().optional(),
   lastid: z.coerce.number().int().nonnegative().optional(),
@@ -85,6 +89,7 @@ interface MipEntryNode {
   '@_id': number;
   '@_extId': string;
   '@_classname': string;
+  '@_classid': number;
   name: string;
   club?: string;
   card?: { '#text': number; '@_hired'?: 'true' };
@@ -128,7 +133,7 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     suppressBooleanAttributes: false,
   });
 
-  app.get('/mip', async (req, reply) => {
+  app.get('/mip', { onRequest: meosAccessHook(app) }, async (req, reply) => {
     // (1) Parse query — Zod rejects decimals/negatives/garbage with 400
     // (RESEARCH Landmine "input.php lastid coercion" — we're stricter).
     const parsedQuery = MipQuery.safeParse(req.query);
@@ -142,14 +147,12 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     const headers = req.headers;
     const lastid =
       queryData.lastid ?? coerceInt(headers['lastid']) ?? coerceInt(headers['x-lastid']) ?? 0;
-    // `competition` and `pwd` are accepted but ignored — D-MIP-1 + the
-    // single-active-competition session model owns scope. Read-and-discard
-    // satisfies the linter without changing behavior.
+    // `competition` is accepted but ignored — the single-active-competition
+    // session model owns scope (`pwd` was checked in meosAccessHook).
+    // Read-and-discard satisfies the linter without changing behavior.
     void queryData.competition;
     void coerceInt(headers['competition']);
     void coerceInt(headers['x-competition']);
-    void queryData.pwd;
-    void headers['pwd'];
 
     // (3) Resolve active competition. If no competition is active, emit
     // an empty <MIPData lastid="0"/> — safe default that MeOS treats as
@@ -198,6 +201,27 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
     // (5) Hydrate competitor + class + hired_card data via three batched
     // queries (one inArray per table) instead of a SELECT per card_bound
     // event. Class name "cache" is now just the pre-built Map.
+    //
+    // classCache: fetch MeOS class list so we can include classid on each
+    // <entry> (D-13 / "Okänd klass" fix). The MeOS host is derived from
+    // the polling client's source IP. IPv6-mapped IPv4 addresses (::ffff:
+    // prefix) are stripped to their plain IPv4 form. On any fetch failure
+    // the cache returns an empty Map and entries fall back to classid=0.
+    const meosHost = (() => {
+      const raw = req.socket?.remoteAddress ?? '127.0.0.1';
+      // Strip IPv6-mapped IPv4 prefix (::ffff:192.168.x.x → 192.168.x.x).
+      if (raw.startsWith('::ffff:')) return raw.slice(7);
+      // Wrap bare IPv6 addresses in brackets for URL construction.
+      if (raw.includes(':')) return `[${raw}]`;
+      return raw;
+    })();
+    // The class cache is module-level in classCache.ts. Integration tests
+    // call getClassCacheForTest().seed() BEFORE this handler runs so the
+    // TTL guard is already satisfied and refreshClassCache returns the
+    // seeded Map without making a network call. No special wiring needed
+    // here — the module-level cache is shared within the process.
+    const meosCacheMap = await refreshClassCache(meosHost);
+
     const entries: MipEntryNode[] = [];
     let maxSeq = lastid;
 
@@ -296,10 +320,16 @@ export default async function registerMipRoute(app: FastifyInstance): Promise<vo
       // Hired-card lookup against the pre-fetched set (see above).
       const hired = competitor.cardNumber !== null && hiredCardSet.has(competitor.cardNumber);
 
+      // D-13: include classid so MeOS doesn't reject with "Okänd klass".
+      // Falls back to 0 when the class is not in the cache; MeOS then
+      // uses classname for lookup (safe for small events).
+      const classId = meosCacheMap.get(className) ?? 0;
+
       const entry: MipEntryNode = {
         '@_id': row.localSeq,
         '@_extId': competitor.id,
         '@_classname': className,
+        '@_classid': classId,
         name: competitor.name,
       };
       if (competitor.club !== null && competitor.club.length > 0) {

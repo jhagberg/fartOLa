@@ -9,7 +9,7 @@
 
 import type { ReceiptData } from '../sink.ts';
 import type { ThermalPrinterLike } from '../templates.ts';
-import { formatElapsed, formatGap, halfDayClockGapMs } from '../templates.ts';
+import { formatElapsed, formatGap, halfDayClockGapMs, receiptTime } from '../templates.ts';
 
 export default async function classic(
   printer: ThermalPrinterLike,
@@ -42,7 +42,10 @@ export default async function classic(
     const expected = data.course.control_codes[i] as number;
     const actual = data.competitor.latest_punches[i];
     if (actual !== undefined) {
-      const cumMs = halfDayClockGapMs(data.competitor.latest_start, actual);
+      // 02.1-14 Task 9: no split times for an untimed class.
+      const cumMs = data.competitor.no_timing
+        ? null
+        : halfDayClockGapMs(data.competitor.latest_start, actual);
       const cumStr = formatElapsed(cumMs).padStart(7, ' ');
       const tag = String(i + 1).padEnd(3, ' ');
       const code = String(actual.code).padEnd(5, ' ');
@@ -56,7 +59,7 @@ export default async function classic(
 
   printer.drawLine();
   printer.bold(true);
-  printer.leftRight('TOTAL', formatElapsed(data.competitor.elapsed_time_ms));
+  printer.leftRight('TOTAL', receiptTime(data.competitor));
   printer.bold(false);
 
   if (data.placeContext.place !== null) {

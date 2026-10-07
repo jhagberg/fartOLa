@@ -7,7 +7,7 @@
 // for storing the node_id across restarts.
 //
 // Locked by:
-// - .planning/adr/0003-event-sourcing-as-core-data-model.md (events table
+// - docs/decisions/0003-event-sourcing-as-core-data-model.md (events table
 //   is immutable — enforced by triggers in 0001_append_only_triggers.sql)
 // - .planning/phases/01-single-laptop-training-mvp/01-CONTEXT.md D-09
 //   (mutable config tables — Phase 1 uses CRUD; Phase 2 will layer Yjs
@@ -60,6 +60,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,41 @@ export type EventPayload =
       event_type: 'card_inserted';
       card_number: number;
       card_type: string;
+    }
+  | {
+      // Phase 2.1 — voided leg. Emitted by
+      // POST /api/competitions/:id/competitors/:cid/void-leg.
+      // The control is not required for this runner (approve despite a
+      // missing punch); the running time is never changed (SOFT TR 4.20.10,
+      // 2026-10-05). Reversible via leg_unvoided.
+      event_type: 'leg_voided';
+      competitor_id: string;
+      /** SPORTident control code of the leg being voided. */
+      control_code: number;
+      /** Legacy time cap from event logs before 2026-10-05. Ignored by the
+       * reducer: results may not be built from split times (TR 4.20.10). */
+      max_seconds?: number | null;
+      /** Optional operator reason. */
+      reason?: string;
+    }
+  | {
+      // Phase 2.1 — unvoid leg. Reverses a prior leg_voided event.
+      event_type: 'leg_unvoided';
+      competitor_id: string;
+      control_code: number;
+    }
+  | {
+      // 02.1-14 Task 5 — control voided for the whole competition (MeOS
+      // "Bad"/trasig control): dropped from every course's expected list,
+      // punching it is still fine, no time is removed. Emitted by
+      // POST /api/competitions/:id/voided-controls/:code.
+      event_type: 'control_voided';
+      control_code: number;
+    }
+  | {
+      // Reverses control_voided. DELETE /api/competitions/:id/voided-controls/:code.
+      event_type: 'control_unvoided';
+      control_code: number;
     }
   | {
       event_type: 'card_read';
@@ -122,7 +158,8 @@ export type EventPayload =
       // keep replaying correctly.
       event_type: 'manual_status_set';
       competitor_id: string;
-      status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+      // 'MP' since 02.1-14 Task 10 (set by hand, as MeOS).
+      status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
       reason: string;
     }
   | {
@@ -200,6 +237,18 @@ export const competitions = sqliteTable('competitions', {
    * cache so the reducer + frontend don't have to scan the log to know
    * the current phase. */
   raceStartedAtMs: integer('race_started_at_ms'),
+  /** Phase 2.1 — liveresultat.orientering.se competition ID for result push. */
+  liveresultatId: text('liveresultat_id'),
+  /** Phase 2.1 — liveresultat upload password. */
+  liveresultatPwd: text('liveresultat_pwd'),
+  /** Phase 2.1 — linked Eventor event ID for result/start-list push. */
+  eventorEventId: integer('eventor_event_id'),
+  /** Phase 2.1 D-17 — display format for elapsed times: 'seconds' or 'tenths'.
+   * Sprint events typically use 'tenths'; road/forest use 'seconds'. */
+  timingFormat: text('timing_format').default('seconds'),
+  /** SOFT TR 4.21.1 — one max time for every class, in seconds. NULL = none.
+   * classes.max_time_sec overrides it per class (non-sanctioned use). */
+  maxTimeSec: integer('max_time_sec'),
 });
 
 // ---------------------------------------------------------------------------
@@ -217,6 +266,32 @@ export const classes = sqliteTable(
       .references(() => competitions.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     shortName: text('short_name'),
+    /** Phase 2.1 D-05 — epoch ms of the first start slot for this class.
+     * NULL = no start list drawn yet. */
+    firstStartMs: integer('first_start_ms'),
+    /** Phase 2.1 D-05 — seconds between start slots (e.g. 60 for 1-minute
+     * intervals). NULL = no start list drawn yet. */
+    startIntervalSec: integer('start_interval_sec'),
+    /** Phase 2.1 D-08 — class time cap in seconds. NULL = no cap.
+     * Reducer promotes OK/MP to MAX when elapsed_time_ms/1000 > maxTimeSec. */
+    maxTimeSec: integer('max_time_sec'),
+    /** 02.1-14 Task 4 — the course this class runs. Many classes may share
+     * one course. NULL = not assigned; readers then fall back to the legacy
+     * courses.class_id pointer. */
+    courseId: text('course_id').references((): AnySQLiteColumn => courses.id, {
+      onDelete: 'set null',
+    }),
+    /** 02.1-14 Task 9 — class without timing (MeOS NoTiming, IOF
+     * resultListMode="UnorderedNoTimes"). Status is still computed; results,
+     * exports and receipts show no running time or place. */
+    noTiming: integer('no_timing', { mode: 'boolean' }).notNull().default(false),
+    /** 02.1-14 Task 14 — which start the running time is measured from
+     * (dnfMp.startMs): 'auto' (start time if any, else start punch),
+     * 'start_time' (start punch ignored), 'start_punch' (MeOS default).
+     * Replaces Task 11's ignore_start_punch (migration 0014). */
+    startMethod: text('start_method', { enum: ['auto', 'start_time', 'start_punch'] })
+      .notNull()
+      .default('auto'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
@@ -317,6 +392,19 @@ export const competitors = sqliteTable(
     source: text('source', { enum: ['walkup', 'entrylist', 'meos'] })
       .notNull()
       .default('walkup'),
+    /** Phase 2.1 D-05 — assigned start time as epoch ms. NULL = not drawn
+     * (walk-up or late entry without a start slot). */
+    startTimeMs: integer('start_time_ms'),
+    /** SOFT TA till TR 7.8.3 — person id in Eventor, from the EntryList
+     * import (Person/Id). The ResultList export writes it back so Eventor
+     * links the result to the person. NULL = unknown. */
+    eventorPersonId: integer('eventor_person_id'),
+    /** The start as a local wall-clock time (ms on epochToWallClockMs's
+     * scale) when it was set as one; NULL otherwise. Lets a start in the
+     * skipped spring-DST hour keep its station-clock value. Valid only while
+     * start_time_ms is still its epoch (dnfMp.drawnStartWallMs). Migration
+     * 0015. */
+    startWallMs: integer('start_wall_ms'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
@@ -394,7 +482,7 @@ export const events = sqliteTable(
 //   meos_* tables; auto-merge into competitors with source='meos')
 // - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-HB-1 (junction table
 //   hired_cards with compound PK + contact info MeOS lacks)
-// - .planning/adr/0009-eventor-runner-cache.md (PII trade-off for the
+// - docs/decisions/0009-eventor-runner-cache.md (PII trade-off for the
 //   national runner DB cache)
 
 // ---------------------------------------------------------------------------
@@ -544,4 +632,86 @@ export const hiredCards = sqliteTable(
     note: text('note'),
   },
   (t) => [primaryKey({ columns: [t.competitionId, t.cardNumber] })]
+);
+
+// ===========================================================================
+// Phase 2.1 — D-15: course_replacements.
+//
+// Alternative control codes accepted in lieu of the expected control code on
+// a given course. The reducer looks up replacement codes before comparing
+// expected vs actual punches — if the punched code is in the replacement set
+// for the expected code, it counts as a match. One-level lookup only (no
+// chaining).
+//
+// Unique index prevents duplicate mappings for the same (course, expected)
+// pair.
+// ===========================================================================
+
+export const courseReplacements = sqliteTable(
+  'course_replacements',
+  {
+    id: text('id').primaryKey(),
+    competitionId: text('competition_id')
+      .notNull()
+      .references(() => competitions.id, { onDelete: 'cascade' }),
+    courseId: text('course_id')
+      .notNull()
+      .references(() => courses.id, { onDelete: 'cascade' }),
+    /** The expected control code in the course sequence. */
+    controlCode: integer('control_code').notNull(),
+    /** An alternative punched code that counts as a hit on controlCode. */
+    alternativeCode: integer('alternative_code').notNull(),
+  },
+  (t) => [
+    uniqueIndex('course_replacements_unique').on(t.courseId, t.controlCode, t.alternativeCode),
+  ]
+);
+
+// ===========================================================================
+// Phase 2.1 Plan 02.1-12 — event_codes.
+//
+// Admin codes for mobile sekretariat-helpers (D-18). A code of the form
+// `<word>-<NNN>` (e.g. `sänkan-127`) scoped to a single competition lets
+// helpers register walk-ups from their phones without exposing the bridge to
+// the open LAN.
+//
+// Trust model: codes are single-competition scoped (competition_id FK),
+// time-limited (expires_at_ms = competition.date + 24h), and revocable.
+// The plaintext code is returned ONCE on generation and is never re-readable
+// via GET. The GET surface returns only masked previews (e.g. `sän****27`).
+//
+// Signed cookie (fartola_event_code) is issued by POST /access after
+// validateCode succeeds; the signing secret is stored in the config table
+// as `event_code_signing_secret` (auto-generated on first use via
+// crypto.randomBytes(32) — survives edge server restarts).
+//
+// Locked by:
+//   - .planning/phases/02.1-sanctioned-competition-foundations/02.1-12-PLAN.md
+//   - docs/decisions/0010-event-admin-codes-trust-model.md
+//   - T-02.1-24..27b (STRIDE threat register for event codes)
+// ===========================================================================
+
+export const eventCodes = sqliteTable(
+  'event_codes',
+  {
+    id: text('id').primaryKey(),
+    competitionId: text('competition_id')
+      .notNull()
+      .references(() => competitions.id, { onDelete: 'cascade' }),
+    /** Plaintext event code (e.g. `sänkan-127`). Stored so validateCode can
+     * SELECT by code value; the GET surface masks this to `sän****27`. */
+    code: text('code').notNull(),
+    /** Epoch ms when this code expires (competition.date + 24h by default). */
+    expiresAtMs: integer('expires_at_ms').notNull(),
+    /** Epoch ms when the operator revoked this code; NULL = still active. */
+    revokedAtMs: integer('revoked_at_ms'),
+    /** Epoch ms when this code was generated. */
+    createdAtMs: integer('created_at_ms').notNull(),
+  },
+  (t) => [
+    // Fast lookup by competition + code (the validateCode hot path).
+    index('idx_event_codes_comp_code').on(t.competitionId, t.code),
+    // Fast listing of active codes per competition (the GET/list path).
+    index('idx_event_codes_comp_active').on(t.competitionId, t.expiresAtMs),
+  ]
 );

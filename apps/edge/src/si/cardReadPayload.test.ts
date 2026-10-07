@@ -162,7 +162,11 @@ async function captureFirstCardRead(basename: string): Promise<BaseSiCard | null
   await transport.open();
   await station.readCards();
   await transport.pumpRemaining();
-  await new Promise((r) => setTimeout(r, 80));
+  // Wait for the read itself rather than a fixed 80 ms, which was too short
+  // when the whole edge suite runs in parallel.
+  for (let waited = 0; captured === null && waited < 3000; waited += 20) {
+    await new Promise((r) => setTimeout(r, 20));
+  }
   await station.close();
   return captured;
 }
@@ -271,5 +275,16 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     const ndjson = JSON.parse(capturedLines[0]!) as { punches: unknown };
     assert.deepEqual(payload.punches, ndjson.punches);
     assert.ok(payload.punches.length > 0, 'SI10 fixture has 2 punches');
+  });
+
+  test('02.1-14 Task 3: SIAC read across noon carries the PM bit into half_day', async () => {
+    const card = await captureFirstCardRead(path.join(FIXTURE_DIR, 'siac-jonas-001'));
+    assert.ok(card);
+    const payload = buildCardReadPayload(card);
+    assert.equal(payload.card_type, 'SIAC');
+    assert.deepEqual(payload.finish, { seconds_in_half_day: 591, half_day: 1, weekday: null });
+    const halves = payload.punches.map((p) => p.half_day);
+    assert.equal(halves[0], 0, 'first punch 11:29 is AM');
+    assert.equal(halves[halves.length - 1], 1, 'last punch 12:09 is PM');
   });
 });

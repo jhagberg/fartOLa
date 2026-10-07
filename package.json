@@ -5,17 +5,18 @@
   "type": "module",
   "description": "fartOLa — orienteering competition system (workspace root)",
   "license": "AGPL-3.0-or-later",
-  "packageManager": "pnpm@10.30.3",
+  "packageManager": "pnpm@10.34.6",
   "engines": {
-    "node": ">=24.0.0"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter ./apps/* dev",
     "dev:tabs": "bash scripts/dev.sh",
     "dev:stop": "bash scripts/dev.sh --stop",
     "dev:status": "bash scripts/dev.sh --status",
-    "lint": "pnpm -r --if-present run lint && pnpm run lint:attribution",
-    "lint:attribution": "bash scripts/check-mit-attribution.sh || echo 'check-mit-attribution.sh not yet present (Plan 05 lands it); skipping'",
+    "lint": "pnpm -r --if-present run lint && pnpm run lint:attribution && pnpm run lint:compliance",
+    "lint:compliance": "node scripts/check-compliance.mjs",
+    "lint:attribution": "bash scripts/check-mit-attribution.sh",
     "format": "prettier --write '**/*.{ts,js,cjs,mjs,md,yml,yaml,json}'",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
@@ -26,18 +27,18 @@
     "prepare": "lefthook install"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.0.1",
-    "@commitlint/config-conventional": "^21.0.1",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^22.10.0",
-    "eslint": "^10.4.0",
-    "globals": "^17.6.0",
-    "lefthook": "^2.1.6",
-    "prettier": "^3.3.3",
-    "tsup": "^8.3.5",
-    "tsx": "^4.22.3",
-    "typescript": "^5.6.3",
-    "typescript-eslint": "^8.59.4"
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.19.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "lefthook": "^2.1.16",
+    "prettier": "^3.9.9",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
   }
 }

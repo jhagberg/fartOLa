@@ -14,8 +14,11 @@
 //   §"Receipt templates" + §"Receipt-specific typography"
 
 import type { HalfDayClock, NdjsonPunch } from '@fartola/sportident';
+import { softStatus, SOFT_STATUS_SV } from '@fartola/shared-types';
 
 import type { ReceiptData, ReceiptTemplate } from './sink.ts';
+import type { CompetitorView, ResultView } from '../projection/types.ts';
+import { formatLocalTime } from '../time/competitionClock.ts';
 
 import classic from './templates/classic.ts';
 import standing from './templates/standing.ts';
@@ -87,6 +90,25 @@ export function formatElapsed(ms: number | null): string {
   return `${m}:${pad(s)}`;
 }
 
+/** What a receipt prints for the running time. A run that is not approved
+ * prints SOFT's status name instead ("Ej godkänd", "Diskad", "Ej start";
+ * TA till TR 7.8.2), and an OK run in an untimed class "Deltagit" (TR
+ * 4.21.3; 02.1-14 Task 9: no time). */
+export function receiptTime(
+  c: Pick<CompetitorView, 'no_timing' | 'status' | 'elapsed_time_ms'>
+): string {
+  if (c.status === 'PEND') return c.no_timing ? '—' : formatElapsed(c.elapsed_time_ms);
+  const soft = softStatus(c.status, { noTiming: c.no_timing });
+  return soft === 'OK' ? formatElapsed(c.elapsed_time_ms) : SOFT_STATUS_SV[soft];
+}
+
+/** A result-row's time column: the time for an OK row, else SOFT's name. */
+export function rowTime(row: Pick<ResultView, 'soft_status' | 'elapsed_time_ms'>): string {
+  return row.soft_status === 'OK'
+    ? formatElapsed(row.elapsed_time_ms)
+    : SOFT_STATUS_SV[row.soft_status];
+}
+
 /** Format the +M:SS leader-gap suffix used by every template's place line. */
 export function formatGap(behindMs: number | null): string {
   if (behindMs === null) return '';
@@ -108,4 +130,59 @@ export function halfDayClockGapMs(
   let diff = toSec - fromSec;
   if (diff < 0) diff += 24 * 3600;
   return diff * 1000;
+}
+
+// ---------------------------------------------------------------------------
+// Start list thermal print template (Plan 02.1-03).
+//
+// Renders a per-class start list to the thermal printer:
+//   - Header: class name + event date
+//   - Rows: bib/startnr | name | club | start time (HH:MM:SS)
+//
+// This is a standalone renderer — not part of the ReceiptTemplate receipt
+// system — because it operates on a list of starters for a whole class, not
+// an individual competitor's receipt.
+// ---------------------------------------------------------------------------
+
+export interface StartListEntry {
+  name: string;
+  club: string | null;
+  startTimeMs: number;
+  bibNumber?: string | null;
+}
+
+/** Format epoch ms as HH:MM:SS on the competition's local wall clock
+ * (COMPETITION_TZ), independent of the server's own time zone. */
+export function formatStartTime(epochMs: number): string {
+  return formatLocalTime(epochMs);
+}
+
+/** Render a class start list to the thermal printer. Pure: no I/O. */
+export async function renderStartListTemplate(
+  printer: ThermalPrinterLike,
+  className: string,
+  date: string,
+  entries: StartListEntry[]
+): Promise<void> {
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(className);
+  printer.bold(false);
+  printer.println(date);
+  printer.drawLine();
+
+  printer.alignLeft();
+  // Sort by start time ascending.
+  const sorted = [...entries].sort((a, b) => a.startTimeMs - b.startTimeMs);
+  for (const entry of sorted) {
+    const time = formatStartTime(entry.startTimeMs);
+    const bib = entry.bibNumber != null && entry.bibNumber.length > 0 ? entry.bibNumber : '—';
+    const club = entry.club != null && entry.club.length > 0 ? entry.club : '';
+    printer.leftRight(`${bib} ${entry.name}`, time);
+    if (club.length > 0) {
+      printer.println(`   ${club}`);
+    }
+  }
+  printer.drawLine();
+  printer.cut();
 }

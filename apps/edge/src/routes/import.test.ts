@@ -31,7 +31,8 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitors } from '../db/schema.ts';
+import { competitors, events } from '../db/schema.ts';
+import type { Competitor } from '../db/types.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, '..', '..', 'test', 'fixtures');
@@ -226,6 +227,29 @@ describe('POST /api/competitions/:id/import', () => {
     }
   });
 
+  test('test 8 (02.1-14 Task 6): EntryList response lists skipped rows', async () => {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    const entries = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entries);
+    // Re-import: the two carded entries are duplicates, Bo (no card) is new again.
+    const res = await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'e.xml', entries);
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { skipped: { row: number; reason: string }[] };
+    assert.deepEqual(
+      body.skipped.map((r) => [r.row, r.reason]),
+      [
+        [1, 'duplicate_card'],
+        [3, 'duplicate_card'],
+      ]
+    );
+  });
+
   test('test 7: unknown XML root → 400 parse_failed with Purple-Pen-aware message', async () => {
     const compId = await newCompetition(ctx.app);
     const bytes = Buffer.from('<?xml version="1.0"?><UnknownRoot/>', 'utf8');
@@ -234,5 +258,680 @@ describe('POST /api/competitions/:id/import', () => {
     const body = res.body as { error: string; detail?: string };
     assert.equal(body.error, 'parse_failed');
     assert.match(body.detail ?? '', /CourseData|EntryList/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StartList import routes (Plan 02.1-03)
+// ---------------------------------------------------------------------------
+
+function buildStartListXmlBuffer(
+  classes: Array<{
+    className: string;
+    persons: Array<{
+      given: string;
+      family: string;
+      startTimeIso: string | null;
+      siCard?: number;
+      club?: string;
+    }>;
+  }>
+): Buffer {
+  const classParts = classes
+    .map(({ className, persons }) => {
+      const personParts = persons
+        .map(
+          ({ given, family, startTimeIso, siCard, club }) => `
+      <PersonStart>
+        <Person><Name><Family>${family}</Family><Given>${given}</Given></Name></Person>
+        ${club != null ? `<Organisation><Name>${club}</Name></Organisation>` : ''}
+        <Start>
+          ${startTimeIso != null ? `<StartTime>${startTimeIso}</StartTime>` : ''}
+          ${siCard != null ? `<ControlCard punchingSystem="SI">${siCard}</ControlCard>` : ''}
+        </Start>
+      </PersonStart>`
+        )
+        .join('\n');
+      return `<ClassStart><Class><Name>${className}</Name></Class>${personParts}</ClassStart>`;
+    })
+    .join('\n');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<StartList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0"
+           createTime="2026-05-19T18:00:00Z" creator="test">
+  <Event><Name>Test</Name><StartTime><Date>2026-05-19</Date></StartTime></Event>
+  ${classParts}
+</StartList>`;
+  return Buffer.from(xml, 'utf8');
+}
+
+describe('POST /api/competitions/:id/import/startlist', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('startlist test 1: exact SI card match → 201 with exact=1, start_time_ms written', async () => {
+    const compId = await newCompetition(ctx.app);
+    // Seed a class and competitor with a card number.
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+
+    // Find the competitor's card number from the DB.
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .limit(1)
+      .all()[0];
+    if (!row?.cardNumber) return; // Skip if no card — fixture-dependent.
+
+    const startTimeIso = '2026-05-19T10:00:00Z';
+    // Get the class name for this competitor from the DB.
+    const { eq: eqFn } = await import('drizzle-orm');
+    const { classes: classesTable } = await import('../db/schema.ts');
+    const classRow = ctx.handle.db
+      .select({ name: classesTable.name })
+      .from(classesTable)
+      .where(eqFn(classesTable.id, row.classId))
+      .get();
+    const className = classRow?.name ?? 'H21';
+    const bytes = buildStartListXmlBuffer([
+      {
+        className,
+        persons: [{ given: 'Anna', family: 'Andersson', startTimeIso, siCard: row.cardNumber }],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { exact: number; fuzzy: number; unmatched: number };
+    assert.equal(body.exact, 1);
+
+    // Verify DB write.
+    const updated = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, row.id))
+      .get();
+    assert.equal(updated?.startTimeMs, new Date(startTimeIso).getTime());
+  });
+
+  test('startlist test 2: name-only match → fuzzy, NOT auto-applied', async () => {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+
+    // Get a competitor name from the DB (no card in the StartList XML).
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .limit(1)
+      .all()[0];
+    if (!row) return;
+
+    // Parse "Given Family" → split for XML
+    const parts = row.name.split(' ');
+    const family = parts.pop() ?? '';
+    const given = parts.join(' ');
+
+    // Get class name for this competitor.
+    const { eq: eqFn2 } = await import('drizzle-orm');
+    const { classes: classesTable2 } = await import('../db/schema.ts');
+    const classRow2 = ctx.handle.db
+      .select({ name: classesTable2.name })
+      .from(classesTable2)
+      .where(eqFn2(classesTable2.id, row.classId))
+      .get();
+    const className2 = classRow2?.name ?? 'H21';
+
+    const startTimeIso = '2026-05-19T10:00:00Z';
+    // No siCard in StartList → name-only match (fuzzy, not exact).
+    const bytes = buildStartListXmlBuffer([
+      { className: className2, persons: [{ given, family, startTimeIso }] },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as {
+      exact: number;
+      fuzzy: number;
+      unmatched: number;
+      fuzzyMatches: unknown[];
+    };
+    // Name-only → fuzzy, not exact.
+    assert.ok(body.fuzzy >= 0); // May be fuzzy or unmatched depending on fixture.
+    assert.equal(body.exact, 0, 'no SI card match → not exact');
+    // start_time_ms must NOT be written (fuzzy is pending_confirmation).
+    const still = ctx.handle.db.select().from(competitors).where(eq(competitors.id, row.id)).get();
+    assert.equal(still?.startTimeMs, null, 'fuzzy match must not auto-write start_time_ms');
+  });
+
+  test('startlist test 4 (02.1-14 Task 6): changed card matched by name + club; skips reported', async () => {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+    const byName = (name: string) =>
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .find((c) => c.name === name)!;
+
+    const startTimeIso = '2026-05-19T10:00:00Z';
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          // Anna entered with 7501853, runs on a rented card: name + club match.
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'stortuna ok',
+            siCard: 8000001,
+            startTimeIso,
+          },
+          // Bo's new card already belongs to Cia (D21): cannot take it.
+          { given: 'Bo', family: 'Berg', club: 'StorTuna OK', siCard: 1428824, startTimeIso },
+          { given: 'Okänd', family: 'Löpare', club: 'X', siCard: 8000002, startTimeIso },
+          { given: 'Utan', family: 'Tid', siCard: 8000003, startTimeIso: null },
+        ],
+      },
+      { className: 'H99', persons: [{ given: 'Fel', family: 'Klass', startTimeIso }] },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as {
+      exact: number;
+      card_updated: number;
+      unmatched: number;
+      cardUpdates: unknown[];
+      skipped: unknown[];
+    };
+    const anna = byName('Anna Andersson');
+    assert.equal(body.card_updated, 1);
+    assert.deepEqual(body.cardUpdates, [
+      {
+        row: 1,
+        competitor_id: anna.id,
+        name: 'Anna Andersson',
+        class: 'H21',
+        previous_card: 7501853,
+        card: 8000001,
+      },
+    ]);
+    assert.equal(anna.cardNumber, 8000001);
+    assert.equal(anna.startTimeMs, Date.parse(startTimeIso));
+    assert.equal(byName('Bo Berg').cardNumber, null, 'conflicting card not taken');
+    assert.deepEqual(body.skipped, [
+      { row: 2, name: 'Bo Berg', class: 'H21', card: 1428824, reason: 'duplicate_card' },
+      { row: 3, name: 'Okänd Löpare', class: 'H21', card: 8000002, reason: 'no_match' },
+      { row: 4, name: 'Utan Tid', class: 'H21', card: 8000003, reason: 'no_start_time' },
+      { row: 5, name: 'Fel Klass', class: 'H99', card: null, reason: 'unknown_class' },
+    ]);
+    assert.equal(body.unmatched, 4);
+  });
+
+  /** CourseData + EntryList: H21 = Anna Andersson (7501853) and Bo Berg (no
+   * card), both StorTuna OK. Returns a by-name row reader. */
+  async function seedAnnaAndBo(): Promise<{ compId: string; byName: (n: string) => Competitor }> {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+    const byName = (name: string): Competitor =>
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .find((c) => c.name === name)!;
+    return { compId, byName };
+  }
+
+  test("startlist: two rows with the same card don't overwrite each other's start", async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'StorTuna OK',
+            siCard: 555,
+            startTimeIso: '2026-05-19T10:00:00Z',
+          },
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 555,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Anna Andersson', class: 'H21', card: 555, reason: 'duplicate_card' },
+      { row: 2, name: 'Bo Berg', class: 'H21', card: 555, reason: 'duplicate_card' },
+    ]);
+    const anna = byName('Anna Andersson');
+    assert.equal(anna.cardNumber, 7501853);
+    assert.equal(anna.startTimeMs, null);
+    assert.equal(byName('Bo Berg').startTimeMs, null);
+  });
+
+  test('startlist: two imported runners resolving to one competitor are both left unapplied', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    // Bo's row carries Anna's card (exact card match → Anna); Anna's own row
+    // has a new card and matches her by name + club. Neither may win silently.
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 7501853,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'StorTuna OK',
+            siCard: 8000001,
+            startTimeIso: '2026-05-19T10:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201);
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Bo Berg', class: 'H21', card: 7501853, reason: 'duplicate_runner' },
+      { row: 2, name: 'Anna Andersson', class: 'H21', card: 8000001, reason: 'duplicate_runner' },
+    ]);
+    const anna = byName('Anna Andersson');
+    assert.equal(anna.cardNumber, 7501853);
+    assert.equal(anna.startTimeMs, null);
+  });
+
+  test('startlist: a discarded card change does not free its card for a later row', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    ctx.handle.sqlite
+      .prepare(`UPDATE competitors SET card_number = 2222 WHERE competition_id = ? AND name = ?`)
+      .run(compId, 'Bo Berg');
+    // Anna's two card changes conflict and are both dropped, so she keeps
+    // 7501853 — Bo's row may not take it.
+    const anna = { given: 'Anna', family: 'Andersson', club: 'StorTuna OK' };
+    const bytes = buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          { ...anna, siCard: 5555, startTimeIso: '2026-05-19T10:00:00Z' },
+          { ...anna, siCard: 6666, startTimeIso: '2026-05-19T10:05:00Z' },
+          {
+            given: 'Bo',
+            family: 'Berg',
+            club: 'StorTuna OK',
+            siCard: 7501853,
+            startTimeIso: '2026-05-19T11:00:00Z',
+          },
+        ],
+      },
+    ]);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    const body = res.body as { exact: number; card_updated: number; skipped: unknown[] };
+    assert.equal(body.exact, 0);
+    assert.equal(body.card_updated, 0);
+    assert.deepEqual(body.skipped, [
+      { row: 1, name: 'Anna Andersson', class: 'H21', card: 5555, reason: 'duplicate_runner' },
+      { row: 2, name: 'Anna Andersson', class: 'H21', card: 6666, reason: 'duplicate_runner' },
+      { row: 3, name: 'Bo Berg', class: 'H21', card: 7501853, reason: 'duplicate_card' },
+    ]);
+    assert.equal(byName('Anna Andersson').cardNumber, 7501853);
+    assert.equal(byName('Anna Andersson').startTimeMs, null);
+    assert.equal(byName('Bo Berg').cardNumber, 2222);
+    assert.equal(byName('Bo Berg').startTimeMs, null);
+  });
+
+  test('startlist test 3: competition not found → 404', async () => {
+    const bytes = buildStartListXmlBuffer([{ className: 'H21', persons: [] }]);
+    const res = await uploadFile(
+      ctx.app,
+      '/api/competitions/00000000-0000-0000-0000-000000000000/import/startlist',
+      'sl.xml',
+      bytes
+    );
+    assert.equal(res.statusCode, 404);
+  });
+});
+
+describe('POST /api/competitions/:id/import/startlist/confirm', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('confirm test 1: applies confirmed fuzzy matches', async () => {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .limit(1)
+      .all()[0];
+    if (!row) return;
+
+    const targetMs = new Date('2026-05-19T10:30:00Z').getTime();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/import/startlist/confirm`,
+      payload: { matches: [{ competitorId: row.id, startTimeMs: targetMs }] },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { applied: number; alreadyApplied: number };
+    assert.equal(body.applied, 1);
+    assert.equal(body.alreadyApplied, 0);
+
+    const updated = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, row.id))
+      .get();
+    assert.equal(updated?.startTimeMs, targetMs);
+  });
+
+  test('confirm test 2: idempotent — re-confirming returns alreadyApplied', async () => {
+    const compId = await newCompetition(ctx.app);
+    const courseBytes = readFixture('iof30-coursedata-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'course.xml', courseBytes);
+    const entryBytes = readFixture('iof30-entrylist-sample.xml');
+    await uploadFile(ctx.app, `/api/competitions/${compId}/import`, 'entries.xml', entryBytes);
+
+    const row = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .limit(1)
+      .all()[0];
+    if (!row) return;
+
+    const targetMs = new Date('2026-05-19T10:30:00Z').getTime();
+    const body1 = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${compId}/import/startlist/confirm`,
+        payload: { matches: [{ competitorId: row.id, startTimeMs: targetMs }] },
+      })
+    ).json() as { applied: number; alreadyApplied: number };
+    assert.equal(body1.applied, 1);
+
+    // Second call (idempotent).
+    const body2 = (
+      await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${compId}/import/startlist/confirm`,
+        payload: { matches: [{ competitorId: row.id, startTimeMs: targetMs }] },
+      })
+    ).json() as { applied: number; alreadyApplied: number };
+    assert.equal(body2.applied, 0, 'second confirm must not re-write');
+    assert.equal(body2.alreadyApplied, 1, 'must count already-applied');
+  });
+
+  test('confirm rejects a non-epoch start time and writes nothing from the batch', async () => {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries.xml',
+      readFixture('iof30-entrylist-sample.xml')
+    );
+    const [a, b] = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .all();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/import/startlist/confirm`,
+      payload: {
+        matches: [
+          { competitorId: a!.id, startTimeMs: Date.parse('2026-05-19T10:30:00Z') },
+          { competitorId: b!.id, startTimeMs: 36_000_000 }, // 10:00 as ms since midnight
+        ],
+      },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    const rows = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.competitionId, compId))
+      .all();
+    assert.ok(rows.every((r) => r.startTimeMs === null));
+  });
+
+  test('confirm test 3: competition not found → 404', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions/00000000-0000-0000-0000-000000000000/import/startlist/confirm',
+      payload: { matches: [] },
+    });
+    assert.equal(res.statusCode, 404);
+  });
+});
+
+describe('POST /api/competitions/:id/import — cached results follow the import', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    const handle = openDatabase(':memory:');
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 0,
+    });
+    ctx = { app, handle };
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+  const h21Rows = async (compId: string) => {
+    const res = await ctx.app.inject({ method: 'GET', url: `/api/competitions/${compId}/results` });
+    const body = res.json() as {
+      classes: Array<{ class_name: string; rows: Array<{ name: string; status: string }> }>;
+    };
+    return body.classes.find((c) => c.class_name === 'H21')!.rows;
+  };
+
+  /** Course + entries imported, race started, Anna (H21, Bana 1 = 31-34)
+   * read out with punches 31, 32 only → MP, and that result is cached. */
+  async function annaMpCached(): Promise<string> {
+    const compId = await newCompetition(ctx.app);
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course.xml',
+      readFixture('iof30-coursedata-sample.xml')
+    );
+    await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries.xml',
+      readFixture('iof30-entrylist-sample.xml')
+    );
+    ctx.handle.sqlite
+      .prepare(`UPDATE competitions SET race_started_at_ms = 0 WHERE id = ?`)
+      .run(compId);
+    const clock = (s: number) => ({ half_day: 0 as const, seconds_in_half_day: s, weekday: null });
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'node-test',
+        localSeq: 1,
+        competitionId: compId,
+        eventType: 'card_read',
+        eventTimeMs: Date.UTC(2026, 4, 22, 12),
+        recordedAtMs: Date.UTC(2026, 4, 22, 12),
+        payload: {
+          event_type: 'card_read',
+          card_number: 7501853,
+          card_type: 'SI10',
+          start: clock(9 * 3600),
+          finish: clock(9 * 3600 + 1800),
+          check: null,
+          clear: null,
+          punch_count: 2,
+          punches: [
+            { code: 31, ...clock(9 * 3600 + 600) },
+            { code: 32, ...clock(9 * 3600 + 1200) },
+          ],
+          card_holder: null,
+        },
+      })
+      .run();
+    // Anna's card is already bound, so a later EntryList import binds nothing new.
+    const anna = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.cardNumber, 7501853))
+      .get()!;
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'node-test',
+        localSeq: 2,
+        competitionId: compId,
+        eventType: 'card_bound',
+        eventTimeMs: Date.UTC(2026, 4, 22, 12, 1),
+        recordedAtMs: Date.UTC(2026, 4, 22, 12, 1),
+        payload: {
+          event_type: 'card_bound',
+          competitor_id: anna.id,
+          card_number: 7501853,
+          walkup: false,
+          consent_at_ms: 0,
+        },
+      })
+      .run();
+    await settle(); // let the imports' own recompute land before caching the MP
+    const before = await h21Rows(compId);
+    assert.equal(before.find((r) => r.name === 'Anna Andersson')?.status, 'MP');
+    return compId;
+  }
+
+  test('a corrected CourseData import re-scores the cached results', async () => {
+    const compId = await annaMpCached();
+    // Bana 1 corrected to 31, 32.
+    const corrected = readFixture('iof30-coursedata-sample.xml')
+      .toString('utf8')
+      .replace(
+        /(<Name>Bana 1<\/Name>[\s\S]*?<Control>32<\/Control>\s*<\/CourseControl>)[\s\S]*?(<CourseControl type="Finish">)/,
+        '$1\n      $2'
+      );
+    assert.notEqual(corrected, readFixture('iof30-coursedata-sample.xml').toString('utf8'));
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'course2.xml',
+      Buffer.from(corrected)
+    );
+    assert.equal(res.statusCode, 201);
+    await settle();
+    const after = await h21Rows(compId);
+    assert.equal(after.find((r) => r.name === 'Anna Andersson')?.status, 'OK');
+  });
+
+  test('an EntryList import without newly bound cards still refreshes the cached results', async () => {
+    const compId = await annaMpCached();
+    // Same list with Bo Berg renamed to a new runner, Dag Ek (no card).
+    const entries = readFixture('iof30-entrylist-sample.xml')
+      .toString('utf8')
+      .replace('<Family>Berg</Family>', '<Family>Ek</Family>')
+      .replace('<Given>Bo</Given>', '<Given>Dag</Given>');
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import`,
+      'entries2.xml',
+      Buffer.from(entries)
+    );
+    assert.equal(res.statusCode, 201);
+    await settle();
+    const after = await h21Rows(compId);
+    assert.ok(
+      after.some((r) => r.name === 'Dag Ek'),
+      JSON.stringify(after)
+    );
   });
 });
