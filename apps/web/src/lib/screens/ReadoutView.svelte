@@ -256,6 +256,7 @@
       cardNumber: row.card_number,
       name: row.competitor_name,
       cls: cls?.name ?? '—',
+      cardType: row.card_type,
       club: competitor?.club ?? null,
       startTime: formatStartTimeMs(competitor?.start_time_ms),
       readTime: formatTimeOfDay(row.event_time_ms),

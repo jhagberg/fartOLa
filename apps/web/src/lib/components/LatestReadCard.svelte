@@ -41,6 +41,8 @@
 
   interface Read {
     cardNumber: number;
+    /** SI card model from the read ("SIAC", "SI10", "SI5" …); null when unknown. */
+    cardType: string | null;
     name: string | null;
     cls: string;
     club: string | null;
@@ -247,6 +249,9 @@
               <span>{t('ro.club')} <b>{read.club}</b></span>
             {/if}
             <span>{t('ro.start')} <b class="mono">{read.startTime}</b></span>
+            {#if read.cardType}
+              <span data-testid="card-type">{t('ro.card')} <b class="mono">{read.cardType}</b></span>
+            {/if}
           </div>
         </div>
         <div class="result-col">
