@@ -25,10 +25,25 @@ read): also fetch page 1 when the start, finish or check record in page 0
 has PTD bit 7 set and page 1 has not been read. Nothing else changes; the
 decoder picks the code up from storage.
 
-## First
+## Status (2026-10-08)
 
-The strict bench replay (`tests/fixtures/jonas/*.bytes.hex`) fails on any
-request not in the transcript. Record a new bench capture of a touch-free
-SIAC read that includes the block-1 request (`siac-jonas-002`), then make
-the change and add the fixture. The existing `siac-jonas-001` finish is
-touch-free with an unread block 1, so it cannot be reused.
+Done in code, awaiting a bench capture:
+
+- `ModernSiCard.typeSpecificReadTouchFreeBlock` fetches page 1 when a start,
+  finish or check record has PTD bit 7 and a real time, and page 1 is unread
+  (an erased 0xEE record also has bit 7 set, so the time is checked). SI8/SI9
+  read page 1 already; their zero-punch shortcut now respects touch-free.
+- An erased block-1 byte (0xEE) decodes as "no code", not 238.
+- Tests: `block1TouchFree.test.ts` (fake station). The strict replay
+  harnesses (`bin/replay.ts`, `benchReplay.test.ts`, edge
+  `cardReadPayload.test.ts`) answer the one unrecorded page-1 request with an
+  erased page, so `siac-jonas-001` (recorded before block-1 support) replays
+  unchanged and still shows `touch_free` without a code.
+- Research: no public SportIdent document gives the bit 7 / block 1 layout
+  (PC Programmer's Guide is on request only); it rests on MeOS
+  `SportIdent.cpp:1366,1929`.
+
+Still needs real hardware: record `siac-jonas-002` (touch-free SIAC Air+
+finish, with the `FF 02 EF 01 01 ...` request) and confirm the unit code at
+0xA9 (and 0xA5/0xA1), bit 6 handling, check-record behaviour; then add the
+fixture and drop the legacy reply from the harnesses once no fixture needs it.
