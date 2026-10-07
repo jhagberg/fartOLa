@@ -237,9 +237,11 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
         }
       })();
       // The date and the override set the competition clock card times are
-      // placed on: re-score.
+      // placed on: re-score now, not debounced. Routes read the offset fresh
+      // next to the cached projection, so a stale cache (old starts) must
+      // not outlive this response.
       if (patch.date !== undefined || patch.clockOffsetMin !== undefined) {
-        app.projectionStore.markDirty(id);
+        app.projectionStore.recomputeNow(id);
       }
     }
 

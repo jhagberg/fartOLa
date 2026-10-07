@@ -301,6 +301,61 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.equal(body.history[0]!.elapsed_time_ms, 30 * 60 * 1000);
   });
 
+  // Codex follow-up review: the route pairs the cached projection with the
+  // offset read now. An offset change shifts the stored starts, so the
+  // cache must be fresh by the time the PATCH returns — not one debounce
+  // later. A long debounce makes the old window deterministic.
+  test('test 2f: right after an offset change, the start still reads 09:00', async () => {
+    const handle = openDatabase(':memory:');
+    const nodeId = ensureNodeId(handle);
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 60_000,
+    });
+    try {
+      const { competitorId } = seedCompetition(handle, 'comp-2f');
+      const DAY = '2026-05-14'; // default +120
+      handle.db
+        .update(competitors)
+        .set({ startTimeMs: clockToEpochMs(DAY, 9 * 3600, 120) })
+        .where(eq(competitors.id, competitorId))
+        .run();
+      insertCardRead(
+        handle,
+        nodeId,
+        'comp-2f',
+        7501853,
+        clockToEpochMs(DAY, 9 * 3600 + 35 * 60, 120),
+        1,
+        [31],
+        null
+      );
+      type Body = { clock_offset_min: number; history: Array<{ start_time_ms: number }> };
+      const get = async (): Promise<Body> =>
+        (
+          await app.inject({ method: 'GET', url: '/api/competitions/comp-2f/readout' })
+        ).json() as Body;
+      const startText = (b: Body): string =>
+        formatClockTime(b.history[0]!.start_time_ms, b.clock_offset_min);
+
+      assert.equal(startText(await get()), '09:00:00'); // caches the projection
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: '/api/competitions/comp-2f',
+        payload: { clock_offset_min: 60 },
+      });
+      assert.equal(patch.statusCode, 200, patch.body);
+      const after = await get();
+      assert.equal(after.clock_offset_min, 60);
+      assert.equal(startText(after), '09:00:00');
+    } finally {
+      await app.close();
+      handle.close();
+    }
+  });
+
   // Codex follow-up review: every history row carried the latest read's
   // running time, so selecting an older read paired its finish with
   // another read's time.
