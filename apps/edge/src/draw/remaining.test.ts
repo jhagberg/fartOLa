@@ -3,9 +3,11 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fillVacancies, placeBeforeOrAfter, smallestGapMs } from './remaining.ts';
+import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from './remaining.ts';
+import { drawSOFT } from './soft.ts';
 import type { StartedRunner } from './remaining.ts';
 import { DrawError } from './types.ts';
+import type { DrawRunner } from './types.ts';
 
 const MIN = 60_000;
 const T0 = 1_780_000_000_000;
@@ -61,49 +63,33 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
     ]);
   });
 
-  test('SOFT TR 7.5.1: the block is reversed when that avoids a same-club neighbour at the seam', () => {
-    const existing = startList(['A', 'B', 'C']);
-    const after = placeBeforeOrAfter(
-      existing,
-      [
-        { id: 'x', club: 'C' },
-        { id: 'y', club: 'D' },
-      ],
-      'After',
-      2 * MIN
-    );
-    assert.deepEqual(
-      after.map((a) => a.id),
-      ['y', 'x']
-    );
-    const before = placeBeforeOrAfter(
-      existing,
-      [
-        { id: 'x', club: 'D' },
-        { id: 'y', club: 'A' },
-      ],
-      'Before',
-      2 * MIN
-    );
-    assert.deepEqual(
-      before.map((a) => a.id),
-      ['y', 'x']
-    );
+  test('seamClubs: the block meets the first start (Before) or the last start (After)', () => {
+    const existing = startList(['B', 'C', 'A']);
+    assert.deepEqual(seamClubs(existing, 'Before'), { after: 'B' });
+    assert.deepEqual(seamClubs(existing, 'After'), { before: 'A' });
+    assert.deepEqual(seamClubs([], 'After'), {});
   });
 
-  test('SOFT TR 7.5.1: both block ends from the boundary club → the block is reordered, not just reversed', () => {
-    const existing = startList(['B', 'C', 'A']);
+  test('SOFT TR 7.5.1/7.5.2: the late block is drawn with its seam club → no same-club neighbour in the block or at the seam, every such order drawn', () => {
+    // Both ends of the block would be A: reversing alone cannot help.
     const late = ['A', 'B', 'C', 'B', 'A'].map((club, i) => ({ id: `l${i}`, club }));
     const byId = new Map(late.map((r) => [r.id, r.club]));
     for (const placement of ['Before', 'After'] as const) {
-      const flipped = placement === 'Before' ? startList(['A', 'B', 'C']) : existing;
-      for (let seed = 1; seed <= 20; seed++) {
-        const got = placeBeforeOrAfter(flipped, late, placement, 2 * MIN, mulberryRng(seed));
-        const clubs = got.map((a) => byId.get(a.id)!);
-        const all = placement === 'Before' ? [...clubs, 'A'] : ['A', ...clubs];
-        for (let i = 1; i < all.length; i++)
-          assert.notEqual(all[i], all[i - 1], `${placement} seed ${seed}: ${all.join('')}`);
+      const existing =
+        placement === 'Before' ? startList(['A', 'B', 'C']) : startList(['B', 'C', 'A']);
+      const rng = mulberryRng(7);
+      const seen = new Set<string>();
+      for (let k = 0; k < 400; k++) {
+        const { order } = drawSOFT(late, { boundary: seamClubs(existing, placement), rngFn: rng });
+        const got = placeBeforeOrAfter(existing, order as DrawRunner[], placement, 2 * MIN);
+        const clubs = got.map((a) => byId.get(a.id)!).join('');
+        const all = placement === 'Before' ? `${clubs}A` : `A${clubs}`;
+        assert.doesNotMatch(all, /(.)\1/, `${placement}: ${all}`);
+        seen.add(clubs);
       }
+      // 12 orders of AABBC have no equal neighbours; 7 of them keep A off
+      // the seam (5 start with A, 5 end with A).
+      assert.equal(seen.size, 7, `${placement}: ${[...seen].join(' ')}`);
     }
   });
 

@@ -11,13 +11,14 @@
 // MeOS falls back to 01:00 and 2 minutes when it cannot infer (:2544-2548);
 // fartOLa refuses instead (DrawError), so nobody gets a start at 01:00.
 //
-// fartOLa additions: the block is reversed when that avoids a same-club
-// neighbour at the seam (TR 7.5.1), and fillVacancies puts late entrants
-// into free places of the class's start grid (TR 7.5.8: "vakanta
-// platser", not in elite classes; the route checks the class kind).
+// fartOLa additions: seamClubs gives the club next to the block, so the
+// SOFT draw of the block (drawSOFT boundary) counts a same-club neighbour
+// at the seam and draws uniformly among the orders with the fewest
+// (TR 7.5.1, TR 7.5.2); fillVacancies puts late entrants into free places
+// of the class's start grid (TR 7.5.8: "vakanta platser", not in elite
+// classes; the route checks the class kind).
 
-import crypto from 'node:crypto';
-
+import type { DrawBoundary } from './soft.ts';
 import type { DrawRunner, RngFn } from './types.ts';
 import { DrawError } from './types.ts';
 
@@ -45,8 +46,19 @@ export function smallestGapMs(startTimesMs: readonly number[]): number | null {
   return gap;
 }
 
-const sameClub = (a: { club: string | null } | undefined, b: { club: string | null } | undefined) =>
-  a !== undefined && b !== undefined && a.club !== null && a.club === b.club;
+/** The club of the starter next to the block: the first start for
+ * 'Before' (the block ends just before it), the last for 'After'. Pass it
+ * to drawSOFT as its boundary. */
+export function seamClubs(
+  existing: readonly StartedRunner[],
+  placement: 'Before' | 'After'
+): DrawBoundary {
+  if (existing.length === 0) return {};
+  const byTime = [...existing].sort((a, b) => a.startTimeMs - b.startTimeMs);
+  return placement === 'Before'
+    ? { after: byTime[0]!.club }
+    : { before: byTime[byTime.length - 1]!.club };
+}
 
 /** MeOS RemainingBefore/RemainingAfter: `order` (the late entrants, already
  * drawn) starts in a block before the first or after the last start. */
@@ -54,54 +66,17 @@ export function placeBeforeOrAfter(
   existing: readonly StartedRunner[],
   order: readonly DrawRunner[],
   placement: 'Before' | 'After',
-  intervalMs: number,
-  rng: RngFn = (min, max) => crypto.randomInt(min, max)
+  intervalMs: number
 ): Assignment[] {
   if (order.length === 0) return [];
   if (existing.length === 0)
     throw new DrawError('no_start_list', 'The class has no start times yet; draw the whole class.');
-  const byTime = [...existing].sort((a, b) => a.startTimeMs - b.startTimeMs);
-  const first = byTime[0]!;
-  const last = byTime[byTime.length - 1]!;
-  // Same-club neighbours in a candidate block, counting the seam to the
-  // existing list (before → block's last meets the first start; after →
-  // block's first meets the last).
-  const clashes = (b: readonly DrawRunner[]): number => {
-    let n = 0;
-    for (let i = 1; i < b.length; i++) if (sameClub(b[i - 1], b[i])) n++;
-    const seam = placement === 'Before' ? sameClub(b[b.length - 1], first) : sameClub(b[0], last);
-    return n + (seam ? 1 : 0);
-  };
-  // The drawn order first, then its reverse, then random orders (rejection
-  // sampling keeps every clash-free order equally likely, TR 7.5.2). Reversal
-  // alone cannot help when both ends are from the boundary runner's club.
-  let block = [...order];
-  let best = clashes(block);
-  const candidates = function* (): Generator<DrawRunner[]> {
-    yield [...order].reverse();
-    for (let k = 0; k < 300; k++) {
-      const c = [...order];
-      for (let i = c.length - 1; i > 0; i--) {
-        const j = rng(0, i + 1);
-        [c[i], c[j]] = [c[j]!, c[i]!];
-      }
-      yield c;
-    }
-  };
-  if (best > 0)
-    for (const c of candidates()) {
-      const n = clashes(c);
-      if (n < best) {
-        block = c;
-        best = n;
-        if (best === 0) break;
-      }
-    }
+  const times = existing.map((r) => r.startTimeMs);
   const start =
     placement === 'Before'
-      ? first.startTimeMs - block.length * intervalMs
-      : last.startTimeMs + intervalMs;
-  return block.map((r, i) => ({ id: r.id, startTimeMs: start + i * intervalMs }));
+      ? Math.min(...times) - order.length * intervalMs
+      : Math.max(...times) + intervalMs;
+  return order.map((r, i) => ({ id: r.id, startTimeMs: start + i * intervalMs }));
 }
 
 /** Late entrants into free places of the start grid first + k·interval,
