@@ -11,7 +11,7 @@ jobs:
   playwright:
     name: Playwright (Chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Enable Corepack (pins pnpm from package.json `packageManager`)
@@ -23,6 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Build cross-workspace type deps — see ci.yml for the rationale.
       - run: pnpm --filter @fartola/sportident build
+      # The install (apt for --with-deps) usually takes under 2 min but its
+      # apt step is sometimes very slow on the runner; don't kill it mid-unpack.
       - name: Install Playwright browsers (Chromium only)
         run: pnpm exec playwright install --with-deps chromium
       # webServer entries in playwright.config.ts spawn edge + web dev
