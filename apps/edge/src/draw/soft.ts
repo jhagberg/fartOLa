@@ -169,8 +169,10 @@ function gapClasses(tb: Table, t: number, d: number) {
 }
 
 function buildTable(counts: readonly number[], before: number, after: number): Table {
-  // A fixed letter of a club with no runners here can never be a neighbour.
-  const has = (c: number) => c >= 0 && (counts[c] ?? 0) > 0;
+  // A fixed letter of a club with no runners here can never be a neighbour,
+  // except of the other fixed letter when the word is empty.
+  const empty = counts.every((c) => c === 0);
+  const has = (c: number) => c >= 0 && (empty || (counts[c] ?? 0) > 0);
   const b = has(before) ? before : -1;
   const a = has(after) ? after : -1;
   const ends = (b >= 0 ? 1 : 0) + (a >= 0 ? 1 : 0);
@@ -232,8 +234,15 @@ export function fewestPatterns(
   return { fewest: tb.fewest, count: tb.layers[tb.order.length]![tb.fewest]! };
 }
 
+/** The number of club patterns by neighbour count d (index d), seams to
+ * `before` / `after` included. */
+export function patternCounts(counts: readonly number[], before = -1, after = -1): bigint[] {
+  const tb = buildTable(counts, before, after);
+  return tb.layers[tb.order.length]!;
+}
+
 /** Uniform random BigInt in [0, n), n > 0. */
-function randomBelow(n: bigint, rng: RngFn): bigint {
+export function randomBelow(n: bigint, rng: RngFn): bigint {
   if (n <= 0x1_0000_0000n) return BigInt(rng(0, Number(n)));
   const bits = n.toString(2).length;
   for (;;) {
@@ -258,21 +267,24 @@ function pick<T>(items: readonly T[], k: number, rng: RngFn): T[] {
 
 /**
  * A club pattern drawn uniformly among those with the fewest same-club
- * neighbours: counts[c] letters of club c, seams to the clubs `before` and
- * `after` (indexes, -1 for none) counted. Returns the club of each place.
+ * neighbours (or exactly `pairs` of them): counts[c] letters of club c,
+ * seams to the clubs `before` and `after` (indexes, -1 for none) counted.
+ * Returns the club of each place.
  */
 export function samplePattern(
   counts: readonly number[],
   before: number,
   after: number,
-  rng: RngFn
+  rng: RngFn,
+  pairs?: number
 ): number[] {
   const tb = buildTable(counts, before, after);
   const K = tb.order.length;
+  let d = pairs ?? tb.fewest;
+  if (!(tb.layers[K]![d]! > 0n)) throw new RangeError(`no club pattern with ${d} neighbours`);
 
-  // Walk back from (K, fewest), choosing each step by its share of the count.
+  // Walk back from (K, d), choosing each step by its share of the count.
   const steps: Array<{ s: number; j: number; a: number; d: number }> = new Array(K);
-  let d = tb.fewest;
   for (let t = K - 1; t >= 0; t--) {
     const c = tb.sizes[t]!;
     const prev = tb.layers[t]!;
