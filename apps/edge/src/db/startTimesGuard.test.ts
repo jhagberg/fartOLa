@@ -31,6 +31,14 @@ export function startTimeWrites(text: string): string[] {
   const c = code(text);
   const found: string[] = [];
   for (const m of c.matchAll(/\.(set|values)\(\s*\{[^}]*\bstartTimeMs\b[^}]*\}/g)) found.push(m[0]);
+  // `.set(variable)` / `.values(variable)` on the competitors table: the
+  // variable's declared type must exclude startTimeMs (Omit<…, 'startTimeMs'>).
+  for (const m of c.matchAll(
+    /\.(?:update|insert)\(\s*competitors(?:Table)?\s*\)\s*\.(?:set|values)\(\s*([A-Za-z_]\w*)\s*\)/g
+  )) {
+    const decl = new RegExp(`(?:const|let)\\s+${m[1]}\\s*:([^=]+)=`).exec(c);
+    if (decl === null || !/Omit<.*startTimeMs/.test(decl[1]!)) found.push(m[0]);
+  }
   for (const m of c.matchAll(/\bSET\b[^;`'"]*\bstart_time_ms\s*=/gi)) found.push(m[0]);
   for (const m of c.matchAll(/INSERT\s+INTO\s+competitors\s*\([^)]*\bstart_time_ms\b/gi))
     found.push(m[0]);
@@ -46,6 +54,22 @@ describe('start-time cache guard (ADR-0003)', () => {
       startTimeWrites("prepare('INSERT INTO competitors (id, start_time_ms) VALUES (?, ?)')")
         .length,
       1
+    );
+    assert.equal(
+      startTimeWrites('const u = {};\ndb.update(competitors).set(u).run()').length,
+      1,
+      '.set(variable) with no Omit type'
+    );
+    assert.equal(
+      startTimeWrites('const u: Partial<Competitor> = {};\ndb.update(competitors).set(u).run()')
+        .length,
+      1
+    );
+    assert.equal(
+      startTimeWrites(
+        "const u: Omit<Partial<Competitor>, 'startTimeMs'> = {};\ndb.update(competitors).set(u).run()"
+      ).length,
+      0
     );
     assert.equal(
       startTimeWrites('// assigns start_time_ms = first\nconst x = r.startTimeMs;').length,
