@@ -5,7 +5,7 @@ area: print
 files:
   - apps/edge/src/print/templates/kids.ts
   - apps/edge/src/print/kids-svg-to-bitmap.ts
-  - packages/shared-types/src/skogis.ts
+  - packages/shared-types/src/skogis.ts (old generator, to remove)
   - apps/web/src/lib/components/receipt-templates/Kids.svelte
 ---
 
@@ -36,8 +36,13 @@ this is a replacement, not a sixth template next to the old one.
 ## What
 
 - Move the story generator, `skogisar.json` and the figure PNGs into
-  fartOLa (shared-types for the generator and texts, edge for the
-  bitmaps). Keep the import-free story test.
+  `apps/edge` (AGPL), not the MIT package `packages/shared-types`
+  (owner's decision 2026-10-07: content of our own, like Skogis, stays
+  copyleft; shared-types is only the API contract). Keep the import-free
+  story test.
+- The web preview gets the chosen Skogis (figure id + the two sentences)
+  from the edge API instead of computing it, so the web needs no copy of
+  the generator.
 - `kids.ts`: print figure + name + the two sentences; dither the PNG for
   ESC/POS like the tool does. Web `Kids.svelte`: same layout for preview.
 - Class selection per competition (which classes get a Skogis), as on the
