@@ -458,6 +458,9 @@ describe('draw algorithms', () => {
           }
       }
       assert.ok(checked > 1500, `${checked} cases`);
+      // No runner between the fixed starters: they meet each other.
+      assert.deepEqual(fewestPatterns([0, 0], 0, 0), { fewest: 1, count: 1n });
+      assert.deepEqual(fewestPatterns([0, 0], 0, 1), { fewest: 0, count: 1n });
     });
 
     test('SOFT TR 7.5.1: property — random shapes and boundaries → the drawn order has the fewest neighbours, seams counted', () => {
