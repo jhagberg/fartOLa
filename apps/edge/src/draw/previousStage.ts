@@ -33,19 +33,35 @@ export function matchPreviousStage(
   unmatched: StageEntry[];
 } {
   const byPerson = new Map<number, PreviousResult>();
-  const byName = new Map<string, PreviousResult | null>(); // null = ambiguous
+  const prevByName = new Map<string, PreviousResult[]>();
   for (const p of previous) {
     if (p.eventorPersonId !== null) byPerson.set(p.eventorPersonId, p);
     const k = key(p.name, p.club);
-    byName.set(k, byName.has(k) ? null : p);
+    prevByName.set(k, [...(prevByName.get(k) ?? []), p]);
+  }
+  const currentByName = new Map<string, number>();
+  for (const c of current) {
+    const k = key(c.name, c.club);
+    currentByName.set(k, (currentByName.get(k) ?? 0) + 1);
   }
   const matched: Array<{ id: string; timeMs: number | null; status: string | null }> = [];
   const unmatched: StageEntry[] = [];
   for (const c of current) {
-    const p =
-      (c.eventorPersonId !== null ? byPerson.get(c.eventorPersonId) : undefined) ??
-      byName.get(key(c.name, c.club)) ??
-      undefined;
+    let p: PreviousResult | undefined;
+    const byId = c.eventorPersonId !== null ? byPerson.get(c.eventorPersonId) : undefined;
+    if (byId !== undefined) p = byId;
+    else {
+      // Name and club only when unique on both sides, and never against a
+      // result that carries another person's Eventor id.
+      const k = key(c.name, c.club);
+      const cands = (prevByName.get(k) ?? []).filter(
+        (x) =>
+          c.eventorPersonId === null ||
+          x.eventorPersonId === null ||
+          x.eventorPersonId === c.eventorPersonId
+      );
+      if (cands.length === 1 && currentByName.get(k) === 1) p = cands[0];
+    }
     if (p === undefined) unmatched.push(c);
     else matched.push({ id: c.id, timeMs: p.timeMs, status: p.status });
   }

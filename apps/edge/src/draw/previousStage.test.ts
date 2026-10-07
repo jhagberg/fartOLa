@@ -36,4 +36,23 @@ describe('matchPreviousStage (SOFT TR 7.4.1)', () => {
       ['twin', 'none']
     );
   });
+
+  test('different Eventor ids never match by name; a name twin on either side is unmatched', () => {
+    const r = matchPreviousStage(
+      [
+        { id: 'x', name: 'Anna Berg', club: 'OK Ek', eventorPersonId: 202 },
+        { id: 't1', name: 'Eva Ek', club: 'OK Ek', eventorPersonId: null },
+        { id: 't2', name: 'Eva Ek', club: 'OK Ek', eventorPersonId: null },
+      ],
+      [
+        { name: 'Anna Berg', club: 'OK Ek', eventorPersonId: 101, timeMs: MIN, status: 'OK' },
+        { name: 'Eva Ek', club: 'OK Ek', eventorPersonId: null, timeMs: MIN, status: 'OK' },
+      ]
+    );
+    assert.deepEqual(r.matched, []);
+    assert.deepEqual(
+      r.unmatched.map((u) => u.id),
+      ['x', 't1', 't2']
+    );
+  });
 });

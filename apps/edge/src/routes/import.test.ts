@@ -947,7 +947,10 @@ describe('POST /api/competitions/:id/import/previous-results (SOFT TR 7.4.1)', (
   });
 
   /** A day-1 IOF 3.0 ResultList: [given, family, club, eventorId|null, seconds|null, status]. */
-  function resultList(rows: Array<[string, string, string, number | null, number | null, string]>) {
+  function resultList(
+    rows: Array<[string, string, string, number | null, number | null, string]>,
+    className = 'H21'
+  ) {
     const person = ([given, family, club, id, seconds, status]: (typeof rows)[number]) =>
       `<PersonResult><Person>${id === null ? '' : `<Id type="Eventor">${id}</Id>`}<Name><Family>${family}</Family><Given>${given}</Given></Name></Person>` +
       `<Organisation><Name>${club}</Name></Organisation>` +
@@ -956,7 +959,7 @@ describe('POST /api/competitions/:id/import/previous-results (SOFT TR 7.4.1)', (
       `<?xml version="1.0" encoding="UTF-8"?>
 <ResultList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0" createTime="2026-05-23T18:00:00Z" creator="MeOS">
   <Event><Name>Dag 1</Name><StartTime><Date>2026-05-23</Date></StartTime></Event>
-  <ClassResult><Class><Name>H21</Name></Class>${rows.map(person).join('')}</ClassResult>
+  <ClassResult><Class><Name>${className}</Name></Class>${rows.map(person).join('')}</ClassResult>
 </ResultList>`,
       'utf8'
     );
@@ -1019,5 +1022,51 @@ describe('POST /api/competitions/:id/import/previous-results (SOFT TR 7.4.1)', (
       Buffer.from('<ResultList xmlns="http://www.orienteering.org/datastandard/3.0"/>', 'utf8')
     );
     assert.equal(res.statusCode, 400);
+  });
+
+  test('a ResultList replaces only the classes it contains; other classes keep their results', async () => {
+    const compId = await newCompetition(ctx.app);
+    const mk = async (name: string) =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: `/api/competitions/${compId}/classes`,
+            payload: { name },
+          })
+        ).json() as { id: string }
+      ).id;
+    const h = await mk('H21');
+    const d = await mk('D21');
+    ctx.handle.db
+      .insert(competitors)
+      .values([
+        { id: 'h', competitionId: compId, name: 'Hugo Ek', club: 'OK', classId: h },
+        { id: 'd', competitionId: compId, name: 'Dora Ek', club: 'OK', classId: d },
+      ])
+      .run();
+    const url = `/api/competitions/${compId}/import/previous-results`;
+    await uploadFile(
+      ctx.app,
+      url,
+      'h.xml',
+      resultList([['Hugo', 'Ek', 'OK', null, 2000, 'OK']], 'H21')
+    );
+    const second = await uploadFile(
+      ctx.app,
+      url,
+      'd.xml',
+      resultList([['Dora', 'Ek', 'OK', null, 2100, 'OK']], 'D21')
+    );
+    assert.deepEqual(second.body, { results: 1, matched: 1, unmatched: [] });
+    const stored = Object.fromEntries(
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .map((r) => [r.id, r.inputTimeMs])
+    );
+    assert.deepEqual(stored, { h: 2_000_000, d: 2_100_000 });
   });
 });
