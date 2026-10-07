@@ -226,6 +226,7 @@
   "ro.struck": "struken",
   "ro.extra": "extra",
   "ro.order": "fel ordn.",
+  "ro.untimed": "Utan tidtagning",
   "ro.print": "Skriv ut kvitto",
   "ro.printed": "Kvitto utskrivet",
   "ro.print.fail": "Skrivare offline — kvitto kunde inte skrivas ut",

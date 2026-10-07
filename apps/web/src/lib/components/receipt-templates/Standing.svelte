@@ -57,6 +57,7 @@
     <span>{isLeader ? '—' : (read.progress.behind ?? '+0:00')}</span>
   </div>
 {:else}
+  {#if read.untimed}<div class="rcpt-row"><span>{t('ro.untimed')}</span></div>{/if}
   <div class="rcpt-row"><b>Status</b><span>{read.statusLabel}</span></div>
 {/if}
 

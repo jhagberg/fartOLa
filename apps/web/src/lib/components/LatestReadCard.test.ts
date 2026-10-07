@@ -21,6 +21,7 @@ const read = (over: Partial<Read> = {}): Read => ({
   status: 'OK',
   manual_status: null,
   place: null,
+  untimed: false,
   unknown: false,
   competitorId: 'c1',
   missingStart: false,
@@ -50,5 +51,16 @@ describe('LatestReadCard header — card type', () => {
 
   it('shows no card type when the read has none', () => {
     expect(html(read({ cardType: null })).querySelector('[data-testid="card-type"]')).toBeNull();
+  });
+});
+
+describe('LatestReadCard header — untimed class', () => {
+  it('shows "Utan tidtagning" for a class without timing', () => {
+    const el = html(read({ untimed: true })).querySelector('[data-testid="untimed"]');
+    expect(el?.textContent).toBe('Utan tidtagning');
+  });
+
+  it('shows nothing for a timed class', () => {
+    expect(html(read()).querySelector('[data-testid="untimed"]')).toBeNull();
   });
 });

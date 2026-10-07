@@ -452,6 +452,7 @@ export function toReceiptRead(input: {
       softStatus(input.row.status, { noTiming: input.noTiming === true })
     ),
     place: input.place ?? null,
+    untimed: input.noTiming === true,
     punches,
     progress: {
       place: input.place ?? null,

@@ -33,7 +33,7 @@
       {t('rcpt.place')} <b>{read.place}</b>
       {t('rcpt.of')} {read.progress.finishedInClass} {t('rcpt.finished')}
     {:else}
-      <b>{read.statusLabel}</b>
+      {#if read.untimed}{t('ro.untimed')} · {/if}<b>{read.statusLabel}</b>
     {/if}
   </div>
   {#if !isLeader && read.status === 'OK' && read.progress.behind}

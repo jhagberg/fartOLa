@@ -56,6 +56,8 @@
      * should appear — auto-DNF shows an explanation popover instead. */
     manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
     place: number | null;
+    /** Class without timing (no_timing): labelled instead of a place. */
+    untimed: boolean;
     unknown: boolean;
     /** Competitor id for the manual-DNF endpoint (null on unknown rows). */
     competitorId: string | null;
@@ -257,6 +259,9 @@
         <div class="result-col">
           <div class="elapsed mono" data-testid="elapsed">{read.elapsed}</div>
           <div class="place">
+            {#if read.untimed}
+              <span data-testid="untimed">{t('ro.untimed')}</span> ·
+            {/if}
             {#if read.place}
               {t('ro.place')} <b class="mono">{read.place}</b> ·
             {/if}

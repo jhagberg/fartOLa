@@ -60,6 +60,8 @@ export interface ReceiptRead {
    * "Diskad", "Deltagit" …; TA till TR 7.8.2, TR 4.21.3). */
   statusLabel: string;
   place: number | null;
+  /** Class without timing: no place or running time; receipts say so. */
+  untimed?: boolean;
   punches: ReceiptPunch[];
   progress: ReceiptProgress;
   /** Competition meta — used in the receipt header rows. */

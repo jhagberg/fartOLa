@@ -279,6 +279,7 @@
       // can distinguish auto-DNF (no clear button) from operator override.
       manual_status: row.manual_status,
       place: null,
+      untimed: cls?.no_timing ?? false,
       unknown: row.unmatched,
       competitorId: row.competitor_id,
       // 02.1-14 Task 13: "Saknar starttid" + suggestion.

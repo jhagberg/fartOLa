@@ -378,3 +378,18 @@ describe('classifyPunches', () => {
     expect(classifyPunches(tiles, [])).toBe(tiles);
   });
 });
+
+describe('toReceiptRead untimed', () => {
+  const base = {
+    row: row({}),
+    className: 'D21',
+    classId: 'c',
+    club: null,
+    competitionName: 'T',
+    competitionDate: '2026-10-03',
+  };
+  it('flags a class without timing', () => {
+    expect(toReceiptRead({ ...base, noTiming: true }).untimed).toBe(true);
+    expect(toReceiptRead(base).untimed).toBe(false);
+  });
+});
