@@ -104,6 +104,7 @@ export type {
 // --- Radio controls (ROC input + watchdog) ---------------------------------
 export type {
   RadioControlState,
+  RadioRole,
   RadioControlStatus,
   RadioSettings,
   RadioPollStatus,

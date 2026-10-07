@@ -1136,6 +1136,9 @@ export function setRadioSettings(
     roc_competition_id?: string | null;
     start_id?: number | null;
     radio_controls?: number[];
+    start_codes?: number[];
+    check_codes?: number[];
+    finish_codes?: number[];
   }
 ): Promise<RadioStatus> {
   return apiFetch<RadioStatus>(

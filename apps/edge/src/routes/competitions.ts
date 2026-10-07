@@ -144,6 +144,9 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       rocStartId: null,
       rocLastId: null,
       rocControls: null,
+      rocStartCodes: null,
+      rocCheckCodes: null,
+      rocFinishCodes: null,
     };
     app.fartolaDb.db.insert(competitions).values(row).run();
     return reply.code(201).send(competitionRowToDTO(row));

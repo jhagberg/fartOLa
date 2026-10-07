@@ -58,6 +58,10 @@ describe('radio routes', () => {
       start_id: null,
       last_id: null,
       radio_controls: [],
+      start_codes: [],
+      check_codes: [],
+      finish_codes: [],
+      heard_codes: [],
     });
     assert.equal(body.poll, null);
     assert.deepEqual(body.controls, []);
@@ -95,6 +99,31 @@ describe('radio routes', () => {
     );
     const cleared = await patch({ radio_controls: [] });
     assert.deepEqual(cleared.json<RadioStatus>().settings.radio_controls, []);
+  });
+
+  it('settings: start, check and finish unit codes are stored; heard codes are suggested', async () => {
+    const res = await patch({
+      start_codes: [13, 3],
+      check_codes: [22, 2, 12],
+      finish_codes: [20, 10],
+    });
+    const body = res.json<RadioStatus>();
+    assert.deepEqual(body.settings.start_codes, [3, 13]);
+    assert.deepEqual(body.settings.check_codes, [2, 12, 22]);
+    assert.deepEqual(body.settings.finish_codes, [10, 20]);
+    // Listed units are shown (role + unit) even before anything is heard.
+    assert.deepEqual(
+      body.controls.map((c) => [c.role, c.control_code]),
+      [
+        ['start', 3],
+        ['start', 13],
+        ['check', 2],
+        ['check', 12],
+        ['check', 22],
+        ['finish', 10],
+        ['finish', 20],
+      ]
+    );
   });
 
   it('settings: a write from another machine needs the event code', async () => {

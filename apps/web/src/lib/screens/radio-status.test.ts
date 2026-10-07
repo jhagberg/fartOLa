@@ -19,6 +19,8 @@ const NOW = Date.UTC(2026, 9, 4, 9, 30, 0);
 
 function control(over: Partial<RadioControlStatus>): RadioControlStatus {
   return {
+    role: 'control',
+    unknown_unit: false,
     control_code: 78,
     state: 'ok',
     last_heard_ms: NOW - 3 * 60_000,
@@ -46,6 +48,10 @@ function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null
       start_id: 1,
       last_id: 2,
       radio_controls: [],
+      start_codes: [],
+      check_codes: [],
+      finish_codes: [],
+      heard_codes: [],
     },
     poll,
     now_ms: NOW,
@@ -115,6 +121,43 @@ describe('radio view extras', () => {
     const pending = status([]);
     pending.settings.start_id = null;
     expect(baselineKey(pending).key).toBe('radio.baseline.pending');
+  });
+});
+
+describe('unit names and the SIAC warning numbers', () => {
+  it('names a finish unit, an unknown unit and an ordinary control apart', () => {
+    const unit20 = radioControlView(
+      control({
+        role: 'finish',
+        control_code: 20,
+        siac_problem: true,
+        other_card_punches: 15,
+        other_matched: 13,
+        siac_card_punches: 25,
+        siac_matched: 1,
+      }),
+      NOW
+    );
+    expect(unit20.nameKey).toBe('radio.name.finish');
+    expect(unit20.key).toBe('finish:20');
+    expect(unit20.otherPct).toBe(87);
+    expect(unit20.siacPct).toBe(4);
+    const unknown = radioControlView(
+      control({ role: 'start', control_code: 0, unknown_unit: true }),
+      NOW
+    );
+    expect(unknown.nameKey).toBe('radio.name.start.unknown');
+    expect(unknown.key).toBe('start:unknown');
+    expect(radioControlView(control({}), NOW).key).toBe('control:78');
+  });
+  it('has Swedish texts for the unit names and the Mål enhet 20 warning', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    expect(sv['radio.name.finish']).toBe('Mål enhet {{code}}');
+    expect(sv['radio.siacProblem']).toContain('kontrollera Air+-inställningen');
+    const { t } = await import('../i18n/index.ts');
+    expect(
+      t('radio.siacProblem', { what: t('radio.name.finish', { code: 20 }), other: 87, siac: 4 })
+    ).toBe('Mål enhet 20: vanliga brickor 87 %, SIAC 4 % – kontrollera Air+-inställningen');
   });
 });
 
@@ -195,6 +238,16 @@ describe('radio i18n keys', () => {
     'radio.linkProblem',
     'radio.loadError',
     'radio.siacProblem',
+    'radio.name.control',
+    'radio.name.start',
+    'radio.name.check',
+    'radio.name.finish',
+    'radio.name.finish.unknown',
+    'settings.radio.startCodes',
+    'settings.radio.checkCodes',
+    'settings.radio.finishCodes',
+    'settings.radio.unitsHelp',
+    'settings.radio.heard',
     'radio.neverHeard',
     'radio.delay',
     'radio.baseline.from',

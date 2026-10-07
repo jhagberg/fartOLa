@@ -617,7 +617,7 @@
   "settings.radio.saved": "Saved.",
   "settings.radio.invalid": "The ROC id must be a number.",
   "settings.radio.saveError": "Could not save.",
-  "radio.siacProblem": "SIAC is not getting through – check the Air+ setting",
+  "radio.siacProblem": "{{what}}: ordinary cards {{other}} %, SIAC {{siac}} % – check the Air+ setting",
   "radio.neverHeard": "Nothing heard from this control yet",
   "radio.delay": "delay {{text}}",
   "radio.baseline.from": "Fetching punches from ROC id {{id}} onwards",
@@ -625,5 +625,17 @@
   "settings.radio.startId": "Start from ROC id (optional)",
   "settings.radio.startIdHelp": "If empty, everything already in ROC counts as old when fetching starts, whatever its date. Enter an id to fetch from that id onwards.",
   "settings.radio.controls": "Expected radio controls (codes, comma separated)",
-  "settings.radio.controlsHelp": "A listed control that is not heard at all shows as Silent as soon as someone has punched there. Example: 52, 78, 100."
+  "settings.radio.controlsHelp": "A listed control that is not heard at all shows as Silent as soon as someone has punched there. Example: 52, 78, 100.",
+  "radio.name.control": "Control {{code}}",
+  "radio.name.start": "Start unit {{code}}",
+  "radio.name.check": "Check unit {{code}}",
+  "radio.name.finish": "Finish unit {{code}}",
+  "radio.name.start.unknown": "Start, unknown unit",
+  "radio.name.check.unknown": "Check, unknown unit",
+  "radio.name.finish.unknown": "Finish, unknown unit",
+  "settings.radio.startCodes": "Start units (codes)",
+  "settings.radio.checkCodes": "Check units (codes)",
+  "settings.radio.finishCodes": "Finish units (codes)",
+  "settings.radio.unitsHelp": "ROC sends the station's own code. Say which codes are start, check and finish, e.g. start 3, 13, check 2, 12, 22, finish 10, 20. A row with such a code is compared with the card's start, check or finish time from that very unit.",
+  "settings.radio.heard": "Heard codes not yet listed: {{codes}}"
 }

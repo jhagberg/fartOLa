@@ -7,7 +7,8 @@
 //     shared-types RadioStatus). Read-only.
 //
 //   PATCH /api/competitions/:id/radio/settings
-//     { enabled?, roc_competition_id?, start_id?, radio_controls? }. A suffixed write route,
+//     { enabled?, roc_competition_id?, start_id?, radio_controls?,
+//     start_codes?, check_codes?, finish_codes? }. A suffixed write route,
 //     so the event-code gate in server.ts applies. Changing the ROC id
 //     forgets the stored start/last id (they belong to the old unit).
 //
@@ -32,6 +33,10 @@ const SettingsInput = z
     start_id: z.number().int().nonnegative().nullable().optional(),
     /** Expected radio control codes; [] clears the list. */
     radio_controls: z.array(z.number().int().positive()).max(100).optional(),
+    /** Radio codes of start / check / finish units. */
+    start_codes: z.array(z.number().int().positive()).max(100).optional(),
+    check_codes: z.array(z.number().int().positive()).max(100).optional(),
+    finish_codes: z.array(z.number().int().positive()).max(100).optional(),
   })
   .strict();
 
@@ -66,6 +71,9 @@ export default async function registerRadioRoutes(app: FastifyInstance): Promise
         roc_competition_id: unitId,
         start_id: startId,
         radio_controls: radioControls,
+        start_codes: startCodes,
+        check_codes: checkCodes,
+        finish_codes: finishCodes,
       } = parsed.data;
       const nextUnit = unitId === undefined ? cur.unitId : unitId;
       if ((enabled ?? cur.enabled) && !nextUnit) {
@@ -83,10 +91,14 @@ export default async function registerRadioRoutes(app: FastifyInstance): Promise
         set.rocStartId = startId;
         set.rocLastId = null;
       }
-      if (radioControls !== undefined) {
-        const codes = [...new Set(radioControls)].sort((a, b) => a - b);
-        set.rocControls = codes.length > 0 ? codes.join(',') : null;
-      }
+      const list = (codes: number[]): string | null => {
+        const sorted = [...new Set(codes)].sort((a, b) => a - b);
+        return sorted.length > 0 ? sorted.join(',') : null;
+      };
+      if (radioControls !== undefined) set.rocControls = list(radioControls);
+      if (startCodes !== undefined) set.rocStartCodes = list(startCodes);
+      if (checkCodes !== undefined) set.rocCheckCodes = list(checkCodes);
+      if (finishCodes !== undefined) set.rocFinishCodes = list(finishCodes);
       if (Object.keys(set).length > 0) {
         app.fartolaDb.db.update(competitions).set(set).where(eq(competitions.id, id)).run();
       }

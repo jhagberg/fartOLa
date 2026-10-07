@@ -21,10 +21,6 @@ import {
   type RadioPunchIn,
 } from './watchdog.ts';
 
-const ROC_START_CODE = 1;
-const ROC_FINISH_CODE = 2;
-const ROC_CHECK_CODE = 3;
-
 /** '52,78,100' → [52, 78, 100]; anything that is not a code is dropped. */
 export function parseRocControls(text: string | null): number[] {
   if (!text) return [];
@@ -48,6 +44,9 @@ export function buildRadioStatus(
       startId: competitions.rocStartId,
       lastId: competitions.rocLastId,
       controlsText: competitions.rocControls,
+      startText: competitions.rocStartCodes,
+      checkText: competitions.rocCheckCodes,
+      finishText: competitions.rocFinishCodes,
       raceStartedAtMs: competitions.raceStartedAtMs,
     })
     .from(competitions)
@@ -56,6 +55,9 @@ export function buildRadioStatus(
   if (!comp) return null;
 
   const radioControls = parseRocControls(comp.controlsText);
+  const startCodes = parseRocControls(comp.startText);
+  const checkCodes = parseRocControls(comp.checkText);
+  const finishCodes = parseRocControls(comp.finishText);
   const radio: RadioPunchIn[] = [];
   for (const e of handle.db
     .select({ eventTimeMs: events.eventTimeMs, payload: events.payload })
@@ -93,26 +95,36 @@ export function buildRadioStatus(
     const p = e.payload;
     if (p.event_type !== 'card_read') continue;
     if (comp.raceStartedAtMs !== null && e.eventTimeMs < comp.raceStartedAtMs) continue;
-    // Start, finish and check are card fields, not punches; ROC sends them
-    // as codes 1, 2 and 3 (the control types of the oPunch rows).
-    const clocks: Array<[number, HalfDayClock | null]> = [
-      [ROC_START_CODE, p.start],
-      [ROC_FINISH_CODE, p.finish],
-      [ROC_CHECK_CODE, p.check],
-      ...p.punches.map((x): [number, HalfDayClock] => [x.code, x]),
-    ];
+    // Start, finish and check are card fields, not punches. Each is compared
+    // with the radio rows of the unit that stamped it (the card's CN).
     const siac = cardTypeFromNumber(p.card_number) === 'SIAC';
-    for (const [code, clock] of clocks) {
-      if (clock === null) continue;
+    const add = (
+      clock: HalfDayClock | null,
+      code: number,
+      role?: 'start' | 'check' | 'finish'
+    ): void => {
+      if (clock === null) return;
       const wallMs = cardClockToWallMs(clock, p.card_type, e.eventTimeMs);
-      card.push({ code, card: p.card_number, wallMs, epochMs: wallMsToEpochMs(wallMs), siac });
-    }
+      card.push({
+        code,
+        ...(role ? { role, unit: clock.code ?? null } : {}),
+        card: p.card_number,
+        wallMs,
+        epochMs: wallMsToEpochMs(wallMs),
+        siac,
+      });
+    };
+    add(p.start, 0, 'start');
+    add(p.finish, 0, 'finish');
+    add(p.check, 0, 'check');
+    for (const x of p.punches) add(x, x.code);
   }
 
   const controls = evaluateRadioWatchdog(radio, card, {
     nowWallMs: epochToWallClockMs(nowMs),
     nowMs,
     expectedCodes: radioControls,
+    roleCodes: { start: startCodes, check: checkCodes, finish: finishCodes },
   });
 
   return {
@@ -122,6 +134,14 @@ export function buildRadioStatus(
       start_id: comp.startId,
       last_id: comp.lastId,
       radio_controls: radioControls,
+      start_codes: startCodes,
+      check_codes: checkCodes,
+      finish_codes: finishCodes,
+      heard_codes: [...new Set(radio.map((r) => r.code))]
+        .filter(
+          (c) => ![...radioControls, ...startCodes, ...checkCodes, ...finishCodes].includes(c)
+        )
+        .sort((a, b) => a - b),
     },
     poll:
       poll === null

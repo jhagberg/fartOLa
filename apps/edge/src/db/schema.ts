@@ -293,6 +293,10 @@ export const competitions = sqliteTable('competitions', {
   rocLastId: integer('roc_last_id'),
   /** Expected radio control codes, comma separated ('52,78,100'); NULL = none listed. */
   rocControls: text('roc_controls'),
+  /** Radio codes of start / check / finish units, comma separated; NULL = none. */
+  rocStartCodes: text('roc_start_codes'),
+  rocCheckCodes: text('roc_check_codes'),
+  rocFinishCodes: text('roc_finish_codes'),
 });
 
 // ---------------------------------------------------------------------------

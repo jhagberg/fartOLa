@@ -6,8 +6,16 @@
 
 export type RadioControlState = 'ok' | 'few' | 'silent';
 
+export type RadioRole = 'control' | 'start' | 'check' | 'finish';
+
 export interface RadioControlStatus {
+  /** control: an ordinary control. start/check/finish: one unit of that role. */
+  role: RadioRole;
+  /** The control code, or the unit's station code for start/check/finish.
+   * 0 with unknown_unit. */
   control_code: number;
+  /** Cards (SI5) that do not say which unit stamped the time. */
+  unknown_unit: boolean;
   /** silent: nothing heard for the silence window while read-out cards
    * passed after the last radio punch. few: under the coverage threshold
    * over the last M minutes. ok otherwise. */
@@ -50,6 +58,12 @@ export interface RadioSettings {
   last_id: number | null;
   /** Expected radio control codes; a listed one with no radio punch is silent. */
   radio_controls: number[];
+  /** Radio codes that are start, check and finish units. */
+  start_codes: number[];
+  check_codes: number[];
+  finish_codes: number[];
+  /** Distinct codes heard from ROC that are in none of the lists: suggestions. */
+  heard_codes: number[];
 }
 
 export interface RadioPollStatus {

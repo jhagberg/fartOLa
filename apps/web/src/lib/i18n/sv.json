@@ -617,7 +617,7 @@
   "settings.radio.saved": "Sparat.",
   "settings.radio.invalid": "ROC-id ska vara ett nummer.",
   "settings.radio.saveError": "Kunde inte spara.",
-  "radio.siacProblem": "SIAC kommer inte fram – kontrollera Air+-inställningen",
+  "radio.siacProblem": "{{what}}: vanliga brickor {{other}} %, SIAC {{siac}} % – kontrollera Air+-inställningen",
   "radio.neverHeard": "Inget hört från kontrollen än",
   "radio.delay": "fördröjning {{text}}",
   "radio.baseline.from": "Hämtar stämplingar från ROC-id {{id}} och framåt",
@@ -625,5 +625,17 @@
   "settings.radio.startId": "Börja från ROC-id (valfritt)",
   "settings.radio.startIdHelp": "Lämnas tomt räknas allt som redan finns i ROC som gammalt när hämtningen startar, oavsett datum. Fyll i ett id för att hämta från just det id:t och framåt.",
   "settings.radio.controls": "Förväntade radiokontroller (koder, kommaseparerade)",
-  "settings.radio.controlsHelp": "En kontroll i listan som inte hörs alls visas som Tyst så fort någon har stämplat där. Exempel: 52, 78, 100."
+  "settings.radio.controlsHelp": "En kontroll i listan som inte hörs alls visas som Tyst så fort någon har stämplat där. Exempel: 52, 78, 100.",
+  "radio.name.control": "Kontroll {{code}}",
+  "radio.name.start": "Start enhet {{code}}",
+  "radio.name.check": "Check enhet {{code}}",
+  "radio.name.finish": "Mål enhet {{code}}",
+  "radio.name.start.unknown": "Start okänd enhet",
+  "radio.name.check.unknown": "Check okänd enhet",
+  "radio.name.finish.unknown": "Mål okänd enhet",
+  "settings.radio.startCodes": "Startenheter (koder)",
+  "settings.radio.checkCodes": "Checkenheter (koder)",
+  "settings.radio.finishCodes": "Målenheter (koder)",
+  "settings.radio.unitsHelp": "ROC skickar stationens egen kod. Ange vilka koder som är start, check och mål, t.ex. start 3, 13, check 2, 12, 22, mål 10, 20. En rad med en sådan kod jämförs med brickans start-, check- eller måltid från just den enheten.",
+  "settings.radio.heard": "Hörda koder som inte är inlagda: {{codes}}"
 }

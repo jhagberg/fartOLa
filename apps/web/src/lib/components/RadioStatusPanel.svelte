@@ -72,9 +72,9 @@
       <p class="empty">{t('radio.none')}</p>
     {:else}
       <ul>
-        {#each views as v (v.code)}
+        {#each views as v (v.key)}
           <li data-testid="radio-control" data-state={v.state} data-code={v.code}>
-            <span class="code mono">{v.code}</span>
+            <span class="code">{t(v.nameKey, { code: v.code })}</span>
             <span class="state">
               <span aria-hidden="true">{v.symbol}</span>
               {t(v.labelKey)}
@@ -88,7 +88,7 @@
             {#if v.siacProblem}
               <span class="state" data-testid="radio-siac-problem">
                 <span aria-hidden="true">!</span>
-                {t('radio.siacProblem')}
+                {t('radio.siacProblem', { what: t(v.nameKey, { code: v.code }), other: v.otherPct, siac: v.siacPct })}
               </span>
             {/if}
             <span class="when muted">
@@ -169,7 +169,6 @@
   }
   .code {
     font-weight: 700;
-    min-width: 3ch;
   }
   .state {
     font-weight: 600;

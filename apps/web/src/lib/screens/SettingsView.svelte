@@ -343,10 +343,21 @@
   let radioStartId = $state('');
   let radioStartIdLoaded = '';
   let radioControls = $state('');
+  let radioStartCodes = $state('');
+  let radioCheckCodes = $state('');
+  let radioFinishCodes = $state('');
+  let radioHeard = $state('');
   let radioBaseline: { key: string; id: number | null } | null = $state(null);
   let radioBusy = $state(false);
   let radioMsg: string | null = $state(null);
   let radioErr: string | null = $state(null);
+
+  function parseCodes(text: string): number[] {
+    return text
+      .split(/[,\s]+/)
+      .filter((x) => x !== '')
+      .map(Number);
+  }
 
   function applyRadio(r: RadioStatus): void {
     radioEnabled = r.settings.enabled;
@@ -354,6 +365,10 @@
     radioStartId = r.settings.start_id === null ? '' : String(r.settings.start_id);
     radioStartIdLoaded = radioStartId;
     radioControls = r.settings.radio_controls.join(', ');
+    radioStartCodes = r.settings.start_codes.join(', ');
+    radioCheckCodes = r.settings.check_codes.join(', ');
+    radioFinishCodes = r.settings.finish_codes.join(', ');
+    radioHeard = r.settings.heard_codes.join(', ');
     radioBaseline = baselineKey(r);
   }
 
@@ -371,6 +386,10 @@
     radioStartId = '';
     radioStartIdLoaded = '';
     radioControls = '';
+    radioStartCodes = '';
+    radioCheckCodes = '';
+    radioFinishCodes = '';
+    radioHeard = '';
     radioBaseline = null;
     const id = currentCompId;
     if (!id) return;
@@ -385,14 +404,16 @@
   async function saveRadio(): Promise<void> {
     const id = currentCompId;
     if (!id || radioBusy) return;
-    const codes = radioControls
-      .split(/[,\s]+/)
-      .filter((x) => x !== '')
-      .map(Number);
+    const codes = parseCodes(radioControls);
+    const startCodes = parseCodes(radioStartCodes);
+    const checkCodes = parseCodes(radioCheckCodes);
+    const finishCodes = parseCodes(radioFinishCodes);
     const startText = radioStartId.trim();
     if (
       !/^\d+$/.test(radioId.trim()) ||
-      codes.some((n) => !Number.isInteger(n) || n <= 0) ||
+      [codes, startCodes, checkCodes, finishCodes].some((l) =>
+        l.some((n) => !Number.isInteger(n) || n <= 0)
+      ) ||
       (startText !== '' && !/^\d+$/.test(startText))
     ) {
       radioErr = t('settings.radio.invalid');
@@ -408,6 +429,9 @@
           enabled: radioEnabled,
           roc_competition_id: radioId.trim(),
           radio_controls: codes,
+          start_codes: startCodes,
+          check_codes: checkCodes,
+          finish_codes: finishCodes,
           // Only when changed: setting it makes the next fetch start over from there.
           ...(startText !== radioStartIdLoaded
             ? { start_id: startText === '' ? null : Number(startText) }
@@ -758,6 +782,18 @@
           <span>{t('settings.radio.controls')}</span>
           <input type="text" bind:value={radioControls} data-testid="radio-controls" />
         </label>
+        <label>
+          <span>{t('settings.radio.startCodes')}</span>
+          <input type="text" bind:value={radioStartCodes} data-testid="radio-start-codes" />
+        </label>
+        <label>
+          <span>{t('settings.radio.checkCodes')}</span>
+          <input type="text" bind:value={radioCheckCodes} data-testid="radio-check-codes" />
+        </label>
+        <label>
+          <span>{t('settings.radio.finishCodes')}</span>
+          <input type="text" bind:value={radioFinishCodes} data-testid="radio-finish-codes" />
+        </label>
         <label class="radio-toggle">
           <input type="checkbox" bind:checked={radioEnabled} data-testid="radio-enabled" />
           <span>{t('settings.radio.enabled')}</span>
@@ -765,6 +801,12 @@
       </div>
       <p class="desc muted small">{t('settings.radio.startIdHelp')}</p>
       <p class="desc muted small">{t('settings.radio.controlsHelp')}</p>
+      <p class="desc muted small">{t('settings.radio.unitsHelp')}</p>
+      {#if radioHeard}
+        <p class="muted" data-testid="radio-heard-codes">
+          {t('settings.radio.heard', { codes: radioHeard })}
+        </p>
+      {/if}
       {#if radioBaseline}
         <p class="muted" data-testid="radio-settings-baseline">
           {t(radioBaseline.key, { id: radioBaseline.id })}

@@ -20,6 +20,12 @@
 // punch time over the last M min) shows a backlog or a wrong sender clock.
 // SIAC (touch-free) coverage is split out: a link that drops them while
 // forwarding ordinary cards is flagged (siac_problem).
+// Start, check and finish are not controls but UNITS (SI stations with their
+// own programmed code, e.g. finish 10 and 20). Radio codes listed as such are
+// compared with the card's start/check/finish time stamped by that unit (the
+// card's CN); cards that do not say which unit (SI5) are an "unknown unit"
+// compared with every radio row of the role. Coverage and the SIAC check are
+// per unit: one finish unit dropping SIAC is hidden by a role-level total.
 // The date mismatch count is reported next to the state, not as a state.
 
 import type { RadioControlStatus } from '@fartola/shared-types';
@@ -37,8 +43,16 @@ export interface RadioPunchIn {
   dateMismatch: boolean;
 }
 
+export type RadioRole = 'control' | 'start' | 'check' | 'finish';
+
 export interface CardPunchIn {
+  /** Control code of an ordinary punch; unused for start/check/finish. */
   code: number;
+  /** Set for the card's start, check or finish time. */
+  role?: Exclude<RadioRole, 'control'>;
+  /** Station code (CN) of the unit that stamped it; null/absent = the card
+   * does not say (SI5), an "unknown unit". */
+  unit?: number | null;
   card: number;
   wallMs: number;
   /** The same instant as epoch ms, to compare with receive times. */
@@ -61,6 +75,10 @@ export interface WatchdogParams {
   matchToleranceMs?: number;
   /** Expected radio control codes. */
   expectedCodes?: readonly number[];
+  /** Radio codes that are start, check and finish units. A radio row with such
+   * a code is compared with the card's start/check/finish time stamped by
+   * that unit (CN), not with ordinary punches. */
+  roleCodes?: { start: readonly number[]; check: readonly number[]; finish: readonly number[] };
 }
 
 export const WATCHDOG_DEFAULTS = {
@@ -93,7 +111,7 @@ export function evaluateRadioWatchdog(
   // A card read twice yields the same punches: count each (card, code, time) once.
   const seen = new Set<string>();
   const cardUnique = card.filter((p) => {
-    const k = `${p.card}:${p.code}:${p.wallMs}`;
+    const k = `${p.card}:${p.role ?? ''}:${p.unit ?? ''}:${p.code}:${p.wallMs}`;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
@@ -102,33 +120,83 @@ export function evaluateRadioWatchdog(
   // The same punch can arrive via two sender types (two rows). Heard-ness
   // (last heard, date mismatches) looks at every row; the punch itself
   // (received count, matching, delay) once, as the first row received.
-  const allByCode = new Map<number, RadioPunchIn[]>();
+  const allRows: RadioPunchIn[] = radio;
   const firstByKey = new Map<string, RadioPunchIn>();
   for (const p of radio) {
-    const all = allByCode.get(p.code);
-    if (all) all.push(p);
-    else allByCode.set(p.code, [p]);
     const k = `${p.card}:${p.code}:${p.wallMs}`;
     const first = firstByKey.get(k);
     if (!first || p.receivedMs < first.receivedMs) firstByKey.set(k, p);
   }
-  const radioByCode = new Map<number, RadioPunchIn[]>();
-  for (const p of firstByKey.values()) {
-    const list = radioByCode.get(p.code);
-    if (list) list.push(p);
-    else radioByCode.set(p.code, [p]);
-  }
+  const roleCodes = params.roleCodes ?? { start: [], check: [], finish: [] };
+  const ROLES = ['start', 'check', 'finish'] as const;
+  const roleOfCode = new Map<number, (typeof ROLES)[number]>();
+  for (const r of ROLES) for (const c of roleCodes[r]) if (!roleOfCode.has(c)) roleOfCode.set(c, r);
 
   const expected = new Set(params.expectedCodes ?? []);
-  for (const code of expected) if (!radioByCode.has(code)) radioByCode.set(code, []);
-
   const share = (matched: number, total: number): number => (total === 0 ? 1 : matched / total);
 
+  // A channel is one radio-side stream and the card punches it should carry:
+  // an ordinary control, or one start/check/finish UNIT (card CN = radio code),
+  // or the cards of a role that do not name their unit.
+  interface Channel {
+    role: RadioRole;
+    code: number; // control code or unit code; 0 for the unknown unit
+    unknownUnit: boolean;
+    rows: RadioPunchIn[]; // every ROC row (dups included)
+    punches: RadioPunchIn[]; // each punch once
+    cards: CardPunchIn[];
+  }
+  const channels = new Map<string, Channel>();
+  const channel = (role: RadioRole, code: number, unknownUnit = false): Channel => {
+    const key = `${role}:${unknownUnit ? 'unknown' : code}`;
+    let ch = channels.get(key);
+    if (!ch) {
+      ch = { role, code, unknownUnit, rows: [], punches: [], cards: [] };
+      channels.set(key, ch);
+    }
+    return ch;
+  };
+  const roleChannelFor = (r: (typeof ROLES)[number], p: { code: number }) => channel(r, p.code);
+
+  for (const code of expected) if (!roleOfCode.has(code)) channel('control', code);
+  for (const r of ROLES) for (const u of roleCodes[r]) channel(r, u);
+
+  for (const p of allRows) {
+    const r = roleOfCode.get(p.code);
+    (r ? roleChannelFor(r, p) : channel('control', p.code)).rows.push(p);
+  }
+  for (const p of firstByKey.values()) {
+    const r = roleOfCode.get(p.code);
+    (r ? roleChannelFor(r, p) : channel('control', p.code)).punches.push(p);
+  }
+  for (const c of cardUnique) {
+    if (c.role === undefined) {
+      if (!roleOfCode.has(c.code)) channels.get(`control:${c.code}`)?.cards.push(c);
+    } else if (typeof c.unit === 'number') {
+      if (roleCodes[c.role].includes(c.unit)) channel(c.role, c.unit).cards.push(c);
+    } else if (roleCodes[c.role].length > 0) {
+      channel(c.role, 0, true).cards.push(c);
+    }
+  }
+  // The unknown unit is compared with every radio row of its role.
+  for (const r of ROLES) {
+    const unk = channels.get(`${r}:unknown`);
+    if (!unk) continue;
+    for (const u of roleCodes[r]) {
+      const ch = channels.get(`${r}:${u}`);
+      if (ch) {
+        unk.rows.push(...ch.rows);
+        unk.punches.push(...ch.punches);
+      }
+    }
+  }
+
+  const ROLE_RANK: Record<RadioRole, number> = { control: 0, start: 1, check: 2, finish: 3 };
   const out: RadioControlStatus[] = [];
-  for (const [code, punches] of radioByCode) {
-    const rows = allByCode.get(code) ?? [];
+  for (const ch of channels.values()) {
+    const { code, punches, rows } = ch;
     const lastHeard = rows.length === 0 ? null : Math.max(...rows.map((p) => p.receivedMs));
-    const cardHere = cardUnique.filter((p) => p.code === code && p.wallMs <= nowWallMs);
+    const cardHere = ch.cards.filter((p) => p.wallMs <= nowWallMs);
 
     const inWindow = cardHere.filter((p) => p.wallMs >= nowWallMs - windowMin * MIN_MS);
     const isMatched = (c: CardPunchIn): boolean =>
@@ -167,10 +235,12 @@ export function evaluateRadioWatchdog(
 
     out.push({
       control_code: code,
+      role: ch.role,
+      unknown_unit: ch.unknownUnit,
       state: silent ? 'silent' : few ? 'few' : 'ok',
       last_heard_ms: lastHeard,
       median_delay_ms: medianDelay,
-      listed: expected.has(code),
+      listed: ch.role !== 'control' || expected.has(code),
       received: punches.length,
       window_card_punches: inWindow.length,
       window_matched: matched.length,
@@ -183,5 +253,10 @@ export function evaluateRadioWatchdog(
       date_mismatch_count: rows.filter((p) => p.dateMismatch).length,
     });
   }
-  return out.sort((a, b) => a.control_code - b.control_code);
+  return out.sort(
+    (a, b) =>
+      ROLE_RANK[a.role] - ROLE_RANK[b.role] ||
+      Number(a.unknown_unit) - Number(b.unknown_unit) ||
+      a.control_code - b.control_code
+  );
 }

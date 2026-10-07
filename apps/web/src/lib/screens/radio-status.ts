@@ -7,7 +7,14 @@ import { formatLocalTime } from '@fartola/shared-types';
 import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
 
 export interface RadioControlView {
+  /** Unique within the list. */
+  key: string;
   code: number;
+  /** i18n key for the name ("Mål enhet 20", "Start okänd enhet", "Kontroll 78"). */
+  nameKey: string;
+  /** Percent of ordinary / SIAC cards that came through, for the SIAC warning. */
+  otherPct: number | null;
+  siacPct: number | null;
   state: RadioControlStatus['state'];
   symbol: string;
   /** i18n key for the state label. */
@@ -36,8 +43,13 @@ export function formatDelay(ms: number): string {
 }
 
 export function radioControlView(c: RadioControlStatus, nowMs: number): RadioControlView {
+  const pct = (m: number, n: number): number | null => (n === 0 ? null : Math.round((m / n) * 100));
   return {
+    key: `${c.role}:${c.unknown_unit ? 'unknown' : c.control_code}`,
     code: c.control_code,
+    nameKey: `radio.name.${c.role}${c.unknown_unit ? '.unknown' : ''}`,
+    otherPct: pct(c.other_matched, c.other_card_punches),
+    siacPct: pct(c.siac_matched, c.siac_card_punches),
     state: c.state,
     symbol: SYMBOL[c.state],
     labelKey: `radio.state.${c.state}`,
@@ -58,7 +70,7 @@ export function sortedRadioViews(status: RadioStatus): RadioControlView[] {
     v.state === 'silent' ? 0 : v.state === 'few' ? 1 : v.dateWarnings > 0 || v.siacProblem ? 2 : 3;
   return status.controls
     .map((c) => radioControlView(c, status.now_ms))
-    .sort((a, b) => rank(a) - rank(b) || a.code - b.code);
+    .sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key, 'sv', { numeric: true }));
 }
 
 /** "Hämtar stämplingar från ROC-id 4587 och framåt" etc: the baseline in plain words. */
