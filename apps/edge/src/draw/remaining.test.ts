@@ -93,6 +93,28 @@ describe('late entrants (SOFT TR 7.5.7, TR 7.5.8)', () => {
     }
   });
 
+  test('SOFT TR 7.5.1: late entrants beyond the vacant places start after the last start without a same-club neighbour at the seam', () => {
+    // Last start A, no vacant place: A then B would give A–A.
+    const existing = startList(['B', 'A']);
+    const late = [
+      { id: 'a', club: 'A' },
+      { id: 'b', club: 'B' },
+    ];
+    for (let seed = 1; seed <= 20; seed++) {
+      const got = fillVacancies(
+        existing,
+        late,
+        { firstStartMs: T0, intervalMs: 2 * MIN },
+        mulberryRng(seed),
+        true
+      );
+      assert.deepEqual(got, [
+        { id: 'b', startTimeMs: T0 + 4 * MIN },
+        { id: 'a', startTimeMs: T0 + 6 * MIN },
+      ]);
+    }
+  });
+
   test('SOFT TR 7.5.8: a hand-edited off-grid start occupies its place; a late entrant never lands before it', () => {
     const existing: StartedRunner[] = [
       { id: 'a', club: 'A', startTimeMs: T0 + 30_000 },

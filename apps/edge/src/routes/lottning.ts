@@ -405,7 +405,8 @@ function drawLateEntrants(
   if (intervalMs === null)
     throw new DrawError('interval_unknown', 'The class has no start interval; give intervalSec.');
   // Before/After: the SOFT block counts the seam to the existing list
-  // (TR 7.5.1); Random ignores clubs, as in a whole-class draw.
+  // (TR 7.5.1); Vacant: fillVacancies handles the seam of its overflow.
+  // Random ignores clubs at the seams, as in a whole-class draw.
   const placement = body.drawType === 'RemainingBefore' ? 'Before' : 'After';
   const boundary = body.drawType === 'RemainingVacant' ? {} : seamClubs(existing, placement);
   const order = (
@@ -413,8 +414,12 @@ function drawLateEntrants(
   ).order.filter((s): s is DrawRunner => s !== null);
   if (body.drawType === 'RemainingVacant') {
     const firstStartMs = classRow.firstStartMs ?? Math.min(...existing.map((r) => r.startTimeMs));
-    const assignments = fillVacancies(existing, order, { firstStartMs, intervalMs }, (min, max) =>
-      crypto.randomInt(min, max)
+    const assignments = fillVacancies(
+      existing,
+      order,
+      { firstStartMs, intervalMs },
+      (min, max) => crypto.randomInt(min, max),
+      body.mode === 'SOFT'
     );
     return { assignments, wholeClass: false };
   }
