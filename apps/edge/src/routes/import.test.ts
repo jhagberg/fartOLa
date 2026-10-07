@@ -935,3 +935,89 @@ describe('POST /api/competitions/:id/import — cached results follow the import
     );
   });
 });
+
+describe('POST /api/competitions/:id/import/previous-results (SOFT TR 7.4.1)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  /** A day-1 IOF 3.0 ResultList: [given, family, club, eventorId|null, seconds|null, status]. */
+  function resultList(rows: Array<[string, string, string, number | null, number | null, string]>) {
+    const person = ([given, family, club, id, seconds, status]: (typeof rows)[number]) =>
+      `<PersonResult><Person>${id === null ? '' : `<Id type="Eventor">${id}</Id>`}<Name><Family>${family}</Family><Given>${given}</Given></Name></Person>` +
+      `<Organisation><Name>${club}</Name></Organisation>` +
+      `<Result>${seconds === null ? '' : `<Time>${seconds}</Time>`}<Status>${status}</Status></Result></PersonResult>`;
+    return Buffer.from(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<ResultList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0" createTime="2026-05-23T18:00:00Z" creator="MeOS">
+  <Event><Name>Dag 1</Name><StartTime><Date>2026-05-23</Date></StartTime></Event>
+  <ClassResult><Class><Name>H21</Name></Class>${rows.map(person).join('')}</ClassResult>
+</ResultList>`,
+      'utf8'
+    );
+  }
+
+  test('SOFT TR 7.4.1: matches by Eventor id, then name and club; stores the result; lists the unmatched without failing', async () => {
+    const compId = await newCompetition(ctx.app);
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21' },
+    });
+    const classId = (cls.json() as { id: string }).id;
+    const add = (id: string, name: string, club: string, eventorPersonId: number | null) =>
+      ctx.handle.db
+        .insert(competitors)
+        .values({ id, competitionId: compId, name, club, classId, eventorPersonId })
+        .run();
+    add('a', 'Anna Andersson', 'OK Ek', 4711);
+    add('b', 'Bo Berg', 'IFK', null);
+    add('c', 'Cia Carlsson', 'OK Ek', null);
+
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/previous-results`,
+      'dag1.xml',
+      resultList([
+        ['Anna', 'A', 'Annan klubb', 4711, 2400.4, 'OK'],
+        ['Bo', 'Berg', 'IFK', null, 2500, 'MissingPunch'],
+        ['Okänd', 'Person', 'OK Ek', null, 2600, 'OK'],
+      ])
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    assert.deepEqual(res.body, {
+      results: 3,
+      matched: 2,
+      unmatched: [{ competitor_id: 'c', name: 'Cia Carlsson', club: 'OK Ek', class_name: 'H21' }],
+    });
+    const stored = Object.fromEntries(
+      ctx.handle.db
+        .select()
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .map((r) => [r.id, [r.inputTimeMs, r.inputStatus]])
+    );
+    assert.deepEqual(stored, {
+      a: [2_400_000, 'OK'],
+      b: [2_500_000, 'MissingPunch'],
+      c: [null, null],
+    });
+  });
+
+  test('a file that is not XSD-valid → 400, nothing stored', async () => {
+    const compId = await newCompetition(ctx.app);
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/previous-results`,
+      'bad.xml',
+      Buffer.from('<ResultList xmlns="http://www.orienteering.org/datastandard/3.0"/>', 'utf8')
+    );
+    assert.equal(res.statusCode, 400);
+  });
+});

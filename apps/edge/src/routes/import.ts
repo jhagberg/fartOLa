@@ -65,7 +65,8 @@ import {
 } from '../db/schema.ts';
 import { parseIofXml } from '../xml/parse.ts';
 import { validateXml } from '../xml/validate.ts';
-import { importStartList } from '../xml/iofImport.ts';
+import { matchPreviousStage } from '../draw/previousStage.ts';
+import { importResultList, importStartList } from '../xml/iofImport.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
@@ -576,6 +577,95 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
 
     return reply.code(200).send({ applied, alreadyApplied });
   });
+
+  // ---------------------------------------------------------------------------
+  // POST /api/competitions/:id/import/previous-results — an earlier stage's
+  // IOF XML 3.0 ResultList (day 1 from MeOS, OLA or Eventor) for a pursuit
+  // (SOFT TR 7.4.1). Matches every runner of this competition (Eventor id,
+  // then unique name + club) and stores the result on the runner
+  // (competitors.input_time_ms / input_status, MeOS inputTime/inputStatus);
+  // a new file replaces the old. Unmatched runners are listed, not refused:
+  // they start in the pursuit's restart block.
+  // ---------------------------------------------------------------------------
+  app.post<{ Params: { id: string } }>(
+    '/api/competitions/:id/import/previous-results',
+    async (req, reply) => {
+      const competitionId = req.params.id;
+      const comp = app.fartolaDb.db
+        .select({ id: competitions.id })
+        .from(competitions)
+        .where(eq(competitions.id, competitionId))
+        .get();
+      if (!comp) return reply.code(404).send({ error: 'competition_not_found' });
+
+      const part = await req.file();
+      if (!part) return reply.code(400).send({ error: 'no_file', message: 'Förväntar en fil.' });
+      let xmlSource: string;
+      try {
+        xmlSource = (await part.toBuffer()).toString('utf8');
+      } catch (e) {
+        const msg = (e as Error).message ?? '';
+        if (/file too large|FST_REQ_FILE_TOO_LARGE/i.test(msg))
+          return reply.code(413).send({ error: 'file_too_large' });
+        return reply.code(400).send({ error: 'bad_upload', detail: msg });
+      }
+      if (/<!DOCTYPE|<!ENTITY/i.test(xmlSource))
+        return reply
+          .code(400)
+          .send({ error: 'parse_failed', detail: 'DOCTYPE/ENTITY not allowed' });
+      const validation = await validateXml(xmlSource);
+      if (!validation.valid)
+        return reply.code(400).send({
+          error: 'xsd_invalid',
+          message: 'ResultList XML klarade inte XSD-validering.',
+          errors: validation.errors.slice(0, 10),
+        });
+      let results;
+      try {
+        results = importResultList(xmlSource);
+      } catch (e) {
+        return reply.code(400).send({ error: 'parse_failed', detail: (e as Error).message });
+      }
+
+      const runners = app.fartolaDb.db
+        .select({
+          id: competitorsTable.id,
+          name: competitorsTable.name,
+          club: competitorsTable.club,
+          eventorPersonId: competitorsTable.eventorPersonId,
+          className: classesTable.name,
+        })
+        .from(competitorsTable)
+        .innerJoin(classesTable, eq(classesTable.id, competitorsTable.classId))
+        .where(eq(competitorsTable.competitionId, competitionId))
+        .all();
+      const { matched, unmatched } = matchPreviousStage(runners, results);
+      app.fartolaDb.sqlite.transaction(() => {
+        app.fartolaDb.db
+          .update(competitorsTable)
+          .set({ inputTimeMs: null, inputStatus: null })
+          .where(eq(competitorsTable.competitionId, competitionId))
+          .run();
+        for (const m of matched)
+          app.fartolaDb.db
+            .update(competitorsTable)
+            .set({ inputTimeMs: m.timeMs, inputStatus: m.status })
+            .where(eq(competitorsTable.id, m.id))
+            .run();
+      })();
+      const classOf = new Map(runners.map((r) => [r.id, r.className]));
+      return reply.code(201).send({
+        results: results.length,
+        matched: matched.length,
+        unmatched: unmatched.map((u) => ({
+          competitor_id: u.id,
+          name: u.name,
+          club: u.club,
+          class_name: classOf.get(u.id) ?? '',
+        })),
+      });
+    }
+  );
 
   app.post<{ Params: { id: string } }>('/api/competitions/:id/import', async (req, reply) => {
     const competitionId = req.params.id;

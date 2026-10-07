@@ -496,6 +496,12 @@ export const competitors = sqliteTable(
     /** SOFT TR 7.4.5 — seeding group in an elite class, 1 = strongest; NULL =
      * not seeded. Set by PUT …/lottning/:classId/seeding. Migration 0021. */
     seedGroup: integer('seed_group'),
+    /** SOFT TR 7.4.1 — earlier stage's running time (whole seconds, as ms)
+     * from an imported ResultList, for pursuit (MeOS inputTime). Migration 0022. */
+    inputTimeMs: integer('input_time_ms'),
+    /** The earlier stage's IOF ResultStatus ('OK', 'MissingPunch', …); NULL =
+     * no matching result (MeOS inputStatus). Migration 0022. */
+    inputStatus: text('input_status'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
