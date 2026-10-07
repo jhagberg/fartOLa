@@ -16,6 +16,13 @@ describe('draw benchmark (ADR-0011)', () => {
     );
     for (const s of report.shapes) {
       assert.equal(s.result.fartola.distinct, s.validPatterns, `${s.shape}: every valid pattern`);
+      // Chi-square critical value at p = 0.001 (Wilson–Hilferty).
+      const df = s.validPatterns - 1;
+      const critical = df * Math.pow(1 - 2 / (9 * df) + 3.09 * Math.sqrt(2 / (9 * df)), 3);
+      assert.ok(
+        s.result.fartola.chi2 < critical,
+        `${s.shape}: chi-square ${s.result.fartola.chi2}`
+      );
       assert.ok(s.result.meos_soft.distinct < s.validPatterns, `${s.shape}: MeOS SOFT repeats`);
       assert.ok(
         s.result.fartola.topShare < s.result.meos_soft.topShare &&

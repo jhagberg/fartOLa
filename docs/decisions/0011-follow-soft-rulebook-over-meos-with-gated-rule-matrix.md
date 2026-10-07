@@ -20,9 +20,22 @@ reference ports of MeOS `drawSOFTMethod` and `drawMeOSMethod`
 Seed 2026: of 4000 random classes, MeOS `drawSOFTMethod` left avoidable
 same-club neighbours (TR 7.5.1) in 1124, `drawMeOSMethod` and fartOLa in 0.
 Over 5000 redraws of A×4/B×4/C×2 (138 valid club patterns), fartOLa drew all
-138 with the most common at 1.1 %; `drawSOFTMethod` drew 6 (17.7 %) and
+138 with the most common at 1.0 %; `drawSOFTMethod` drew 6 (17.7 %) and
 `drawMeOSMethod` 16 (30.7 %), i.e. "snarlika utfall" (TR 7.5.2). The
 benchmark is a test (`draw-benchmark.test.ts`), so a regression fails CI.
+
+Revised 2026-10-08: the first fartOLa draw randomised an optimal order
+with a fixed number of swaps, which Codex showed is not uniform: for
+A×10/B×9/C×1 (38 valid patterns, 3800 draws) the counts ranged from 2 to
+166, chi-square 1212.8 against the p = 0.001 limit 69.4. The draw now
+counts the fewest-neighbour club patterns exactly (an insertion dynamic
+program in `apps/edge/src/draw/soft.ts`) and samples one uniformly, also
+with fixed clubs at the seams of a late-entry block. Benchmark, seed 2026,
+5000 draws of A×10/B×9/C×1: fartOLa all 38 patterns, most/least common
+1.34, chi-square 20.3 (df 37); `drawSOFTMethod` 4 patterns (chi-square
+42 507), `drawMeOSMethod` 20 (4530). A×4/B×4/C×2: fartOLa 138 patterns,
+most/least 2.53, chi-square 122.1 (df 137). A 200-runner class draws in
+about 9 ms.
 
 ## Context and Problem Statement
 
