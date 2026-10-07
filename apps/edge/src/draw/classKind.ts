@@ -81,3 +81,19 @@ export function kindConfirmed(c: {
     c.classKind !== null && (c.classKindSource === 'eventor' || c.classKindSource === 'operator')
   );
 }
+
+/** What stops a rule from reading the class kind, or null when it may.
+ * No kind → 409 class_kind_unknown. A kind only guessed from the name →
+ * 409 class_kind_unconfirmed ("Bekräfta klasstyp för <klass>"): a rule that
+ * would refuse something does not act on a guess. */
+export function kindProblem(c: {
+  name: string;
+  classKind: ClassKind | null;
+  classKindSource: ClassKindSource | null;
+}): { error: 'class_kind_unknown' | 'class_kind_unconfirmed'; message: string } | null {
+  if (c.classKind === null)
+    return { error: 'class_kind_unknown', message: `Ange klasstyp för ${c.name}` };
+  if (!kindConfirmed(c))
+    return { error: 'class_kind_unconfirmed', message: `Bekräfta klasstyp för ${c.name}` };
+  return null;
+}
