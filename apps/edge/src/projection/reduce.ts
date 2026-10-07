@@ -53,6 +53,7 @@ import {
 } from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 import { buildCardIndex } from './matching.ts';
+import { withEventStartTimes } from './startTimes.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
 /** Course extended with the in-order list of expected control codes. Plan 08
@@ -136,8 +137,11 @@ export function reduce(input: ReduceInput): CompetitionState {
 
   // Per-competition slice of competitors so cross-competition leakage cannot
   // happen through matching (T-CROSS-COMP-LEAK).
-  const competitorsByCompetition = input.competitors.filter(
-    (c) => c.competitionId === input.competition_id
+  // Start times come from start_times_set events (ADR-0003 update 2026-10).
+  const competitorsByCompetition = withEventStartTimes(
+    input.competitors.filter((c) => c.competitionId === input.competition_id),
+    sortedEvents,
+    input.competition_id
   );
 
   // Plan 09: build the cardNumber → Competitor index ONCE per reduce() call

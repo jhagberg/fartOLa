@@ -31,6 +31,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 
 import * as schema from './schema.ts';
 import { runMigrations } from './migrate.ts';
+import { rebuildStartTimeCache } from './startTimes.ts';
 
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -57,9 +58,8 @@ export function openDatabase(dbPath: string): DbHandle {
   sqlite.pragma('busy_timeout = 5000');
   runMigrations(sqlite);
   const db = drizzle(sqlite, { schema });
-  return {
-    db,
-    sqlite,
-    close: () => sqlite.close(),
-  };
+  const handle: DbHandle = { db, sqlite, close: () => sqlite.close() };
+  // ADR-0003 update: competitors.start_time_ms is a cache of the events.
+  rebuildStartTimeCache(handle);
+  return handle;
 }

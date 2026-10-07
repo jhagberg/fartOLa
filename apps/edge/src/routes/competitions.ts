@@ -33,7 +33,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { desc, eq, asc, sql } from 'drizzle-orm';
+import { and, desc, eq, asc, isNotNull } from 'drizzle-orm';
 
 import {
   CompetitionCreateInput,
@@ -42,6 +42,7 @@ import {
   type ClassDTO,
 } from '@fartola/shared-types';
 import { competitions, classes, competitors } from '../db/schema.ts';
+import { writeStartTimes } from '../db/startTimes.ts';
 import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -238,14 +239,38 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       app.fartolaDb.sqlite.transaction(() => {
         db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
         if (shiftMs !== 0) {
-          db.update(competitors)
-            .set({ startTimeMs: sql`${competitors.startTimeMs} - ${shiftMs}` })
-            .where(eq(competitors.competitionId, id))
-            .run();
-          db.update(classes)
-            .set({ firstStartMs: sql`${classes.firstStartMs} - ${shiftMs}` })
-            .where(eq(classes.competitionId, id))
-            .run();
+          // Start times are events (ADR-0003 update 2026-10): the shift is
+          // one start_times_set event for the runners and one per class
+          // grid, so the projection moves with the cache.
+          const starts = db
+            .select({ id: competitors.id, startTimeMs: competitors.startTimeMs })
+            .from(competitors)
+            .where(and(eq(competitors.competitionId, id), isNotNull(competitors.startTimeMs)))
+            .all();
+          writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
+            cause: 'clock_shift',
+            classId: null,
+            changes: starts.map((r) => ({
+              competitorId: r.id,
+              startTimeMs: r.startTimeMs! - shiftMs,
+            })),
+          });
+          const grids = db
+            .select({
+              id: classes.id,
+              firstStartMs: classes.firstStartMs,
+              intervalSec: classes.startIntervalSec,
+            })
+            .from(classes)
+            .where(and(eq(classes.competitionId, id), isNotNull(classes.firstStartMs)))
+            .all();
+          for (const g of grids)
+            writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
+              cause: 'clock_shift',
+              classId: g.id,
+              changes: [],
+              classGrid: { firstStartMs: g.firstStartMs! - shiftMs, intervalSec: g.intervalSec },
+            });
         }
       })();
       // The date and the override set the competition clock card times are

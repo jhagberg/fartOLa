@@ -67,6 +67,7 @@ import registerSettingsRoutes from './routes/settings.ts';
 import registerMipRoute from './integrations/meos/mip.ts';
 import registerMopRoute from './integrations/meos/mop.ts';
 import registerLottningRoutes from './routes/lottning.ts';
+import registerStartTimesRoutes from './routes/startTimes.ts';
 import registerLiveresultatRoutes from './routes/liveresultat.ts';
 import registerRadioRoutes from './routes/radio.ts';
 import registerEventorPushRoutes from './routes/eventorPush.ts';
@@ -363,6 +364,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // shadow-table writes and auto-merge.
     await app.register(registerMopRoute);
     await app.register(registerLottningRoutes);
+    await app.register(registerStartTimesRoutes);
     await app.register(registerLiveresultatRoutes);
     await app.register(registerRadioRoutes);
     // Phase 2.1 Plan 02.1-08 — Eventor results + startlist push.

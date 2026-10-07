@@ -6,6 +6,34 @@ decision-makers: [Jonas Hagberg]
 
 # Event sourcing as the core data model
 
+## Update 2026-10-07: start times are events
+
+The 2026-10-05 update listed `competitors.start_time_ms` as a mutable row.
+That changes: a start time is an operator decision about a run, and a
+redraw or a wrong hand edit must be undoable (ADR-0016 rule 2).
+
+- Every change of start times is one `start_times_set` event with the new
+  and previous start of each runner it changes, a cause (`draw`,
+  `late_entrants`, `manual`, `missing_starts`, `start_list_import`,
+  `clock_shift` for an ADR-0017 offset change, `undo`) and, for a draw, the class's start grid (`classes.first_start_ms`,
+  `start_interval_sec`) before and after.
+- The reducer derives each runner's start from these events
+  (`projection/startTimes.ts`). A runner no event names keeps the stored
+  value, so data from before this update still loads.
+- `competitors.start_time_ms` stays as a cache, written in the same
+  transaction by the one writer, `writeStartTimes`
+  (`apps/edge/src/db/startTimes.ts`), like
+  `competitions.race_started_at_ms`. Exports, print, Eventor and MOP read
+  the cache. No other code may write it: `db/startTimesGuard.test.ts`
+  fails the build on any other write. `rebuildStartTimeCache` rewrites it
+  from the events at every startup.
+- Moving every reader to the projection and dropping the column is a
+  later, separate change.
+- Undo is a compensating `start_times_set` event (cause `undo`, `undoes`
+  pointing at the event). It is refused when any runner's start has been
+  changed again since (`POST /api/competitions/:id/start-times/undo`).
+- Other registration and configuration stay mutable rows.
+
 ## Update 2026-10-05
 
 The decision of 2026-05-12 stands, with its scope stated as built:

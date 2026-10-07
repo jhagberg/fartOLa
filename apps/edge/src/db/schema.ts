@@ -229,7 +229,42 @@ export type EventPayload =
       event_type: 'consent_confirmed';
       competitor_id: string;
       prior_consent_status: 'pending_first_read';
+    }
+  | {
+      // M1 (ADR-0003 update 2026-10): start times are events. One event per
+      // change of one or many runners' start times; the projection folds them
+      // (projection/startTimes.ts) and competitors.start_time_ms is a cache
+      // written in the same transaction (db/startTimes.ts), like
+      // competitions.race_started_at_ms. Undo is a compensating event.
+      event_type: 'start_times_set';
+      cause: StartTimeCause;
+      class_id: string | null;
+      changes: Array<{
+        competitor_id: string;
+        start_time_ms: number | null;
+        previous_ms: number | null;
+      }>;
+      /** A draw also sets the class's start grid (first start, interval);
+       * undo puts the previous one back. */
+      class_grid?: {
+        first_start_ms: number | null;
+        interval_sec: number | null;
+        previous_first_start_ms: number | null;
+        previous_interval_sec: number | null;
+      };
+      /** cause 'undo': the start_times_set event this one reverses. */
+      undoes?: { node_id: string; local_seq: number };
     };
+
+/** What wrote a start_times_set event. */
+export type StartTimeCause =
+  | 'draw'
+  | 'late_entrants'
+  | 'manual'
+  | 'missing_starts'
+  | 'start_list_import'
+  | 'clock_shift'
+  | 'undo';
 
 // ---------------------------------------------------------------------------
 // competitions — mutable. D-09 (config tables are CRUD; punches are events).

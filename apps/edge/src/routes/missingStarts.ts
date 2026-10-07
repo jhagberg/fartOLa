@@ -21,7 +21,8 @@ import { classes, competitions } from '../db/schema.ts';
 import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { issuesToErrors } from './_zod-errors.ts';
-import { StartTimeMs, setCompetitorStartTime } from './competitors.ts';
+import { UnknownCompetitor, writeStartTimes } from '../db/startTimes.ts';
+import { StartTimeMs } from './competitors.ts';
 
 const CompetitorId = z.string().min(1);
 const ApplyInput = z
@@ -31,14 +32,6 @@ const ApplyInput = z
       .min(1),
   })
   .strict();
-
-class CompetitorNotFound extends Error {
-  readonly competitorId: string;
-  constructor(competitorId: string) {
-    super('competitor_not_found');
-    this.competitorId = competitorId;
-  }
-}
 
 export default async function registerMissingStarts(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>(
@@ -106,19 +99,16 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
       if (!parsed.success) return reply.code(400).send(issuesToErrors(parsed.error.issues));
       const { items } = parsed.data;
       try {
-        app.fartolaDb.sqlite.transaction(() => {
-          for (const item of items) {
-            const row = setCompetitorStartTime(
-              app.fartolaDb.db,
-              id,
-              item.competitor_id,
-              item.start_time_ms
-            );
-            if (!row) throw new CompetitorNotFound(item.competitor_id);
-          }
-        })();
+        writeStartTimes(app.fartolaDb, app.fartolaNodeId, id, {
+          cause: 'missing_starts',
+          classId: null,
+          changes: items.map((i) => ({
+            competitorId: i.competitor_id,
+            startTimeMs: i.start_time_ms,
+          })),
+        });
       } catch (err) {
-        if (err instanceof CompetitorNotFound) {
+        if (err instanceof UnknownCompetitor) {
           return reply
             .code(404)
             .send({ error: 'competitor_not_found', competitor_id: err.competitorId });
