@@ -5,6 +5,15 @@
 // so the read fetches page 1 even when the card holder is already complete,
 // and only then. Fake station serves pages from a synthetic memory image.
 
+// Evidence tags used in comments below: documented (SPORTident doc) = the card
+// data structure doc, provided on request; MeOS behaviour = MeOS
+// SportIdent.cpp; bench capture <fixture>; assumption, unverified.
+//
+// Everything here about page 1 holding the code (0xa5 / 0xa9 / 0xa1) is MeOS
+// behaviour (SportIdent.cpp:1366, 1929), not in the SPORTident card doc; the
+// synthetic memory image is ours. Erased block 1 (0xee) = no code: assumption,
+// unverified. Page 1 = bytes 0x80-0xff: documented (SPORTident doc).
+
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
