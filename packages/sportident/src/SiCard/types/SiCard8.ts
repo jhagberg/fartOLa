@@ -13,7 +13,7 @@
 //     2,003,999 because SI6* cards share that range in its single registry;
 //     here SI6 detection (0xE6) has its own registry, so there's no clash.
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN plus PTD bit 6; touch-free records read it from block 1) read into startCode/finishCode/checkCode.
+//   - Start/finish/check station codes (CN plus PTD bit 6; touch-free start/finish records read it from block 1) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import {
@@ -86,11 +86,12 @@ export const siCard8StorageLocations: SiStorageLocations<ISiCard8StorageFields> 
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
-  // Station codes; a touch-free (PTD bit 7) record keeps its code in block 1
-  // (0xa5 / 0xa9 / 0xa1), see siStationCode.
+  // Station codes; a touch-free (PTD bit 7) start/finish record keeps its code
+  // in block 1 (0xa5 / 0xa9), see siStationCode. The check record's code is
+  // always its own CN + PTD bit 6, bit 7 or not (SPORTident.Communication 2.59.0, simulated readout of memory images (check PTD 0x81/0xC1, CN 77, 0xA1 = 99) on SI8, SI9, SI10 and SIAC, 2026-10-08).
   startCode: siStationCode(0x0c, 0xa5),
   finishCode: siStationCode(0x10, 0xa9),
-  checkCode: siStationCode(0x08, 0xa1),
+  checkCode: siPunchCode(0x08),
   startSubsec256: siSubsec256(0x0c),
   finishSubsec256: siSubsec256(0x10),
   startTouchFree: siTouchFree(0x0c),

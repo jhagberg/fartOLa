@@ -7,8 +7,8 @@
 // Fields that read block 1 (see the todo 2026-10-08-read-block1-touch-free):
 //   - card holder bytes 0x80-0x9F (SI10/11/SIAC; fetched when the holder in
 //     page 0 is incomplete)
-//   - station code of a PTD bit-7 start/finish/check record: 0xA5 / 0xA9 /
-//     0xA1 (SI8 and newer; MeOS behaviour, SportIdent.cpp:1929)
+//   - station code of a PTD bit-7 start/finish record: 0xA5 / 0xA9 (SI8 and
+//     newer; MeOS behaviour, SportIdent.cpp:1929). A check record keeps CN.
 //   - punches 0x88.. (SI8) and 0x38..0xFF (SI9; punches from 0x80 on)
 //     (documented, SPORTident card data structure doc, provided on request)
 // Deterministic pseudo-random images, so a failure is reproducible.

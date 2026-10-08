@@ -99,11 +99,10 @@ describe('station codes of start, finish and check', () => {
     assert.equal(card.raceResult.finishCode, undefined);
   });
 
-  test('a touch-free start/finish/check takes its code from block 1 (0xa5 / 0xa9 / 0xa1)', () => {
+  test('a touch-free start/finish takes its code from block 1 (0xa5 / 0xa9)', () => {
     const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
-    // Offsets 0xa5 / 0xa9 / 0xa1 and "bit 7 -> code from block 1": MeOS behaviour (SportIdent.cpp:1929);
-    // not in the SPORTident card doc. A bit-7 CHECK record's code at 0xa1 is the same MeOS
-    // rule applied to check: assumption, unverified (the doc allows a subsecond only on start/finish).
+    // Offsets 0xa5 / 0xa9 and "bit 7 -> code from block 1": MeOS behaviour (SportIdent.cpp:1929);
+    // not in the SPORTident card doc. The check record never uses 0xa1 (next test).
     bytes.splice(0x0c, 4, 0x81, 3, 0x0e, 0x10); // start: touch-free, CN ignored
     bytes.splice(0x10, 4, 0x81, 10, 0x0e, 0x10); // finish
     bytes.splice(0x08, 4, 0x01, 2, 0x0e, 0x10); // check: contact, own CN
@@ -124,6 +123,23 @@ describe('station codes of start, finish and check', () => {
       ],
       [true, true, undefined]
     );
+  });
+
+  test('a bit-7 check record keeps its own code: CN + 256 × bit 6, not 0xa1', () => {
+    // MeOS reads 0xa1 for a bit-7 check; SPORTident's library takes CN on SI8, SI9, SI10
+    // and SIAC (SPORTident.Communication 2.59.0, simulated readout of memory images, 2026-10-08).
+    for (const [ptd, code] of [
+      [0x81, 77],
+      [0xc1, 333],
+    ] as const) {
+      const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
+      bytes.splice(0x08, 4, ptd, 77, 0x0e, 0x10);
+      bytes[0xa1] = 99;
+      const card: Decodable = new SiCard10(0);
+      card._decodeFromStorage(bytes);
+      assert.equal(card.raceResult.checkCode, code);
+      assert.equal(card.raceResult.checkTouchFree, true);
+    }
   });
 
   test('PTD bit 6 adds 256 to a touch-free code too: 0xC1 + block 1 = 10 gives 266, 0x81 gives 10', () => {

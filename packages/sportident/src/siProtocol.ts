@@ -403,10 +403,12 @@ export class SiTime extends SiDataType<SiTimestamp> {
 // A PTD punch record (SI6, SI8, SI9, SI10, SI11, SIAC) is
 // [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bit 6
 // is code bit 8 (code = cn + 256 * bit 6, up to 511). PTD bit 7 is NOT a code
-// bit: on a start, finish or check record it marks a touch-free (SIAC Air+,
-// "beacon") punch, whose station code is then not in CN but in block 1 of the
-// card memory (see siStationCode). Behaviour as in MeOS SportIdent.cpp:1919
+// bit: on a start or finish record it marks a touch-free (SIAC Air+, "beacon")
+// punch, whose station code is then not in CN but in block 1 of the card
+// memory (see siStationCode). Behaviour as in MeOS SportIdent.cpp:1919
 // (analysePunch); written independently, upstream sportident.js reads CN only.
+// A check record keeps its code in CN even with bit 7 set, unlike MeOS
+// (SPORTident.Communication 2.59.0, simulated readout of memory images (check PTD 0x81/0xC1, CN 77, 0xA1 = 99) on SI8, SI9, SI10 and SIAC, 2026-10-08).
 
 /** Storage field for the control code of the PTD punch record at `punchOffset`. */
 export const siPunchCode = (punchOffset: number): SiInt =>
