@@ -50,9 +50,13 @@ model/firmware id.
 
 ## Provenance
 
-Derive the bit from our own --dump capture or SPORTident's direct answer — NOT
-from their proprietary .NET library/docs — to keep the clean-room story intact.
-See [[feedback-no-copy-claims]] and the parent config-menu todo.
+Derive the bit from our own --dump capture, SPORTident's direct answer, or the
+developer documentation SPORTident provides on request (PC Programmer's Guide;
+cite it, don't redistribute it). Never from their .NET library binary: its
+licence forbids deriving information from it. Note that SPORTident advises
+against low-level station configuration and recommends Config+; any write
+support needs read-back verification and must never be used untested at a
+competition. See the parent config-menu todo.
 
 ## Capture record
 
