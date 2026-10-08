@@ -5,6 +5,7 @@
 // SettingsView.test.ts: i18n keys + the client calls the toggle makes.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flushSync, mount, tick, unmount } from 'svelte';
 
 const KEYS = ['info.courses.voidControl', 'info.courses.unvoidControl'] as const;
 
@@ -92,5 +93,95 @@ describe('competition max time (SOFT TR 4.21.1)', () => {
     }
     expect(sv['info.maxTime.hint']).toContain('densamma för alla klasser');
     expect(sv['info.maxTime.hint']).toMatch(/2 ×.*4 ×/);
+  });
+});
+
+// SOFT TR 3.3.1: the competition level (nivå 1–4 or träning) is set in the
+// competition's fields card and saved with the other fields.
+describe('competition level (SOFT TR 3.3.1)', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  let patches: unknown[];
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+  };
+
+  beforeEach(() => {
+    patches = [];
+    const competition = {
+      id: 'c1',
+      name: 'Nivåtest',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        return json({ ...competition, ...body });
+      }
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      if (url.endsWith('/classes/kinds')) return json({ eventor: 'not_linked', items: [] });
+      return json({ competition, classes: [], courses: [] });
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('sv + en name every level; the hint says level 4 and training are free', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    for (const l of ['none', 'niva1', 'niva2', 'niva3', 'niva4', 'traning', 'label', 'hint']) {
+      expect(sv[`info.level.${l}`], l).toBeTruthy();
+      expect(en[`info.level.${l}`], l).toBeTruthy();
+    }
+    expect(sv['info.level.hint']).toContain('TR 3.3.1');
+  });
+
+  it('shows "Inte angiven" when unset and saves the chosen level; choosing none sends null', async () => {
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+    const select = document.querySelector('[data-testid="info-level"]') as HTMLSelectElement;
+    expect(select.selectedOptions[0]!.textContent).toBe('Inte angiven');
+    const save = document.querySelector('[data-testid="info-save"]') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    select.value = 'niva1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(save.disabled).toBe(false);
+    save.click();
+    await settle();
+    expect(patches).toHaveLength(1);
+    expect((patches[0] as { level: unknown }).level).toBe('niva1');
+
+    select.value = '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    save.click();
+    await settle();
+    expect((patches[1] as { level: unknown }).level).toBeNull();
   });
 });

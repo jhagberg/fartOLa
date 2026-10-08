@@ -40,6 +40,7 @@
     ClassDTO,
     CourseDTO,
     CompetitorDTO,
+    CompetitionLevel,
   } from '@fartola/shared-types';
 
   interface Props {
@@ -64,6 +65,8 @@
   let formTemplate: CompetitionDTO['receipt_template'] = $state('classic');
   let formAutoPrint = $state(false);
   let formTimingFormat: 'seconds' | 'tenths' = $state('seconds');
+  // SOFT TR 3.3.1: nivå 1–4 or träning; '' = not set (null on the wire).
+  let formLevel: CompetitionLevel | '' = $state('');
   let saving = $state(false);
   let saveErr: string | null = $state(null);
   let savedToast: string | null = $state(null);
@@ -80,7 +83,8 @@
       formDate !== c.date ||
       formTemplate !== c.receipt_template ||
       formAutoPrint !== c.auto_print ||
-      formTimingFormat !== c.timing_format
+      formTimingFormat !== c.timing_format ||
+      formLevel !== (c.level ?? '')
     );
   });
 
@@ -105,6 +109,8 @@
     for (const c of classes) m.set(c.id, c);
     return m;
   });
+
+  const LEVEL_OPTIONS: CompetitionLevel[] = ['niva1', 'niva2', 'niva3', 'niva4', 'traning'];
 
   const RECEIPT_OPTIONS: Array<CompetitionDTO['receipt_template']> = [
     'classic',
@@ -142,6 +148,7 @@
       formTemplate = detail.competition.receipt_template;
       formAutoPrint = detail.competition.auto_print;
       formTimingFormat = detail.competition.timing_format;
+      formLevel = detail.competition.level ?? '';
       formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
@@ -171,6 +178,7 @@
         receipt_template: formTemplate,
         auto_print: formAutoPrint,
         timing_format: formTimingFormat,
+        level: formLevel === '' ? null : formLevel,
       });
       competition = updated;
       flashSaved();
@@ -272,6 +280,20 @@
             <option value="seconds">{t('settings.timing.seconds')}</option>
             <option value="tenths">{t('settings.timing.tenths')}</option>
           </select>
+        </label>
+        <label class="field">
+          <span>{t('info.level.label')}</span>
+          <select
+            bind:value={formLevel}
+            aria-describedby="info-level-hint"
+            data-testid="info-level"
+          >
+            <option value="">{t('info.level.none')}</option>
+            {#each LEVEL_OPTIONS as lvl (lvl)}
+              <option value={lvl}>{t(`info.level.${lvl}`)}</option>
+            {/each}
+          </select>
+          <small class="field-hint" id="info-level-hint">{t('info.level.hint')}</small>
         </label>
       </div>
       <div class="card-foot">
@@ -508,6 +530,10 @@
     background: var(--bg);
     color: var(--fg);
     font: inherit;
+  }
+  .field .field-hint {
+    font-size: var(--fs-caption);
+    color: var(--fg-muted);
   }
   .field.check-row {
     flex-direction: row-reverse;
