@@ -26,14 +26,19 @@ import type { HalfDayClock } from '@fartola/sportident';
 const HALF_DAY_MS = 12 * 3600 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
 
+/** The clock's subsecond (start/finish only, 1/256 s steps) in whole ms. */
+function subsecMs(clock: HalfDayClock): number {
+  return Math.round(((clock.subsec_256 ?? 0) * 1000) / 256);
+}
+
 /**
  * Convert a HalfDayClock to absolute ms within a 24h reference. half_day=0
  * (AM) maps to 00:00..11:59:59.999; half_day=1 (PM) maps to
- * 12:00..23:59:59.999. `weekday` is ignored — Phase 1 < 12h assumption
+ * 12:00..23:59:59.999, plus the subsecond if the clock has one. `weekday` is ignored — Phase 1 < 12h assumption
  * makes per-day disambiguation unnecessary.
  */
 export function halfDayClockToMs(clock: HalfDayClock): number {
-  return clock.half_day * HALF_DAY_MS + clock.seconds_in_half_day * 1000;
+  return clock.half_day * HALF_DAY_MS + clock.seconds_in_half_day * 1000 + subsecMs(clock);
 }
 
 /**
@@ -79,7 +84,9 @@ export function cardClockToEpochMs(
 ): number {
   const noPmBit = cardType === 'SI5';
   const period = noPmBit ? HALF_DAY_MS : DAY_MS;
-  const cardMs = noPmBit ? clock.seconds_in_half_day * 1000 : halfDayClockToMs(clock);
+  const cardMs = noPmBit
+    ? clock.seconds_in_half_day * 1000 + subsecMs(clock)
+    : halfDayClockToMs(clock);
   const offsetMs = offsetMin * 60_000;
   const anchor = readAtMs + offsetMs + CLOCK_SKEW_TOLERANCE_MS;
   return anchor - ((((anchor - cardMs) % period) + period) % period) - offsetMs;
