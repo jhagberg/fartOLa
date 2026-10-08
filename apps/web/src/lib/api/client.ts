@@ -1033,6 +1033,53 @@ export function applyMissingStarts(
 }
 
 // ---------------------------------------------------------------------------
+// Start-time history and undo (routes/startTimes.ts; ADR-0016 rule 2)
+// ---------------------------------------------------------------------------
+
+export type StartTimeCause =
+  | 'draw'
+  | 'late_entrants'
+  | 'manual'
+  | 'missing_starts'
+  | 'start_list_import'
+  | 'clock_shift'
+  | 'undo';
+
+/** One start_times_set event: what changed start times, newest first. */
+export interface StartTimeHistoryItem {
+  node_id: string;
+  local_seq: number;
+  /** Epoch ms of the change. */
+  at_ms: number;
+  cause: StartTimeCause;
+  /** The class drawn, or null for a change across classes. */
+  class_id: string | null;
+  /** How many runners' start times it changed. */
+  changed: number;
+  undone: boolean;
+}
+
+/** GET …/start-times/history — the latest 50 changes, newest first. */
+export function getStartTimeHistory(
+  competitionId: string
+): Promise<{ items: StartTimeHistoryItem[] }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/start-times/history`);
+}
+
+/** POST …/start-times/undo — puts back the start times one change replaced,
+ * all or nothing. 409 start_changed_since (competitor_ids), already_undone,
+ * grid_changed_since, clock_shift_not_undoable; 404 when it is gone. */
+export function undoStartTimes(
+  competitionId: string,
+  ref: { node_id: string; local_seq: number }
+): Promise<{ local_seq: number | null; changed: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/start-times/undo`, {
+    method: 'POST',
+    body: ref,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Eventor push (Phase 2.1 Plan 02.1-08)
 // ---------------------------------------------------------------------------
 

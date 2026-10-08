@@ -41,6 +41,7 @@
   import Input from '#lib/ui/Input.svelte';
   import Button from '#lib/ui/Button.svelte';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
+  import StartTimeHistory from '#lib/components/StartTimeHistory.svelte';
   import type {
     ClassDTO,
     CompetitionLevel,
@@ -110,6 +111,8 @@
   let level: CompetitionLevel | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
+  /** Bumped whenever start times may have changed: the history refetches. */
+  let historyKey = $state(0);
 
   /** Start list after a draw or on initial load. */
   let startList: Array<{ id: string; name: string; club: string | null; card_number: number | null; start_time_ms: number | null; seed_group: number | null }> = $state([]);
@@ -164,6 +167,7 @@
         ...seedTyped,
       };
       startListLoaded = true;
+      historyKey++;
     } catch {
       startList = [];
       classRunners = [];
@@ -405,6 +409,7 @@
     Pursuit: 'lottning.pursuit',
     ReversePursuit: 'lottning.reversePursuit',
   };
+  const classNames = $derived(Object.fromEntries(classes.map((c) => [c.id, c.name])));
   const infoHref = $derived(`/competition/${encodeURIComponent(competitionId)}/info`);
 </script>
 
@@ -726,6 +731,14 @@
       </div>
     {/if}
   </div>
+
+  <!-- Recent start-time changes with undo (ADR-0016 rule 2) -->
+  <StartTimeHistory
+    {competitionId}
+    {classNames}
+    refreshKey={historyKey}
+    onUndone={() => void loadStartList()}
+  />
 
   <!-- Start list result table -->
   {#if startListLoaded && startList.length > 0}

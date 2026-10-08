@@ -192,6 +192,7 @@ describe('LottningView (mounted)', () => {
         if (url.endsWith('/classes/kinds')) classKindSource = 'operator';
         return json({ ok: true });
       }
+      if (url.endsWith('/start-times/history')) return json({ items: [] });
       if (url.endsWith('/classes/kinds'))
         return json({
           eventor: 'not_linked',
