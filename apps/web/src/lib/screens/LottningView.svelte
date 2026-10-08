@@ -158,6 +158,8 @@
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       startList = res.start_list;
+      // A late-entrant choice only means something next to an existing list.
+      if (startList.length === 0) drawType = 'All';
       classRunners = runners.competitors.filter((r) => r.class_id === classId);
       // The stored seeding groups of the drawn runners (a redraw reuses
       // them); what the operator has typed and not yet drawn with stays.
@@ -183,6 +185,7 @@
     done = null;
     error = null;
     redrawConfirmOpen = false;
+    drawType = 'All';
     await loadStartList();
   }
 
