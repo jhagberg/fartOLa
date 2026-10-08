@@ -53,3 +53,21 @@ model/firmware id.
 Derive the bit from our own --dump capture or SPORTident's direct answer — NOT
 from their proprietary .NET library/docs — to keep the clean-room story intact.
 See [[feedback-no-copy-claims]] and the parent config-menu todo.
+
+## Capture record
+
+Fill in one record per bench case. Raw captures with personal data (card
+holder names, card numbers) stay out of git; commit only scrubbed fixtures.
+
+- Case ID and date:
+- Station model and firmware:
+- Card type and firmware (where available):
+- Mode (contact or AIR+) and station code (set through Config+):
+- Serial transport (device, baud, direct or coupled):
+- Punch history from a cleared card, including mode changes:
+- Raw request/response bytes:
+- What a reference readout shows, and its precision:
+- Our commit and result:
+- Conclusion and what is still unknown:
+
+Read and keep ALL blocks of the card before and after each case, so any card-side data is found by diff.
