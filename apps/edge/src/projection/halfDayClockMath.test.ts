@@ -189,15 +189,19 @@ describe('subsecond (subsec_256, 1/256 s) of start/finish clocks', () => {
     ...(subsec_256 === undefined ? {} : { subsec_256 }),
   });
 
-  test('halfDayClockToMs adds n × 1000 / 256 ms, rounded: 0 → 0, 128 → 500, 255 → 996', () => {
+  // Floor, not round: SPORTident.Communication 2.59.0 gives floor(n × 1000 / 256)
+  // for all 256 values (simulated readout of siac-jonas-001, 2026-10-08).
+  test('halfDayClockToMs adds n × 1000 / 256 ms, floored: 0 → 0, 1 → 3, 2 → 7, 128 → 500, 255 → 996', () => {
     assert.equal(halfDayClockToMs(withSub(3600, 0)), 3_600_000);
+    assert.equal(halfDayClockToMs(withSub(3600, 1)), 3_600_003);
+    assert.equal(halfDayClockToMs(withSub(3600, 2)), 3_600_007);
     assert.equal(halfDayClockToMs(withSub(3600, 128)), 3_600_500);
     assert.equal(halfDayClockToMs(withSub(3600, 255)), 3_600_996);
     assert.equal(halfDayClockToMs(withSub(3600)), 3_600_000);
   });
 
   test('diffMs carries the fractions of start and finish', () => {
-    assert.equal(diffMs(withSub(36_000, 230), withSub(37_800, 26)), 1_799_204);
+    assert.equal(diffMs(withSub(36_000, 230), withSub(37_800, 26)), 1_799_203);
   });
 
   test('cardClockToEpochMs places the fraction on SI5 and other cards alike', () => {

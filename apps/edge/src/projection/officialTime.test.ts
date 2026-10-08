@@ -215,7 +215,7 @@ describe('SOFT TR 4.20.7: subsecond of start and finish punches reaches the offi
     assert.equal(official(sub(TEN, 0), sub(FINISH, 127)), 1_800_000);
   });
 
-  test('fractions change the whole-second result: .898 start, .102 finish → 1799.2 s → 1799 s', () => {
+  test('fractions change the whole-second result: .898 start, .101 finish → 1799.2 s → 1799 s', () => {
     assert.equal(official(sub(TEN), sub(FINISH)), 1_800_000, 'whole seconds alone give 1800 s');
     assert.equal(official(sub(TEN, 230), sub(FINISH, 26)), 1_799_000);
   });

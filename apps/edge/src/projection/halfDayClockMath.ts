@@ -26,9 +26,12 @@ import type { HalfDayClock } from '@fartola/sportident';
 const HALF_DAY_MS = 12 * 3600 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
 
-/** The clock's subsecond (start/finish only, 1/256 s steps) in whole ms. */
+/** The clock's subsecond (start/finish only, 1/256 s steps) in whole ms,
+ * truncated as SPORTident's Communication library does (own observation,
+ * SPORTident.Communication 2.59.0, simulated readout of fixture
+ * siac-jonas-001 with the finish CN swept 0..255, 2026-10-08). */
 function subsecMs(clock: HalfDayClock): number {
-  return Math.round(((clock.subsec_256 ?? 0) * 1000) / 256);
+  return Math.floor(((clock.subsec_256 ?? 0) * 1000) / 256);
 }
 
 /**
