@@ -12,8 +12,10 @@ orienteer at a real event (training counts).
 - [x] **Phase 0: Hardware proof** — Node.js script reads SI cards via BSM7/BSM8 on Linux, logs structured JSON. (Completed 2026-05-13, tagged `v0.0.1-handshake`.)
 - [x] **Phase 1: Single-laptop training MVP** — Run a real club training using only this software on one laptop. (Merged to main 2026-05-16 via PR #3.)
 - [x] **Phase 1.5: Public demo + landing page** — GitHub Pages site with a clickable mock so anyone can test the UI and leave feedback. (Merged to main 2026-05-15.)
-- [ ] **Phase 2.0: 4-klubbs MVP (parallel with MeOS)** — Run fartOLa as primary registration + readout at a 4-klubbs training on 2026-05-20, with MeOS as parallel safety backup via MIP+MOP sync.
-- [x] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, gap-analysis quick wins. (completed 2026-05-24)
+- [x] **Phase 2.0: 4-klubbs MVP (parallel with MeOS)** — Code complete and merged 2026-05-22 (PR #20). The 4-klubbs training on 2026-05-20 ran on MeOS, so the "fartOLa as primary" criterion was not met; replay of real competitions (Phase 2.1) took over as the acceptance test.
+- [x] **Phase 2.1: Sanctioned-competition foundations** — Start list lottning, kvar-i-skogen, multi-serial readers, liveresultat push, Eventor results+startlist push, admin codes, MeOS classid fix, replay of real competitions as acceptance test, SOFT compliance gate, competition clock, ROC radio + watchdog, readout labels. (Merged 2026-10-07, PR #51 and follow-ups.)
+- [ ] **Phase 2.2: SOFT-compliant draw and class model** — Class kind and competition level, start times as events, SOFT-proven draw, vacancies, late entrants, seeding, pursuit; then fees/bibs, start distribution, loop courses, rogaining. M1 merged 2026-10-08 (#77); M2 next.
+- [ ] **Phase 2.3: Race-day operations** — Rental-card inventory, unknown-card rebind, competition-leader decisions, checklist, backup, desk corrections. Planned; scope to be confirmed.
 - [ ] **Phase 3: Children's finish, public engagement** — Kids' finish screen, parent notifications, embeddable live widget.
 - [ ] **Phase 4: Multi-arena, radio controls** — Radio controls feeding live punches, multiple WiFi cells, peer-to-peer sync.
 - [ ] **Phase 5: O-ringen scale** — Demonstrable capacity for a five-stage event with 25 000+ starters.
@@ -118,7 +120,8 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
   4. Hyrbricka flag survives the round-trip: fartOLa toast at finish-readout AND MeOS reminder both fire for hired cards.
   5. Course-only model (no Klasser) works for 4-klubbs's 5-course bundle (Vit / Grön / Gul / Orange / Violett).
   6. If fartOLa is killed mid-event, MeOS-side registrations done during the outage are picked up via MOP on fartOLa restart.
-**Plans**: 10 plans (7 active for 4-klubbs; 2 deferred to Phase 2.1; 1 added 2026-05-17 as a 4-klubbs blocker fix)
+**Status (2026-10-08)**: Code complete, merged to main 2026-05-22 as PR #20 (7/7 active plans; 02-08, 02-09 and 02-10 were carried into Phase 2.1). The 2026-05-20 training at Stora Tuna OK ran on MeOS because start list, lottning, start times and kvar-i-skogen were missing; criteria 1 and 6 were never exercised at a real event. Phase 2.1 closed those gaps.
+**Plans**: 10 plans (7 active for 4-klubbs; 3 carried to Phase 2.1)
   - [x] 02-01-PLAN.md — Wave 0 [BLOCKING]: Drizzle migration 0002 (6 new tables + competitors.source) + Eventor saxes streaming parser + ingest cache + scheduleEventorBoot + admin refresh route + ADR-0009 + REQ-EXT-MEOS-001 entry
   - [x] 02-02-PLAN.md — Wave 1: WalkupModal Bana label + Hyrbricka checkbox + Eventor autocomplete (si_card pre-fill + name prefix) + competitors transactional hired_cards write + TweaksPanel Eventor status + walkup-eventor e2e
   - [x] 02-02b-PLAN.md — Wave 2: Registration-desk screen (/competition/:id/registration) + cardQueue Svelte rune store (FIFO + dedupe) + cardSubscription shared WS service (refactors ReadoutView WS code) + WalkupModal onClose callback + auto-advance + dedupe toast + registration-queue e2e (added late 2026-05-16 — addresses ReadoutView.svelte:406-414 silent-drop site)
@@ -128,7 +131,7 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
   - [x] 02-06-PLAN.md — Wave 3: retention.ts hired_cards.contact_* scrub + docs/ops/parallel-meos-runbook.md + bench-smoke-phase2.sh + Wednesday-morning bench checkpoint
   - [x] 02-07-PLAN.md — Settings UI + integration-keys API for managing EVENTOR_API_KEY (and future Livelox / Liveresultat keys) from the operator UI instead of env files
   - [x] 02-08-PLAN.md — Wave deferred → Phase 2.1: Event admin codes (`<word>-<NNN>`) for mobile sekretariat-helpers; LOCKED 35-word Swedish O-feature wordlist; rate-limited /access endpoint + signed cookie + redact extension; ADR-0010 (completed 2026-05-24)
-  - [ ] 02-09-PLAN.md — Wave 3 [BLOCKING for walk-up autocomplete]: Drop UNIQUE on `eventor_competitors.si_card` (federation data has legitimate duplicates); tri-state `lookupBySiCard` with context-aware disambiguation (active-competition match → recency rule fallback); WalkupModal `+N andra` chip + override picker; added 2026-05-17 after real Eventor ingest crashed against a working API key
+  - [x] 02-09-PLAN.md — Wave deferred → Phase 2.1 (delivered as 02.1-10) [was BLOCKING for walk-up autocomplete]: Drop UNIQUE on `eventor_competitors.si_card` (federation data has legitimate duplicates); tri-state `lookupBySiCard` with context-aware disambiguation (active-competition match → recency rule fallback); WalkupModal `+N andra` chip + override picker; added 2026-05-17 after real Eventor ingest crashed against a working API key
   - [x] 02-10-PLAN.md — Wave deferred → Phase 2.1: Persistent Eventor event-ID linkage on `competitions` table; wizard step-1 Eventor-quickstart prefill; ImportRunnersView linked-card collapse with [Relink]; Tävling list Eventor chip (completed 2026-05-24)
 
 ### Phase 2.1: Sanctioned-competition foundations
@@ -144,7 +147,8 @@ Phase 1.5 is explicitly non-blocking for Phase 2 — if the StorTuna club is rea
   5. Liveresultat push sends MOP XML 2.0 to liveresultat.orientering.se without blocking local results.
   6. MeOS classid fix: MIP entries include classid from REST auto-discovery.
   7. Gundes Sommarsprint (June 2026) runs on this stack with MeOS as backup.
-**Plans**: 13 plans
+**Status (2026-10-08)**: Complete. Merged 2026-10-07 as PR #51 plus follow-ups (below). Gundes Sommarsprint did not run on fartOLa; criterion 7 is replaced by replay of real competitions (ADR-0014): DM lång 2026 dag 1 633/634 (the one difference is intended, SOFT TR 4.18.9) and Tuna Ting 2026 dag 2 608/609 (the one left has no start time; fartOLa warns). fartOLa has not yet been the main system at a real event.
+**Plans**: 14 plans (13 original + the replay-readiness plan)
 
 Plans:
   - [x] 02.1-01-PLAN.md — Wave 1: Schema migration 0007 (start_time_ms, max_time_sec, liveresultat cols, course_replacements table) + reducer extensions (MAX auto-compute, voided legs, replacement controls) + voided-leg routes
@@ -160,9 +164,72 @@ Plans:
   - [x] 02.1-11-PLAN.md — Wave 3: Eventor event linkage carry-over (migration 0009 index, event proxy route, wizard quickstart, ImportRunnersView collapse, CompetitionList chip)
   - [x] 02.1-12-PLAN.md — Wave 4: Admin codes carry-over (migration 0010 event_codes table, wordlist, auth functions, /access route, preHandler gate, AccessView, ADR-0010)
   - [x] 02.1-13-PLAN.md — Wave 5: Quality fixes (DQ punch contamination, POST /status idempotency, auto-DNF distinction, StatusPill aria IDs) + MeOS SQL dump replay harness
+  - [x] 02.1-14-REPLAY-READINESS-PLAN.md — Replay readiness: one start-time base, MP as ordered course controls, absolute card clocks, untimed classes, "Saknar starttid", replay script, SOFT compliance matrix and lint gate
 
-Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred to Phase 2.2+.
+**October 2026 scope** (PRs #51-#53, #64, #68, #69, #72-#75):
+- **Replay as acceptance test (ADR-0014):** `apps/edge/scripts/replay.ts` feeds an anonymised real competition day through the normal imports and card reads and diffs against the official Eventor result. Fixtures stay out of the public repo.
+- **SOFT compliance gate (ADR-0011):** `.planning/compliance/soft-regelverk-2026.md` maps 75 rules of Regelverk för OL 20260701_2 (26 UPPFYLLD, 20 DELVIS, 24 SAKNAS, 5 EJ TILLÄMPLIG). `pnpm lint` fails if an UPPFYLLD row names a test that does not exist. Small rulebook gaps closed in PR #53 (whole-second times, one max time, SOFT status names, same-club draw property test, ResultList content).
+- **Competition clock (ADR-0017):** one fixed UTC offset per competition, replacing the epoch + wall-clock pair (PR #69).
+- **ROC radio + watchdog:** native ROC polling and a per-unit radio watchdog against read-out cards (PR #72); block 1 read for touch-free SIAC Air+ station codes (PR #73), bench capture still open.
+- **Readout labels:** struck, extra and out-of-order punches, place and "x av y i mål", card type, untimed classes; demo with 20 de-identified real punch patterns (PR #68), demo audit (PR #75).
+- **Platform and docs:** all dependencies upgraded (PR #52), Node 26 (PR #64), ADRs moved to `docs/decisions` with the October review (PR #63), README/AGENTS.md (PR #65), test de-flaking and svelte-check gate (PR #74).
+
+Phase 2.1 rescope (2026-05-23): Yjs, spectator page, and peer-sync deferred past Phase 2.1 (Phase 2.2 is now the SOFT draw and class model; peer-sync stays in Phase 4).
 Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup), 02-10 (Eventor event linkage).
+
+### Phase 2.2: SOFT-compliant draw and class model
+
+**Goal**: Draw, class model and start-time handling that follow SOFT's rulebook (ADR-0011) and are provably at least as good as MeOS's, so a nivå 1-3 start list can be produced, changed and undone without leaving the rules.
+**Depends on**: Phase 2.1
+**Requirements**: REQ-EVT-CMP-010 (M4); rule rows in `.planning/compliance/soft-regelverk-2026.md` (TR 3.4.2, 4.12.4, 4.12.6, 4.16.1, 4.16.3, 4.22.1, 7.3.2, 7.4.1, 7.4.5, 7.5.2, 7.5.4, 7.5.7, 7.5.8)
+**Source plan**: MeOS port plan, Part A (revision 3, decisions in Part D). fartOLa keeps its own SOFT draw; MeOS code is ported only where listed, with attribution (ADR-0001).
+**Success Criteria** (what must be TRUE):
+  1. M1: every class has a kind (ungdom/junior/senior/veteran/elit/öppen/inskolning plus D/H age) decided from Eventor `ClassTypeId`, else SOFT name patterns, and confirmed by the operator; a rule that would refuse an action on an unconfirmed kind asks for confirmation instead of guessing.
+  2. M1: the competition has a level (nivå 1-4 or träning); level-scoped rules apply to nivå 1-3 only.
+  3. M1: start times are events. Draws, hand edits and missing starts can be undone all or nothing, and the screen says why an undo is refused. `competitors.start_time_ms` is a guarded cache rebuilt at startup.
+  4. M1: the SOFT draw samples exactly uniformly among start orders with the fewest same-club neighbours, proved by exhaustive brute-force tests (TR 7.5.1, 7.5.2) and benchmarked against MeOS; vacancy positions (mixed/first/last), late entrants (before, after, on vacant places) and seeding groups (TR 7.4.5, refused outside nivå 1 elite classes and trainings) work through LottningView.
+  5. M1: an IOF XML 3.0 ResultList can be imported (prefers `OverallResult`, one stage) and drives pursuit and reverse pursuit; both are refused in inskolning and D/H10-12.
+  6. M2: class type drives fees and caps (TR 4.12.4, 4.12.6), bibs (TR 7.5.4), a pre-race check with card table, closing time and default start interval (TR 4.16.3, 4.22.1).
+  7. M3a: a multi-class planning screen warns before drawing on start-distribution problems (TR 7.5.3, 7.5.5). M3b: courses with a shared loop or butterfly control are scored correctly (voided legs and replacements by course position).
+  8. M4: a rogaining class (variable points, time reduction) scores correctly end to end.
+  9. Compliance matrix rows move as listed in the plan; `pnpm lint` stays green; both real-competition replays unchanged (633/634, 608/609).
+**Plans**: milestone-based, plan files to be created
+  - [x] M1 — Draw package (merged 2026-10-08, PR #77, migrations 0020-0022; UI still to build): class kind + competition level; MeOS attribution lint check; start times as events with undo; vacancy positions; proof of the SOFT draw; late entrants; seeded draw with stored groups; ResultList import; pursuit and reverse pursuit with ban
+  - [ ] M2 — Class type fees (4b), bibs (4c), pre-race check + card table (4d), closing time + default interval + class-kind rules (4e)
+  - [ ] M3a — Start distribution across classes (warnings first, optimiser later)
+  - [ ] M3b — Loop/butterfly courses (`getAdapetedCourse` equivalent)
+  - [ ] M4 — Rogaining (score events)
+
+Notes: M1 follows the merge order clock (#69) -> readout labels (#68) -> ROC (#72) -> M1. The plan placed M3b in Phase 3, M4 in Phase 4 (success criterion 5) and start groups in Phase 5; they are grouped here so one phase owns the draw and class model. Later and unassigned: relay (REQ-EVT-CMP-009/011, Phase 4), IOF XML 2.0.3 import (REQ-STD-003), start-time cache option B (separate PR after M1).
+
+**Related todos**:
+- `2026-10-08-verify-start-method-rules-and-ola.md` (start methods per class, feeds M1 pursuit ban and M2 4e)
+- `2026-10-05-runners-list-with-status.md` (M2 4d, missing start time)
+- `2026-05-24-voided-legs-by-course-position.md`, `2026-05-24-apply-replacements-sequence-aware.md` (M3b)
+
+### Phase 2.3: Race-day operations
+
+**Goal**: The things that go wrong or get forgotten on the day itself are handled in the product: cards, decisions, backups and the checklist. Scope and grouping are a proposal to be confirmed.
+**Depends on**: Phase 2.1 (can run in parallel with 2.2)
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. The rental-card box is scanned in the morning and reconciled at the end of the day; missing cards are listed.
+  2. An unknown card at readout finds the entered runner first (name search), then rebinds the card.
+  3. The competition leader is a role with a personal code (ADR-0010 model); a re-read that changes a status needs their signed decision (SOFT TR 8.2.11) and is recorded.
+  4. A competition checklist is built from the settings and ticked off by the data.
+  5. Automatic backup during the competition to USB and/or cloud, restorable.
+  6. Used by a real secretariat at a real event.
+**Plans**: TBD
+
+**Related todos**:
+- `2026-10-07-rental-card-inventory.md`
+- `2026-10-08-unknown-card-entered-runner.md`
+- `2026-10-08-competition-leader-decisions.md`
+- `2026-10-08-competition-checklist.md`
+- `2026-10-08-race-day-backup.md`
+- `2026-10-05-time-adjustment-per-control.md` (correct a station whose clock was wrong)
+- `2026-10-03-banutsattning-mode.md` (course checkers read their cards)
+- `2026-05-17-mobile-registration-outbox-idempotency.md` (volunteers registering on phones)
 
 ### Phase 3: Children's finish, public engagement
 
@@ -177,6 +244,13 @@ Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup)
   5. At least one parent says "this is way better" unprompted.
 **Plans**: TBD
 
+**Related todos**:
+- `2026-10-07-speaker-view.md`
+- `2026-10-05-skogis-story-receipts.md`
+- `2026-05-14-revisit-thermal-receipt-rendering.md`
+- `2026-05-15-parent-self-signup-qr-flow.md`
+- `2026-05-15-tailscale-cloudflare-tunnel-for-self-signup.md`
+
 ### Phase 4: Multi-arena, radio controls
 
 **Goal**: Competition with radio controls feeding live punches, multiple WiFi cells, full peer-to-peer sync.
@@ -187,8 +261,16 @@ Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup)
   2. SIRAP gateway accepted by an existing MeOS install for testing.
   3. Two edge-bridges sync events under simulated partition; no data loss.
   4. Relay-day at a regional cup runs end-to-end on this stack.
-  5. Score-event support proven at a rogaining.
+  5. Score-event support proven at a rogaining. (Built in Phase 2.2 M4; proven here.)
 **Plans**: TBD
+
+**Related todos**:
+- `2026-10-04-radio-link-watchdog.md` (jSh gateway, SRR, per-unit watching; ROC input and watchdog are built, PR #72)
+- `2026-10-08-read-block1-touch-free.md` (code done, bench capture open)
+- `2026-06-01-siac-airplus-dump-capture.md`
+- `2026-06-01-sportident-config-menu.md`
+- `2026-10-05-browser-reader-client.md`
+- `2026-10-05-club-hardware-and-platforms.md`
 
 ### Phase 5: O-ringen scale
 
@@ -204,6 +286,8 @@ Phase 2.1 carry-overs from Phase 2.0: 02-08 (admin codes), 02-09 (SI card dedup)
   6. System pitched to O-ringen organizing committee without lying.
 **Plans**: TBD
 
+**Related todos**: none yet. `2026-10-07-competition-admin-hub.md` (needs an RFC first) is unphased and may land here or after Phase 2.3.
+
 ## Cross-cutting (all phases)
 
 These must be respected throughout, not deferred to a phase:
@@ -211,21 +295,24 @@ These must be respected throughout, not deferred to a phase:
 - Tests run on real hardware before any release tag.
 - ADRs (`docs/decisions/NNNN-title.md`, MADR 4.0.0 format) for non-obvious decisions.
 - README, PROJECT.md, research notes stay current.
+- Open work that fits no phase (tech debt, UI polish) stays in `.planning/todos/pending/`: `2026-05-16-centralize-event-inserts-via-insertevent-helper.md`, `2026-05-16-perf-autobind-n-plus-1.md`, `2026-05-16-perf-loader-course-controls-n-plus-1.md`, `2026-05-16-perf-projection-broadcast-per-changed-class.md`, `2026-05-16-stortuna-tuesday-to-wednesday-cleanup.md`, `2026-05-16-si-card-write-program-name.md`, `2026-10-06-svg-icons-instead-of-emoji.md`.
 - Swedish-first UI strings. Plain language over jargon.
 - Backwards compatibility with SI5 cards and IOF XML 2.0.3.
 - AGPL-3.0 application, MIT for `packages/sportident`.
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 0 → 1 → 1.5 → 2.0 → 2.1 → 3 → 4 → 5
+**Execution Order:** Phases execute in numeric order: 0 → 1 → 1.5 → 2.0 → 2.1 → 2.2 → 2.3 → 3 → 4 → 5 (2.3 may run in parallel with 2.2)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 0. Hardware proof | 6/6 | Complete | 2026-05-13 |
 | 1. Single-laptop training MVP | 18/18 | Complete | 2026-05-16 |
 | 1.5. Public demo + landing page | 3/3 | Complete | 2026-05-15 |
-| 2.0. 4-klubbs MVP (parallel with MeOS) | 0/7 | Planned | hard deadline 2026-05-20 |
-| 2.1. Sanctioned-competition foundations | 13/13 | Complete   | 2026-05-24 |
+| 2.0. 4-klubbs MVP (parallel with MeOS) | 7/7 | Code complete (training ran on MeOS) | 2026-05-22 |
+| 2.1. Sanctioned-competition foundations | 14/14 | Complete | 2026-10-07 |
+| 2.2. SOFT-compliant draw and class model | 1/5 milestones | In progress (M1 done, UI + M2 next) | - |
+| 2.3. Race-day operations | 0/TBD | Planned | - |
 | 3. Children's finish, public engagement | 0/TBD | Not started | - |
 | 4. Multi-arena, radio controls | 0/TBD | Not started | - |
 | 5. O-ringen scale | 0/TBD | Not started | - |
