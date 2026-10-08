@@ -3,6 +3,7 @@
 // Local modifications: import path `siProtocol` -> `siProtocol.ts` (Node 22 strip-types
 // requires the suffix; root tsconfig has `allowImportingTsExtensions: true`).
 //   - startCode/finishCode/checkCode: station codes of the start, finish and check units.
+//   - batteryMillivolts/hardwareVersion/softwareVersion: SIAC block 3.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import type { SiTimestamp } from '../siProtocol.ts';
@@ -25,6 +26,10 @@ export interface IRaceResultData {
   startTouchFree?: boolean;
   finishTouchFree?: boolean;
   checkTouchFree?: boolean;
+  /** SIAC block 3: battery voltage in mV, hardware and software version "major.minor". */
+  batteryMillivolts?: number;
+  hardwareVersion?: string;
+  softwareVersion?: string;
   punches?: IPunch[];
 }
 

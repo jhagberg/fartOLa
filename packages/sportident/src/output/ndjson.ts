@@ -98,6 +98,10 @@ export interface CardReadEvent extends NdjsonBase {
   punch_count: number;
   punches: NdjsonPunch[];
   card_holder: Record<string, unknown> | null;
+  /** SIAC only (block 3): battery voltage in mV, versions "major.minor". */
+  battery_mv?: number;
+  hardware_version?: string;
+  software_version?: string;
   raw_pages_b64?: string;
 }
 
@@ -309,6 +313,11 @@ export class NdjsonEmitter {
     if (c.uid !== undefined) {
       event.uid = c.uid;
     }
+    if (raceResult.batteryMillivolts !== undefined) event.battery_mv = raceResult.batteryMillivolts;
+    if (raceResult.hardwareVersion !== undefined)
+      event.hardware_version = raceResult.hardwareVersion;
+    if (raceResult.softwareVersion !== undefined)
+      event.software_version = raceResult.softwareVersion;
     if (this.includeRawPages) {
       // Best-effort: ModernSiCard / SiCard5 own a SiStorage with internalData
       // accessible via storage.getInternalData() — but the storage type is

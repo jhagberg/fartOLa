@@ -22,6 +22,8 @@
 //   - Block 1 (page 1) is also fetched when a start/finish record is touch-free
 //     (PTD bit 7) and the card holder step did not read it; MeOS SportIdent.cpp:1366
 //     reads it for every SI10/SI11/SIAC card.
+//   - Block 3 (page 3) is read on SIAC (static readsBlock3) for battery voltage and
+//     hardware/software version.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
@@ -122,7 +124,16 @@ export const parseCardHolder = (
 export interface IModernSiCardStorageFields extends IBaseSiCardStorageFields {
   uid: number;
   cardSeries: ModernSiCardSeriesKey;
+  batteryMillivolts?: number;
+  hardwareVersion?: string;
+  softwareVersion?: string;
 }
+
+/** "major.minor" from two block-3 bytes; undefined while erased (0xEE). */
+const siVersion = (offset: number): SiModified<number[], string> =>
+  new SiModified(new SiArray(2, (i) => new SiInt([[offset + i]])), (bytes) =>
+    bytes.some((b) => b === undefined || b === 0xee) ? undefined : `${bytes[0]}.${bytes[1]}`
+  ) as unknown as SiModified<number[], string>;
 
 export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStorageFields> = {
   uid: new SiInt([[0x03], [0x02], [0x01], [0x00]]),
@@ -166,11 +177,24 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   cardHolder: new SiModified(new SiArray(0x80, (i) => new SiInt([[0x20 + i]])), (charCodes) =>
     parseCardHolder(charCodes)
   ),
+  // Block 3 (SIAC only, see readsBlock3). Battery: 1.9 V + n × 0.09 V, over
+  // 5 V means no valid value (MeOS SportIdent.cpp:1490-1497; same byte and
+  // formula in SPORTident.Communication 2.59.0, black-box byte sweep of siac-jonas-001, 2026-10-08).
+  batteryMillivolts: new SiModified(new SiInt([[0x1c7]]), (n) => {
+    const mv = 1900 + 90 * n;
+    return mv > 5000 ? undefined : mv;
+  }),
+  // Hardware and software version, major.minor (SPORTident.Communication 2.59.0, black-box byte sweep of siac-jonas-001, 2026-10-08).
+  hardwareVersion: siVersion(0x1c0),
+  softwareVersion: siVersion(0x1c2),
 };
 export const modernSiCardStorageDefinition = defineStorage(0x400, modernSiCardStorageLocations);
 
 export class ModernSiCard extends BaseSiCard {
   static maxNumPunches = MAX_NUM_PUNCHES;
+  /** Read block 3 (battery, versions); SPORTident's library reads it on
+   * SIAC (SPORTident.Communication 2.59.0, black-box byte sweep of siac-jonas-001, 2026-10-08). */
+  static readsBlock3 = false;
 
   public storage: SiStorage<IModernSiCardStorageFields>;
   public punchCount?: number;
@@ -211,6 +235,7 @@ export class ModernSiCard extends BaseSiCard {
 
   typeSpecificRead(): Promise<void> {
     return this.typeSpecificReadBasic()
+      .then(() => this.typeSpecificReadBlock3())
       .then(() => this.typeSpecificReadCardHolder())
       .then(() => this.typeSpecificReadTouchFreeBlock())
       .then(() => this.typeSpecificReadPunches())
@@ -220,6 +245,13 @@ export class ModernSiCard extends BaseSiCard {
   typeSpecificReadBasic(): Promise<void> {
     return this.typeSpecificGetPage(0).then((page0) => {
       this.storage.splice(bytesPerPage * 0, bytesPerPage, ...page0);
+    });
+  }
+
+  typeSpecificReadBlock3(): Promise<void> {
+    if (!(this.constructor as typeof ModernSiCard).readsBlock3) return Promise.resolve();
+    return this.typeSpecificGetPage(3).then((page3) => {
+      this.storage.splice(bytesPerPage * 3, bytesPerPage, ...page3);
     });
   }
 
@@ -348,5 +380,13 @@ export class ModernSiCard extends BaseSiCard {
     if (cardSeries !== undefined) this.cardSeries = cardSeries;
     const uid = this.storage.get('uid')?.value;
     if (uid !== undefined) this.uid = uid;
+    if ((this.constructor as typeof ModernSiCard).readsBlock3) {
+      const battery = this.storage.get('batteryMillivolts')?.value;
+      if (battery !== undefined) this.raceResult.batteryMillivolts = battery;
+      const hardware = this.storage.get('hardwareVersion')?.value;
+      if (hardware !== undefined) this.raceResult.hardwareVersion = hardware;
+      const software = this.storage.get('softwareVersion')?.value;
+      if (software !== undefined) this.raceResult.softwareVersion = software;
+    }
   }
 }
