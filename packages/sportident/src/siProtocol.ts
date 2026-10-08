@@ -444,6 +444,27 @@ export const siStationCode = (
     }
   );
 
-/** True when the record's PTD bit 7 is set: a touch-free (Air+) punch. */
+/** True when the record's PTD bit 7 is set. SPORTident documents that bit as
+ * the subsecond marker of a start/finish record (CN then holds TSS, see
+ * siSubsec256; SPORTident card data structure doc, provided on request). In
+ * practice it is set for punches from AIR+ timing-mode stations, hence the
+ * "touch-free" naming here; station code selection (siStationCode) keys on
+ * it as MeOS does. */
 export const siTouchFree = (recordOffset: number): SiModified<number, boolean> =>
   new SiModified(new SiInt([[recordOffset, 7, 8]]), (bit) => bit === 1);
+
+/** Subsecond of a START or FINISH record (never check/clear/ordinary punches:
+ * the doc allows a subsecond value "only for start and finish"): when PTD
+ * bit 7 is set, CN is TSS in 1/256 s (SPORTident card data structure doc,
+ * provided on request, record structure TD-TSS-TH-TL; PC Programmer's Guide 5,
+ * TSS = 1/256 s). 0..255, or undefined when the record carries no fraction. */
+export const siSubsec256 = (
+  recordOffset: number
+): SiModified<{ ptd: number; cn: number }, number> =>
+  new SiModified(
+    new SiDict<{ ptd: number; cn: number }>({
+      ptd: new SiInt([[recordOffset]]),
+      cn: new SiInt([[recordOffset + 1]]),
+    }) as unknown as SiDataType<{ ptd: number; cn: number }>,
+    ({ ptd, cn }) => ((ptd & 0x80) !== 0 ? cn : undefined)
+  );

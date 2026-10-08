@@ -15,7 +15,7 @@
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
-import { SiTime, arr2cardNumber, siPunchCode } from '../../siProtocol.ts';
+import { SiTime, arr2cardNumber, siPunchCode, siSubsec256 } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
 import { SiDict } from '../../storage/SiDict.ts';
@@ -62,6 +62,8 @@ export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> 
   startCode: siPunchCode(0x18),
   finishCode: siPunchCode(0x14),
   checkCode: siPunchCode(0x1c),
+  startSubsec256: siSubsec256(0x18),
+  finishSubsec256: siSubsec256(0x14),
   clearTime: new SiTime([[0x23], [0x22]], 0x20),
   punchCount: new SiInt([[0x12]]),
   punches: new SiModified(
@@ -132,10 +134,16 @@ export class SiCard6 extends BaseSiCard {
     if (startTime !== undefined) this.raceResult.startTime = startTime;
     const startCode = this.storage.get('startCode')?.value;
     if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
+    const startSubsec = this.storage.get('startSubsec256')?.value;
+    if (startTime != null && startSubsec !== undefined)
+      this.raceResult.startSubsec256 = startSubsec;
     const finishTime = this.storage.get('finishTime')?.value;
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
     const finishCode = this.storage.get('finishCode')?.value;
     if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
+    const finishSubsec = this.storage.get('finishSubsec256')?.value;
+    if (finishTime != null && finishSubsec !== undefined)
+      this.raceResult.finishSubsec256 = finishSubsec;
     const checkTime = this.storage.get('checkTime')?.value;
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
