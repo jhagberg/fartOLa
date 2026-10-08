@@ -18,6 +18,7 @@ import { proto } from '../../constants.ts';
 import { SiTime, arr2cardNumber, siPunchCode, siSubsec256 } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
+import { SiDataType } from '../../storage/SiDataType.ts';
 import { SiDict } from '../../storage/SiDict.ts';
 import { SiInt } from '../../storage/SiInt.ts';
 import { SiModified } from '../../storage/SiModified.ts';
@@ -49,6 +50,20 @@ export const cropPunches = (allPunches: (PotentialSiCard6Punch | undefined)[]): 
   return punchesUntilInvalid.filter(isPunchEntryValid);
 };
 
+/** Station code of an SI6 start/finish record. With PTD bit 7 set CN holds the
+ * subsecond instead of the code (SPORTident card data structure doc, provided
+ * on request); the doc gives no other place for it on SI6, so: no code. */
+const siCard6StartFinishCode = (
+  recordOffset: number
+): SiModified<{ ptd: number; code: number }, number> =>
+  new SiModified(
+    new SiDict<{ ptd: number; code: number }>({
+      ptd: new SiInt([[recordOffset]]),
+      code: siPunchCode(recordOffset),
+    }) as unknown as SiDataType<{ ptd: number; code: number }>,
+    ({ ptd, code }) => ((ptd & 0x80) !== 0 ? undefined : code)
+  );
+
 export type ISiCard6StorageFields = IBaseSiCardStorageFields;
 
 export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> = {
@@ -59,8 +74,8 @@ export const siCard6StorageLocations: SiStorageLocations<ISiCard6StorageFields> 
   startTime: new SiTime([[0x1b], [0x1a]], 0x18),
   finishTime: new SiTime([[0x17], [0x16]], 0x14),
   checkTime: new SiTime([[0x1f], [0x1e]], 0x1c),
-  startCode: siPunchCode(0x18),
-  finishCode: siPunchCode(0x14),
+  startCode: siCard6StartFinishCode(0x18),
+  finishCode: siCard6StartFinishCode(0x14),
   checkCode: siPunchCode(0x1c),
   startSubsec256: siSubsec256(0x18),
   finishSubsec256: siSubsec256(0x14),

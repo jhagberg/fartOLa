@@ -67,11 +67,9 @@ cover them):
   PC Programmer's Guide 5 says TSS is 1/256 s; we use 1/256 s for every card
   (`subsec_256`). Check against a bench capture with a known station time
   (`siac-jonas-001` finish: CN 117, plausible but not checked).
-- SI6 start/finish with bit 7: the sheet says the subsecond byte is stored
-  instead of the station code, but `startCode`/`finishCode` still take CN
-  (`siPunchCode`), so they currently equal the fraction byte there. Code
-  selection left unchanged in the subsecond PR; decide whether SI6 should
-  report no code when bit 7 is set.
+- SI6 start/finish with bit 7: FIXED. CN holds the fraction (SPORTident doc), so
+  the station code is now undefined; no other location is documented and we
+  do not guess one (`subsec.test.ts`).
 - Block-1 audit (SI8/SI9/SI10/SI11/SIAC): no live-read gap found; see
   `block1Audit.test.ts`. Fields that read block 1: card holder 0x80-0x9F
   (SI10 family), the three station codes, SI8/SI9 punches at 0x88 / 0x38+.
