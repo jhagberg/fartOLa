@@ -3,7 +3,8 @@
 // Lottning e2e (Phase 2.2 M1 UI): a draw shows what it will do and what it
 // did, and is undone whole from the history (ADR-0016 rules 1 and 2); a
 // pursuit refused for an unconfirmed class kind is confirmed in place and
-// then drawn; class kinds and the level are set on the info page.
+// then drawn from an uploaded day-1 ResultList; class kinds and the level
+// are set on the info page.
 //
 // Shares the tmp DB with the other specs; every test makes its own
 // competition from the synthetic IOF fixtures (H21 × 2, D21 × 1).
@@ -70,7 +71,7 @@ test('a draw says what it will do and did, and is undone whole from the history'
   );
 });
 
-test('a pursuit refused for an unconfirmed class kind is confirmed in place, then drawn', async ({
+test('a pursuit refused for an unconfirmed class kind is confirmed in place, then drawn from day 1', async ({
   page,
   request,
 }) => {
@@ -90,9 +91,18 @@ test('a pursuit refused for an unconfirmed class kind is confirmed in place, the
   );
   await expect(page.getByTestId('lottning-class-kind')).toHaveAttribute('data-status', 'operator');
 
-  // No day-1 results: both runners start in the restart block.
+  // Day 1 (SOFT TR 7.4.1): Anna OK, Bo mispunched, so Bo restarts.
+  await page
+    .getByTestId('pursuit-results-file')
+    .setInputFiles(path.join(FIXTURES, 'iof30-resultlist-expected.xml'));
+  await page.getByTestId('pursuit-results-upload').click();
+  await expect(page.getByTestId('pursuit-results-done')).toContainText(
+    'Resultat i filen: 3. Matchade löpare: 3.'
+  );
   await page.getByTestId('lottning-draw-btn').click();
-  await expect(page.getByTestId('lottning-done')).toContainText('I omstarten: 2.');
+  await expect(page.getByTestId('lottning-done')).toContainText(
+    'I omstarten: 1. Utan resultat från förra etappen: 0.'
+  );
 });
 
 test('class kinds and the competition level are set on the info page', async ({

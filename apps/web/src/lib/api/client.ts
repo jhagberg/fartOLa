@@ -528,6 +528,50 @@ export async function importCompetitionFile(
   return parsed as { kind: 'CourseData' | 'EntryList'; [k: string]: unknown };
 }
 
+/** What POST …/import/previous-results did: results in the file, runners
+ * matched, and the runners of the file's classes that were not found (they
+ * start in the pursuit's restart block). */
+export interface PreviousResultsImport {
+  results: number;
+  matched: number;
+  unmatched: Array<{
+    competitor_id: string;
+    name: string;
+    club: string | null;
+    class_name: string;
+  }>;
+}
+
+/** An earlier stage's IOF XML 3.0 ResultList for a pursuit (SOFT TR 7.4.1).
+ * Multipart like importCompetitionFile. 400 xsd_invalid / parse_failed /
+ * no_file, 413 file_too_large. */
+export async function importPreviousResults(
+  competitionId: string,
+  file: File
+): Promise<PreviousResultsImport> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/import/previous-results`,
+    { method: 'POST', body: form }
+  );
+  const text = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = text.length > 0 ? JSON.parse(text) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+  if (!res.ok) {
+    const message =
+      parsed && typeof parsed === 'object' && 'error' in parsed
+        ? String((parsed as { error: unknown }).error)
+        : `HTTP ${res.status} on previous-results import`;
+    throw new ApiError(res.status, message, parsed, text);
+  }
+  return parsed as PreviousResultsImport;
+}
+
 // ---------------------------------------------------------------------------
 // Readout + Results (projection-store reads)
 // ---------------------------------------------------------------------------

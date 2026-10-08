@@ -42,6 +42,7 @@
   import Button from '#lib/ui/Button.svelte';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import StartTimeHistory from '#lib/components/StartTimeHistory.svelte';
+  import PreviousResultsUpload from '#lib/components/PreviousResultsUpload.svelte';
   import type {
     ClassDTO,
     CompetitionLevel,
@@ -591,6 +592,7 @@
       <fieldset class="group" data-testid="lottning-pursuit">
         <legend>{t('lottning.pursuitSettings')}</legend>
         <p class="hint">{t('lottning.pursuitHint')}</p>
+        <PreviousResultsUpload {competitionId} />
         <Field label={t('lottning.restart')} htmlFor="lottning-restart">
           <Input
             id="lottning-restart"
