@@ -1,15 +1,16 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Live card read of a touch-free (PTD bit 7) start/finish/check record on an
-// SI10/SIAC: its station code sits in block 1 (page 1) at 0xa5 / 0xa9 / 0xa1,
-// so the read fetches page 1 even when the card holder is already complete,
-// and only then. Fake station serves pages from a synthetic memory image.
+// Live card read of a touch-free (PTD bit 7) start/finish record on an
+// SI10/SIAC: its station code sits in block 1 (page 1) at 0xa5 / 0xa9, so the
+// read fetches page 1 even when the card holder is already complete, and only
+// then. A bit-7 check record keeps its code in CN and needs no page 1
+// (SPORTident.Communication 2.59.0, simulated readout of memory images, 2026-10-08). Fake station serves pages from a synthetic memory image.
 
 // Evidence tags used in comments below: documented (SPORTident doc) = the card
 // data structure doc, provided on request; MeOS behaviour = MeOS
 // SportIdent.cpp; bench capture <fixture>; assumption, unverified.
 //
-// Everything here about page 1 holding the code (0xa5 / 0xa9 / 0xa1) is MeOS
+// Everything here about page 1 holding the code (0xa5 / 0xa9) is MeOS
 // behaviour (SportIdent.cpp:1366, 1929), not in the SPORTident card doc; the
 // synthetic memory image is ours. Erased block 1 (0xee) = no code: assumption,
 // unverified. Page 1 = bytes 0x80-0xff: documented (SPORTident doc).
@@ -60,7 +61,7 @@ async function read(mem: number[]): Promise<{ card: SiCard10; pages: number[] }>
   return { card, pages };
 }
 
-describe('block 1 read for touch-free start/finish/check', () => {
+describe('block 1 read for touch-free start/finish', () => {
   test('touch-free finish: page 1 is read and the block-1 code is decoded', async () => {
     const mem = makeMemory();
     setRecord(mem, FINISH, 0x81, 0xee); // PTD bit 7 + PM; CN is not the code
@@ -71,20 +72,34 @@ describe('block 1 read for touch-free start/finish/check', () => {
     assert.equal(card.raceResult.finishTouchFree, true);
   });
 
-  test('PTD bit 6 adds 256 to the block-1 code; start (0xa5) and check (0xa1) too', async () => {
+  test('PTD bit 6 adds 256 to the block-1 code; start (0xa5) too; a bit-7 check keeps CN', async () => {
     const mem = makeMemory();
     setRecord(mem, FINISH, 0xc1, 0xee);
     setRecord(mem, START, 0x81, 0xee);
-    setRecord(mem, CHECK, 0xc1, 0xee);
+    setRecord(mem, CHECK, 0xc1, 3);
     mem[0xa9] = 20;
     mem[0xa5] = 11;
-    mem[0xa1] = 3;
+    mem[0xa1] = 99; // not the check code
     const { card, pages } = await read(mem);
     assert.deepEqual(pages, [0, 1]);
     assert.deepEqual(
       [card.raceResult.startCode, card.raceResult.finishCode, card.raceResult.checkCode],
       [11, 276, 259]
     );
+  });
+
+  test('a bit-7 check alone reads no page 1: code is CN + 256 × bit 6 (77, 333), never 0xa1', async () => {
+    for (const [ptd, code] of [
+      [0x81, 77],
+      [0xc1, 333],
+    ] as const) {
+      const mem = makeMemory();
+      setRecord(mem, CHECK, ptd, 77);
+      mem[0xa1] = 99;
+      const { card, pages } = await read(mem);
+      assert.deepEqual(pages, [0]);
+      assert.equal(card.raceResult.checkCode, code);
+    }
   });
 
   test('touch-free finish with punches: page 1 once, before the punch pages', async () => {
