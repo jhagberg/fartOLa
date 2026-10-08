@@ -889,6 +889,7 @@
   }
   .refusal {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-xs);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);

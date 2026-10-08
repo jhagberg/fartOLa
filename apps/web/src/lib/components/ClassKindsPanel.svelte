@@ -29,7 +29,7 @@
 
   interface Props {
     competitionId: string;
-    /** Show only this class. */
+    /** Show only this class, without the class column and the summary. */
     onlyClassId?: string | null;
     /** Text after the class name, per class id (e.g. "12 anm."). */
     details?: Record<string, string>;
@@ -158,84 +158,90 @@
     {/if}
 
     {#if items.length > 0}
-      <table class="kinds-table">
-        <thead>
-          <tr>
-            <th scope="col">{t('common.class')}</th>
-            <th scope="col">{t('classKinds.kind')}</th>
-            <th scope="col">{t('classKinds.age')}</th>
-            <th scope="col">{t('classKinds.status')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each items as item (item.class_id)}
-            {@const kind = kindOf(item)}
-            {@const status = kindStatus(item)}
-            <tr data-testid="class-kind-row" data-class-id={item.class_id}>
-              <th scope="row" class="name">
-                {item.name}
-                {#if details[item.class_id]}<span class="muted detail">{details[item.class_id]}</span>{/if}
-              </th>
-              <td>
-                <select
-                  class="ctl"
-                  aria-label={t('classKinds.kindFor', { class: item.name })}
-                  value={kind ?? ''}
-                  disabled={busy}
-                  onchange={(e) => onKindChange(item, e.currentTarget.value)}
-                  data-testid="class-kind-select"
-                >
-                  {#if kind === null}
-                    <option value="" disabled>{t('classKinds.choose')}</option>
-                  {/if}
-                  {#each CLASS_KINDS as k (k)}
-                    <option value={k}>{t(`classKinds.kind.${k}`)}</option>
-                  {/each}
-                </select>
-              </td>
-              <td>
-                {#if kind !== null && kindNeedsAge(kind)}
-                  <input
-                    class="ctl age"
-                    type="text"
-                    inputmode="numeric"
-                    aria-label={t('classKinds.ageFor', { class: item.name })}
-                    value={ageOf(item)}
-                    disabled={busy}
-                    onchange={(e) => onAgeChange(item, e.currentTarget.value)}
-                    data-testid="class-kind-age"
-                  />
-                {/if}
-              </td>
-              <td>
-                <div class="status-cell">
-                  <span
-                    class="status"
-                    class:warn={!isConfirmed(item)}
-                    data-testid="class-kind-status"
-                    data-status={status}>{t(`classKinds.status.${status}`)}</span
-                  >
-                  {#if confirmItem(item) !== null && chosen[item.class_id] === undefined}
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      onclick={() => void put([confirmItem(item)!])}
-                      data-testid="class-kind-confirm"
-                    >
-                      {t('classKinds.confirm')}
-                    </Button>
-                  {/if}
-                </div>
-                {#if rowError[item.class_id]}
-                  <p class="err" role="alert" data-testid="class-kind-error">
-                    {rowError[item.class_id]}
-                  </p>
-                {/if}
-              </td>
+      <div class="table-wrap">
+        <table class="kinds-table">
+          <thead>
+            <tr>
+              {#if onlyClassId === null}
+                <th scope="col">{t('common.class')}</th>
+              {/if}
+              <th scope="col">{t('classKinds.kind')}</th>
+              <th scope="col">{t('classKinds.age')}</th>
+              <th scope="col">{t('classKinds.status')}</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each items as item (item.class_id)}
+              {@const kind = kindOf(item)}
+              {@const status = kindStatus(item)}
+              <tr data-testid="class-kind-row" data-class-id={item.class_id}>
+                {#if onlyClassId === null}
+                  <th scope="row" class="name">
+                    {item.name}
+                    {#if details[item.class_id]}<span class="muted detail">{details[item.class_id]}</span>{/if}
+                  </th>
+                {/if}
+                <td>
+                  <select
+                    class="ctl"
+                    aria-label={t('classKinds.kindFor', { class: item.name })}
+                    value={kind ?? ''}
+                    disabled={busy}
+                    onchange={(e) => onKindChange(item, e.currentTarget.value)}
+                    data-testid="class-kind-select"
+                  >
+                    {#if kind === null}
+                      <option value="" disabled>{t('classKinds.choose')}</option>
+                    {/if}
+                    {#each CLASS_KINDS as k (k)}
+                      <option value={k}>{t(`classKinds.kind.${k}`)}</option>
+                    {/each}
+                  </select>
+                </td>
+                <td>
+                  {#if kind !== null && kindNeedsAge(kind)}
+                    <input
+                      class="ctl age"
+                      type="text"
+                      inputmode="numeric"
+                      aria-label={t('classKinds.ageFor', { class: item.name })}
+                      value={ageOf(item)}
+                      disabled={busy}
+                      onchange={(e) => onAgeChange(item, e.currentTarget.value)}
+                      data-testid="class-kind-age"
+                    />
+                  {/if}
+                </td>
+                <td>
+                  <div class="status-cell">
+                    <span
+                      class="status"
+                      class:warn={!isConfirmed(item)}
+                      data-testid="class-kind-status"
+                      data-status={status}>{t(`classKinds.status.${status}`)}</span
+                    >
+                    {#if confirmItem(item) !== null && chosen[item.class_id] === undefined}
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        onclick={() => void put([confirmItem(item)!])}
+                        data-testid="class-kind-confirm"
+                      >
+                        {t('classKinds.confirm')}
+                      </Button>
+                    {/if}
+                  </div>
+                  {#if rowError[item.class_id]}
+                    <p class="err" role="alert" data-testid="class-kind-error">
+                      {rowError[item.class_id]}
+                    </p>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
   {/if}
 </div>
@@ -243,7 +249,11 @@
 <style>
   .kinds {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-sm);
+  }
+  .table-wrap {
+    overflow-x: auto;
   }
   .summary {
     display: grid;
@@ -288,6 +298,7 @@
     font-weight: 500;
   }
   .detail {
+    white-space: nowrap;
     margin-left: var(--space-xs);
     font-weight: 400;
     font-size: var(--fs-caption);
@@ -300,6 +311,10 @@
     background: var(--bg);
     color: var(--fg);
     font: inherit;
+  }
+  select.ctl {
+    width: 100%;
+    min-width: 9rem;
   }
   .age {
     width: 4.5rem;
