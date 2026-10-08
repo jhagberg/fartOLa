@@ -2,8 +2,15 @@
   Authored for fartola. Not ported from upstream.
 
   LottningView — operator draw panel for start-time lottning (D-03/D-07).
-  Provides class selector, draw mode picker (SOFT/Random/Simultaneous),
-  first-start time, interval, vacant slots, and a Lotta button.
+  Provides class selector, draw mode picker (SOFT, random, mass start,
+  seeded, pursuit, reverse pursuit), first-start time, interval, vacant
+  slots and where they go, late entrants (before, after, on vacant places;
+  SOFT TR 7.5.7/7.5.8), seeding groups (TR 7.4.5) and the pursuit fields
+  (TR 7.4.1), and a Lotta button. The class's kind and the competition level
+  are shown, because the SOFT rules the server applies depend on them; a
+  refused draw says why in Swedish and, for an unconfirmed class kind,
+  offers the confirmation right there (ADR-0016 rules 1 and 6). Form logic
+  lives in screens/lottning.ts.
   After drawing, shows the sorted start list with assigned start times.
   Re-lotta asks for confirmation before clearing and redrawing.
   Per-runner inline start-time edit is via PATCH competitor start_time_ms.
@@ -16,20 +23,44 @@
   import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
+    getCompetition,
     listClasses,
+    listCompetitors,
     postLottning,
     getLottning,
     patchClass,
     patchCompetitorStartTime,
-    type LottningBody,
+    putSeeding,
+    type DrawMode,
+    type DrawType,
+    type LottningResult,
+    type VacantPosition,
   } from '#lib/api/client.ts';
   import Field from '#lib/ui/Field.svelte';
   import Select from '#lib/ui/Select.svelte';
   import Input from '#lib/ui/Input.svelte';
   import Button from '#lib/ui/Button.svelte';
-  import type { ClassDTO, StartMethod } from '@fartola/shared-types';
+  import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
+  import type {
+    ClassDTO,
+    CompetitionLevel,
+    CompetitorDTO,
+    StartMethod,
+  } from '@fartola/shared-types';
   import { clockToEpochMs, formatClockTime } from '@fartola/shared-types';
   import { fetchCompetitionClock, type CompetitionClock } from './competition-clock.ts';
+  import { kindStatus } from './class-kinds.ts';
+  import {
+    DRAW_MODES,
+    DRAW_TYPES,
+    VACANT_POSITIONS,
+    buildLottningBody,
+    lateEntrantsAllowed,
+    refusalOf,
+    seedGroupsFromInput,
+    visibleFields,
+    type Refusal,
+  } from './lottning.ts';
 
   interface Props {
     competitionId: string;
@@ -41,7 +72,19 @@
 
   let classes: ClassDTO[] = $state([]);
   let selectedClassId: string = $state('');
-  let drawMode: 'SOFT' | 'Random' | 'Simultaneous' = $state('SOFT');
+  let drawMode: DrawMode = $state('SOFT');
+  /** Whole class or only the late entrants (shown once the class has a list). */
+  let drawType: DrawType = $state('All');
+  let vacantPosition: VacantPosition = $state('Mixed');
+  /** Seeded: strongest group first (default last, as MeOS). */
+  let bestFirst = $state(false);
+  /** Seeded: the typed group per runner id ('' = unseeded). */
+  let seedTyped: Record<string, string> = $state({});
+  /** Pursuit: restart block (omstart) as HH:MM, and the minutes behind the
+   * leader that send a runner there; scale is the time factor. */
+  let restartHHMM: string = $state('11:00');
+  let maxBehindMin: number = $state(30);
+  let scale: number = $state(1);
 
   /** HH:MM string for the first-start time input. Converted to epoch ms on
    * the competition clock (02.1-14 Task 1: start times are epoch ms). */
@@ -58,9 +101,18 @@
 
   let submitting = $state(false);
   let error: string | null = $state(null);
+  /** A refused draw, with its confirm path (ADR-0016 rule 6). */
+  let refusal: Refusal | null = $state(null);
+  /** What the last draw did (ADR-0016 rule 1, "confirm after"). */
+  let done: string | null = $state(null);
+
+  /** Competition level (SOFT TR 3.3.1), shown because seeding depends on it. */
+  let level: CompetitionLevel | null = $state(null);
+  /** Every runner of the selected class, drawn or not. */
+  let classRunners: CompetitorDTO[] = $state([]);
 
   /** Start list after a draw or on initial load. */
-  let startList: Array<{ id: string; name: string; club: string | null; card_number: number | null; start_time_ms: number | null }> = $state([]);
+  let startList: Array<{ id: string; name: string; club: string | null; card_number: number | null; start_time_ms: number | null; seed_group: number | null }> = $state([]);
   let startListLoaded = $state(false);
 
   /** Re-lotta confirmation dialog state. */
@@ -93,15 +145,28 @@
     if (!selectedClassId) return;
     try {
       // The clock with the list it formats: both reflect the server now.
-      const [res, nextClock] = await Promise.all([
-        getLottning(competitionId, selectedClassId),
-        fetchCompetitionClock(competitionId),
+      const classId = selectedClassId;
+      const [res, detail, runners] = await Promise.all([
+        getLottning(competitionId, classId),
+        getCompetition(competitionId),
+        listCompetitors(competitionId),
       ]);
-      clock = nextClock;
+      clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
+      level = detail.competition.level ?? null;
       startList = res.start_list;
+      classRunners = runners.competitors.filter((r) => r.class_id === classId);
+      // The stored seeding groups of the drawn runners (a redraw reuses
+      // them); what the operator has typed and not yet drawn with stays.
+      seedTyped = {
+        ...Object.fromEntries(
+          res.start_list.map((r) => [r.id, r.seed_group === null ? '' : String(r.seed_group)])
+        ),
+        ...seedTyped,
+      };
       startListLoaded = true;
     } catch {
       startList = [];
+      classRunners = [];
       startListLoaded = true;
     }
   }
@@ -109,7 +174,18 @@
   async function onClassChange(): Promise<void> {
     startListLoaded = false;
     startList = [];
+    refusal = null;
+    done = null;
+    error = null;
+    redrawConfirmOpen = false;
     await loadStartList();
+  }
+
+  /** The class kind was confirmed from the refusal: refresh the kind line. */
+  async function onKindSaved(): Promise<void> {
+    refusal = null;
+    done = t('lottning.kindSaved');
+    classes = (await listClasses(competitionId)).classes;
   }
 
   // --- helpers --------------------------------------------------------------
@@ -118,12 +194,10 @@
    * was loaded with; refreshed with every list load. */
   let clock: CompetitionClock | null = $state(null);
 
-  /** Convert HH:MM on the competition clock to epoch ms (clock fetched now:
-   * the offset may have been corrected since the list loaded). */
-  async function hhmmToMs(hhmm: string): Promise<number> {
+  /** HH:MM on the competition clock to epoch ms. */
+  function hhmmToMs(hhmm: string, c: CompetitionClock): number {
     const [hh, mm] = hhmm.split(':').map(Number);
-    const { date, offsetMin } = await fetchCompetitionClock(competitionId);
-    return clockToEpochMs(date, (hh ?? 0) * 3600 + (mm ?? 0) * 60, offsetMin);
+    return clockToEpochMs(c.date, (hh ?? 0) * 3600 + (mm ?? 0) * 60, c.offsetMin);
   }
 
   /** Format epoch ms as HH:MM:SS on the competition clock. */
@@ -148,9 +222,34 @@
 
   // --- draw -----------------------------------------------------------------
 
+  const selectedClassName = $derived(classes.find((c) => c.id === selectedClassId)?.name ?? '');
+  /** Late entrants can be placed once the class has a start list. */
+  const effectiveDrawType = $derived<DrawType>(
+    startList.length > 0 && lateEntrantsAllowed(drawMode) ? drawType : 'All'
+  );
+  const fields = $derived(visibleFields(drawMode, effectiveDrawType));
+  const namedRunners = $derived(classRunners.filter((r) => r.name.trim().length > 0));
+  const lateEntrants = $derived(namedRunners.filter((r) => r.start_time_ms === null));
+
+  /** What the draw will do, shown before it (ADR-0016 rule 1). */
+  const preview = $derived(
+    effectiveDrawType === 'All'
+      ? t('lottning.preview.all', { count: namedRunners.length, class: selectedClassName })
+      : t('lottning.preview.late', { count: lateEntrants.length, class: selectedClassName })
+  );
+
+  function summaryOf(res: LottningResult, className: string): string {
+    const head = t('lottning.done', { count: res.drawn, class: className });
+    if (res.restarted === undefined) return head;
+    return `${head} ${t('lottning.donePursuit', {
+      restarted: res.restarted,
+      without: res.without_result ?? 0,
+    })}`;
+  }
+
   async function submitDraw(): Promise<void> {
     if (!selectedClassId) return;
-    if (startList.length > 0 && !redrawConfirmOpen) {
+    if (effectiveDrawType === 'All' && startList.length > 0 && !redrawConfirmOpen) {
       // Existing start list — ask for confirmation
       redrawConfirmOpen = true;
       return;
@@ -158,21 +257,54 @@
     redrawConfirmOpen = false;
     submitting = true;
     error = null;
+    refusal = null;
+    done = null;
+    const classId = selectedClassId;
+    const className = selectedClassName;
     try {
-      const body: LottningBody = {
+      if (drawMode === 'Seeded') {
+        const groups = seedGroupsFromInput(
+          classRunners.map((r) => r.id),
+          seedTyped
+        );
+        if (groups === null) {
+          error = t('lottning.err.seedInvalid');
+          return;
+        }
+        await putSeeding(competitionId, classId, groups);
+      }
+      // Fetched now: the offset may have been corrected since the list loaded.
+      const c = await fetchCompetitionClock(competitionId);
+      const body = buildLottningBody({
         mode: drawMode,
-        firstStartMs: await hhmmToMs(firstStartHHMM),
-        intervalSec,
-        ...(vacantSlots > 0 ? { vacantSlots } : {}),
-      };
-      await postLottning(competitionId, selectedClassId, body);
+        drawType: effectiveDrawType,
+        firstStartMs: hhmmToMs(firstStartHHMM, c),
+        intervalSec: intervalSec ?? 0,
+        vacantSlots: vacantSlots ?? 0,
+        vacantPosition,
+        bestFirst,
+        restartMs: hhmmToMs(restartHHMM, c),
+        maxBehindMin: maxBehindMin ?? 0,
+        scale: scale || 1,
+      });
+      const res = await postLottning(competitionId, classId, body);
+      done = summaryOf(res, className);
       await loadStartList();
     } catch (e) {
-      error = (e as Error).message;
+      refusal = refusalOf(e, className);
     } finally {
       submitting = false;
     }
   }
+
+  const refusalText = $derived.by(() => {
+    const r: Refusal | null = refusal;
+    if (r === null) return '';
+    return t(r.key, {
+      ...r.vars,
+      ...(r.fieldKey !== undefined ? { field: t(r.fieldKey) } : {}),
+    });
+  });
 
   async function saveMaxTime(): Promise<void> {
     if (!selectedClassId) return;
@@ -251,7 +383,29 @@
     }
   }
 
-  const selectedClassName = $derived(classes.find((c) => c.id === selectedClassId)?.name ?? '');
+  const selectedClass = $derived(classes.find((c) => c.id === selectedClassId) ?? null);
+  /** The selected class's kind as stored; a name guess is not confirmed. */
+  const selectedKindStatus = $derived(
+    selectedClass === null
+      ? null
+      : kindStatus({
+          class_id: selectedClass.id,
+          name: selectedClass.name,
+          class_kind: selectedClass.class_kind ?? null,
+          age_class: selectedClass.age_class ?? null,
+          class_kind_source: selectedClass.class_kind_source ?? null,
+          suggestion: null,
+        })
+  );
+  const MODE_KEYS: Record<DrawMode, string> = {
+    SOFT: 'lottning.soft',
+    Random: 'lottning.random',
+    Simultaneous: 'lottning.simultaneous',
+    Seeded: 'lottning.seeded',
+    Pursuit: 'lottning.pursuit',
+    ReversePursuit: 'lottning.reversePursuit',
+  };
+  const infoHref = $derived(`/competition/${encodeURIComponent(competitionId)}/info`);
 </script>
 
 <div class="lottning" data-testid="lottning-view">
@@ -274,28 +428,77 @@
       </Select>
     </Field>
 
+    <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
+    {#if selectedClass !== null && selectedKindStatus !== null}
+      <div class="context">
+        <p data-testid="lottning-class-kind" data-status={selectedKindStatus}>
+          {t('classKinds.kind')}:
+          <strong
+            >{selectedClass.class_kind
+              ? t(`classKinds.kind.${selectedClass.class_kind}`)
+              : '–'}</strong
+          >
+          ({t(`classKinds.status.${selectedKindStatus}`)})
+          {#if selectedKindStatus !== 'eventor' && selectedKindStatus !== 'operator'}
+            <a href={`${infoHref}#klasser`}>{t('lottning.confirmKindLink')}</a>
+          {/if}
+        </p>
+        <p data-testid="lottning-level">
+          {t('info.level.label')}:
+          <strong>{level === null ? t('info.level.none') : t(`info.level.${level}`)}</strong>
+          <a href={infoHref}>{t('lottning.changeLevelLink')}</a>
+        </p>
+      </div>
+    {/if}
+
     <!-- Draw mode -->
     <Field label={t('lottning.mode')} htmlFor="lottning-mode">
       <Select id="lottning-mode" bind:value={drawMode} data-testid="lottning-mode-select">
-        <option value="SOFT">{t('lottning.soft')}</option>
-        <option value="Random">{t('lottning.random')}</option>
-        <option value="Simultaneous">{t('lottning.simultaneous')}</option>
+        {#each DRAW_MODES as m (m)}
+          <option value={m}>{t(MODE_KEYS[m])}</option>
+        {/each}
       </Select>
     </Field>
 
+    <!-- Whole class or late entrants only (SOFT TR 7.5.7, 7.5.8) -->
+    {#if startList.length > 0 && lateEntrantsAllowed(drawMode)}
+      <fieldset class="radio-group" data-testid="lottning-draw-type">
+        <legend>{t('lottning.drawType')}</legend>
+        {#each DRAW_TYPES as dt (dt)}
+          <label class="radio-row">
+            <input type="radio" name="lottning-draw-type" value={dt} bind:group={drawType} />
+            <span>{t(`lottning.drawType.${dt}`)}</span>
+          </label>
+        {/each}
+      </fieldset>
+    {/if}
+
     <!-- First start time -->
-    <Field label={t('lottning.firstStart')} htmlFor="lottning-first-start">
-      <Input
-        id="lottning-first-start"
-        type="time"
-        bind:value={firstStartHHMM}
-        data-testid="lottning-first-start"
-      />
-    </Field>
+    {#if fields.firstStart}
+      <Field
+        label={t(fields.pursuit ? 'lottning.firstStartPursuit' : 'lottning.firstStart')}
+        htmlFor="lottning-first-start"
+      >
+        <Input
+          id="lottning-first-start"
+          type="time"
+          bind:value={firstStartHHMM}
+          data-testid="lottning-first-start"
+        />
+      </Field>
+    {/if}
 
     <!-- Interval (hidden for Simultaneous) -->
-    {#if drawMode !== 'Simultaneous'}
-      <Field label={t('lottning.interval')} htmlFor="lottning-interval">
+    {#if fields.interval}
+      <Field
+        label={t('lottning.interval')}
+        htmlFor="lottning-interval"
+        {...!fields.firstStart
+          ? { hint: t('lottning.intervalLateHint') }
+          : fields.pursuit
+            ? { hint: t('lottning.intervalPursuitHint') }
+            : {}}
+      >
         <Input
           id="lottning-interval"
           type="number"
@@ -306,16 +509,113 @@
       </Field>
     {/if}
 
-    <!-- Vacant slots -->
-    <Field label={t('lottning.vacants')} htmlFor="lottning-vacants">
-      <Input
-        id="lottning-vacants"
-        type="number"
-        min="0"
-        bind:value={vacantSlots}
-        data-testid="lottning-vacants"
-      />
-    </Field>
+    <!-- Vacant slots and where they go -->
+    {#if fields.vacancies}
+      <Field label={t('lottning.vacants')} htmlFor="lottning-vacants">
+        <Input
+          id="lottning-vacants"
+          type="number"
+          min="0"
+          bind:value={vacantSlots}
+          data-testid="lottning-vacants"
+        />
+      </Field>
+      {#if vacantSlots > 0}
+        <Field label={t('lottning.vacantPosition')} htmlFor="lottning-vacant-position">
+          <Select
+            id="lottning-vacant-position"
+            bind:value={vacantPosition}
+            data-testid="lottning-vacant-position"
+          >
+            {#each VACANT_POSITIONS as vp (vp)}
+              <option value={vp}>{t(`lottning.vacantPosition.${vp}`)}</option>
+            {/each}
+          </Select>
+        </Field>
+      {/if}
+    {/if}
+
+    <!-- Seeding groups (SOFT TR 7.4.5) -->
+    {#if fields.seeding}
+      <fieldset class="group" data-testid="lottning-seeding">
+        <legend>{t('lottning.seeding')}</legend>
+        <p class="hint">{t('lottning.seedingHint')}</p>
+        <label class="check-row">
+          <input type="checkbox" bind:checked={bestFirst} data-testid="lottning-best-first" />
+          <span>{t('lottning.bestFirst')}</span>
+        </label>
+        {#if namedRunners.length === 0}
+          <p class="hint">{t('lottning.seedingEmpty')}</p>
+        {:else}
+          <table class="start-table seed-table">
+            <thead>
+              <tr>
+                <th>{t('runners.addSheet.nameLabel')}</th>
+                <th>{t('runners.addSheet.clubLabel')}</th>
+                <th>{t('lottning.seedGroup')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each namedRunners as r (r.id)}
+                <tr>
+                  <td>{r.name}</td>
+                  <td class="col-club">{r.club ?? '–'}</td>
+                  <td>
+                    <input
+                      class="seed-input"
+                      type="text"
+                      inputmode="numeric"
+                      aria-label={t('lottning.seedGroupFor', { name: r.name })}
+                      value={seedTyped[r.id] ?? ''}
+                      oninput={(e) => {
+                        seedTyped = { ...seedTyped, [r.id]: e.currentTarget.value };
+                      }}
+                      data-testid="lottning-seed-input"
+                    />
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </fieldset>
+    {/if}
+
+    <!-- Pursuit and reverse pursuit (SOFT TR 7.4.1) -->
+    {#if fields.pursuit}
+      <fieldset class="group" data-testid="lottning-pursuit">
+        <legend>{t('lottning.pursuitSettings')}</legend>
+        <p class="hint">{t('lottning.pursuitHint')}</p>
+        <Field label={t('lottning.restart')} htmlFor="lottning-restart">
+          <Input
+            id="lottning-restart"
+            type="time"
+            bind:value={restartHHMM}
+            data-testid="lottning-restart"
+          />
+        </Field>
+        <Field label={t('lottning.maxBehind')} htmlFor="lottning-max-behind">
+          <Input
+            id="lottning-max-behind"
+            type="number"
+            min="1"
+            bind:value={maxBehindMin}
+            data-testid="lottning-max-behind"
+          />
+        </Field>
+        <Field label={t('lottning.scale')} hint={t('lottning.scaleHint')} htmlFor="lottning-scale">
+          <Input
+            id="lottning-scale"
+            type="number"
+            min="0.1"
+            max="10"
+            step="0.1"
+            bind:value={scale}
+            data-testid="lottning-scale"
+          />
+        </Field>
+      </fieldset>
+    {/if}
 
     <!-- Max time -->
     <Field
@@ -369,6 +669,30 @@
       <p class="err" role="alert">{error}</p>
     {/if}
 
+    {#if refusal !== null}
+      <div class="refusal" role="alert" data-testid="lottning-refusal">
+        <p class="err">{refusalText}</p>
+        {#if refusal.fix === 'class_kind' && selectedClassId}
+          <ClassKindsPanel
+            {competitionId}
+            onlyClassId={selectedClassId}
+            onSaved={() => void onKindSaved()}
+          />
+        {:else if refusal.fix === 'level'}
+          <a href={infoHref} data-testid="lottning-set-level">{t('lottning.setLevelLink')}</a>
+        {/if}
+      </div>
+    {/if}
+
+    {#if done !== null}
+      <p class="done" role="status" data-testid="lottning-done">{done}</p>
+    {/if}
+
+    <!-- What the draw will do (ADR-0016 rule 1) -->
+    {#if selectedClassId && startListLoaded}
+      <p class="preview" data-testid="lottning-preview">{preview}</p>
+    {/if}
+
     <!-- Draw button — label changes based on whether a start list exists -->
     <div class="draw-btn-row">
       <Button
@@ -379,9 +703,11 @@
       >
         {submitting
           ? '…'
-          : startList.length > 0
-            ? t('lottning.redraw')
-            : t('lottning.draw')}
+          : effectiveDrawType !== 'All'
+            ? t('lottning.drawLate')
+            : startList.length > 0
+              ? t('lottning.redraw')
+              : t('lottning.draw')}
       </Button>
     </div>
 
@@ -508,6 +834,73 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+  }
+  .context {
+    display: grid;
+    gap: 2px;
+  }
+  .context p,
+  .preview,
+  .done {
+    margin: 0;
+    font-size: var(--fs-body);
+  }
+  .context a,
+  .refusal a {
+    color: var(--accent);
+    margin-left: var(--space-xs);
+  }
+  .radio-group,
+  .group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-sm) var(--space-md);
+    margin: 0;
+    display: grid;
+    gap: var(--space-xs);
+  }
+  .radio-group legend,
+  .group legend {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    padding: 0 4px;
+  }
+  .radio-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--hit);
+  }
+  .hint {
+    margin: 0;
+    font-size: var(--fs-caption);
+    color: var(--fg-muted);
+  }
+  .seed-input {
+    width: 4.5rem;
+    min-height: var(--hit);
+    padding: 0 var(--space-sm);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+  }
+  .refusal {
+    display: grid;
+    gap: var(--space-xs);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: var(--space-sm);
+    background: var(--bg-sunken);
+  }
+  .refusal .err {
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
+  .preview {
+    font-weight: 600;
   }
   .draw-btn-row {
     display: flex;

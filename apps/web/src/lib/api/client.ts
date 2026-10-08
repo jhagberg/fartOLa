@@ -873,12 +873,37 @@ export function returnHiredCard(
 // Lottning — start-time draw (Phase 2.1 Plan 02.1-02 routes)
 // ---------------------------------------------------------------------------
 
+export type DrawMode = 'SOFT' | 'Random' | 'Simultaneous' | 'Seeded' | 'Pursuit' | 'ReversePursuit';
+/** 'All' draws the whole class; the others place only the runners without
+ * a start time (late entrants, SOFT TR 7.5.7/7.5.8). */
+export type DrawType = 'All' | 'RemainingBefore' | 'RemainingAfter' | 'RemainingVacant';
+export type VacantPosition = 'Mixed' | 'First' | 'Last';
+
+/** Mirrors the edge LottningInput schema (routes/lottning.ts). */
 export interface LottningBody {
-  mode: 'SOFT' | 'Random' | 'Simultaneous';
-  /** Epoch ms of the first start (all start times are epoch ms). */
-  firstStartMs: number;
-  intervalSec: number;
+  mode: DrawMode;
+  /** Epoch ms of the first start (all start times are epoch ms). Required
+   * for drawType 'All'. */
+  firstStartMs?: number;
+  intervalSec?: number;
   vacantSlots?: number;
+  vacantPosition?: VacantPosition;
+  drawType?: DrawType;
+  /** Seeded: strongest group starts first (default last). */
+  bestFirst?: boolean;
+  /** Pursuit: epoch ms of the restart block (omstart). */
+  restartMs?: number;
+  /** Pursuit: runners this far behind the leader start in the restart block. */
+  maxBehindSec?: number;
+  /** Pursuit: time factor. Default 1. */
+  scale?: number;
+}
+
+/** What a draw did; a pursuit adds who restarts and who had no result. */
+export interface LottningResult {
+  drawn: number;
+  restarted?: number;
+  without_result?: number;
 }
 
 export interface StartListEntry {
@@ -888,6 +913,8 @@ export interface StartListEntry {
   card_number: number | null;
   /** Epoch ms; null = not drawn. */
   start_time_ms: number | null;
+  /** Seeding group (1 = strongest, SOFT TR 7.4.5); null = unseeded. */
+  seed_group: number | null;
 }
 
 export interface LottningResponse {
@@ -908,10 +935,23 @@ export function postLottning(
   competitionId: string,
   classId: string,
   body: LottningBody
-): Promise<{ drawn: number }> {
+): Promise<LottningResult> {
   return apiFetch(
     `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}`,
     { method: 'POST', body }
+  );
+}
+
+/** PUT …/lottning/:classId/seeding — the class's seeding groups, competitor
+ * ids per group, strongest first (SOFT TR 7.4.5). Replaces the old groups. */
+export function putSeeding(
+  competitionId: string,
+  classId: string,
+  groups: string[][]
+): Promise<{ seeded: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}/seeding`,
+    { method: 'PUT', body: { groups } }
   );
 }
 
