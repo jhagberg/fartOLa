@@ -30,6 +30,7 @@ import {
   arr2cardNumber,
   siPunchCode,
   siStationCode,
+  siSubsec256,
   siTouchFree,
 } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
@@ -144,6 +145,8 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   startCode: siStationCode(0x0c, 0xa5),
   finishCode: siStationCode(0x10, 0xa9),
   checkCode: siStationCode(0x08, 0xa1),
+  startSubsec256: siSubsec256(0x0c),
+  finishSubsec256: siSubsec256(0x10),
   startTouchFree: siTouchFree(0x0c),
   finishTouchFree: siTouchFree(0x10),
   checkTouchFree: siTouchFree(0x08),
@@ -313,12 +316,18 @@ export class ModernSiCard extends BaseSiCard {
     if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
     if (this.storage.get('startTouchFree')?.value === true && startTime != null)
       this.raceResult.startTouchFree = true;
+    const startSubsec = this.storage.get('startSubsec256')?.value;
+    if (startTime != null && startSubsec !== undefined)
+      this.raceResult.startSubsec256 = startSubsec;
     const finishTime = this.storage.get('finishTime')?.value;
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
     const finishCode = this.storage.get('finishCode')?.value;
     if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
     if (this.storage.get('finishTouchFree')?.value === true && finishTime != null)
       this.raceResult.finishTouchFree = true;
+    const finishSubsec = this.storage.get('finishSubsec256')?.value;
+    if (finishTime != null && finishSubsec !== undefined)
+      this.raceResult.finishSubsec256 = finishSubsec;
     const checkTime = this.storage.get('checkTime')?.value;
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
