@@ -26,6 +26,8 @@ import type {
   CompetitorCreateInput,
   ClassDTO,
   ClassCreateInput,
+  ClassKind,
+  ClassKindSource,
   StartMethod,
   CourseDTO,
   CourseCreateInput,
@@ -284,6 +286,42 @@ export function createClass(competitionId: string, body: ClassCreateInput): Prom
   return apiFetch<ClassDTO>(`/api/competitions/${encodeURIComponent(competitionId)}/classes`, {
     method: 'POST',
     body,
+  });
+}
+
+/** One class's kind and the suggestion for it (GET …/classes/kinds,
+ * SOFT TR 3.4.2): Eventor's ClassTypeId when linked, else the SOFT name. */
+export interface ClassKindItem {
+  class_id: string;
+  name: string;
+  class_kind: ClassKind | null;
+  age_class: number | null;
+  class_kind_source: ClassKindSource | null;
+  suggestion: {
+    class_kind: ClassKind;
+    age_class: number | null;
+    source: 'eventor' | 'name';
+  } | null;
+}
+
+export interface ClassKindsResponse {
+  eventor: 'used' | 'not_linked' | 'no_key' | 'failed';
+  items: ClassKindItem[];
+}
+
+export function getClassKinds(competitionId: string): Promise<ClassKindsResponse> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/classes/kinds`);
+}
+
+/** The operator confirms or changes class kinds (source 'operator'). All or
+ * nothing: 400 age_class_required / class_not_in_competition with class_id. */
+export function putClassKinds(
+  competitionId: string,
+  items: Array<{ class_id: string; class_kind: ClassKind; age_class: number | null }>
+): Promise<{ updated: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/classes/kinds`, {
+    method: 'PUT',
+    body: { items },
   });
 }
 
