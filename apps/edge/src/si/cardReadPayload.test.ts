@@ -85,19 +85,22 @@ function parseTranscript(raw: string): Step[] {
 }
 
 /**
- * Reply for a GET_SI8 page-1 request that a transcript does not contain.
- * Bench captures made before block-1 support (siac-jonas-001: touch-free
- * finish, block 1 never read) are frozen truth, so they stay strict; this one
- * extra request is answered with an erased page (all 0xEE, "no data") and the
- * decoder keeps touch_free with no code. Undefined for any other request.
+ * Reply for a GET_SI8 page-1 or page-3 request that a transcript does not
+ * contain. Bench captures made before block-1 and block-3 support
+ * (siac-jonas-001: touch-free finish, blocks 1 and 3 never read) are frozen
+ * truth, so they stay strict; these extra requests are answered with an
+ * erased page (all 0xEE, "no data"). Undefined for any other request.
  */
-function legacyBlock1Reply(sent: number[]): number[] | undefined {
-  const request = [0xff, ...render({ command: 0xef, parameters: [0x01] })];
-  if (hexEncode(sent) !== hexEncode(request)) return undefined;
-  return render({
-    command: 0xef,
-    parameters: [0x00, 0x0a, 0x01, ...new Array<number>(128).fill(0xee)],
-  });
+function legacyErasedPageReply(sent: number[]): number[] | undefined {
+  for (const page of [0x01, 0x03]) {
+    const request = [0xff, ...render({ command: 0xef, parameters: [page] })];
+    if (hexEncode(sent) !== hexEncode(request)) continue;
+    return render({
+      command: 0xef,
+      parameters: [0x00, 0x0a, page, ...new Array<number>(128).fill(0xee)],
+    });
+  }
+  return undefined;
 }
 
 class PlaybackTransport extends EventEmitter implements ISerialTransport {
@@ -127,7 +130,7 @@ class PlaybackTransport extends EventEmitter implements ISerialTransport {
       }
     }
     const step = this.steps[this.cursor];
-    const legacy = legacyBlock1Reply(bytes);
+    const legacy = legacyErasedPageReply(bytes);
     if (
       legacy !== undefined &&
       (step === undefined || hexEncode(step.bytes) !== hexEncode(bytes))

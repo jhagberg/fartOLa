@@ -4,6 +4,7 @@
 //   - Registers on the SI8_DET-only registry via `BaseSiCard.registerSi8Range` —
 //     codex review #4 enforces that SIAC NEVER captures SI5_DET messages.
 //   - No lodash; no enums.
+//   - Reads block 3 (battery, versions): readsBlock3 = true.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 //
 // TODO: find out the series value and remove this hack.
@@ -15,6 +16,8 @@
 import { BaseSiCard } from '../BaseSiCard.ts';
 import { ModernSiCard } from './ModernSiCard.ts';
 
-export class SIAC extends ModernSiCard {}
+export class SIAC extends ModernSiCard {
+  static override readsBlock3 = true;
+}
 
 BaseSiCard.registerSi8Range(8_000_000, 9_000_000, SIAC);

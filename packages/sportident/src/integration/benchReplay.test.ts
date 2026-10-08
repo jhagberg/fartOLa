@@ -41,7 +41,7 @@ import { SiMainStation } from '../SiStation/SiMainStation.ts';
 import { NdjsonEmitter } from '../output/ndjson.ts';
 import type { BaseSiCard } from '../SiCard/BaseSiCard.ts';
 import type { FrameError } from '../siProtocol.ts';
-import { legacyBlock1Reply } from '../bin/replay.ts';
+import { legacyErasedPageReply } from '../bin/replay.ts';
 
 // Resolve the fixture directory relative to THIS test file, not process.cwd().
 // pnpm runs `node --test` with cwd = packages/sportident/, so cwd-relative
@@ -129,8 +129,8 @@ class BenchPlaybackTransport extends EventEmitter implements ISerialTransport {
       // advance the cursor like any other matching out step.
     }
     const step = this.steps[this.cursor];
-    // Captures from before block-1 support: see legacyBlock1Reply.
-    const legacy = legacyBlock1Reply(bytes);
+    // Captures from before block-1/block-3 support: see legacyErasedPageReply.
+    const legacy = legacyErasedPageReply(bytes);
     if (
       legacy !== undefined &&
       (step === undefined || hexEncode(step.bytes) !== hexEncode(bytes))
