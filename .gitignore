@@ -52,7 +52,10 @@ docs/guide-meos.pdf
 # MeOS user manual, IOF spec extracts), and anything else useful as
 # context but that we do NOT want to ship in the public repo. Keep it
 # local; mention specific files in .planning/* or docs/* by path so
-# downstream readers know to ask the maintainer for a copy.
+# downstream readers know to ask the maintainer for a copy. Exception:
+# SPORTident's developer documents (PC Programmer's Guide, card data
+# structure sheet) are never passed on; refer requests to SPORTident, who
+# provide them on request.
 .reference/
 
 # MeOS SQL dump fixtures for regression testing. May contain PII (runner
