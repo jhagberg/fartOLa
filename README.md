@@ -62,3 +62,6 @@ reports are welcome as GitHub issues.
 The application is [AGPL-3.0-or-later](LICENSE). `packages/sportident`
 and `packages/shared-types` are MIT. Third-party notices are in
 [apps/edge/NOTICE.md](apps/edge/NOTICE.md).
+
+SPORTident is a trademark of SPORTident GmbH. fartOLa is an independent
+project and is not affiliated with or endorsed by SPORTident.
