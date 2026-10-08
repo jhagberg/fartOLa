@@ -11,7 +11,8 @@ import { SiCard8 } from './SiCard8.ts';
 import { SiCard9 } from './SiCard9.ts';
 import { SiCard11 } from './SiCard11.ts';
 
-/** PTD bit 0 marks PM; where this synthetic data sets it, times are +12 h. */
+/** PTD bit 0 marks PM (documented, SPORTident doc); where this synthetic data
+ * (upstream sportident.js fixture) sets it, times are +12 h. */
 const PM = 43_200;
 
 const hex = (s: string): number[] =>

@@ -37,7 +37,8 @@ const expectedPunches = Array.from({ length: 16 }, (_, i) => ({
   time: Math.floor(i / 4) * (256 - 4) + i + 1,
 }));
 
-/** PTD bit 0 marks PM; where this synthetic data sets it, times are +12 h. */
+/** PTD bit 0 marks PM (documented, SPORTident doc); where this synthetic data
+ * (upstream sportident.js fixture) sets it, times are +12 h. */
 const PM = 43_200;
 
 describe('SiCard6', () => {

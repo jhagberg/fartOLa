@@ -5,6 +5,14 @@
 // only for start and finish", record TD-TSS-TH-TL; PC Programmer's Guide 5,
 // TSS = 1/256 s). Check and ordinary punch records never carry a fraction.
 
+// Evidence tags used in comments below: documented (SPORTident doc) = the card
+// data structure doc, provided on request; MeOS behaviour = MeOS
+// SportIdent.cpp; bench capture <fixture>; assumption, unverified.
+//
+// Erased start/finish (no fraction): our own design, assumption, unverified on hardware.
+// bench capture siac-jonas-001 (touch-free finish, CN 117) is pinned in
+// tests/fixtures/jonas/siac-jonas-001.expected.json and in the edge cardReadPayload test.
+
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 

@@ -146,6 +146,7 @@ describe('NdjsonEmitter', () => {
     assert.strictEqual(parsed.device_serial, '593656');
     const start = parsed.start as Record<string, unknown>;
     assert.strictEqual(start.seconds_in_half_day, 8721);
+    // PTD bit 0 = PM: documented (SPORTident doc); upstream sportident.js fixture.
     assert.strictEqual(start.half_day, 1); // the fixture's start record has the PTD PM bit set
     // finishTime null on this fixture
     assert.strictEqual(parsed.finish, null);
