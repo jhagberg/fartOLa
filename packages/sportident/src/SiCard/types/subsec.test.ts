@@ -124,3 +124,34 @@ describe('subsecond in the NDJSON card_read', () => {
     assert.equal('subsec_256' in ev.finish, false);
   });
 });
+
+describe('SI6 start/finish station code with PTD bit 7', () => {
+  test('CN is the fraction, so there is no code [documented (SPORTident doc)]', () => {
+    const r = decode(
+      SiCard6,
+      image(0x400, [
+        [0x18, 0x81, 117],
+        [0x14, 0xc1, 5],
+        [0x1c, 0x81, 9],
+      ])
+    );
+    assert.equal(r.startSubsec256, 117);
+    assert.equal(r.startCode, undefined);
+    assert.equal(r.finishSubsec256, 5);
+    assert.equal(r.finishCode, undefined);
+    // Check keeps its CN as the code: no subsecond on check records.
+    assert.equal(r.checkCode, 9);
+  });
+
+  test('without bit 7 the code is unchanged (CN + PTD bit 6)', () => {
+    const r = decode(
+      SiCard6,
+      image(0x400, [
+        [0x18, 0x41, 3],
+        [0x14, 0x01, 20],
+      ])
+    );
+    assert.equal(r.startCode, 259);
+    assert.equal(r.finishCode, 20);
+  });
+});
