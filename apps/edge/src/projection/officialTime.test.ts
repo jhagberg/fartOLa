@@ -54,6 +54,16 @@ function read(card: number, finishSec: number): Event {
   } as Event;
 }
 
+/** A read with a start punch and a finish punch (clocks as the card gave them). */
+function readStartFinish(card: number, start: HalfDayClock, finish: HalfDayClock): Event {
+  const e = read(card, 0);
+  return {
+    ...e,
+    eventTimeMs: at(TEN + 3600),
+    payload: { ...(e.payload as object), start, finish },
+  } as Event;
+}
+
 function runner(id: string, card: number, startMs: number): Competitor {
   return {
     id,
@@ -175,5 +185,42 @@ describe('SOFT TR 4.20.7: official time in whole seconds, rounded', () => {
     assert.match(mop, /rt="6000"/);
 
     assert.equal(receiptTime(state.competitors.get('b')!), '10:00');
+  });
+});
+
+describe('SOFT TR 4.20.7: subsecond of start and finish punches reaches the official time', () => {
+  const sub = (sec: number, subsec_256?: number): HalfDayClock => ({
+    ...hd(sec),
+    ...(subsec_256 === undefined ? {} : { subsec_256 }),
+  });
+  // Runner without a drawn start: timed from the start punch (start method auto).
+  const official = (start: HalfDayClock, finish: HalfDayClock): number | null => {
+    const state = reduce({
+      competition_id: 'comp-1',
+      clock_offset_min: 120,
+      events: [readStartFinish(100, start, finish)],
+      competitors: [{ ...runner('a', 100, at(TEN)), startTimeMs: null } as Competitor],
+      classes: [H21],
+      courses: [COURSE],
+    });
+    return state.competitors.get('a')!.elapsed_time_ms;
+  };
+  const FINISH = TEN + 1800; // 10:30:00
+
+  test('start 10:00:00 + finish 10:30:00.5 → 1800.5 s → 1801 s (half up)', () => {
+    assert.equal(official(sub(TEN, 0), sub(FINISH, 128)), 1_801_000);
+  });
+
+  test('start 10:00:00 + finish 10:30:00.496 → 1800 s (fraction below one half)', () => {
+    assert.equal(official(sub(TEN, 0), sub(FINISH, 127)), 1_800_000);
+  });
+
+  test('fractions change the whole-second result: .898 start, .102 finish → 1799.2 s → 1799 s', () => {
+    assert.equal(official(sub(TEN), sub(FINISH)), 1_800_000, 'whole seconds alone give 1800 s');
+    assert.equal(official(sub(TEN, 230), sub(FINISH, 26)), 1_799_000);
+  });
+
+  test('fraction 0 equals no fraction', () => {
+    assert.equal(official(sub(TEN, 0), sub(FINISH, 0)), official(sub(TEN), sub(FINISH)));
   });
 });

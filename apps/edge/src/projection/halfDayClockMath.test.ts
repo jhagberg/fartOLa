@@ -182,3 +182,30 @@ describe('cardClockToEpochMs on DST nights (Europe/Stockholm)', () => {
     assert.equal(cardClockToEpochMs(clk(12, 0), 'SIAC', read, 60), utc('2026-10-24T11:00:00Z'));
   });
 });
+
+describe('subsecond (subsec_256, 1/256 s) of start/finish clocks', () => {
+  const withSub = (sec: number, subsec_256?: number): HalfDayClock => ({
+    ...hd(sec),
+    ...(subsec_256 === undefined ? {} : { subsec_256 }),
+  });
+
+  test('halfDayClockToMs adds n × 1000 / 256 ms, rounded: 0 → 0, 128 → 500, 255 → 996', () => {
+    assert.equal(halfDayClockToMs(withSub(3600, 0)), 3_600_000);
+    assert.equal(halfDayClockToMs(withSub(3600, 128)), 3_600_500);
+    assert.equal(halfDayClockToMs(withSub(3600, 255)), 3_600_996);
+    assert.equal(halfDayClockToMs(withSub(3600)), 3_600_000);
+  });
+
+  test('diffMs carries the fractions of start and finish', () => {
+    assert.equal(diffMs(withSub(36_000, 230), withSub(37_800, 26)), 1_799_204);
+  });
+
+  test('cardClockToEpochMs places the fraction on SI5 and other cards alike', () => {
+    const readAt = Date.UTC(2026, 9, 3, 12, 0, 0);
+    const base = cardClockToEpochMs(hd(36_000), 'SI10', readAt, 0);
+    assert.equal(cardClockToEpochMs(withSub(36_000, 128), 'SI10', readAt, 0), base + 500);
+    assert.equal(cardClockToEpochMs(withSub(36_000, 0), 'SI10', readAt, 0), base);
+    const base5 = cardClockToEpochMs(hd(36_000), 'SI5', readAt, 0);
+    assert.equal(cardClockToEpochMs(withSub(36_000, 128), 'SI5', readAt, 0), base5 + 500);
+  });
+});

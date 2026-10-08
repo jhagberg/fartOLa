@@ -36,7 +36,7 @@ import * as path from 'node:path';
 import * as url from 'node:url';
 import { EventEmitter } from 'node:events';
 
-import { SiMainStation, NdjsonEmitter, BaseSiCard, render } from '@fartola/sportident';
+import { SiMainStation, NdjsonEmitter, BaseSiCard, SiCard10, render } from '@fartola/sportident';
 import type { ISerialTransport } from '@fartola/sportident';
 
 import { buildCardReadPayload } from './cardReadPayload.ts';
@@ -313,9 +313,25 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
       // PTD bit 7: a touch-free (Air+) finish. Its station code sits in block 1,
       // which this capture never read, so there is no code.
       touch_free: true,
+      // CN of that bit-7 record is TSS: 117/256 s (SPORTident doc; bench capture siac-jonas-001).
+      subsec_256: 117,
     });
     const halves = payload.punches.map((p) => p.half_day);
     assert.equal(halves[0], 0, 'first punch 11:29 is AM');
     assert.equal(halves[halves.length - 1], 1, 'last punch 12:09 is PM');
+  });
+
+  test('subsec_256 on start/finish only: a bit-7 check record keeps CN as no fraction', () => {
+    const mem = new Array<number>(0x400).fill(0xee);
+    mem.splice(0x0c, 4, 0x81, 64, 0x0e, 0x10); // start, bit 7: CN = 64/256 s
+    mem.splice(0x10, 4, 0x81, 0, 0x0e, 0x10); // finish, fraction 0 is a fraction
+    mem.splice(0x08, 4, 0x81, 99, 0x0e, 0x10); // check, bit 7: CN is NOT a fraction
+    const card = new SiCard10(0);
+    card._decodeFromStorage(mem);
+    const payload = buildCardReadPayload(card);
+    assert.equal(payload.start?.subsec_256, 64);
+    assert.equal(payload.finish?.subsec_256, 0);
+    assert.ok(payload.check);
+    assert.equal('subsec_256' in payload.check, false);
   });
 });
