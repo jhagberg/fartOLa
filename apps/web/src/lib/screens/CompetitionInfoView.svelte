@@ -3,7 +3,7 @@
 
   CompetitionInfoView — single surface for inspecting and editing a
   competition's static config: name, date, receipt template, auto-print,
-  classes (read-only count), and courses with their ordered control
+  classes (count and class kind, ClassKindsPanel), and courses with their ordered control
   codes. Phase 2.1 (2026-05-18) addition closing the "no way to see
   imported courses / edit competition" gap surfaced during 4-klubbs
   dress rehearsal.
@@ -34,6 +34,7 @@
     ApiError,
   } from '#lib/api/client.ts';
   import { goto } from '$app/navigation';
+  import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import type {
     CompetitionDTO,
     ClassDTO,
@@ -88,6 +89,16 @@
     for (const c of competitors) m.set(c.class_id, (m.get(c.class_id) ?? 0) + 1);
     return m;
   });
+
+  /** "[H21K] 12 anm." after each class name in the class-kind list. */
+  const classDetails = $derived(
+    Object.fromEntries(
+      classes.map((c) => [
+        c.id,
+        `${c.short_name ? `[${c.short_name}] ` : ''}${competitorCountByClass.get(c.id) ?? 0} ${t('info.classes.competitorsShort')}`,
+      ])
+    )
+  );
 
   const classById = $derived.by(() => {
     const m = new Map<string, ClassDTO>();
@@ -313,8 +324,8 @@
       </div>
     </section>
 
-    <!-- Classes -->
-    <section class="card">
+    <!-- Classes with their class kind (SOFT TR 3.4.2) -->
+    <section class="card" id="klasser">
       <header class="card-head">
         <h2>{t('info.classes.heading')}</h2>
         <span class="badge mono">{classes.length}</span>
@@ -322,17 +333,7 @@
       {#if classes.length === 0}
         <p class="empty">{t('info.classes.empty')}</p>
       {:else}
-        <ul class="class-list" data-testid="info-class-list">
-          {#each classes as cls (cls.id)}
-            <li class="class-row">
-              <span class="class-name">{cls.name}</span>
-              {#if cls.short_name}<span class="muted mono">[{cls.short_name}]</span>{/if}
-              <span class="class-count mono"
-                >{competitorCountByClass.get(cls.id) ?? 0} {t('info.classes.competitorsShort')}</span
-              >
-            </li>
-          {/each}
-        </ul>
+        <ClassKindsPanel {competitionId} details={classDetails} />
       {/if}
     </section>
 
@@ -556,29 +557,10 @@
     color: var(--fg-muted);
     text-align: center;
   }
-  .class-list,
   .course-list {
     list-style: none;
     margin: 0;
     padding: 0;
-  }
-  .class-row {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-sm);
-    padding: var(--space-xs) var(--space-md);
-    border-bottom: 1px solid var(--border);
-  }
-  .class-row:last-child {
-    border-bottom: 0;
-  }
-  .class-name {
-    font-weight: 500;
-  }
-  .class-count {
-    margin-left: auto;
-    color: var(--fg-muted);
-    font-size: 12px;
   }
   .course-row {
     padding: var(--space-sm) var(--space-md);
