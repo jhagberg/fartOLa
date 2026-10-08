@@ -128,3 +128,8 @@ This closes Phase 0 success criterion #6 (tagged release).
 This package contains code ported from
 [allestuetsmerweh/sportident.js](https://github.com/allestuetsmerweh/sportident.js)
 under MIT. See `NOTICE.md` for the full third-party software list.
+
+## Trademark
+
+SPORTident is a trademark of SPORTident GmbH. This package is an
+independent project and is not affiliated with or endorsed by SPORTident.
