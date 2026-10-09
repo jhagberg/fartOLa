@@ -159,3 +159,52 @@ describe('StartTimeHistory (mounted)', () => {
     expect(rows()[0]!.querySelector('[data-testid="history-error"]')).toBeNull();
   });
 });
+
+describe('StartTimeHistory overlapping loads', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+  });
+
+  it('an older answer that arrives last does not replace the newer rows', async () => {
+    const { historyProps } = await import('./StartTimeHistory.testprops.svelte.ts');
+    const answers: Array<(items: StartTimeHistoryItem[]) => void> = [];
+    global.fetch = vi.fn(async (input: string | URL | Request) => {
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (String(input).endsWith('/start-times/history'))
+        return new Promise<Response>((resolve) => {
+          answers.push((items) => resolve(json({ items })));
+        });
+      return json({ competition: { date: '2026-10-08', clock_offset_min: 120 } });
+    }) as unknown as typeof fetch;
+    const settle = async (): Promise<void> => {
+      for (let i = 0; i < 6; i++) {
+        await Promise.resolve();
+        await tick();
+      }
+      flushSync();
+    };
+
+    historyProps.refreshKey = 0;
+    component = mount(StartTimeHistory, { target: document.body, props: historyProps });
+    await settle();
+    historyProps.refreshKey = 1;
+    await settle();
+    expect(answers).toHaveLength(2);
+
+    answers[1]!([row({ local_seq: 2, cause: 'manual' })]);
+    await settle();
+    answers[0]!([row({ local_seq: 1, cause: 'draw' })]);
+    await settle();
+    const causes = [...document.querySelectorAll('[data-testid="history-row"]')].map((e) =>
+      e.getAttribute('data-cause')
+    );
+    expect(causes).toEqual(['manual']);
+  });
+});

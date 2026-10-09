@@ -47,16 +47,23 @@
 
   const keyOf = (i: StartTimeHistoryItem) => `${i.node_id}:${i.local_seq}`;
 
+  /** Loads overlap (a refresh while one is in flight); only the latest
+   * may set the rows, so an older answer never replaces a newer one. */
+  let generation = 0;
+
   async function load(): Promise<void> {
+    const mine = ++generation;
     try {
       const [res, clock] = await Promise.all([
         getStartTimeHistory(competitionId),
         fetchCompetitionClock(competitionId),
       ]);
+      if (mine !== generation) return;
       items = res.items;
       offsetMin = clock.offsetMin;
       loadError = null;
     } catch (e) {
+      if (mine !== generation) return;
       loadError = (e as Error).message;
     }
   }
