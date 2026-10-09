@@ -405,8 +405,9 @@
     border: 1px solid var(--border);
   }
   .btn.xs {
-    padding: 4px 10px;
-    font-size: 12px;
+    min-height: var(--hit);
+    padding: 0 var(--space-sm);
+    font-size: var(--fs-label);
     background: var(--bg-elev);
     color: var(--fg);
     border: 1px solid var(--border);

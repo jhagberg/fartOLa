@@ -195,7 +195,6 @@
 [data-density='high'] {
   --fs-display: 24px;
   --fs-heading: 20px;
-  --fs-body: 15px;
 }
 
 /* ───── Base reset ────────────────────────────────────────────────────── */
@@ -217,6 +216,13 @@ button {
   font: inherit;
   color: inherit;
   cursor: pointer;
+}
+/* One visible focus style (ADR-0016 rule 7, ui-ux-pro-max focus-states):
+   2px ink ring with an offset, so it sits on the page (>=7:1), not on the
+   control's own fill. */
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }
 input,
 select,

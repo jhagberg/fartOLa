@@ -146,13 +146,13 @@
   }
   .tpl-tab {
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 500;
     border: 0;
     background: transparent;
     color: var(--fg-muted);
     border-radius: 5px;
-    min-height: 28px;
+    min-height: var(--hit);
     cursor: pointer;
   }
   .tpl-tab:hover {

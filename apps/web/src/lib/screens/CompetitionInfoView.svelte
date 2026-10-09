@@ -622,11 +622,12 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    min-height: var(--hit);
     padding: 2px 8px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: inherit;
     cursor: pointer;
   }

@@ -86,8 +86,8 @@
     color: var(--fg);
   }
   .input:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: -1px;
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
     border-color: var(--accent);
   }
 </style>

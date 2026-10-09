@@ -554,9 +554,9 @@
     font-size: 17px;
   }
   .btn.sm {
-    height: 32px;
+    height: var(--hit);
     padding: 0 12px;
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .btn:disabled {
     opacity: 0.55;
@@ -585,16 +585,15 @@
     gap: 4px;
   }
   .status-chip {
-    height: 28px;
+    height: var(--hit);
     padding: 0 10px;
     border: 1px solid var(--border-strong);
     border-radius: 999px;
     background: var(--bg-elev);
-    color: var(--fg-muted);
-    font-size: 12px;
+    color: var(--fg);
+    font-size: var(--fs-label);
     font-weight: 600;
-    font-family: var(--font-mono);
-    letter-spacing: 0.02em;
+    font-family: var(--font-ui);
     cursor: pointer;
   }
   .status-chip:hover {
@@ -612,7 +611,7 @@
     letter-spacing: 0.06em;
   }
   .dnf-input {
-    height: 36px;
+    height: var(--hit);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     padding: 0 10px;
@@ -655,7 +654,7 @@
   }
   .kbd {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-label);
     padding: 2px 6px;
     border: 1px solid var(--border-strong);
     border-radius: 4px;
@@ -663,8 +662,8 @@
     color: var(--fg-muted);
   }
   .faint {
-    color: var(--fg-faint);
-    font-size: 12px;
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
   }
   .mono {
     font-family: var(--font-mono);

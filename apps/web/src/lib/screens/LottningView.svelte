@@ -1068,9 +1068,10 @@
     border: none;
     color: var(--accent);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-label);
     cursor: pointer;
-    padding: 0;
+    min-height: var(--hit);
+    padding: 0 var(--space-xs);
   }
   .time-edit-input {
     width: 8rem;
@@ -1078,7 +1079,7 @@
   }
   .edit-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-xs);
     justify-content: flex-end;
   }
   .edit-action-btn {
@@ -1086,8 +1087,9 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     font: inherit;
-    font-size: 12px;
-    padding: 2px 8px;
+    font-size: var(--fs-label);
+    min-height: var(--hit);
+    padding: 0 var(--space-sm);
     cursor: pointer;
     color: var(--fg);
   }
