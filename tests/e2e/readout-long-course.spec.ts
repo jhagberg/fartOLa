@@ -43,6 +43,10 @@ async function expectPickerVisible(page: Page, scroll: boolean): Promise<void> {
     return c.getBoundingClientRect().top - (p.getBoundingClientRect().top + 0) - c.scrollTop;
   });
   expect(aboveOrigin).toBeLessThanOrEqual(0);
+  // The reason label carries meaning: 14 px, sentence case (ADR-0016 rule 7).
+  const label = page.locator('.dnf-pop .dnf-label');
+  await expect(label).toHaveCSS('font-size', '14px');
+  await expect(label).toHaveCSS('text-transform', 'none');
   const n = await parts.count();
   expect(n).toBeGreaterThanOrEqual(7);
   for (let i = 0; i < n; i++) {
