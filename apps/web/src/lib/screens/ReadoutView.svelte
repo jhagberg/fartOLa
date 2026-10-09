@@ -83,6 +83,8 @@
   import HistoryList from '#lib/components/HistoryList.svelte';
   import ReceiptMirror from '#lib/components/ReceiptMirror.svelte';
   import WalkupModal from '#lib/screens/WalkupModal.svelte';
+  import CardRebindNotice from '#lib/components/CardRebindNotice.svelte';
+  import type { CardRebind } from '#lib/api/client.ts';
   import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
   import ConsentConfirmationToast from '#lib/components/ConsentConfirmationToast.svelte';
   import HyrbrickaToast from '#lib/components/HyrbrickaToast.svelte';
@@ -222,6 +224,10 @@
   // from the competitors map. Save flows through editCompetitorProfile
   // (PATCH /api/competitors/:id/profile) and refetchCompetitors.
   let editingCompetitorId: string | null = $state(null);
+
+  /** The last card replacement from the walk-up overlay's "anmäld?" step,
+   * shown with undo until the operator closes it (ADR-0016 rule 2). */
+  let lastRebind: CardRebind | null = $state(null);
 
   // --- derived UI shapes ----------------------------------------------------
 
@@ -846,6 +852,20 @@
       onSelect={onSelectHistory}
     />
 
+    {#if lastRebind}
+      <CardRebindNotice
+        {competitionId}
+        rebind={lastRebind}
+        onUndone={() => {
+          void refetchCompetitors();
+          void refetchReadout();
+        }}
+        onClose={() => {
+          lastRebind = null;
+        }}
+      />
+    {/if}
+
     {#if pendingUnknownCards.length > 0}
       <section class="card pending-card">
         <header class="head">
@@ -882,6 +902,11 @@
       {classes}
       cardHolderHint={walkupHint}
       {eventorHint}
+      onRebound={(r) => {
+        lastRebind = r;
+        void refetchCompetitors();
+        void refetchReadout();
+      }}
     />
   {/if}
 

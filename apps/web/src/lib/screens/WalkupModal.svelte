@@ -22,6 +22,11 @@
   Avbryt / Esc → same goto, no POST. The Esc binding is owned by
   ReadoutView (plan 13) so we don't duplicate it here.
 
+  Before the form: "Är det någon som är anmäld?" (EnteredRunnerStep). An
+  entered runner who reads out with a new card gets the card on their
+  entry (onRebound reports it so the parent can offer undo); only a runner
+  who is not entered continues to the form.
+
   Locked by:
   - 01-14-PLAN.md task 1
   - 01-UI-SPEC.md §"Walk-up modal" (LOCKED form contract)
@@ -39,6 +44,8 @@
   import Select from '#lib/ui/Select.svelte';
   import SmartRunnerSearch from '#lib/components/SmartRunnerSearch.svelte';
   import SmartClubSearch from '#lib/components/SmartClubSearch.svelte';
+  import EnteredRunnerStep from '#lib/components/EnteredRunnerStep.svelte';
+  import type { CardRebind } from '#lib/api/client.ts';
   import type { EventorClubSuggestion } from '@fartola/shared-types';
   import { ApiError } from '#lib/api/client.ts';
   import type {
@@ -77,6 +84,8 @@
      * cancel button, escape key — all false). Used by RegistrationView to
      * push the unsaved card back into the queue instead of dropping it. */
     onClose?: ((saved: boolean) => void) | null;
+    /** An entered runner got this card instead (the "anmäld?" step). */
+    onRebound?: ((r: CardRebind) => void) | null;
   }
 
   let {
@@ -86,7 +95,15 @@
     cardHolderHint = null,
     eventorHint = null,
     onClose = null,
+    onRebound = null,
   }: Props = $props();
+
+  /** 'entered' first: is the runner already entered? Then the form. */
+  let step = $state<'entered' | 'form'>('entered');
+  function onReboundDone(r: CardRebind): void {
+    onRebound?.(r);
+    close(true);
+  }
 
   // --- form state -----------------------------------------------------------
   // Pre-fill name from Eventor cache when available (wins per Plan 2 nuance),
@@ -219,7 +236,7 @@
   let confirmingClose = $state(false);
 
   function onScrimTap(): void {
-    if (dirty && !confirmingClose) {
+    if (step === 'form' && dirty && !confirmingClose) {
       confirmingClose = true;
       return;
     }
@@ -437,10 +454,23 @@
     onclick={(e) => e.stopPropagation()}
   >
     <header class="head">
-      <h2 id="walkup-title">{t('walk.title')}</h2>
-      <p class="desc">{t('walk.desc')}</p>
+      {#if step === 'entered'}
+        <h2 id="walkup-title">{t('walk.entered.title')}</h2>
+      {:else}
+        <h2 id="walkup-title">{t('walk.title')}</h2>
+        <p class="desc">{t('walk.desc')}</p>
+      {/if}
     </header>
 
+    {#if step === 'entered'}
+      <EnteredRunnerStep
+        {competitionId}
+        {cardNumber}
+        onRebound={onReboundDone}
+        onNotEntered={() => (step = 'form')}
+        onCancel={() => close(false)}
+      />
+    {:else}
     <form
       class="body"
       novalidate
@@ -676,6 +706,7 @@
         {/if}
       </footer>
     </form>
+    {/if}
   </div>
 </div>
 

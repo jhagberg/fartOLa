@@ -27,6 +27,11 @@
 //      of the same card does NOT re-pop the toast (session-local
 //      dismissedConsentForCompetitorIds suppresses).
 //
+//   6. **entered runner with a new card**: the unknown card's modal asks
+//      "Är det någon som är anmäld?" first; the entered runner whose course
+//      fits is suggested; picking shows the change before it is made; the
+//      read attaches without a new read-out; undo gives the old card back.
+//
 // Test isolation: serial mode (mirrors readout.spec.ts + wizard.spec.ts
 // pattern — the bridge's tmp SQLite DB is shared across all e2e files).
 //
@@ -186,6 +191,10 @@ test('walk-up creates competitor (overlay on readout — C-M3 LOCKED)', async ({
   expect(startUrl).toMatch(/\/competition\/[^/]+\/readout\?walkup=9999999$/);
   expect(startUrl).not.toContain('/walkup/');
 
+  // First "Är det någon som är anmäld?" — Erik is not entered.
+  await expect(page.getByTestId('entered-step')).toBeVisible();
+  await page.getByTestId('walkup-not-entered').click();
+
   await page.getByTestId('walkup-name').fill('Erik Eriksson');
   // Klubb is optional; leave blank to also cover the null path.
   await page.getByTestId('walkup-class').selectOption(h21Id);
@@ -214,6 +223,7 @@ test('walk-up with empty name shows inline error and stays open', async ({ page,
   const { competitionId, h21Id } = await setup(request);
   await page.goto(`/competition/${competitionId}/readout?walkup=9999991`);
   await expect(page.getByTestId('walkup-modal')).toBeVisible();
+  await page.getByTestId('walkup-not-entered').click();
 
   // Class selected but name empty → Save click surfaces inline error.
   await page.getByTestId('walkup-class').selectOption(h21Id);
@@ -242,6 +252,81 @@ test('walk-up Avbryt closes overlay without POST', async ({ page, request }) => 
     competitors: Array<{ card_number: number | null }>;
   };
   expect(list.competitors.find((c) => c.card_number === 9999992)).toBeUndefined();
+});
+
+test('entered runner with a new card: pick, card replaced, result attached; undo restores the old card', async ({
+  page,
+  request,
+}) => {
+  const { competitionId, annaId } = await setup(request);
+  const countBefore = (
+    (await (await request.get(`${BASE}/api/competitions/${competitionId}/competitors`)).json()) as {
+      competitors: unknown[];
+    }
+  ).competitors.length;
+
+  // Anna (entered with 7501853) runs Bana 1 with card 8800001.
+  const read = await request.post(`${BASE}/api/__dev/simulate-read`, {
+    data: {
+      competition_id: competitionId,
+      card_number: 8_800_001,
+      card_type: 'SI10',
+      punches: [31, 32, 33, 34].map((c, i) => ({
+        control_code: c,
+        time_ms: 36_000_000 + 60_000 * (i + 1),
+      })),
+      start: { half_day: 0, seconds_in_half_day: 36_000, weekday: null },
+      finish: { half_day: 0, seconds_in_half_day: 37_800, weekday: null },
+    },
+  });
+  expect(read.status(), await read.text()).toBe(201);
+
+  await page.goto(`/competition/${competitionId}/readout?walkup=8800001`);
+  await expect(page.getByTestId('walkup-modal')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('heading', { name: 'Är det någon som är anmäld?' })).toBeVisible();
+  const first = page.getByTestId('entered-suggestion').first();
+  await expect(first).toContainText('Anna');
+  await first.click();
+  await expect(page.getByTestId('entered-confirm')).toContainText('7501853 → 8800001');
+  await page.getByTestId('entered-save').click();
+
+  await page.waitForURL(new RegExp(`/competition/[^/]+/readout$`), { timeout: 5_000 });
+  await expect(page.getByTestId('card-rebind-notice')).toContainText(
+    'Bricka bytt för Anna Andersson: 7501853 → 8800001'
+  );
+
+  // One competitor (no duplicate); the read is Anna's without a new read-out.
+  const after = (await (
+    await request.get(`${BASE}/api/competitions/${competitionId}/competitors`)
+  ).json()) as { competitors: Array<{ id: string; card_number: number | null }> };
+  expect(after.competitors.length).toBe(countBefore);
+  expect(after.competitors.find((c) => c.id === annaId)?.card_number).toBe(8_800_001);
+  await expect
+    .poll(async () => {
+      const r = (await (
+        await request.get(`${BASE}/api/competitions/${competitionId}/readout`)
+      ).json()) as {
+        history: Array<{ card_number: number; competitor_id: string | null; status: string }>;
+        pending_unknown_cards: number[];
+      };
+      const row = r.history.find((h) => h.card_number === 8_800_001);
+      return [row?.competitor_id, row?.status, r.pending_unknown_cards.includes(8_800_001)];
+    })
+    .toEqual([annaId, 'OK', false]);
+
+  // Undo: Anna has 7501853 again and the read is an unknown card again.
+  await page.getByTestId('card-rebind-undo').click();
+  await expect(page.getByTestId('card-rebind-notice')).toContainText('Bytet ångrat');
+  const undone = await fetchCompetitor(request, competitionId, annaId);
+  expect((undone as unknown as { card_number: number }).card_number).toBe(7_501_853);
+  await expect
+    .poll(async () => {
+      const r = (await (
+        await request.get(`${BASE}/api/competitions/${competitionId}/readout`)
+      ).json()) as { pending_unknown_cards: number[] };
+      return r.pending_unknown_cards.includes(8_800_001);
+    })
+    .toBe(true);
 });
 
 test('C-M4 consent toast on first card_read for pending competitor', async ({ page, request }) => {

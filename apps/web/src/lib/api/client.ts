@@ -389,6 +389,76 @@ export async function createCompetitor(body: CompetitorCreateInput): Promise<Com
   }
 }
 
+/** An entered runner who has not read out, ranked for an unknown card
+ * (GET /api/competitions/:id/cards/:card/entries). */
+export interface EnteredRunner {
+  competitor_id: string;
+  name: string;
+  club: string | null;
+  class_id: string;
+  class_name: string;
+  card_number: number | null;
+  start_time_ms: number | null;
+  missing: number | null;
+  extra: number | null;
+  start_diff_ms: number | null;
+  /** The class course fits the card's punches. */
+  suggested: boolean;
+}
+
+export function getEnteredRunners(
+  competitionId: string,
+  cardNumber: number
+): Promise<{ card_number: number; clock_offset_min: number; runners: EnteredRunner[] }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/cards/${cardNumber}/entries`
+  );
+}
+
+/** A logged card replacement: what to show and what undo needs. */
+export interface CardRebind {
+  competitor_id: string;
+  name: string;
+  card_number: number;
+  card_event: { node_id: string; local_seq: number; previous_card_number: number | null };
+}
+
+/** Give an entered runner a new card (POST /api/competitors replace mode). */
+export function replaceCard(body: {
+  competition_id: string;
+  competitor_id: string;
+  card_number: number;
+  hired_card: boolean;
+  hired_contact: CompetitorCreateInput['hired_contact'];
+}): Promise<CardRebind> {
+  return apiFetch<CompetitorDTO & Pick<CardRebind, 'card_event'>>('/api/competitors', {
+    method: 'POST',
+    body: {
+      competition_id: body.competition_id,
+      card_number: body.card_number,
+      replace_card_for_competitor_id: body.competitor_id,
+      hired_card: body.hired_card,
+      hired_contact: body.hired_contact,
+    },
+  }).then((r) => ({
+    competitor_id: r.id,
+    name: r.name,
+    card_number: body.card_number,
+    card_event: r.card_event,
+  }));
+}
+
+/** Undo a card replacement: the runner gets the old card back. */
+export function undoCardRebind(
+  competitionId: string,
+  event: { node_id: string; local_seq: number }
+): Promise<{ competitor_id: string; card_number: number | null; local_seq: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/card-binds/undo`, {
+    method: 'POST',
+    body: { node_id: event.node_id, local_seq: event.local_seq },
+  });
+}
+
 /** Edit name / club / class / card on an existing competitor row. Distinct
  * from `confirmConsent` (different PATCH path); operator-driven correction
  * surface. All fields optional; an empty body is a no-op 200. */
