@@ -357,7 +357,7 @@
   "edit.withdraw.hint": "Sätter status till Återbud. Löparen finns kvar i historiken men räknas inte med i resultatet.",
   "edit.withdraw.confirmBody": "Bekräfta att löparen lämnar återbud.",
   "edit.withdraw.confirm": "Ja, återbud",
-  "edit.withdraw.busy": "Avregistrerar…",
+  "edit.withdraw.busy": "Registrerar återbud…",
   "registration.alreadyRegistered": "Redan registrerad som",
   "registration.knownDismiss": "Stäng",
   "registration.cancelRegistration": "Avregistrera (Återbud)",
