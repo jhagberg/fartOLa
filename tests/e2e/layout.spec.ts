@@ -28,10 +28,18 @@ test('hamburger only at ≤1024 px', async ({ page }) => {
 test('closed drawer takes no Tab stops at 820 px', async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto('/');
+  await expect(page.getByTestId('topbar-menu')).toBeVisible();
   for (let i = 0; i < 6; i++) {
     await page.keyboard.press('Tab');
-    const inSidebar = await page.evaluate(() => !!document.activeElement?.closest('.sidebar-slot'));
-    expect(inSidebar).toBe(false);
+    const where = await page.evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return 'lost';
+      if (a.closest('.sidebar-slot')) return 'sidebar';
+      if (a.classList.contains('skip-link')) return 'skip-link';
+      return a.closest('main') ? 'main' : 'elsewhere';
+    });
+    // First stop is the skip link, then the page itself; focus is never lost.
+    expect(where).toBe(i === 0 ? 'skip-link' : 'main');
   }
 });
 
