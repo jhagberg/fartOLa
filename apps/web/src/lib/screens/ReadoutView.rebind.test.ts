@@ -23,6 +23,7 @@ const NEW = 2222222;
 
 let rebound: boolean;
 let hired: boolean;
+let postSeq: number;
 
 function row(attached: boolean) {
   return {
@@ -122,11 +123,12 @@ function installFetch(): void {
       });
     if (url === '/api/competitors' && init?.method === 'POST') {
       rebound = true;
+      postSeq += 1;
       return json({
         id: EVA,
         name: 'Eva Ek',
         card_number: NEW,
-        card_event: { node_id: 'n', local_seq: 7, previous_card_number: 1111111 },
+        card_event: { node_id: 'n', local_seq: postSeq, previous_card_number: 1111111 },
       });
     }
     if (url.endsWith('/api/competitions/c1'))
@@ -174,6 +176,7 @@ describe('ReadoutView — first-read prompts after a card replacement', () => {
   beforeEach(() => {
     rebound = false;
     hired = false;
+    postSeq = 0;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
     installFetch();
   });
@@ -203,5 +206,21 @@ describe('ReadoutView — first-read prompts after a card replacement', () => {
     hired = true;
     await replaceCard();
     expect(q('hyrbricka-toast')).not.toBeNull();
+  });
+
+  it('keeps each replacement with its own undo until closed', async () => {
+    await replaceCard();
+    // A second replacement from the same overlay (another card in a queue).
+    q('entered-save')!.click();
+    await settle();
+    const notices = () =>
+      Array.from(document.querySelectorAll('[data-testid="card-rebind-notice"]'));
+    expect(notices()).toHaveLength(2);
+    expect(document.querySelectorAll('[data-testid="card-rebind-undo"]')).toHaveLength(2);
+
+    (notices()[1]!.querySelector('[data-testid="card-rebind-close"]') as HTMLElement).click();
+    await settle();
+    expect(notices()).toHaveLength(1);
+    expect(document.querySelectorAll('[data-testid="card-rebind-undo"]')).toHaveLength(1);
   });
 });

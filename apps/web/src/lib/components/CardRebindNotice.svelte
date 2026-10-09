@@ -16,7 +16,7 @@
     competitionId: string;
     rebind: CardRebind;
     /** After a successful undo (the parent refetches). */
-    onUndone?: () => void;
+    onUndone?: (() => void) | undefined;
     onClose: () => void;
   }
 
