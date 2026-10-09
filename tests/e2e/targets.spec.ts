@@ -45,6 +45,8 @@ test('frame and readout targets are at least 44 px', async ({ page, request }) =
 
   await page.getByTestId('active-comp-pill').click();
   await expect(page.getByTestId('active-comp-panel')).toBeVisible();
+  // The competition list loads after the panel opens; measure its rows too.
+  await expect(page.getByTestId('active-comp-panel').getByRole('option').first()).toBeVisible();
   expect(await smallTargets(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('active-comp-panel')).toBeHidden();
