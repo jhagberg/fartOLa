@@ -208,15 +208,87 @@ describe('reduce — CompetitionState projection', () => {
     });
     assert.deepEqual(afterRead.pending_unknown_cards, [9_999_999]);
 
-    // Snapshot after BOTH events — pending must be empty.
+    // Snapshot after BOTH events — the bind wrote the competitor row in the
+    // same transaction, so the read attaches and pending is empty.
     const afterBound = reduce({
       competition_id: 'comp-1',
       events,
-      competitors: [],
+      competitors: [comp({ id: 'c-anna', cardNumber: 9_999_999 })],
       classes: [],
       courses: [],
     });
     assert.deepEqual(afterBound.pending_unknown_cards, []);
+  });
+
+  describe('entered runner reads out with a new card (rebind)', () => {
+    const OLD = 1_111_111;
+    const NEW = 2_222_222;
+    const run = (): Event[] => {
+      seqCounter = 0;
+      return [
+        cardRead(NEW, [p(31), p(32), p(33), p(34)], hd(10 * 3600), hd(10 * 3600 + 600)),
+        evt({
+          event_type: 'card_bound',
+          competitor_id: 'c-eva',
+          card_number: NEW,
+          walkup: true,
+          consent_at_ms: 1,
+          previous_card_number: OLD,
+        }),
+      ];
+    };
+    const reduceWith = (events: Event[], cardNumber: number | null) =>
+      reduce({
+        competition_id: 'comp-1',
+        events,
+        competitors: [comp({ id: 'c-eva', name: 'Eva', cardNumber })],
+        classes: [cls('cls-H21', 'H21')],
+        courses: [course('cls-H21', [31, 32, 33, 34])],
+      });
+
+    test('the read made before the bind attaches: result, no unknown card', () => {
+      const state = reduceWith(run(), NEW);
+      const eva = state.competitors.get('c-eva')!;
+      assert.equal(eva.status, 'OK');
+      assert.equal(eva.elapsed_time_ms, 600_000);
+      assert.equal(eva.card_read_history.length, 1);
+      assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
+      assert.deepEqual(state.pending_unknown_cards, []);
+    });
+
+    test('undo back to the old card: the read is an unknown card again', () => {
+      const events = run();
+      events.push(
+        evt({
+          event_type: 'card_bound',
+          competitor_id: 'c-eva',
+          card_number: OLD,
+          walkup: false,
+          consent_at_ms: 1,
+          previous_card_number: NEW,
+          undoes: { node_id: 'node-A', local_seq: events[1]!.localSeq },
+        })
+      );
+      const state = reduceWith(events, OLD);
+      assert.equal(state.competitors.get('c-eva')!.status, 'PEND');
+      assert.equal(state.competitors.get('c-eva')!.card_read_history.length, 0);
+      assert.deepEqual(state.pending_unknown_cards, [NEW]);
+    });
+
+    test('undo when the runner had no card: the read is an unknown card again', () => {
+      const events = run();
+      events.push(
+        evt({
+          event_type: 'card_unbound',
+          competitor_id: 'c-eva',
+          card_number: NEW,
+          undoes: { node_id: 'node-A', local_seq: events[1]!.localSeq },
+        })
+      );
+      const state = reduceWith(events, null);
+      assert.equal(state.competitors.get('c-eva')!.status, 'PEND');
+      assert.deepEqual(state.pending_unknown_cards, [NEW]);
+    });
   });
 
   test('test 4: mixed status — 3 competitors in same class, OK / MP / DNF sort order', () => {

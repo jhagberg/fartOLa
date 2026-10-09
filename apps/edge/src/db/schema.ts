@@ -147,6 +147,14 @@ export type EventPayload =
       undoes?: { node_id: string; local_seq: number };
     }
   | {
+      // Undo of a card replacement for a competitor who had no card before:
+      // the competitor's card is cleared. card_number is the card removed.
+      event_type: 'card_unbound';
+      competitor_id: string;
+      card_number: number;
+      undoes: { node_id: string; local_seq: number };
+    }
+  | {
       event_type: 'manual_dnf';
       competitor_id: string;
       reason: string;
