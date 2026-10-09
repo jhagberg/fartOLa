@@ -61,7 +61,12 @@
   $effect(() => {
     const mq = window.matchMedia(DRAWER_QUERY);
     narrow = mq.matches;
-    const onChange = (e: MediaQueryListEvent) => (narrow = e.matches);
+    const onChange = (e: MediaQueryListEvent) => {
+      narrow = e.matches;
+      // Widening past the breakpoint hides the drawer; a drawer left open
+      // would keep <main> inert with no visible way to close it.
+      if (!e.matches) drawerOpen = false;
+    };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   });
