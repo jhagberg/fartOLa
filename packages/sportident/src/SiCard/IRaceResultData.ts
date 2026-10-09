@@ -19,13 +19,9 @@ export interface IRaceResultData {
   startCode?: number;
   finishCode?: number;
   checkCode?: number;
-  /** The record was a touch-free (Air+) punch: PTD bit 7. SI8 and newer only. */
   /** Subsecond of the start/finish time in 1/256 s (0-255): PTD bit 7 set, CN = TSS. Absent: no fraction. SI6 and newer. */
   startSubsec256?: number;
   finishSubsec256?: number;
-  startTouchFree?: boolean;
-  finishTouchFree?: boolean;
-  checkTouchFree?: boolean;
   /** SIAC block 3: battery voltage in mV, hardware and software version "major.minor". */
   batteryMillivolts?: number;
   hardwareVersion?: string;

@@ -92,8 +92,7 @@ const parseTranscript = (raw: string): { steps: TranscriptStep[]; meta: Transcri
  * contain. Bench captures made before block-1 and block-3 support
  * (siac-jonas-001: touch-free finish, blocks 1 and 3 never read) are frozen
  * truth, so they stay strict; these extra requests are answered with an
- * erased page (all 0xEE, "no data"): the decoder keeps touch_free with no
- * code and reports no battery or versions. Undefined for any other request.
+ * erased page (all 0xEE, "no data"): no block-1 code, battery or versions. Undefined for any other request.
  */
 export const legacyErasedPageReply = (sent: number[]): number[] | undefined => {
   for (const page of [0x01, 0x03]) {

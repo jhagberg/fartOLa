@@ -313,9 +313,9 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
       seconds_in_half_day: 591,
       half_day: 1,
       weekday: null,
-      // PTD bit 7: a touch-free (Air+) finish. Its station code sits in block 1,
-      // which this capture never read, so there is no code.
-      touch_free: true,
+      // PTD bit 7: the finish has a subsecond and its CN holds no code. A SIAC
+      // keeps it in block 1 only from firmware 4.0, and this capture never
+      // read block 3 (firmware unknown), so there is no code.
       // CN of that bit-7 record is TSS: 117/256 s (SPORTident doc; bench capture siac-jonas-001).
       subsec_256: 117,
     });

@@ -402,58 +402,38 @@ export class SiTime extends SiDataType<SiTimestamp> {
 // --- Punch control code -------------------------------------------------------
 // A PTD punch record (SI6, SI8, SI9, SI10, SI11, SIAC) is
 // [ptd, cn, time_hi, time_lo]. CN holds control-code bits 0-7 and PTD bit 6
-// is code bit 8 (code = cn + 256 * bit 6, up to 511). PTD bit 7 is NOT a code
-// bit: on a start or finish record it marks a touch-free (SIAC Air+, "beacon")
-// punch, whose station code is then not in CN but in block 1 of the card
-// memory (see siStationCode). Behaviour as in MeOS SportIdent.cpp:1919
-// (analysePunch); written independently, upstream sportident.js reads CN only.
-// A check record keeps its code in CN even with bit 7 set, unlike MeOS
-// (SPORTident.Communication 2.59.0, simulated readout of memory images (check PTD 0x81/0xC1, CN 77, 0xA1 = 99) on SI8, SI9, SI10 and SIAC, 2026-10-08).
+// is code bit 8 (code = cn + 256 * bit 6, up to 511). On a start or finish
+// record PTD bit 7 marks a subsecond value: CN then holds TSS and the station
+// code is lost there, for AIR+ and for contact punches from a station with
+// subsecond timing alike. Only SIAC with firmware 4.0 or later keeps the
+// start/finish code elsewhere, in block 1 at 0xA5 / 0xA9, and SI10/SI11 do
+// not use those bytes (SPORTident (Thomas, 2026-10-09); same as SPORTident.Communication
+// 2.59.0 on our own card images). A check record keeps its code in CN.
 
 /** Storage field for the control code of the PTD punch record at `punchOffset`. */
 export const siPunchCode = (punchOffset: number): SiInt =>
   // SiInt concatenates parts little-endian: CN → bits 0-7, PTD bit 6 → bit 8.
   new SiInt([[punchOffset + 1], [punchOffset, 6, 7]]);
 
-interface StationCodeParts {
-  ptd: number;
-  cn: number;
-  beacon?: number;
-}
-
-/** Storage field for the station code of a start/finish/check record on SI8
- * and newer cards: `recordOffset` is its PTD byte, `beaconCodeOffset` where
- * block 1 keeps the code of a touch-free punch (MeOS reads it 153 bytes after
- * the record pointer, SportIdent.cpp:1930). Without PTD bit 7 the code is the
- * record's own (CN + PTD bit 6); with it, the block-1 byte (undefined while
- * block 1 has not been read). */
-export const siStationCode = (
-  recordOffset: number,
-  beaconCodeOffset: number
-): SiModified<StationCodeParts, number> =>
+/** Station code of a start or finish record from its own bytes: CN + 256 ×
+ * PTD bit 6, or undefined when PTD bit 7 is set (CN is then a subsecond). */
+export const siRecordCode = (
+  recordOffset: number
+): SiModified<{ ptd: number; cn: number }, number> =>
   new SiModified(
-    new SiDict<StationCodeParts>({
+    new SiDict<{ ptd: number; cn: number }>({
       ptd: new SiInt([[recordOffset]]),
       cn: new SiInt([[recordOffset + 1]]),
-      beacon: new SiInt([[beaconCodeOffset]]),
-    }) as unknown as SiDataType<StationCodeParts>,
-    ({ ptd, cn, beacon }) => {
-      // Bit 6 is code bit 8 whichever byte holds the low byte (MeOS applies
-      // it after choosing, SportIdent.cpp:1932).
-      // An unwritten block-1 byte reads 0xEE (erased card memory): no code.
-      const low = (ptd & 0x80) !== 0 ? (beacon === 0xee ? undefined : beacon) : cn;
-      return low === undefined ? undefined : low + 256 * ((ptd >> 6) & 1);
-    }
+    }) as unknown as SiDataType<{ ptd: number; cn: number }>,
+    ({ ptd, cn }) => ((ptd & 0x80) !== 0 ? undefined : cn + 256 * ((ptd >> 6) & 1))
   );
 
-/** True when the record's PTD bit 7 is set. SPORTident documents that bit as
- * the subsecond marker of a start/finish record (CN then holds TSS, see
- * siSubsec256; SPORTident card data structure doc, provided on request). In
- * practice it is set for punches from AIR+ timing-mode stations, hence the
- * "touch-free" naming here; station code selection (siStationCode) keys on
- * it as MeOS does. */
-export const siTouchFree = (recordOffset: number): SiModified<number, boolean> =>
-  new SiModified(new SiInt([[recordOffset, 7, 8]]), (bit) => bit === 1);
+/** SIAC (firmware 4.0+) start/finish code in block 1 (0xA5 / 0xA9). 0x00 means
+ * the code was lost (contact punch with subsecond timing), 0xEE unwritten; both
+ * give undefined. PTD bit 6 is not added (SPORTident.Communication 2.59.0 on
+ * our own card images, 2026-10-09). */
+export const siacBlock1Code = (offset: number): SiModified<number, number> =>
+  new SiModified(new SiInt([[offset]]), (b) => (b === 0x00 || b === 0xee ? undefined : b));
 
 /** Subsecond of a START or FINISH record (never check/clear/ordinary punches:
  * the doc allows a subsecond value "only for start and finish"): when PTD
