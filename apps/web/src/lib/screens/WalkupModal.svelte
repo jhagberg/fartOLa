@@ -872,7 +872,7 @@
     background: var(--mp-soft, rgba(200, 150, 0, 0.1));
     border: 1px solid var(--mp, #c89600);
     border-radius: 99px;
-    color: var(--mp, #c89600);
+    color: var(--mp-fg);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
