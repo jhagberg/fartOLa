@@ -392,7 +392,7 @@
                   disabled={dnfReason.trim().length === 0}
                   onclick={confirmDnf}
                 >
-                  {t('walk.save')}
+                  {t('ro.status.save')}
                 </button>
               </div>
             </div>

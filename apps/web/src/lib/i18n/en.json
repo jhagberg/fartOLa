@@ -282,6 +282,7 @@
   "ro.rebind.close": "Close",
   "ro.rebind.err.changed": "The card has been changed again since. Undo the later change first.",
   "ro.rebind.err.taken": "Card {{card}} is now used by another runner.",
+  "ro.status.save": "Save",
   "ro.simulate": "Simulate read",
   "ro.dnf": "DNF",
   "ro.undnf": "Un-DNF",

@@ -64,3 +64,12 @@ describe('LatestReadCard header — untimed class', () => {
     expect(html(read()).querySelector('[data-testid="untimed"]')).toBeNull();
   });
 });
+
+describe('LatestReadCard manual-status picker', () => {
+  it('saves with "Spara", not the walk-up form\'s label', () => {
+    const el = html(read());
+    el.querySelector<HTMLButtonElement>('[data-testid="manual-dnf-btn"]')!.click();
+    flushSync();
+    expect(el.querySelector('[data-testid="dnf-confirm"]')?.textContent?.trim()).toBe('Spara');
+  });
+});
