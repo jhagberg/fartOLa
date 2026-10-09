@@ -864,6 +864,7 @@
       {/snippet}
     </LatestReadCard>
 
+    <div class="ro-extras">
     <div class="auto-print-row">
       <label class="auto-toggle">
         <span class="sw" data-on={autoPrint}>
@@ -888,6 +889,7 @@
         onSelect={onTemplate}
       />
     {/if}
+    </div>
   </div>
 
   <aside class="ro-side">
@@ -1004,6 +1006,13 @@
       grid-template-columns: minmax(0, 1fr) 340px;
     }
   }
+  .ro-main,
+  .ro-extras {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+  }
   /* History rail below the card whenever the readout column would be
      narrower than ~600px (340 rail + 18 gap + 600). */
   @container readout (max-width: 958px) {
@@ -1011,12 +1020,16 @@
       grid-template-columns: minmax(0, 1fr);
       height: auto;
     }
-  }
-  .ro-main {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    min-width: 0;
+    /* Card, then the rail, then auto-print and the receipt preview. */
+    .ro-main {
+      display: contents;
+    }
+    .ro-side {
+      order: 1;
+    }
+    .ro-extras {
+      order: 2;
+    }
   }
   .ro-side {
     display: flex;
