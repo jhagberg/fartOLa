@@ -529,14 +529,22 @@
       }, 600);
     }
 
+    if (top) firstReadPrompts(top, cardNumber);
+  }
+
+  /** The prompts a competitor's read-out raises: consent confirmation
+   * (C-M4) and the hyrbricka return (Plan 02-05). Run for the latest read
+   * and for a read just attached by a card replacement. `row` is the
+   * refetched history row of `cardNumber`. */
+  function firstReadPrompts(row: ReadoutHistoryRow, cardNumber: number): void {
     // C-M4: first card_read for a competitor whose consent_status ===
     // 'pending_first_read' surfaces the one-time confirmation toast. The
     // toast is local UI sugar — the card_read is fully accepted server-
     // side regardless of consent state. We refetch competitors on every
     // card_read (card_bound + card_read both trigger refetch indirectly)
     // so the lookup reflects the current server-side state.
-    if (top && top.competitor_id && !top.unmatched && pendingConsentToast === null) {
-      const competitor = competitorsById.get(top.competitor_id);
+    if (row.competitor_id && !row.unmatched && pendingConsentToast === null) {
+      const competitor = competitorsById.get(row.competitor_id);
       if (
         competitor &&
         competitor.consent_status === 'pending_first_read' &&
@@ -555,16 +563,15 @@
     // every card_read whose history row has a non-null hired_card_open
     // payload AND the operator has not already returned/dismissed this
     // card_number in the session (RESEARCH §"Pattern 6"). The readout
-    // refetch above guarantees `history[0].hired_card_open` is the
+    // refetch above guarantees the row's `hired_card_open` is the
     // authoritative server view.
     if (
-      top &&
-      top.card_number === cardNumber &&
-      top.hired_card_open !== null &&
+      row.card_number === cardNumber &&
+      row.hired_card_open !== null &&
       !returnedHiredCardNumbers.has(cardNumber) &&
       pendingHyrbrickaToast === null
     ) {
-      const hco = top.hired_card_open;
+      const hco = row.hired_card_open;
       pendingHyrbrickaToast = {
         cardNumber,
         contactName: hco.contact_name,
@@ -573,6 +580,15 @@
         note: hco.note,
       };
     }
+  }
+
+  /** A card replacement attached an unknown read to an entered runner: it
+   * is that runner's read-out now, so refetch and raise its prompts. */
+  async function onRebound(r: CardRebind): Promise<void> {
+    lastRebind = r;
+    await Promise.all([refetchCompetitors(), refetchReadout()]);
+    const row = history.find((h) => h.card_number === r.card_number && !h.unmatched);
+    if (row) firstReadPrompts(row, r.card_number);
   }
 
   async function onHyrbrickaReturn(cardNumber: number): Promise<void> {
@@ -902,11 +918,7 @@
       {classes}
       cardHolderHint={walkupHint}
       {eventorHint}
-      onRebound={(r) => {
-        lastRebind = r;
-        void refetchCompetitors();
-        void refetchReadout();
-      }}
+      onRebound={(r) => void onRebound(r)}
     />
   {/if}
 
