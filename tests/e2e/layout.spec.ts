@@ -35,6 +35,16 @@ test('closed drawer takes no Tab stops at 820 px', async ({ page }) => {
   }
 });
 
+test('Escape closes the drawer and returns focus to the menu button', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto('/');
+  await page.getByTestId('topbar-menu').click();
+  await expect(page.getByTestId('drawer-close')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('drawer-close')).toHaveCount(0);
+  await expect(page.getByTestId('topbar-menu')).toBeFocused();
+});
+
 test('settings reachable in the sidebar at 1366×768', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto('/');

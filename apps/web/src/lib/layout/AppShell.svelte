@@ -16,7 +16,7 @@
   TopBar children.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import Sidebar from './Sidebar.svelte';
   import TopBar from './TopBar.svelte';
   import Icon from '../ui/Icon.svelte';
@@ -85,9 +85,9 @@
   function closeDrawer(): void {
     drawerOpen = false;
     // Return focus to the hamburger so subsequent Tab continues from a
-    // sane spot. queueMicrotask is unnecessary here — the button stays
-    // mounted; we just need to focus it.
-    hamburgerRef?.focus();
+    // sane spot. Wait for the DOM update: until then <main> (which holds
+    // the hamburger) is still inert and focus() would do nothing.
+    void tick().then(() => hamburgerRef?.focus());
   }
 
   /** Wrap nav callbacks so a tap on a drawer item navigates AND closes
