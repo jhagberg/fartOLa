@@ -109,10 +109,10 @@
     background: var(--bg-elev);
   }
   .size-sm {
-    height: 32px;
-    min-height: 32px;
-    padding: 0 10px;
-    font-size: 13px;
+    height: var(--hit);
+    min-height: var(--hit);
+    padding: 0 var(--space-sm);
+    font-size: var(--fs-label);
   }
   .size-lg {
     height: 56px;

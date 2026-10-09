@@ -230,14 +230,14 @@
   }
   .reset-btn {
     width: 100%;
-    min-height: 32px;
+    min-height: var(--hit);
     padding: 0 var(--space-md);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     background: transparent;
     color: var(--fg-muted);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 500;
     cursor: pointer;
   }
@@ -274,11 +274,11 @@
   .confirm-cancel,
   .confirm-go {
     flex: 1;
-    min-height: 32px;
+    min-height: var(--hit);
     padding: 0 8px;
     border-radius: var(--radius);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     cursor: pointer;
   }

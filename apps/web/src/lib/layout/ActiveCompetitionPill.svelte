@@ -206,8 +206,8 @@
     background: var(--bg-hover, var(--bg-elev));
   }
   .pill:focus-visible {
-    outline: 2px solid var(--mp);
-    outline-offset: 1px;
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
   }
   .pill[aria-expanded='true'] {
     border-color: var(--mp);
@@ -282,7 +282,6 @@
     color: var(--fg);
     font: inherit;
     font-size: 13px;
-    outline: none;
     min-height: 24px;
   }
   .search-input::placeholder {
@@ -314,7 +313,6 @@
   .row:hover,
   .row:focus-visible {
     background: var(--bg-hover, rgba(120, 120, 140, 0.08));
-    outline: none;
   }
   .row.current {
     background: rgba(120, 120, 200, 0.08);

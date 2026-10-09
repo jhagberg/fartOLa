@@ -142,14 +142,14 @@
   }
   .reconnect-btn {
     margin-top: var(--space-2xs);
-    min-height: 32px;
+    min-height: var(--hit);
     padding: 6px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg);
     color: var(--fg);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--fs-label);
     cursor: pointer;
     width: 100%;
   }
@@ -157,8 +157,8 @@
     background: var(--bg-hover, var(--bg-elev));
   }
   .reconnect-btn:focus-visible {
-    outline: 2px solid var(--mp);
-    outline-offset: 1px;
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
   }
   .reconnect-btn:disabled {
     opacity: 0.6;
