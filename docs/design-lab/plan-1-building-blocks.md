@@ -54,12 +54,12 @@ from it).
 ## Review Focus
 
 1. **A 35-control course at 1366×768:** "Skriv ut kvitto" and the status
-   picker stay reachable without scrolling the page → e2e in Task 8.
+   picker stay reachable without scrolling the page → e2e in Task 9.
 2. **A class without a course:** punch tiles must not claim "correct"
    (no check icon, no "saknas") → unit test in Task 7.
 3. **Tablet 820×1180 and 1025 px wide:** no clipped readout, hamburger
    shown at ≤1024 px, closed drawer not reachable by Tab → unit test +
-   e2e in Task 9.
+   e2e in Task 8.
 4. **Bright-sun mode with the new tokens:** every listed pair passes →
    contrast test runs both modes in Task 3.
 5. **Shared i18n keys:** renaming `walk.save` must not relabel the
@@ -84,11 +84,11 @@ from it).
 | `apps/web/src/lib/ui/StatusPill.svelte` (+ test)                       | translated label, type                    | 5       |
 | `apps/web/src/lib/ui/Button.svelte`, 6 component CSS blocks            | 44 px, 14 px                              | 6       |
 | `apps/web/src/lib/components/PunchGrid.svelte` (+ test)                | states, size rule, verdict                | 7       |
-| `apps/web/src/lib/screens/ReadoutView.svelte`                          | `verdict` prop, container query           | 7, 9    |
-| `apps/web/src/lib/components/LatestReadCard.svelte`                    | action bar, picker up                     | 8       |
-| `tests/e2e/readout-long-course.spec.ts`                                | new                                       | 8       |
-| `apps/web/src/lib/layout/{breakpoints.ts,AppShell,TopBar,Sidebar}`     | drawer ≤1024, inert, scroll               | 9       |
-| `apps/web/src/lib/layout/AppShell.test.ts`, `tests/e2e/layout.spec.ts` | new                                       | 9       |
+| `apps/web/src/lib/screens/ReadoutView.svelte`                          | `verdict` prop, container query           | 7, 8    |
+| `apps/web/src/lib/components/LatestReadCard.svelte`                    | action bar, picker up                     | 9       |
+| `tests/e2e/readout-long-course.spec.ts`                                | new                                       | 9       |
+| `apps/web/src/lib/layout/{breakpoints.ts,AppShell,TopBar,Sidebar}`     | drawer ≤1024, inert, scroll               | 8       |
+| `apps/web/src/lib/layout/AppShell.test.ts`, `tests/e2e/layout.spec.ts` | new                                       | 8       |
 | `apps/web/src/lib/i18n/sv.json`, `en.json`                             | wording                                   | 5, 10   |
 | `tests/e2e/a11y.spec.ts`, `tests/e2e/a11y-known.json`                  | new: axe                                  | 11      |
 | `docs/design-lab/README.md`                                            | new: what changed and why                 | 12      |
@@ -253,7 +253,7 @@ export async function voidControl(
 // punch state (miss, wrong order, extra, struck) and shoots every screen
 // at laptop and tablet size, default and bright-sun.
 //   DESIGN_LAB_SHOTS=~/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/before \
-//     pnpm e2e design-lab-screens
+//     pnpm e2e design-lab-screens --workers=1
 
 import { test } from '@playwright/test';
 import { longCourseCodes } from './helpers/long-course.ts';
@@ -311,6 +311,8 @@ test('design-lab screens', async ({ browser, request }) => {
       }
       await page.goto('/');
       await page.getByTestId('open-wizard').first().click();
+      await page.getByTestId('wiz-name').waitFor();
+      if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
       await page.screenshot({ path: `${OUT}/wizard-${tag}-${mode}.png` });
       await page.close();
     }
@@ -352,7 +354,7 @@ Run (repo root):
 
 ```bash
 mkdir -p ~/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/before
-DESIGN_LAB_SHOTS=$HOME/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/before pnpm e2e design-lab-screens
+DESIGN_LAB_SHOTS=$HOME/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/before pnpm e2e design-lab-screens --workers=1
 ls ~/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/before | wc -l
 ```
 
@@ -436,7 +438,10 @@ git commit -m "docs(design-lab): add per-screen ui audit"
 - Create: `apps/web/src/lib/tokens.contrast.test.ts`
 - Modify: `apps/web/src/lib/tokens.css`
 - Modify: `apps/web/src/lib/ui/Card.svelte` (`.card` block)
-- Modify: `apps/web/src/lib/ui/Modal.svelte:74` (radius)
+- Modify: `apps/web/src/lib/ui/Modal.svelte:74` (radius, border)
+- Modify: `apps/web/src/lib/components/LatestReadCard.svelte` (`.card-num` colour)
+- Modify: `apps/web/src/lib/layout/NavItem.svelte` (`.nav-item.active`)
+- Modify: `apps/web/src/lib/components/HistoryRow.svelte` (`.hist-row.active`)
 
 **Interfaces:**
 
@@ -460,7 +465,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const css = readFileSync(fileURLToPath(new URL('./tokens.css', import.meta.url)), 'utf8');
+// Comments removed first: a comment that mentions a token ("--mp-soft:")
+// would otherwise swallow the next declaration.
+const css = readFileSync(fileURLToPath(new URL('./tokens.css', import.meta.url)), 'utf8').replace(
+  /\/\*[\s\S]*?\*\//g,
+  ''
+);
 
 function block(selector: string): Record<string, string> {
   const start = css.indexOf(`${selector} {`);
@@ -550,7 +560,11 @@ function resolve(tokens: Record<string, string>, v: string): string {
 
 describe.each(Object.entries(MODES))('tokens.css contrast — %s', (_mode, tokens) => {
   it.each(PAIRS)('%s on %s ≥ %d:1', (fg, bg, floor) => {
-    expect(ratio(resolve(tokens, fg), resolve(tokens, bg))).toBeGreaterThanOrEqual(floor);
+    const r = ratio(resolve(tokens, fg), resolve(tokens, bg));
+    // PRINT_CONTRAST=1 prints the table for docs/design-lab/README.md.
+    if (process.env['PRINT_CONTRAST'])
+      console.log(`| ${_mode} | \`${fg}\` | \`${bg}\` | ${r.toFixed(2)} | ${floor} |`);
+    expect(r).toBeGreaterThanOrEqual(floor);
   });
 });
 
@@ -629,7 +643,22 @@ In `.contrast-high`, add:
 `apps/web/src/lib/ui/Card.svelte`: delete the line
 `box-shadow: var(--shadow-sm);` from `.card` (border + ring would draw a
 2 px edge). `apps/web/src/lib/ui/Modal.svelte:74`: `border-radius: 14px;`
-→ `border-radius: var(--radius-lg);`.
+→ `border-radius: var(--radius-lg);` and add `border: 1px solid var(--border);`
+(the modal keeps `--shadow-lg`: it floats over a scrim, spec "Card / Modal look").
+
+- [ ] **Step 4b: Green only for meaning** (spec "Rules that come with the tokens")
+
+- `components/LatestReadCard.svelte` `.card-num`: `color: var(--accent-strong);` → `color: var(--fg);`.
+- `layout/NavItem.svelte` `.nav-item.active`: `background: var(--accent-soft); color: var(--accent-strong);`
+  → `background: var(--bg-sunken); color: var(--fg); font-weight: 600;`; its
+  `::before` bar `background: var(--accent);` → `background: var(--fg);`.
+- `components/HistoryRow.svelte` `.hist-row.active`: `background: var(--accent-soft);`
+  → `background: var(--bg-sunken);`; `.hist-row.active::before` `background: var(--accent);`
+  → `background: var(--fg);`. The new-read flash (`flashIn`, accent-soft) stays: it
+  says "this just arrived".
+
+Grep afterwards: `grep -n "accent" apps/web/src/lib/components/LatestReadCard.svelte apps/web/src/lib/layout/NavItem.svelte apps/web/src/lib/components/HistoryRow.svelte`
+— remaining uses are the primary button, the active status chip and the flash.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -642,7 +671,8 @@ Expected: PASS (46 + 3 cases). Lowest values: `--fg-muted` on
 Run: `pnpm lint && pnpm typecheck && pnpm test`
 
 ```bash
-git add apps/web/src/lib/tokens.css apps/web/src/lib/tokens.contrast.test.ts apps/web/src/lib/ui/Card.svelte apps/web/src/lib/ui/Modal.svelte
+git add apps/web/src/lib/tokens.css apps/web/src/lib/tokens.contrast.test.ts apps/web/src/lib/ui/Card.svelte apps/web/src/lib/ui/Modal.svelte \
+  apps/web/src/lib/components/LatestReadCard.svelte apps/web/src/lib/layout/NavItem.svelte apps/web/src/lib/components/HistoryRow.svelte
 git commit -m "feat(web): darken text and status tokens to meet adr-0016 contrast"
 ```
 
@@ -679,7 +709,6 @@ git commit -m "feat(web): darken text and status tokens to meet adr-0016 contras
 
 ```js
 // scripts/check-icons.mjs
-#!/usr/bin/env node
 // Authored for fartola. Not ported from upstream.
 //
 // Gate: no emoji or pictographic symbols used as icons in the web UI
@@ -701,7 +730,11 @@ function* files(dir) {
     const p = path.join(dir, name);
     if (statSync(p).isDirectory()) {
       if (name !== 'receipt-templates') yield* files(p);
-    } else if ((name.endsWith('.svelte') || p.includes(`${path.sep}i18n${path.sep}`) && name.endsWith('.json')) && !name.includes('.test.')) {
+    } else if (
+      (name.endsWith('.svelte') ||
+        (p.includes(`${path.sep}i18n${path.sep}`) && name.endsWith('.json'))) &&
+      !name.includes('.test.')
+    ) {
       yield p;
     }
   }
@@ -938,8 +971,6 @@ git commit -m "feat(web): use lucide icons instead of emoji and unicode symbols"
 - Modify: `apps/web/src/lib/i18n/sv.json` (`status.MP`, `status.DNF`, `status.DQ`)
 - Modify: `apps/web/src/lib/screens/readout-types.ts:381` and
   `readout-types.test.ts:66` (comments naming the old words)
-- Modify: `docs/design-lab/spec.md` (StatusPill bullet: "icon + text" →
-  "dot + text"; the word is the non-colour cue)
 
 **Interfaces:**
 
@@ -1033,9 +1064,6 @@ font-family: var(--font-ui);
 Comments: `readout-types.ts:381` and `readout-types.test.ts:66` say
 "Felstämpling, Bröt" → "Felstämplad, Utgått".
 
-Spec: in `docs/design-lab/spec.md`, StatusPill bullet, "icon + text" →
-"dot + text (the word is the non-colour cue)".
-
 - [ ] **Step 4: Run tests**
 
 Run: `pnpm --filter @fartola/web exec vitest run src/lib/ui/StatusPill.test.ts && grep -rn "Felstämpling\|\"Bröt\"\|'Bröt'\|Disk\.\"" apps/web/src tests --include=*.ts --include=*.svelte`
@@ -1049,7 +1077,7 @@ Run: `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e`
 
 ```bash
 git add apps/web/src/lib/ui/StatusPill.svelte apps/web/src/lib/ui/StatusPill.test.ts apps/web/src/lib/i18n/sv.json \
-  apps/web/src/lib/screens/readout-types.ts apps/web/src/lib/screens/readout-types.test.ts docs/design-lab/spec.md
+  apps/web/src/lib/screens/readout-types.ts apps/web/src/lib/screens/readout-types.test.ts
 git commit -m "fix(web): show status words instead of codes in status pills"
 ```
 
@@ -1059,38 +1087,89 @@ git commit -m "fix(web): show status words instead of codes in status pills"
 
 **Files:**
 
+- Create: `tests/e2e/targets.spec.ts`
 - Modify: `apps/web/src/lib/tokens.css` (focus rule, density)
 - Modify: `apps/web/src/lib/ui/Button.svelte` (`.size-sm`)
-- Modify: `apps/web/src/lib/components/LatestReadCard.svelte` (`.btn.sm`, `.status-chip`, `.kbd`, `.faint`)
+- Modify: `apps/web/src/lib/ui/Input.svelte` (`.input:focus`), `ui/Select.svelte` (`.select:focus`)
+- Modify: `apps/web/src/lib/components/LatestReadCard.svelte` (`.btn.sm`, `.status-chip`, `.kbd`, `.faint`, the 36 px inputs)
 - Modify: `apps/web/src/lib/screens/KvarISkovenView.svelte` (`.btn.xs`)
 - Modify: `apps/web/src/lib/screens/CompetitionInfoView.svelte` (`.ctrl-chip`)
-- Modify: `apps/web/src/lib/layout/RacePhaseControl.svelte` (`.reset-btn`)
-- Modify: `apps/web/src/lib/layout/StationCard.svelte` (`.reconnect-btn`)
+- Modify: `apps/web/src/lib/layout/RacePhaseControl.svelte` (`.reset-btn`, the confirm buttons)
+- Modify: `apps/web/src/lib/layout/StationCard.svelte` (`.reconnect-btn`, its `:focus-visible`)
 - Modify: `apps/web/src/lib/screens/LottningView.svelte` (`.edit-btn`, `.edit-action-btn`)
-- Modify: `apps/web/src/lib/layout/ActiveCompetitionPill.svelte:285`, `:317` (`outline: none`)
+- Modify: `apps/web/src/lib/layout/ActiveCompetitionPill.svelte` (`.pill:focus-visible`, `outline: none` ×2)
 
-**Interfaces:** none new. Task 11's axe `target-size` rule checks this.
+**Interfaces:**
 
-- [ ] **Step 1: Prove the problem with a quick e2e probe** (not committed)
+- Consumes: `seedCompetition`, `simulateRead` (Task 1).
+- axe's `target-size` (Task 11) only checks 24 px; this task's e2e test is
+  what holds the 44 px rule.
 
-```bash
-cat > /tmp/probe-targets.spec.ts <<'EOF'
-import { test, expect } from '@playwright/test';
-test('small targets', async ({ page }) => {
-  await page.goto('/');
-  const small = await page.$$eval('button, a[href], [role="button"]', (els) =>
-    els.filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height < 44; }).length);
-  console.log('targets under 44px on home:', small);
-  expect(small).toBeGreaterThan(0);
+- [ ] **Step 1: Write the failing e2e test**
+
+```ts
+// tests/e2e/targets.spec.ts
+// Authored for fartola. Not ported from upstream.
+//
+// ADR-0016 rule 7: touch targets at least 44 px. Measures every visible
+// button, link, input and select on the frame and the readout, including
+// the opened manual-status picker and the start-race confirmation.
+// Visually hidden elements (the skip link until focused) are not targets.
+
+import { test, expect, type Page } from '@playwright/test';
+import { seedCompetition, simulateRead } from './helpers/seed.ts';
+
+test.describe.configure({ mode: 'serial' });
+
+async function smallTargets(page: Page): Promise<string[]> {
+  return page.$$eval(
+    'button, a[href], input:not([type=checkbox]):not([type=radio]), select, [role="button"]',
+    (els) =>
+      els
+        .filter((e) => {
+          const r = e.getBoundingClientRect();
+          const style = getComputedStyle(e);
+          const shown = r.width > 0 && r.height > 0 && style.visibility !== 'hidden';
+          const onScreen =
+            r.bottom > 0 && r.right > 0 && r.top < innerHeight * 3 && r.left < innerWidth;
+          return shown && onScreen && !e.closest('.skip-link') && Math.round(r.height) < 44;
+        })
+        .map(
+          (e) =>
+            `${e.tagName.toLowerCase()} "${(e.textContent ?? '').trim().slice(0, 30)}" ${Math.round(e.getBoundingClientRect().height)}px`
+        )
+  );
+}
+
+test('frame and readout targets are at least 44 px', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const { competitionId } = await seedCompetition(request, { controls: 8 });
+  await page.goto(`/competition/${competitionId}/readout`);
+  await simulateRead(request, competitionId, 7_501_853, [31, 32, 33, 34, 35, 36, 37, 38]);
+  await expect(page.getByTestId('print-btn')).toBeVisible({ timeout: 5_000 });
+  expect(await smallTargets(page)).toEqual([]);
+
+  await page.getByTestId('manual-dnf-btn').click();
+  await expect(page.getByTestId('dnf-reason-input')).toBeVisible();
+  expect(await smallTargets(page)).toEqual([]);
 });
-EOF
-cp /tmp/probe-targets.spec.ts tests/e2e/zz-probe.spec.ts && pnpm e2e zz-probe; rm tests/e2e/zz-probe.spec.ts
 ```
 
-Expected: passes and logs a count > 0 (the "Återställ till förtävling"
-button and the reader card are 32 px).
+Add a second case for the start-race confirmation: create a competition
+without `start-race` (copy `seedCompetition`'s first four calls inline),
+open the readout, click the start-race button in the sidebar
+(`grep -n "data-testid" apps/web/src/lib/layout/RacePhaseControl.svelte`
+gives its testid), wait for `start-race-cancel` to be visible, assert
+`smallTargets(page)` is `[]`.
 
-- [ ] **Step 2: Implement**
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `pnpm e2e targets`
+Expected: FAIL listing e.g. `button "Återställ till förtävling" 32px`,
+`button "Återanslut" 32px`, `input "" 36px` (reason input),
+`button "Avbryt" 32px` (race confirm).
+
+- [ ] **Step 3: Implement**
 
 `tokens.css`, after the `button { … }` reset, add:
 
@@ -1103,6 +1182,17 @@ button and the reader card are 32 px).
   outline-offset: 2px;
 }
 ```
+
+Component rules that set their own focus outline win over this one, so
+change them to the same ring (`outline: 2px solid var(--fg); outline-offset: 2px;`):
+`ui/Input.svelte` `.input:focus` and `ui/Select.svelte` `.select:focus`
+(today accent, offset -1px), `layout/StationCard.svelte`
+`.reconnect-btn:focus-visible` and `layout/ActiveCompetitionPill.svelte`
+`.pill:focus-visible` (today `var(--mp)` amber, about 2.3:1). In
+`ActiveCompetitionPill.svelte` delete both `outline: none;` lines (the
+`.row:focus-visible` background change stays). Check with
+`grep -rn "outline" apps/web/src/lib --include=*.svelte`: every remaining
+outline is either this ring or on a non-focus state.
 
 `tokens.css` `[data-density='high']`: delete `--fs-body: 15px;`
 (ADR-0016 rule 7: body ≥16 px; density high keeps the splits table).
@@ -1122,36 +1212,35 @@ button and the reader card are 32 px).
 `.status-chip`: `height: 28px` → `height: var(--hit)`, `font-size: 12px` →
 `var(--fs-label)`, `font-family: var(--font-mono)` → `var(--font-ui)`,
 delete `letter-spacing: 0.02em;`, `color: var(--fg-muted)` → `var(--fg)`;
-`.kbd { font-size: 11px }` → `var(--fs-label)`; `.faint { font-size: 12px }`
-→ `font-size: var(--fs-label); color: var(--fg-muted);`.
+the rule with `height: 36px` (reason and start-time inputs, ~line 614)
+→ `height: var(--hit)`; `.kbd { font-size: 11px }` → `var(--fs-label)`;
+`.faint { font-size: 12px }` → `font-size: var(--fs-label); color: var(--fg-muted);`.
 
-The five custom controls (X6): in each block add `min-height: var(--hit);`
+The custom controls (X6): in each block add `min-height: var(--hit);`
 and set `font-size: var(--fs-label);` (replacing 12/13 px):
 `KvarISkovenView .btn.xs` (also `padding: 0 var(--space-sm)`),
 `CompetitionInfoView .ctrl-chip`, `RacePhaseControl .reset-btn` (replace
-`min-height: 32px`), `StationCard .reconnect-btn` (replace
-`min-height: 32px`), `LottningView .edit-btn` (also `padding: 0 var(--space-xs)`)
-and `.edit-action-btn` (also `padding: 0 var(--space-sm)`). Where two
-such controls sit side by side, make the parent's `gap` at least
-`var(--space-xs)` (`LottningView .edit-actions { gap: 4px }` → `var(--space-xs)`).
+`min-height: 32px`), the `RacePhaseControl` rule with `min-height: 32px`
+at ~line 277 (the confirm buttons), `StationCard .reconnect-btn`
+(replace `min-height: 32px`), `LottningView .edit-btn` (also
+`padding: 0 var(--space-xs)`) and `.edit-action-btn` (also
+`padding: 0 var(--space-sm)`). Where two such controls sit side by side,
+make the parent's `gap` at least `var(--space-xs)`
+(`LottningView .edit-actions { gap: 4px }` → `var(--space-xs)`).
 
-`ActiveCompetitionPill.svelte`: delete both `outline: none;` lines (the
-global ring now shows on `.row:focus-visible`; the background change
-stays).
+- [ ] **Step 4: Run it to verify it passes**
 
-- [ ] **Step 3: Verify with the probe**
+Run: `pnpm e2e targets`
+Expected: PASS (2 tests). A remaining hit names the element and its
+height; fix it in the component that owns it.
 
-Rerun Step 1's probe with the expectation flipped to
-`expect(small).toBe(0)` on `/` and on `/competition/<seeded id>/readout`
-(seed with `seedCompetition` from Task 1). Expected: 0 on both. Delete
-the probe afterwards.
-
-- [ ] **Step 4: Gate, e2e, commit**
+- [ ] **Step 5: Gate, e2e, commit**
 
 Run: `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e`
 
 ```bash
-git add apps/web/src/lib/tokens.css apps/web/src/lib/ui/Button.svelte apps/web/src/lib/components/LatestReadCard.svelte \
+git add tests/e2e/targets.spec.ts apps/web/src/lib/tokens.css apps/web/src/lib/ui/Button.svelte \
+  apps/web/src/lib/ui/Input.svelte apps/web/src/lib/ui/Select.svelte apps/web/src/lib/components/LatestReadCard.svelte \
   apps/web/src/lib/screens/KvarISkovenView.svelte apps/web/src/lib/screens/CompetitionInfoView.svelte \
   apps/web/src/lib/layout/RacePhaseControl.svelte apps/web/src/lib/layout/StationCard.svelte \
   apps/web/src/lib/screens/LottningView.svelte apps/web/src/lib/layout/ActiveCompetitionPill.svelte
@@ -1519,105 +1608,7 @@ git commit -m "feat(readout): make punch tiles readable without colour and size 
 
 ---
 
-### Task 8: Readout actions always in view
-
-**Files:**
-
-- Modify: `apps/web/src/lib/components/LatestReadCard.svelte` (`.body`, `.dnf-pop` styles)
-- Create: `tests/e2e/readout-long-course.spec.ts`
-
-**Interfaces:**
-
-- Consumes: `seedCompetition`, `simulateRead`, `longCourseCodes` (Task 1).
-
-- [ ] **Step 1: Write the failing e2e test**
-
-```ts
-// tests/e2e/readout-long-course.spec.ts
-// Authored for fartola. Not ported from upstream.
-//
-// ADR-0016 rule 4: the readout's main button never scrolls away. A
-// 35-control course at laptop and tablet size keeps "Skriv ut kvitto"
-// and the manual-status picker in view; the last tile is reachable.
-
-import { test, expect } from '@playwright/test';
-import { longCourseCodes } from './helpers/long-course.ts';
-import { seedCompetition, simulateRead } from './helpers/seed.ts';
-
-test.describe.configure({ mode: 'serial' });
-
-for (const viewport of [
-  { width: 1366, height: 768 },
-  { width: 820, height: 1180 },
-]) {
-  test(`35 controls at ${viewport.width}×${viewport.height}: actions in view`, async ({
-    page,
-    request,
-  }) => {
-    await page.setViewportSize(viewport);
-    const { competitionId } = await seedCompetition(request, { controls: 35 });
-    await page.goto(`/competition/${competitionId}/readout`);
-    await expect(page.getByTestId('readout-view')).toBeVisible();
-    await simulateRead(request, competitionId, 7_501_853, longCourseCodes(35));
-    await expect(page.getByTestId('punch-grid')).toHaveAttribute('data-size', 'medium', {
-      timeout: 5_000,
-    });
-
-    await expect(page.getByTestId('print-btn')).toBeInViewport();
-    await page.getByTestId('manual-dnf-btn').click();
-    await expect(page.getByTestId('dnf-reason-input')).toBeInViewport();
-    await page.getByTestId('dnf-cancel').click();
-
-    const last = page.locator('[data-testid="punch-grid"] .punch').last();
-    await last.scrollIntoViewIfNeeded();
-    await expect(last).toBeInViewport();
-    await expect(page.getByTestId('print-btn')).toBeInViewport();
-  });
-}
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-Run: `pnpm e2e readout-long-course`
-Expected: FAIL at 1366×768 — `print-btn` not in viewport (the 35 tiles
-push the foot below 768 px), or the picker input is clipped by the
-card's `overflow: hidden`.
-
-- [ ] **Step 3: Implement** (`LatestReadCard.svelte` styles)
-
-```css
-.body {
-  padding: 16px 18px;
-  /* The punch area scrolls inside the card so the action bar (.foot)
-       stays in view on long courses (ADR-0016 rule 4). 240px = top bar +
-       page padding + card header + action bar. */
-  max-height: max(280px, calc(100dvh - 240px));
-  overflow-y: auto;
-}
-```
-
-`.dnf-pop`: `top: calc(100% + 8px);` → `bottom: calc(100% + 8px);`
-(opens upwards, inside the card). The card's `overflow: hidden` stays.
-
-- [ ] **Step 4: Run it to verify it passes**
-
-Run: `pnpm e2e readout-long-course readout`
-Expected: PASS (2 new + existing readout tests). If at 820×1180 the
-history rail sits beside the card and squeezes it, that is Task 9; the
-test must still pass here because the foot is in view.
-
-- [ ] **Step 5: Gate, commit**
-
-Run: `pnpm lint && pnpm typecheck && pnpm test`
-
-```bash
-git add apps/web/src/lib/components/LatestReadCard.svelte tests/e2e/readout-long-course.spec.ts
-git commit -m "fix(readout): keep print and status actions in view on long courses"
-```
-
----
-
-### Task 9: Frame at tablet width
+### Task 8: Frame at tablet width
 
 **Files:**
 
@@ -1671,17 +1662,18 @@ describe('AppShell drawer', () => {
     mockMatchMedia(true);
     instance = mount(AppShell, { target: document.body, props: {} });
     flushSync();
-    expect(slot().hasAttribute('inert')).toBe(true);
+    // Svelte sets the inert property; jsdom does not reflect it to an attribute.
+    expect((slot() as HTMLElement).inert).toBe(true);
     document.body.querySelector<HTMLButtonElement>('[data-testid="topbar-menu"]')!.click();
     flushSync();
-    expect(slot().hasAttribute('inert')).toBe(false);
+    expect((slot() as HTMLElement).inert).toBe(false);
   });
 
   it('sidebar is never inert on a wide screen', () => {
     mockMatchMedia(false);
     instance = mount(AppShell, { target: document.body, props: {} });
     flushSync();
-    expect(slot().hasAttribute('inert')).toBe(false);
+    expect((slot() as HTMLElement).inert).toBe(false);
   });
 });
 ```
@@ -1856,6 +1848,142 @@ git commit -m "fix(web): use the drawer up to 1024 px and stack the readout by w
 
 ---
 
+### Task 9: Readout actions always in view
+
+Run after Tasks 6, 7 and 8 (it edits `LatestReadCard.svelte` after Task 6
+and relies on Task 8's layout at tablet width).
+
+**Files:**
+
+- Modify: `apps/web/src/lib/components/LatestReadCard.svelte` (`.card`, `.body`, `.dnf-pop` styles)
+- Create: `tests/e2e/readout-long-course.spec.ts`
+
+**Interfaces:**
+
+- Consumes: `seedCompetition`, `simulateRead`, `longCourseCodes` (Task 1);
+  `data-size` on the punch grid (Task 7).
+
+- [ ] **Step 1: Write the failing e2e test**
+
+```ts
+// tests/e2e/readout-long-course.spec.ts
+// Authored for fartola. Not ported from upstream.
+//
+// ADR-0016 rule 4: the readout's main button never scrolls away. With a
+// 35-control course the punch area scrolls inside the card; the page
+// itself does not scroll, and "Skriv ut kvitto" and the manual-status
+// picker stay fully visible. At 200 % zoom (683×384) the page may scroll,
+// but every action is reachable and nothing is clipped.
+
+import { test, expect, type Page } from '@playwright/test';
+import { longCourseCodes } from './helpers/long-course.ts';
+import { seedCompetition, simulateRead } from './helpers/seed.ts';
+
+test.describe.configure({ mode: 'serial' });
+
+async function openLongRead(
+  page: Page,
+  request: Parameters<typeof seedCompetition>[0]
+): Promise<void> {
+  const { competitionId } = await seedCompetition(request, { controls: 35 });
+  await page.goto(`/competition/${competitionId}/readout`);
+  await expect(page.getByTestId('readout-view')).toBeVisible();
+  await simulateRead(request, competitionId, 7_501_853, longCourseCodes(35));
+  await expect(page.getByTestId('punch-grid')).toHaveAttribute('data-size', 'medium', {
+    timeout: 5_000,
+  });
+}
+
+const pageScroll = (page: Page) =>
+  page.evaluate(() => (document.querySelector('.content')?.scrollTop ?? 0) + window.scrollY);
+
+for (const viewport of [
+  { width: 1366, height: 768 },
+  { width: 820, height: 1180 },
+]) {
+  test(`35 controls at ${viewport.width}×${viewport.height}: actions in view`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize(viewport);
+    await openLongRead(page, request);
+
+    const body = page.locator('[data-testid="latest-read"] .body');
+    expect(await body.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+    await expect(page.getByTestId('print-btn')).toBeInViewport({ ratio: 1 });
+
+    await body.evaluate((e) => (e.scrollTop = e.scrollHeight));
+    const last = page.locator('[data-testid="punch-grid"] .punch').last();
+    await expect(last).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('print-btn')).toBeInViewport({ ratio: 1 });
+    expect(await pageScroll(page)).toBe(0);
+
+    await page.getByTestId('manual-dnf-btn').click();
+    await expect(page.getByTestId('dnf-reason-input')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('dnf-confirm')).toBeInViewport({ ratio: 1 });
+  });
+}
+
+test('35 controls at 200 % zoom (683×384): every action reachable', async ({ page, request }) => {
+  await page.setViewportSize({ width: 683, height: 384 });
+  await openLongRead(page, request);
+  for (const id of ['print-btn', 'manual-dnf-btn']) {
+    await page.getByTestId(id).scrollIntoViewIfNeeded();
+    await expect(page.getByTestId(id)).toBeInViewport({ ratio: 1 });
+  }
+  await page.getByTestId('manual-dnf-btn').click();
+  for (const id of ['dnf-reason-input', 'dnf-confirm']) {
+    await page.getByTestId(id).scrollIntoViewIfNeeded();
+    await expect(page.getByTestId(id)).toBeInViewport({ ratio: 1 });
+  }
+});
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `pnpm e2e readout-long-course`
+Expected: FAIL — the body does not overflow (the card grows instead) and
+`print-btn` is below the fold at 1366×768; at 683×384 the picker (which
+opens downwards inside a card with `overflow: hidden`) is clipped.
+
+- [ ] **Step 3: Implement** (`LatestReadCard.svelte` styles)
+
+`.card` (this file's own rule, ~line 396): `overflow: hidden;` →
+`overflow: visible;` so the picker can extend past the card. Nothing
+inside the card paints a background into its rounded corners, so the
+clip is not needed; check the flash (`.latest[data-flash]`) still shows
+rounded corners in a screenshot.
+
+```css
+.body {
+  padding: 16px 18px;
+  /* The punch area scrolls inside the card so the action bar (.foot)
+     stays in view on long courses (ADR-0016 rule 4). 240px = top bar +
+     page padding + card header + action bar; 120px floor for 200 % zoom. */
+  max-height: max(120px, calc(100dvh - 240px));
+  overflow-y: auto;
+}
+```
+
+`.dnf-pop`: `top: calc(100% + 8px);` → `bottom: calc(100% + 8px);`
+(opens upwards, over the punch area) and `z-index: 10` → `z-index: 20`.
+
+- [ ] **Step 4: Run it to verify it passes**
+
+Run: `pnpm e2e readout-long-course readout`
+Expected: PASS (3 new + existing readout tests).
+
+- [ ] **Step 5: Gate, commit**
+
+Run: `pnpm lint && pnpm typecheck && pnpm test`
+
+```bash
+git add apps/web/src/lib/components/LatestReadCard.svelte tests/e2e/readout-long-course.spec.ts
+git commit -m "fix(readout): keep print and status actions in view on long courses"
+```
+
+---
+
 ### Task 10: Plain Swedish in `sv.json`
 
 **Files:**
@@ -1964,6 +2092,10 @@ git commit -m "fix(i18n): use plain swedish and one word per concept in the ui"
 **Interfaces:**
 
 - Consumes: `seedCompetition`, `simulateRead` (Task 1).
+- axe's `target-size` rule checks WCAG 2.2's 24 px minimum; the 44 px
+  rule is held by `tests/e2e/targets.spec.ts` (Task 6).
+- Run the e2e suite with `--workers=1` when this spec flakes: specs share
+  one database and the active-competition pointer.
 
 - [ ] **Step 1: Add the dependency**
 
@@ -2087,7 +2219,7 @@ git commit -m "test(e2e): check contrast and target size with axe"
 
 ```bash
 mkdir -p ~/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/after-plan-1
-DESIGN_LAB_SHOTS=$HOME/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/after-plan-1 pnpm e2e design-lab-screens
+DESIGN_LAB_SHOTS=$HOME/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/after-plan-1 pnpm e2e design-lab-screens --workers=1
 ```
 
 Expected: 68 PNGs. Compare `readout-*` and `walkup-*` before/after by
@@ -2100,7 +2232,7 @@ history below the card.
 Sections, each change tied to a user need or an ADR-0016 rule:
 "What changed" (one bullet per Task 3–11, with the rule), "Contrast"
 (copy the pairs from `tokens.contrast.test.ts` with the ratios printed
-by `pnpm --filter @fartola/web exec vitest run src/lib/tokens.contrast.test.ts --reporter=verbose`),
+by `PRINT_CONTRAST=1 pnpm --filter @fartola/web exec vitest run src/lib/tokens.contrast.test.ts`, one table row per pair and mode),
 "Screenshots" (path in fartOLa-docs, including the four `readout-laptop-{deut,prot,trit,grey}.png`), "Left for plan 2" (link
 `audit.md` and the axe todo). Prettier it.
 
