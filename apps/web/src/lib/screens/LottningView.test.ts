@@ -437,6 +437,26 @@ describe('LottningView (mounted)', () => {
     expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("SOFT TR 7.4.1: on a class switch the old class's results are not shown and the draw waits", async () => {
+    previousResults = { results: 2, ok: 1 };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await choose('lottning-mode-select', 'Pursuit');
+    expect($('pursuit-results-status')!.textContent).toContain('Inläst för H12: 2 resultat');
+    let release!: () => void;
+    holdD10 = new Promise((r) => (release = r));
+    await choose('lottning-class-select', 'd10');
+    expect($('pursuit-results-status')).toBeNull();
+    expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await settle();
+    expect($('pursuit-results-status')!.textContent!.trim()).toBe(
+      'Ingen resultatlista från förra etappen är inläst för D10.'
+    );
+    expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('an older start-list answer that arrives last does not replace the newer one', async () => {
     startList = [
       {

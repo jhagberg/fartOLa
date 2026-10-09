@@ -112,8 +112,9 @@
   let level: CompetitionLevel | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
-  /** Previous-stage results stored for the selected class (pursuit). */
-  let previousResults: { results: number; ok: number } | null = $state(null);
+  /** Previous-stage results stored for a class (pursuit), with the class
+   * they belong to: shown only while that class is the selected one. */
+  let previousResults: { classId: string; results: number; ok: number } | null = $state(null);
   /** A previous-stage result list is being read in: a pursuit drawn now
    * would use the old input times, so the draw waits. */
   let resultsBusy = $state(false);
@@ -169,7 +170,7 @@
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       startList = res.start_list;
-      previousResults = res.previous_results;
+      previousResults = { classId, ...res.previous_results };
       // A late-entrant choice only means something next to an existing list.
       if (startList.length === 0) drawType = 'All';
       classRunners = runners.competitors.filter((r) => r.class_id === classId);
@@ -194,6 +195,7 @@
   async function onClassChange(): Promise<void> {
     startListLoaded = false;
     startList = [];
+    previousResults = null;
     refusal = null;
     done = null;
     error = null;
@@ -635,7 +637,7 @@
           <PreviousResultsUpload
           {competitionId}
           className={selectedClassName}
-          loaded={previousResults}
+          loaded={previousResults?.classId === selectedClassId ? previousResults : null}
           onbusy={(b) => (resultsBusy = b)}
           onuploaded={() => loadStartList()}
         />
@@ -759,7 +761,7 @@
       <Button
         variant="primary"
         onclick={() => void submitDraw()}
-        disabled={submitting || resultsBusy || !selectedClassId}
+        disabled={submitting || resultsBusy || !selectedClassId || !startListLoaded}
         data-testid="lottning-draw-btn"
       >
         {submitting
