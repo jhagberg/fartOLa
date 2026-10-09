@@ -48,6 +48,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import { tweaks } from '#lib/stores/tweaks.svelte.ts';
   import { bridgeStatus } from '#lib/stores/bridgeStatus.svelte.ts';
   import { resultsChannel, formatClockTime } from '@fartola/shared-types';
@@ -333,7 +334,7 @@
       return {
         cardNumber: r.card_number,
         name: r.competitor_name,
-        cls: cls?.name ?? (r.unmatched ? '⚠' : '—'),
+        cls: cls?.name ?? '—',
         readTime: formatTimeOfDay(r.event_time_ms),
         elapsed: '—',
         status: r.status as ReadoutStatus,
@@ -920,7 +921,7 @@
                 onclick={() => onWalkupCta(cn)}
               >
                 <span class="mono">{cn}</span>
-                <span class="cta">→ {t('ro.register')}</span>
+                <span class="cta">{t('ro.register')} <Icon name="arrow-right" size={16} /></span>
               </button>
             </li>
           {/each}

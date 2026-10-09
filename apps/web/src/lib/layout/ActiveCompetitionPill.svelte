@@ -166,7 +166,7 @@
                 <span class="row-name">{comp.name}</span>
                 <span class="row-date">{comp.date}</span>
                 {#if comp.id === active?.id}
-                  <span class="row-check" aria-hidden="true">●</span>
+                  <span class="row-check"><Icon name="check" size={16} /></span>
                 {/if}
               </button>
             </li>

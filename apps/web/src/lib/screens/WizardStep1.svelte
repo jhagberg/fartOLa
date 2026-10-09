@@ -30,6 +30,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import { getEventorEvent } from '#lib/api/client.ts';
   import { ApiError } from '#lib/api/client.ts';
 
@@ -267,7 +268,7 @@
           onclick={openPicker}
           data-testid="wiz-step1-quickstart-btn"
         >
-          📁 {t('wiz.step1.quickstart.button')}
+          <Icon name="folder-open" size={20} /> {t('wiz.step1.quickstart.button')}
         </button>
       </div>
       {#if quickstartError}
@@ -275,7 +276,7 @@
       {/if}
     {:else}
       <div class="loaded-row" data-testid="wiz-step1-quickstart-loaded">
-        <span class="ok-icon" aria-hidden="true">✓</span>
+        <span class="ok-icon"><Icon name="check" size={18} /></span>
         <div class="grow">
           <div class="loaded-msg">{t('wiz.step1.quickstart.loaded')}</div>
           <div class="mono small">{preimportedFile.name}</div>
@@ -327,7 +328,7 @@
       {/if}
     {:else}
       <div class="loaded-row" data-testid="wiz-evqs-loaded">
-        <span class="ok-icon" aria-hidden="true">✓</span>
+        <span class="ok-icon"><Icon name="check" size={18} /></span>
         <div class="grow">
           <div class="loaded-msg">{t('wizard.eventor.loaded', { name: name || String(eventorEventId), id: eventorEventId })}</div>
         </div>

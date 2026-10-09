@@ -266,7 +266,7 @@
     <footer class="modal-foot">
       {#if step > 1}
         <button type="button" class="btn ghost" onclick={back} data-testid="wiz-back">
-          ← {t('wiz.back')}
+          <Icon name="arrow-left" size={18} /> {t('wiz.back')}
         </button>
       {/if}
       <button type="button" class="btn ghost" onclick={cancel} data-testid="wiz-cancel">
@@ -281,7 +281,7 @@
           onclick={next}
           data-testid="wiz-next"
         >
-          {t('wiz.next')} →
+          {t('wiz.next')} <Icon name="arrow-right" size={18} />
         </button>
       {/if}
     </footer>

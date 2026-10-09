@@ -19,6 +19,8 @@
 -->
 <script lang="ts">
   import StatusPill from '#lib/ui/StatusPill.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
 
   interface Row {
     cardNumber: number;
@@ -60,7 +62,7 @@
 >
   <div class="h-card mono">{row.cardNumber}</div>
   <div class="h-mid">
-    <div class="h-name">{row.unknown ? '⚠ Okänd bricka' : (row.name ?? '—')}</div>
+    <div class="h-name">{#if row.unknown}<Icon name="alert-triangle" size={16} /> {t('ro.unknownCard')}{:else}{row.name ?? '—'}{/if}</div>
     <div class="h-class mono">{row.cls} · {row.readTime}</div>
   </div>
   <div class="h-right">

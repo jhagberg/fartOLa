@@ -31,6 +31,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import {
     createCompetitionFromWizard,
     setActiveCompetition,
@@ -154,7 +155,7 @@
         <div class="title">{t('wiz.detecting')}</div>
         <div class="muted small">Söker på /dev/ttyUSB*</div>
       {:else if readerStatus === 'open'}
-        <div class="title ok">✓ {t('wiz.detected')} · {t('wiz.handshake')}</div>
+        <div class="title ok"><Icon name="check" size={18} /> {t('wiz.detected')} · {t('wiz.handshake')}</div>
         <div class="muted small mono">BSM7-USB · /dev/ttyUSB0 · 38400 baud</div>
       {:else}
         <div class="title err">Läsare hittades inte</div>
@@ -170,7 +171,7 @@
     data-testid="wiz-start"
   >
     {#if submitting}<span class="spinner" aria-hidden="true"></span>{/if}
-    ▶ {t('wiz.start')}
+    <Icon name="play" size={18} /> {t('wiz.start')}
   </button>
 </div>
 

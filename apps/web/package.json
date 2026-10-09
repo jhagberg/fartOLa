@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@fartola/shared-types": "workspace:*",
+    "@lucide/svelte": "^1.54.0",
     "i18next": "^26.4.2"
   },
   "devDependencies": {
