@@ -250,11 +250,10 @@ index and split separately from the tile.
   manual-status picker in `LatestReadCard`; "Spara anmälan" there would
   be wrong, so it gets its own key. `walk.*` is also used by
   `EditCompetitorModal` and `AddRunnerSheet`.
-- **Status words (open question for Jonas):** results already show the
-  published SOFT labels (`soft.status.*`, ADR-0011, rulebook
-  2026-07-01). Open: the readout/history words (`status.*`), today
-  "Felstämpling", "Bröt", "Disk.". Proposal: "Felstämplad", "Utgått",
-  "Diskad", matching the rulebook's words where it has them.
+- **Status words (decided 2026-10-09):** results keep the published
+  SOFT labels (`soft.status.*`, ADR-0011, rulebook 2026-07-01). The
+  readout/history words (`status.*`) change from "Felstämpling",
+  "Bröt", "Disk." to "Felstämplad", "Utgått", "Diskad".
 
 ## Verification
 
@@ -269,8 +268,8 @@ index and split separately from the tile.
   `--fg-muted` ≥7:1 on `--bg`, `--bg-sunken`, `--pend-soft`; non-text
   ≥3:1), for both the default and `.contrast-high` values. Component
   literals that stay (if any) are listed in the test with a reason.
-- **Axe in e2e** (`@axe-core/playwright`, required by ADR-0016,
-  open question for Jonas: new dev dependency): run on the five main
+- **Axe in e2e** (`@axe-core/playwright`, required by ADR-0016; new dev
+  dependency accepted 2026-10-09): run on the five main
   screens in both modes. Acceptance: no colour-contrast or target-size
   violation on surfaces this work changed; existing violations
   (unnamed dialogs, modal focus) are recorded in a todo, not fixed here.
@@ -296,8 +295,8 @@ index and split separately from the tile.
 5. Flat Card/Modal look.
 6. PunchGrid states and size rule; readout sticky action bar.
 7. Layout: drawer ≤1024 px, readout stacking, sidebar scroll (X1, X2).
-8. Wording pass in `sv.json` (X10, status words after Jonas decides).
-9. Axe in e2e, if Jonas accepts the dependency.
+8. Wording pass in `sv.json` (X10, status words).
+9. Axe in e2e.
 
 Then one commit per screen pass. Delivered as small PRs (tokens and
 components; layout; wording; screens in groups), not one large one.
