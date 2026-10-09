@@ -34,7 +34,7 @@
   - REQ-PRIV-001 (explicit consent literal)
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { goto } from '$app/navigation';
   import { createCompetitor, lookupEventorBySiCard } from '#lib/api/client.ts';
   import { t } from '#lib/i18n/index.ts';
@@ -100,9 +100,15 @@
 
   /** 'entered' first: is the runner already entered? Then the form. */
   let step = $state<'entered' | 'form'>('entered');
+  /** False once this modal is gone (scrim, Esc, the parent moved on): a
+   * replacement that answers later must not close the next card's modal. */
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
   function onReboundDone(r: CardRebind): void {
     onRebound?.(r);
-    close(true);
+    if (mounted) close(true);
   }
 
   // --- form state -----------------------------------------------------------
