@@ -504,6 +504,111 @@ describe('competitors replace-card-for-competitor (plan 10)', () => {
       .get();
     assert.equal(aliceRow?.cardNumber, 5555555);
   });
+
+  test('replace logs the old card in the card_bound event and returns the event for undo', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Entered Eva',
+        club: null,
+        class_id: classId,
+        card_number: 1111111,
+        consent: true,
+      },
+    });
+    const evaId = (created.json() as { id: string }).id;
+
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 2222222,
+        replace_card_for_competitor_id: evaId,
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as {
+      card_number: number;
+      card_event: { node_id: string; local_seq: number; previous_card_number: number | null };
+    };
+    assert.equal(body.card_number, 2222222);
+    assert.equal(body.card_event.previous_card_number, 1111111);
+
+    const ev = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.localSeq, body.card_event.local_seq))
+      .get();
+    assert.ok(ev);
+    assert.equal(ev.nodeId, body.card_event.node_id);
+    const payload = ev.payload as { card_number: number; previous_card_number: number | null };
+    assert.equal(payload.card_number, 2222222);
+    assert.equal(payload.previous_card_number, 1111111);
+  });
+
+  test('replace with hired_card marks the new card hired; without contact → 400 and nothing changes', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Rental Rut',
+        club: null,
+        class_id: classId,
+        card_number: null,
+        consent: true,
+      },
+    });
+    const rutId = (created.json() as { id: string }).id;
+
+    const noContact = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 3333333,
+        replace_card_for_competitor_id: rutId,
+        hired_card: true,
+        hired_contact: { name: null, phone: '', email: '', note: null },
+      },
+    });
+    assert.equal(noContact.statusCode, 400);
+    assert.equal((noContact.json() as { error: string }).error, 'hyrbricka_contact_required');
+    const unchanged = ctx.handle.db
+      .select()
+      .from(competitors)
+      .where(eq(competitors.id, rutId))
+      .get();
+    assert.equal(unchanged?.cardNumber, null);
+
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 3333333,
+        replace_card_for_competitor_id: rutId,
+        hired_card: true,
+        hired_contact: { name: 'Rut', phone: '0701234567', email: null, note: null },
+      },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(
+      (res.json() as { card_event: { previous_card_number: number | null } }).card_event
+        .previous_card_number,
+      null
+    );
+    const hired = ctx.handle.db.select().from(hiredCards).all();
+    assert.equal(hired.length, 1);
+    assert.equal(hired[0]!.cardNumber, 3333333);
+    assert.equal(hired[0]!.contactPhone, '0701234567');
+    assert.equal(hired[0]!.returnedAtMs, null);
+  });
 });
 
 describe('competitors atomicity', () => {

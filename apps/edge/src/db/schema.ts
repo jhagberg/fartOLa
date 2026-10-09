@@ -140,6 +140,11 @@ export type EventPayload =
       card_number: number;
       walkup: boolean;
       consent_at_ms: number;
+      /** The card the competitor held before this bind (null: none). Set by
+       * a card replacement and its undo; absent on older events. */
+      previous_card_number?: number | null;
+      /** Set on the event that undoes an earlier card replacement. */
+      undoes?: { node_id: string; local_seq: number };
     }
   | {
       event_type: 'manual_dnf';
