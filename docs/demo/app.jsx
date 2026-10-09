@@ -22,7 +22,8 @@ function App() {
   const t = useT(tw.locale);
 
   // Routing state
-  const [route, setRoute] = useState('readout'); // home | readout | registration | results | export | hyrbrickor
+  const [route, setRoute] = useState('readout'); // home | readout | registration | lottning | results | export | hyrbrickor | info
+  const m1 = useM1Store(); // class kinds and competition level (Tävlingsinfo, Lottning)
   const [wizardOpen, setWizardOpen] = useState(false);
   const [walkupOpen, setWalkupOpen] = useState(false);
   const [walkupCard, setWalkupCard] = useState(null);
@@ -168,6 +169,9 @@ function App() {
         <button className={'nav-item ' + (route === 'hyrbrickor' ? 'active' : '')} onClick={() => setRoute('hyrbrickor')}>
           <span style={{width: 16, textAlign: 'center'}}>⌬</span> {t('nav.hyrbrickor')}
         </button>
+        <button className={'nav-item ' + (route === 'info' ? 'active' : '')} onClick={() => setRoute('info')}>
+          <span style={{width: 16, textAlign: 'center'}}>ⓘ</span> {t('nav.info')}
+        </button>
         {/* Opens the tweaks panel, as in the app. The panel listens for this message. */}
         <button className="nav-item" onClick={() => window.postMessage({ type: '__activate_edit_mode' }, '*')}>
           <span style={{width: 16, textAlign: 'center'}}>⚙</span> {t('nav.settings')}
@@ -239,6 +243,9 @@ function App() {
           )}
           {route === 'hyrbrickor' && (
             <HyrbrickorView t={t} rows={window.MOCK_PHASE2.hyrbrickor} />
+          )}
+          {route === 'info' && (
+            <CompetitionInfoView t={t} store={m1} />
           )}
         </div>
       </main>
