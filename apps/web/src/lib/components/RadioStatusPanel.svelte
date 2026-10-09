@@ -2,7 +2,7 @@
   Authored for fartola. Not ported from upstream.
 
   Radio-control status where the readout operator works: one line per radio
-  control with OK / Få stämplingar / Tyst as text plus a symbol, a date
+  control with OK / Få stämplingar / Tyst as text plus an icon, a date
   warning when ROC rows carry another date, and "senast hörd". Shown only
   while ROC input is on. Polls the edge every 10 s; the watchdog itself lives
   server-side (integrations/roc/watchdog.ts). A speaker view is a later task.
@@ -10,9 +10,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
-  import Icon from '#lib/ui/Icon.svelte';
+  import Icon, { type IconName } from '#lib/ui/Icon.svelte';
   import { getRadioStatus } from '#lib/api/client.ts';
-  import type { RadioStatus } from '@fartola/shared-types';
+  import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
   import { baselineKey, latestOnly, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
 
   interface Props {
@@ -20,6 +20,12 @@
   }
 
   let { competitionId }: Props = $props();
+
+  const STATE_ICON: Record<RadioControlStatus['state'], IconName> = {
+    ok: 'check',
+    few: 'alert-triangle',
+    silent: 'x',
+  };
 
   const POLL_MS = 10_000;
   let status = $state<RadioStatus | null>(null);
@@ -85,7 +91,7 @@
           <li data-testid="radio-control" data-state={v.state} data-code={v.code}>
             <span class="code">{t(v.nameKey, { code: v.code })}</span>
             <span class="state">
-              <span aria-hidden="true">{v.symbol}</span>
+              <Icon name={STATE_ICON[v.state]} size={16} />
               {t(v.labelKey)}
             </span>
             {#if v.dateWarnings > 0}

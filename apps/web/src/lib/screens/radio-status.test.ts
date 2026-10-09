@@ -65,15 +65,11 @@ function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null
 }
 
 describe('radioControlView', () => {
-  it('gives every state a text label key and a symbol (never colour alone)', () => {
-    const symbols = new Set<string>();
+  it('gives every state a text label key (never colour alone)', () => {
     for (const state of ['ok', 'few', 'silent'] as const) {
       const v = radioControlView(control({ state }), NOW, OFFSET);
       expect(v.labelKey).toBe(`radio.state.${state}`);
-      expect(v.symbol.length).toBeGreaterThan(0);
-      symbols.add(v.symbol);
     }
-    expect(symbols.size).toBe(3);
   });
 
   it('shows minutes since last heard and coverage as matched/total', () => {
