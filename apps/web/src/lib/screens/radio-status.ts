@@ -1,7 +1,7 @@
 // Authored for fartola. Not ported from upstream.
 //
 // View helpers for the radio-control status (ROC input). A control's state is
-// shown as text plus a symbol, never by colour alone (ADR-0016 rule 7).
+// shown as text plus an icon, never by colour alone (ADR-0016 rule 7).
 
 import { formatClockTime } from '@fartola/shared-types';
 import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
@@ -16,7 +16,6 @@ export interface RadioControlView {
   otherPct: number | null;
   siacPct: number | null;
   state: RadioControlStatus['state'];
-  symbol: string;
   /** i18n key for the state label. */
   labelKey: string;
   /** Date warning shown next to the state when > 0 rows have another date. */
@@ -32,8 +31,6 @@ export interface RadioControlView {
   /** "12/14" read-out punches with a radio match; null when none to compare. */
   coverageText: string | null;
 }
-
-const SYMBOL: Record<RadioControlStatus['state'], string> = { ok: '✓', few: '△', silent: '✕' };
 
 /** 3000 → "3 s", 150000 → "3 min" (rounded, sign dropped: a sender clock
  * running ahead is as wrong as one running behind). */
@@ -55,7 +52,6 @@ export function radioControlView(
     otherPct: pct(c.other_matched, c.other_card_punches),
     siacPct: pct(c.siac_matched, c.siac_card_punches),
     state: c.state,
-    symbol: SYMBOL[c.state],
     labelKey: `radio.state.${c.state}`,
     dateWarnings: c.date_mismatch_count,
     lastHeard: c.last_heard_ms === null ? null : formatClockTime(c.last_heard_ms, offsetMin),

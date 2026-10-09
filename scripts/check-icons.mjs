@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'apps/web/src');
-const BANNED = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}↳⇄▢▶▾●]/u;
+const BANNED = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}↳⇄▢▶▾●△]/u;
 
 function* files(dir) {
   for (const name of readdirSync(dir)) {
@@ -21,6 +21,7 @@ function* files(dir) {
       if (name !== 'receipt-templates') yield* files(p);
     } else if (
       (name.endsWith('.svelte') ||
+        name.endsWith('.ts') ||
         (p.includes(`${path.sep}i18n${path.sep}`) && name.endsWith('.json'))) &&
       !name.includes('.test.')
     ) {

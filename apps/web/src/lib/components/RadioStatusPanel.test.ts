@@ -9,7 +9,7 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 import RadioStatusPanel from './RadioStatusPanel.svelte';
 import { panelProps } from './RadioStatusPanel.testprops.svelte.ts';
 
-function status(code: number) {
+function status(code: number, state: 'ok' | 'few' | 'silent' = 'ok') {
   return {
     settings: {
       enabled: true,
@@ -33,7 +33,7 @@ function status(code: number) {
         role: 'control',
         unknown_unit: false,
         control_code: code,
-        state: 'ok',
+        state,
         last_heard_ms: 900_000,
         median_delay_ms: 1000,
         listed: false,
@@ -106,4 +106,24 @@ describe('RadioStatusPanel', () => {
     await settle();
     expect(codes()).toEqual(['200']);
   });
+
+  it.each([
+    ['ok', 'OK', 'lucide-check'],
+    ['few', 'Få stämplingar', 'lucide-triangle-alert'],
+    ['silent', 'Tyst', 'lucide-x'],
+  ] as const)(
+    'shows state %s as a Lucide icon plus the word, no symbol glyph',
+    async (state, word, icon) => {
+      panelProps.competitionId = 'A';
+      component = mount(RadioStatusPanel, { target: document.body, props: panelProps });
+      await settle();
+      answers['A']!(status(100, state));
+      await settle();
+      const stateEl = document.querySelector('[data-testid="radio-control"] .state')!;
+      expect(stateEl.textContent?.trim()).toBe(word);
+      const svg = stateEl.querySelector('svg');
+      expect(svg?.getAttribute('aria-hidden')).toBe('true');
+      expect(svg?.getAttribute('class')).toContain(icon);
+    }
+  );
 });
