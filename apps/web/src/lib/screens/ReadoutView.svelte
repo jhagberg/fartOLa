@@ -933,59 +933,59 @@
       </section>
     {/if}
   </aside>
+</div>
+</div>
 
-  {#if toastMessage}
-    <div class="toast" role="status" data-testid="toast">{toastMessage}</div>
-  {/if}
+{#if toastMessage}
+  <div class="toast" role="status" data-testid="toast">{toastMessage}</div>
+{/if}
 
-  {#if walkupCard !== null}
-    <WalkupModal
-      cardNumber={Number(walkupCard)}
-      {competitionId}
-      {classes}
-      cardHolderHint={walkupHint}
-      {eventorHint}
-      onRebound={(r) => void onRebound(r)}
-    />
-  {/if}
-
-  {#if pendingConsentToast}
-    <ConsentConfirmationToast
-      competitorId={pendingConsentToast.competitorId}
-      competitorName={pendingConsentToast.competitorName}
-      className={pendingConsentToast.className}
-      onResolved={onConsentToastResolved}
-    />
-  {/if}
-
-  {#if pendingHyrbrickaToast}
-    <HyrbrickaToast
-      cardNumber={pendingHyrbrickaToast.cardNumber}
-      contactName={pendingHyrbrickaToast.contactName}
-      contactPhone={pendingHyrbrickaToast.contactPhone}
-      contactEmail={pendingHyrbrickaToast.contactEmail}
-      note={pendingHyrbrickaToast.note}
-      onReturn={onHyrbrickaReturn}
-      onDismiss={onHyrbrickaDismiss}
-    />
-  {/if}
-
-  <EditCompetitorModal
-    open={editingCompetitorId !== null}
-    competitor={editingCompetitorId ? competitorsById.get(editingCompetitorId) ?? null : null}
+{#if walkupCard !== null}
+  <WalkupModal
+    cardNumber={Number(walkupCard)}
     {competitionId}
     {classes}
-    onClose={() => { editingCompetitorId = null; }}
-    onSaved={(updated) => {
-      // Refetch so derived shapes (competitorsById, history rows) pick
-      // up the new name/club/class. Single source of truth = server.
-      editingCompetitorId = null;
-      void refetchCompetitors();
-      void refetchReadout();
-    }}
+    cardHolderHint={walkupHint}
+    {eventorHint}
+    onRebound={(r) => void onRebound(r)}
   />
-</div>
-</div>
+{/if}
+
+{#if pendingConsentToast}
+  <ConsentConfirmationToast
+    competitorId={pendingConsentToast.competitorId}
+    competitorName={pendingConsentToast.competitorName}
+    className={pendingConsentToast.className}
+    onResolved={onConsentToastResolved}
+  />
+{/if}
+
+{#if pendingHyrbrickaToast}
+  <HyrbrickaToast
+    cardNumber={pendingHyrbrickaToast.cardNumber}
+    contactName={pendingHyrbrickaToast.contactName}
+    contactPhone={pendingHyrbrickaToast.contactPhone}
+    contactEmail={pendingHyrbrickaToast.contactEmail}
+    note={pendingHyrbrickaToast.note}
+    onReturn={onHyrbrickaReturn}
+    onDismiss={onHyrbrickaDismiss}
+  />
+{/if}
+
+<EditCompetitorModal
+  open={editingCompetitorId !== null}
+  competitor={editingCompetitorId ? competitorsById.get(editingCompetitorId) ?? null : null}
+  {competitionId}
+  {classes}
+  onClose={() => { editingCompetitorId = null; }}
+  onSaved={(updated) => {
+    // Refetch so derived shapes (competitorsById, history rows) pick
+    // up the new name/club/class. Single source of truth = server.
+    editingCompetitorId = null;
+    void refetchCompetitors();
+    void refetchReadout();
+  }}
+/>
 
 <style>
   .readout-wrap {
