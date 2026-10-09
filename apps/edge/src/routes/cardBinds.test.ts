@@ -104,8 +104,20 @@ function addRunner(
     .run();
 }
 
-/** A finished read: start 10:00:00, finish 10:30:00 (card clock), given codes. */
-function addRead(handle: DbHandle, nodeId: string, cardNumber: number, codes: number[]): void {
+/** Read at 11:00 local on the competition day (CEST). */
+const READ_AT_MS = 1_778_749_200_000;
+/** The card's 10:00:00 start punch on the competition clock. */
+const CARD_START_MS = READ_AT_MS - 3600_000;
+
+/** A finished read: start 10:00:00, finish 10:30:00 (card clock), given codes;
+ * `withStart` false = check punch at 09:58:00 and no start punch. */
+function addRead(
+  handle: DbHandle,
+  nodeId: string,
+  cardNumber: number,
+  codes: number[],
+  withStart = true
+): void {
   seq += 1;
   handle.db
     .insert(events)
@@ -114,15 +126,17 @@ function addRead(handle: DbHandle, nodeId: string, cardNumber: number, codes: nu
       localSeq: seq,
       competitionId: COMP,
       eventType: 'card_read',
-      eventTimeMs: 1_747_216_800_000 + seq,
-      recordedAtMs: 1_747_216_800_000 + seq,
+      eventTimeMs: READ_AT_MS + seq,
+      recordedAtMs: READ_AT_MS + seq,
       payload: {
         event_type: 'card_read',
         card_number: cardNumber,
         card_type: 'SI10',
-        start: { half_day: 0, seconds_in_half_day: 10 * 3600, weekday: null },
+        start: withStart ? { half_day: 0, seconds_in_half_day: 10 * 3600, weekday: null } : null,
         finish: { half_day: 0, seconds_in_half_day: 10 * 3600 + 1800, weekday: null },
-        check: null,
+        check: withStart
+          ? null
+          : { half_day: 0, seconds_in_half_day: 9 * 3600 + 58 * 60, weekday: null },
         clear: null,
         punch_count: codes.length,
         punches: codes.map((code, i) => ({
@@ -301,5 +315,112 @@ describe('POST /api/competitions/:id/card-binds/undo', () => {
     const res = await undo(ctx.app, { node_id: ctx.nodeId, local_seq: seq });
     assert.equal(res.statusCode, 409);
     assert.equal((res.json() as { error: string }).error, 'not_undoable');
+  });
+});
+
+interface EnteredRunner {
+  competitor_id: string;
+  name: string;
+  class_name: string;
+  card_number: number | null;
+  missing: number | null;
+  start_diff_ms: number | null;
+  suggested: boolean;
+}
+
+const entries = async (app: FastifyInstance, card: number) => {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/competitions/${COMP}/cards/${card}/entries`,
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const body = res.json() as { clock_offset_min: number; runners: EnteredRunner[] };
+  assert.equal(body.clock_offset_min, 120);
+  return body.runners;
+};
+
+describe('GET /api/competitions/:id/cards/:cardNumber/entries', () => {
+  let ctx: Ctx;
+  const A = '00000000-0000-4000-8000-00000000000a';
+  const B = '00000000-0000-4000-8000-00000000000b';
+  const C = '00000000-0000-4000-8000-00000000000c';
+  beforeEach(async () => {
+    ctx = await boot();
+    seed(ctx.handle, { H21: [31, 32, 33, 34], D21: [41, 42, 43, 44] });
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test("punches match one entered, unread runner's course → that runner is the first suggestion", async () => {
+    addRunner(ctx.handle, A, 'D21', 500);
+    addRunner(ctx.handle, B, 'H21', 600);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 32, 33, 34]);
+    const runners = await entries(ctx.app, NEW);
+    assert.equal(runners[0]!.competitor_id, B);
+    assert.equal(runners[0]!.suggested, true);
+    assert.equal(runners[0]!.missing, 0);
+    assert.equal(runners[0]!.class_name, 'H21');
+    assert.equal(runners[0]!.card_number, 600);
+    const other = runners.find((r) => r.competitor_id === A)!;
+    assert.equal(other.suggested, false);
+  });
+
+  test('runners who have read out are left out', async () => {
+    addRunner(ctx.handle, A, 'H21', 500);
+    addRunner(ctx.handle, B, 'H21', 600);
+    addRead(ctx.handle, ctx.nodeId, 500, [31, 32, 33, 34]);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 32, 33, 34]);
+    const runners = await entries(ctx.app, NEW);
+    assert.deepEqual(
+      runners.map((r) => r.competitor_id),
+      [B]
+    );
+  });
+
+  test('same course: the start time closest to the card start comes first', async () => {
+    addRunner(ctx.handle, A, 'H21', 500, CARD_START_MS + 20 * 60_000);
+    addRunner(ctx.handle, B, 'H21', 600, CARD_START_MS - 2 * 60_000);
+    addRunner(ctx.handle, C, 'H21', 700, null);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 32, 33, 34]);
+    const runners = await entries(ctx.app, NEW);
+    assert.deepEqual(
+      runners.map((r) => r.competitor_id),
+      [B, A, C]
+    );
+    assert.equal(runners[0]!.start_diff_ms, 2 * 60_000);
+  });
+
+  test('no start punch: the check punch plus the usual check → start gap is used', async () => {
+    addRunner(ctx.handle, A, 'H21', 500, CARD_START_MS + 10 * 60_000);
+    addRunner(ctx.handle, B, 'H21', 600, CARD_START_MS);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 32, 33, 34], false);
+    const runners = await entries(ctx.app, NEW);
+    assert.equal(runners[0]!.competitor_id, B);
+    // Check 09:58:00 + the default 1:54 gap = 09:59:54.
+    assert.equal(runners[0]!.start_diff_ms, 6_000);
+  });
+
+  test('a mispunch (one control missing) still fits; a card without a read lists everyone, none suggested', async () => {
+    addRunner(ctx.handle, A, 'H21', 500);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 33, 34]);
+    const mp = await entries(ctx.app, NEW);
+    assert.equal(mp[0]!.suggested, true);
+    assert.equal(mp[0]!.missing, 1);
+
+    const none = await entries(ctx.app, 9_999_999);
+    assert.deepEqual(
+      none.map((r) => [r.competitor_id, r.suggested]),
+      [[A, false]]
+    );
+  });
+
+  test('unknown competition → 404', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/competitions/nope/cards/1/entries',
+    });
+    assert.equal(res.statusCode, 404);
   });
 });

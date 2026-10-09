@@ -3,6 +3,11 @@
 // Card binds for an entered runner who reads out with a card the entry
 // does not have (todo 2026-10-08-unknown-card-entered-runner).
 //
+//   GET  /api/competitions/:id/cards/:cardNumber/entries — the entered
+//        runners who have not read out, ranked for this card
+//        (projection/enteredRunners.ts): { card_number, clock_offset_min,
+//        runners }.
+//        404 when the competition does not exist.
 //   POST /api/competitions/:id/card-binds/undo { node_id, local_seq } —
 //        undoes a card replacement (POST /api/competitors replace mode,
 //        which logs previous_card_number): the competitor gets the old card
@@ -23,6 +28,8 @@ import { z } from 'zod';
 
 import { readoutChannel } from '@fartola/shared-types';
 import { competitors, events, type EventPayload } from '../db/schema.ts';
+import { loadCompetitionInputs } from '../projection/loader.ts';
+import { rankEnteredRunners } from '../projection/enteredRunners.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 const UndoInput = z
@@ -32,6 +39,26 @@ const UndoInput = z
 type CardBound = Extract<EventPayload, { event_type: 'card_bound' }>;
 
 export default async function registerCardBindsRoutes(app: FastifyInstance): Promise<void> {
+  app.get<{ Params: { id: string; cardNumber: string } }>(
+    '/api/competitions/:id/cards/:cardNumber/entries',
+    async (req, reply) => {
+      const { id } = req.params;
+      const cardNumber = Number(req.params.cardNumber);
+      if (!Number.isInteger(cardNumber) || cardNumber <= 0)
+        return reply.code(400).send({ error: 'invalid_card_number' });
+      const input = loadCompetitionInputs(app.fartolaDb, id);
+      const state = app.projectionStore.get(id) ?? app.projectionStore.recomputeNow(id);
+      if (input === null || state === null)
+        return reply.code(404).send({ error: 'competition not found' });
+      return {
+        card_number: cardNumber,
+        // The competition clock (ADR-0017), to show start times.
+        clock_offset_min: input.clock_offset_min,
+        runners: rankEnteredRunners(input, state, cardNumber),
+      };
+    }
+  );
+
   app.post<{ Params: { id: string } }>(
     '/api/competitions/:id/card-binds/undo',
     async (req, reply) => {
