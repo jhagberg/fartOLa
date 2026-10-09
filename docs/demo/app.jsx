@@ -23,6 +23,7 @@ function App() {
 
   // Routing state
   const [route, setRoute] = useState('readout'); // home | readout | registration | lottning | results | export | hyrbrickor | info
+  const lot = useLottningStore();
   const m1 = useM1Store(); // class kinds and competition level (Tävlingsinfo, Lottning)
   const [wizardOpen, setWizardOpen] = useState(false);
   const [walkupOpen, setWalkupOpen] = useState(false);
@@ -159,6 +160,9 @@ function App() {
         <button className={'nav-item ' + (route === 'registration' ? 'active' : '')} onClick={() => setRoute('registration')}>
           <span style={{width: 16, textAlign: 'center'}}>⌗</span> {t('nav.registration')}
         </button>
+        <button className={'nav-item ' + (route === 'lottning' ? 'active' : '')} onClick={() => setRoute('lottning')}>
+          <span style={{width: 16, textAlign: 'center'}}>⇅</span> {t('nav.lottning')}
+        </button>
         <button className={'nav-item ' + (route === 'results' ? 'active' : '')} onClick={() => setRoute('results')}>
           <span style={{width: 16, textAlign: 'center'}}>≣</span> {t('nav.results')}
         </button>
@@ -243,6 +247,12 @@ function App() {
           )}
           {route === 'hyrbrickor' && (
             <HyrbrickorView t={t} rows={window.MOCK_PHASE2.hyrbrickor} />
+          )}
+          {route === 'lottning' && (
+            <LottningView t={t} store={m1} lot={lot} goInfo={(anchor) => {
+              setRoute('info');
+              if (anchor) setTimeout(() => { const el = document.getElementById(anchor); if (el) el.scrollIntoView(); }, 0);
+            }} />
           )}
           {route === 'info' && (
             <CompetitionInfoView t={t} store={m1} />

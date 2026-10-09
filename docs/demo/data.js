@@ -1965,3 +1965,81 @@ window.MOCK_M1 = {
     },
   ],
 };
+
+// Lottning: the runners of each class (same class ids as classKinds), fake names and clubs.
+// start = seconds since midnight or null (not drawn yet); prev = the result from the previous
+// stage ({ sec, ok }), null when the runner is not in that result list.
+(function () {
+  const names = {
+    k1: [
+      'Erik Lindqvist',
+      'Anders Holm',
+      'Johan Berg',
+      'Mattias Sjö',
+      'Oskar Nyman',
+      'Viktor Falk',
+    ],
+    k2: ['Sara Ekholm', 'Anna Dahl', 'Elin Strand', 'Maja Lund', 'Klara Vik'],
+    k3: ['Axel Persson', 'Noel Backman', 'Hugo Ström', 'Isak Wall', 'Ture Gran'],
+    k4: ['Alva Nord', 'Wilma Kron', 'Elsa Fors', 'Saga Lind', 'Tilda Moberg', 'Ebba Rask'],
+    k5: ['Leo Hed', 'Melvin Ask', 'Folke Brink'],
+    k6: ['Ella Sand', 'Nora Vall', 'Lisa Tegn', 'Ida Mård'],
+    k7: ['Lars Bergh', 'Per Wiklund', 'Ulf Östman', 'Bo Carlén'],
+    k8: ['Gunilla Roos', 'Tomas Elm', 'Yvonne Hall'],
+    k9: ['Karin Nilsson', 'Rolf Ahl'],
+  };
+  const clubs = ['Stora Tuna OK', 'OK Tyr', 'Falu OK', 'Skogsluffarna', 'IFK Mora OK'];
+  const runners = {};
+  Object.entries(names).forEach(([cid, list], ci) => {
+    runners[cid] = list.map((name, i) => ({
+      id: cid + '-' + (i + 1),
+      name,
+      club: clubs[(i + ci) % clubs.length],
+      start: null,
+      seed: '',
+      // Not everyone is in the previous stage's list; every fifth runner there is not approved.
+      prev:
+        i === list.length - 1 && list.length > 3
+          ? null
+          : { sec: 2400 + i * 95 + ci * 7, ok: i % 5 !== 3 },
+    }));
+  });
+  // H16 has a list already (a draw 10:00, interval 2 min) and two late entrants.
+  [36000, 36120, 36360].forEach((s, i) => (runners.k3[i].start = s));
+  window.MOCK_M1.lottning = {
+    runners,
+    // Start interval per class that has been drawn; a class without one has none stored.
+    intervals: { k3: 120 },
+    // Start-time changes, newest first (seconds since midnight). before/after: start per runner.
+    history: [
+      {
+        id: 'h3',
+        at: 33160,
+        cause: 'manual',
+        class_id: 'k3',
+        undone: false,
+        before: { 'k3-3': 36240 },
+        after: { 'k3-3': 36360 },
+      },
+      {
+        id: 'h2',
+        at: 32712,
+        cause: 'draw',
+        class_id: 'k3',
+        undone: false,
+        before: { 'k3-1': null, 'k3-2': null, 'k3-3': null },
+        after: { 'k3-1': 36000, 'k3-2': 36120, 'k3-3': 36240 },
+      },
+      {
+        id: 'h1',
+        at: 31803,
+        cause: 'clock_shift',
+        class_id: null,
+        undone: false,
+        changed: 3,
+        before: {},
+        after: {},
+      },
+    ],
+  };
+})();
