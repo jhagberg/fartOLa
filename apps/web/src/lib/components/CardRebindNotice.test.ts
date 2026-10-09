@@ -8,6 +8,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
 import CardRebindNotice from './CardRebindNotice.svelte';
+import { noticeProps } from './CardRebindNotice.testprops.svelte.ts';
 
 const rebind = {
   competitor_id: 'eva',
@@ -69,6 +70,37 @@ describe('CardRebindNotice', () => {
     expect(onUndone).toHaveBeenCalledOnce();
     expect(q('card-rebind-notice')?.textContent).toContain('Bytet ångrat: Eva Ek har 1111111 igen');
     expect(q('card-rebind-undo')).toBeNull();
+  });
+
+  it('a new replacement shown in the same place starts with its own undo', async () => {
+    installFetch(201, { competitor_id: 'eva', card_number: 1111111, local_seq: 8 });
+    noticeProps.rebind = rebind;
+    component = mount(CardRebindNotice, {
+      target: document.body,
+      props: {
+        competitionId: 'comp-1',
+        get rebind() {
+          return noticeProps.rebind;
+        },
+        onClose: vi.fn(),
+      },
+    });
+    await settle();
+    q('card-rebind-undo')!.click();
+    await settle();
+    expect(q('card-rebind-undo')).toBeNull();
+
+    noticeProps.rebind = {
+      competitor_id: 'bo',
+      name: 'Bo Berg',
+      card_number: 3333333,
+      card_event: { node_id: 'n', local_seq: 9, previous_card_number: null },
+    };
+    await settle();
+    expect(q('card-rebind-notice')?.textContent).toContain(
+      'Bricka bytt för Bo Berg: ingen bricka → 3333333'
+    );
+    expect(q('card-rebind-undo')).not.toBeNull();
   });
 
   it('says why when the card has been changed again since', async () => {

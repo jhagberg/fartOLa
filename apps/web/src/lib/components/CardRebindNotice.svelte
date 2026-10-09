@@ -22,9 +22,15 @@
 
   let { competitionId, rebind, onUndone, onClose }: Props = $props();
 
-  let undone = $state(false);
-  let busy = $state(false);
-  let error = $state<string | null>(null);
+  // State belongs to one replacement: the parent may show another one in
+  // this component, which must start with its own undo.
+  const key = $derived(`${rebind.card_event.node_id}:${rebind.card_event.local_seq}`);
+  let undoneKey = $state<string | null>(null);
+  let busyKey = $state<string | null>(null);
+  let errorFor = $state<{ key: string; msg: string } | null>(null);
+  const undone = $derived(undoneKey === key);
+  const busy = $derived(busyKey === key);
+  const error = $derived(errorFor?.key === key ? errorFor.msg : null);
 
   const oldCard = $derived(
     rebind.card_event.previous_card_number === null
@@ -33,26 +39,31 @@
   );
 
   async function undo(): Promise<void> {
-    busy = true;
-    error = null;
+    const k = key;
+    const old = oldCard;
+    busyKey = k;
+    errorFor = null;
     try {
       await undoCardRebind(competitionId, rebind.card_event);
-      undone = true;
+      undoneKey = k;
       onUndone?.();
     } catch (e) {
       const code = e instanceof ApiError ? (e.body as { error?: string } | undefined)?.error : null;
       if (code === 'already_undone') {
-        undone = true;
+        undoneKey = k;
       } else {
-        error =
-          code === 'card_changed_since'
-            ? t('ro.rebind.err.changed')
-            : code === 'card_taken'
-              ? t('ro.rebind.err.taken', { card: oldCard })
-              : t('err.network');
+        errorFor = {
+          key: k,
+          msg:
+            code === 'card_changed_since'
+              ? t('ro.rebind.err.changed')
+              : code === 'card_taken'
+                ? t('ro.rebind.err.taken', { card: old })
+                : t('err.network'),
+        };
       }
     } finally {
-      busy = false;
+      if (busyKey === k) busyKey = null;
     }
   }
 </script>
