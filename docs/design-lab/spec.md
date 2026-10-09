@@ -37,7 +37,7 @@ drawer, top bar), every screen's visual design, the Swedish wording in
 management (X5), the `userMessage()` error helper (X8), undo toasts and
 a shared "Senaste ändringar" list (X7, X11), previews and dry runs (I2,
 P1, U1), connection-state banner (R1/S1), split analysis in readout
-(best leg, lost time "bomtid"), `@axe-core/playwright` in e2e. Receipt
+(best leg, lost time "bomtid"). Receipt
 templates (ESC/POS) and `docs/demo` are not restyled.
 
 **Not touched:** results logic, statuses, timing, the event log,
@@ -61,7 +61,7 @@ touch any of these, it is out of scope.
   without a contrast rule, airy spacing, scroll/entry animations, font
   and Lucide bans.
 - MeOS (`/home/jonas/src/meos/code`) and SOFT's competition rules
-  (2022-07-01) for punch and status vocabulary. OLA has no public
+  (edition 2026-07-01, per ADR-0011) for punch and status vocabulary. OLA has no public
   documentation of its readout screen.
 
 ## Process
@@ -90,22 +90,30 @@ on the readout screen.
 
 Contrast is WCAG 2.x, computed from the oklch values.
 
-| Token                                | Now → new                                       | Contrast                              |
-| ------------------------------------ | ----------------------------------------------- | ------------------------------------- |
-| `--fg-muted`                         | `oklch(0.5 0.01 240)` → `oklch(0.44 0.01 240)`  | 5.65 → 7.32 on `--bg`                 |
-| `--fg-faint`                         | `oklch(0.68 0.01 240)` → `oklch(0.52 0.01 240)` | 2.72 → 5.19 on `--bg`                 |
-| `--border-strong`                    | `oklch(0.82 0.005 90)` → `oklch(0.65 0.005 90)` | 1.75 → 3.23 on white (non-text, ≥3:1) |
-| `--ok`                               | L 0.55 → 0.46                                   | pill text on `--ok-soft` 3.91 → 5.74  |
-| `--dnf`                              | L 0.55 → 0.48                                   | pill text on `--dnf-soft` 4.26 → 5.76 |
-| `--dns`, `--cancel`, `--max`, `--dq` | L 0.50–0.55 → 0.46                              | each ≥4.5 on its soft fill            |
-| `--shadow-sm`, `--shadow-md`         | soft shadow → `0 0 0 1px var(--border)`         | –                                     |
-| `--radius`, `--radius-lg`            | 8/12 → 6/8 px                                   | –                                     |
-| new `--punch-*`                      | punch tile colours (below)                      | text ≥4.5 on each fill                |
-| new `--icon-sm/md/lg`                | 16/20/24 px                                     | –                                     |
-| new `--focus-ring`                   | `2px solid var(--fg)`, offset 2px               | ≥3:1 against adjacent colours         |
+| Token                                | Now → new                                       | Contrast                                                            |
+| ------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------- |
+| `--fg-muted`                         | `oklch(0.5 0.01 240)` → `oklch(0.42 0.01 240)`  | 5.65 → 7.97 on `--bg`, 7.52 on `--bg-sunken`, 7.09 on `--pend-soft` |
+| `--fg-faint`                         | `oklch(0.68 0.01 240)` → `oklch(0.52 0.01 240)` | 2.72 → 5.19 on `--bg`                                               |
+| `--border-strong`                    | `oklch(0.82 0.005 90)` → `oklch(0.62 0.005 90)` | 1.75 → 3.64 on white, 3.24 on `--bg-sunken` (non-text, ≥3:1)        |
+| `--ok`                               | L 0.55 → 0.46                                   | pill text on `--ok-soft` 3.91 → 5.74                                |
+| `--dnf`                              | L 0.55 → 0.48                                   | pill text on `--dnf-soft` 4.26 → 5.76                               |
+| `--dns`, `--cancel`, `--max`, `--dq` | L 0.50–0.55 → 0.46                              | each ≥4.5 on its soft fill                                          |
+| `--shadow-sm`, `--shadow-md`         | soft shadow → `0 0 0 1px var(--border)`         | –                                                                   |
+| `--radius`, `--radius-lg`            | 8/12 → 6/8 px                                   | –                                                                   |
+| new `--punch-*`                      | punch tile colours (below)                      | text ≥4.5 on each fill                                              |
+| new `--icon-sm/md/lg`                | 16/20/24 px                                     | –                                                                   |
+| new `--focus-ring`                   | `2px solid var(--fg)`, offset 2px               | ≥3:1 against adjacent colours                                       |
 
 The exact values are verified by a contrast test (see Verification);
 the table is regenerated from it for the README.
+
+`.contrast-high` today overrides only `--ok`, `--mp`, `--dnf` and the
+neutrals; `--dns`, `--dq`, `--cancel`, `--max` and every `*-soft` fill
+are inherited, so darkening them at `:root` also changes bright-sun
+mode (DNS/CANCEL pills 4.05 → 5.95 there; OK stays 6.75). That is
+wanted. The commit lists the full effective palette of both modes, and
+`StatusPill`'s hard-coded MP foreground (`oklch(0.45 0.12 70)`, 6.49)
+becomes a token so bright-sun's `--mp` applies to it.
 
 Rules that come with the tokens:
 
@@ -138,12 +146,43 @@ the missing control is nearly invisible.
 | Struck (voided control) | grey, 2px dotted border, code struck through | minus            | "struken"   |
 | Finish                  | white, 3px ink border                        | –                | time        |
 
+Exact colours and every text part of a tile (code, index, icon, split
+or label), default → bright-sun:
+
+| Token                        | Default                | Bright-sun | Pairs (default / bright-sun)                                        |
+| ---------------------------- | ---------------------- | ---------- | ------------------------------------------------------------------- |
+| `--punch-ok-fill`            | `oklch(0.93 0.06 150)` | `#d8eedd`  | code `--fg` 14.37 / 17.19, index `--fg-muted` 6.44 / 13.50          |
+| `--punch-ok-line` (icon)     | `oklch(0.42 0.11 150)` | `#005f1a`  | 6.68 / 6.48 on the fill                                             |
+| `--punch-miss-fill`          | `oklch(0.44 0.17 27)`  | `#8a0010`  | white code, index, icon, label 8.48 / 10.06                         |
+| `--punch-order-fill`         | `oklch(0.93 0.08 85)`  | `#ffe9b3`  | code `--fg` 13.99 / 17.56, index 6.27 / 13.78                       |
+| `--punch-order-line` (label) | `oklch(0.45 0.11 65)`  | `#5c3200`  | 6.19 / 9.19 on the fill                                             |
+| extra, struck: `--bg-sunken` | –                      | `#f1f1f1`  | label/icon `--fg-muted` 7.52 / 14.59; border `--border-strong` 3.24 |
+
+The amber `--mp` token is not reused for tile text (2.33 on its soft
+fill). Every part is set explicitly per state, since `PunchGrid` colours
+index and split separately from the tile.
+
 - Tile index top-left, icon top-right, control code centre (mono).
-- **Size follows course length:** large (code 24 px, ~84 px min width,
-  7 per row on laptop) up to 20 controls; medium (code 20 px, ~62 px,
-  9–10 per row) above 20. No setting. Rationale: at 35 controls large
-  tiles push the action buttons below the fold at 768 px.
-- "fel ordn." must not wrap in medium tiles (shorter label size).
+- **What the tiles show** (`classifyPunches`, unchanged): one tile per
+  course control in course order, then appended punches, then finish. A
+  control punched out of order shows twice: "saknas" in its course slot
+  and "fel ordn." appended (e.g. course 31-32-33, punches 31-33-32 →
+  33 saknas, 33 fel ordn.). "Saknas" means not found at its place in the
+  sequence; "correct" means found at its place. Without a course the
+  tiles stay plain punches with no verdict (no check icon).
+- **Size follows course length:** count the course's controls,
+  including struck ones (appended punches and finish do not count).
+  Large (code 24 px, ~84 px min width, 7 per row on laptop) up to 20;
+  medium (code 20 px, ~62 px, 9–10 per row) above 20. Rationale: at 35
+  controls large tiles push the action buttons below the fold at
+  768 px.
+- **Density setting:** `density = 'high'` keeps replacing tiles with
+  `SplitsTable` (unchanged). Its `--fs-body: 15px` override goes (ADR-0016
+  rule 7: body ≥16 px); low/med keep their other sizes. The size rule
+  above applies to low and med.
+- Minimum label size 14 px in large tiles, 13 px in medium; labels never
+  wrap ("fel ordn." fits at 13 px in a 62 px tile; checked in the
+  screenshot pass).
 - Vocabulary matches MeOS where it exists ("saknas", "extra"); "fel
   ordn." is our addition (MeOS shows it as missing + extra). "struken"
   follows how event notices word a voided control (MeOS calls the
@@ -155,17 +194,27 @@ the missing control is nearly invisible.
 
 ### Shared components
 
-- **StatusPill:** label required and always `t('status.<code>')`
-  (X3: no raw "PEND"/"DNF"), UI font 14 px, icon + text, text ≥4.5:1.
-- **Button:** `size-sm` gets `min-height: var(--hit)` (44 px); the small
-  custom controls listed in X6 too; ≥8 px between targets.
-- **Focus:** one visible focus style from `--focus-ring` on every
-  interactive element.
+- **StatusPill:** a translated label is required (X3: no raw
+  "PEND"/"DNF"). Readout and history pass `t('status.<code>')`;
+  `ResultsTable` keeps passing the published SOFT label
+  (`soft.status.*`: "Ej godkänd", "Deltagit"), as today. UI font 14 px,
+  icon + text, text ≥4.5:1.
+- **Button:** `size-sm` gets `min-height: var(--hit)` (44 px) and its
+  label goes from 13 to 14 px; the small custom controls listed in X6
+  too; ≥8 px between targets.
+- **Focus:** one visible focus style on every interactive element: a
+  2px `--fg` outline with a 2px offset, so the ring sits on the page
+  background (≥7:1), not on the button fill (`--fg` on `--accent` is
+  only 2.99).
 - **Card / Modal look:** flat, 1px border, radius from tokens. (Modal
   focus behaviour is out of scope.)
-- **Readout action bar:** "Skriv ut kvitto", "Redigera", "Bryt" stay
-  visible at the bottom of the readout card (sticky), so the main button
-  never scrolls away (ADR-0016 rule 4).
+- **Readout action bar:** `LatestReadCard` keeps `overflow: hidden` on
+  the card, so the bar is not sticky inside the page scroll. Instead the
+  punch area scrolls inside the card (max height = viewport minus top
+  bar, header and action bar) and the action bar sits below it, always
+  in view (ADR-0016 rule 4). The status picker that today opens below
+  the bar opens upwards. Checked with 35 controls at 1366×768 and
+  820×1180: every action reachable without page scroll.
 - **Icons:** `@lucide/svelte` replaces `ui/Icon.svelte` and the about
   90 emoji/Unicode symbols. Decorative icons `aria-hidden`; icon-only
   buttons get `aria-label`. Symbols leave the i18n strings; components
@@ -175,12 +224,18 @@ the missing control is nearly invisible.
 
 - **Drawer below 1024 px** (today 720 px; X2): at 820 px the sidebar
   eats the readout column (≈170 px left for punch tiles). The hamburger
-  and drawer already exist; only the breakpoint and the readout grid
-  change.
-- **Readout ≤1024 px:** history and "Okänd bricka" stack below the
-  readout card.
+  and drawer already exist; `AppShell` and `TopBar` have separate
+  720 px rules and both move to one shared breakpoint. The closed drawer
+  gets `inert` so keyboard focus cannot land in it.
+- **Readout stacks by available width, not only by viewport:** at
+  1025 px the sidebar plus the 340 px rail leave ≈341 px for tiles (3
+  large per row). The history rail moves below the readout card whenever
+  the readout column would be narrower than about 600 px (container
+  query on the readout area), which covers 820–1280 px.
 - **Sidebar scrolls** (`overflow-y: auto`, X1) so "Inställningar" and
   the reader card are reachable at 1366×768.
+- **Widths checked:** 1366×768, 1280×800, 1180×820 (tablet landscape),
+  1025, 1024, 820×1180, and 1366×768 at 200 % zoom.
 
 ### Wording (`apps/web/src/lib/i18n/sv.json`)
 
@@ -189,26 +244,42 @@ the missing control is nearly invisible.
   "Spara anmälan" instead of "Spara och bind", one name format, one
   word per concept (löpare, bricka, Återbud), no developer words in the
   UI ("projektionen", "XSD-fel", "PEND", device paths, "Tweaks").
-  Change texts, not keys (`walk.*` keys are reused elsewhere).
-- **Status words (open question for Jonas):** SOFT's rules use "Ej
-  godkänd" (wrong punch or retired), "Diskad", "Ej start" in result
-  lists; MeOS uses "Felst.", "Utg.". Today we show "Felstämpling",
-  "Bröt", "Disk.". Proposal: readout keeps the specific reason
-  ("Felstämplad", "Utgått"), result lists show SOFT's "Ej godkänd" with
-  the reason as secondary text; "Disk." → "Diskad".
+- **Shared keys:** before changing a text, list every consumer of the
+  key. Where the meaning differs, split the key instead of changing the
+  shared text. Known case: `walk.save` is also the save button of the
+  manual-status picker in `LatestReadCard`; "Spara anmälan" there would
+  be wrong, so it gets its own key. `walk.*` is also used by
+  `EditCompetitorModal` and `AddRunnerSheet`.
+- **Status words (open question for Jonas):** results already show the
+  published SOFT labels (`soft.status.*`, ADR-0011, rulebook
+  2026-07-01). Open: the readout/history words (`status.*`), today
+  "Felstämpling", "Bröt", "Disk.". Proposal: "Felstämplad", "Utgått",
+  "Diskad", matching the rulebook's words where it has them.
 
 ## Verification
 
 - `pnpm lint && pnpm typecheck && pnpm test`; `pnpm e2e` before the
-  proposal. E2e tests that match status text ("DNF") change with X3;
-  update them in the same commit.
+  proposal. Known e2e dependencies, updated in the commit that breaks
+  them: `.status.dnf` class selector (`readout.spec.ts:220`, keep the
+  class), the literal "Bana" label (`walkup-eventor.spec.ts:132`,
+  changes with X10). Each commit greps `tests/e2e` for the texts and
+  classes it changes.
 - **Contrast test** (vitest, `apps/web`): parses `tokens.css` and
-  asserts the listed text/background pairs (≥4.5:1, ≥7:1 for
-  `--fg-muted` on `--bg`) and non-text pairs (≥3:1), for both the
-  default and `.contrast-high` values.
-- **Emoji check** in `scripts/check-compliance.mjs`: no codepoints in
-  U+1F300–U+1FAFF or U+2600–U+27BF in `apps/web/src/**/*.svelte` or the
-  i18n files (receipt templates excluded).
+  asserts every pair in the token and punch tables (text ≥4.5:1,
+  `--fg-muted` ≥7:1 on `--bg`, `--bg-sunken`, `--pend-soft`; non-text
+  ≥3:1), for both the default and `.contrast-high` values. Component
+  literals that stay (if any) are listed in the test with a reason.
+- **Axe in e2e** (`@axe-core/playwright`, required by ADR-0016,
+  open question for Jonas: new dev dependency): run on the five main
+  screens in both modes. Acceptance: no colour-contrast or target-size
+  violation on surfaces this work changed; existing violations
+  (unnamed dialogs, modal focus) are recorded in a todo, not fixed here.
+- **Icon check:** a small separate script (not the SOFT matrix
+  checker), run by `pnpm lint`: no pictographic codepoints
+  (U+1F300–U+1FAFF, U+2600–U+27BF) and none of the icon-like symbols we
+  use today (`↳`, `▢`, `☐`, `✎`, `★`, `▶`, `▾`) in
+  `apps/web/src/**/*.svelte` or the i18n files. Arrows in prose (`→`)
+  stay allowed. Receipt templates excluded.
 - **Screenshots:** a Playwright script seeds a throwaway competition from
   the synthetic e2e fixtures and shoots every screen at 1366×768 and
   820×1180, before and after. Screenshots go to
@@ -218,22 +289,37 @@ the missing control is nearly invisible.
 
 ## Plan of commits (building blocks)
 
-1. Tokens + contrast test.
-2. Lucide + icon swap + emoji check (closes the icon todo).
+1. Tokens + contrast test (both modes).
+2. Lucide + icon swap + icon check (closes the icon todo).
 3. StatusPill labels and type (X3, X4) + e2e text updates.
 4. Button sizes and focus ring (X6).
 5. Flat Card/Modal look.
 6. PunchGrid states and size rule; readout sticky action bar.
 7. Layout: drawer ≤1024 px, readout stacking, sidebar scroll (X1, X2).
 8. Wording pass in `sv.json` (X10, status words after Jonas decides).
+9. Axe in e2e, if Jonas accepts the dependency.
 
 Then one commit per screen pass. Delivered as small PRs (tokens and
 components; layout; wording; screens in groups), not one large one.
 
 ## Risks
 
-- Visual changes can break e2e selectors that match text or classes.
-- Darker status colours also change the bright-sun mode only if a token
-  is shared; re-check `.contrast-high` after commit 1.
+- Visual changes can break e2e selectors that match text or classes
+  (see Verification for the known ones).
+- Tweaks combinations: accent (forest, blue, magenta, charcoal), font
+  pair (4) and density (3) all stay supported. Acceptance checks cover
+  the default (forest, Plex, med) and bright-sun; other accents get one
+  contrast-test pass (button text on `--accent`), not screenshots.
 - A size rule tied to course length means tiles change size between
   classes; acceptable because a course stays the same all day.
+
+## Review log
+
+- 2026-10-09, Codex (gpt-6.1-sol, xhigh), read-only review: 12 findings.
+  Taken: published status labels kept in results, action bar
+  structure, rendered-pair contrast and exact punch colours, full
+  bright-sun palette, density behaviour, punch-state semantics, layout
+  by available width plus boundary widths and `inert`, axe, shared i18n
+  keys, rulebook edition, real e2e dependencies, separate icon check.
+  Not taken: dropping the full audit (Jonas asked for a complete
+  re-check with ui-ux-pro-max).
