@@ -130,6 +130,43 @@ describe('/api/__dev/simulate-read — happy path', () => {
     assert.equal(printed[0]?.template, 'classic');
   });
 
+  test('a failing printer does not fail the simulated read: 201, event inserted', async () => {
+    // run-local.sh defaults to the CUPS sink, whose receipt template needs
+    // fields this dev print does not carry; the read must still land.
+    const handle = openDatabase(':memory:');
+    const app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId: ensureNodeId(handle),
+      printerSink: {
+        async isPrinterConnected() {
+          return true;
+        },
+        async print() {
+          throw new TypeError("Cannot read properties of undefined (reading 'name')");
+        },
+      },
+    });
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/__dev/simulate-read',
+        payload: {
+          competition_id: 'comp-1',
+          card_number: 7501853,
+          card_type: 'SI10',
+          punches: [{ control_code: 31, time_ms: 1234500 }],
+        },
+      });
+      assert.equal(res.statusCode, 201);
+      const row = handle.db.select().from(events).where(eq(events.localSeq, 1)).get();
+      assert.equal(row?.eventType, 'card_read');
+    } finally {
+      await app.close();
+      handle.close();
+    }
+  });
+
   test('test 3: negative card_number returns 400', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
