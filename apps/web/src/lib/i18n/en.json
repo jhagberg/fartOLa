@@ -362,7 +362,7 @@
   "registration.cancelling": "Cancelling…",
   "registration.cancelToast": "{{name}} cancelled",
 
-  "walk.title": "Walk-up registration",
+  "walk.title": "Entry on the day",
   "walk.desc": "Unknown card read. Register the competitor and continue.",
   "walk.name": "Name",
   "walk.name.ph": "First and last name",
@@ -726,7 +726,7 @@
   "access.error.unknown": "Sign-in failed",
 
   "settings.helperCodes.title": "Helper codes",
-  "settings.helperCodes.description": "Codes for sekretariat helpers to register walk-up competitors from a phone.",
+  "settings.helperCodes.description": "Codes for sekretariat helpers to take entries on the day from a phone.",
   "settings.helperCodes.generate": "Generate new code",
   "settings.helperCodes.generating": "Generating…",
   "settings.helperCodes.noCompetition": "Select a competition above.",

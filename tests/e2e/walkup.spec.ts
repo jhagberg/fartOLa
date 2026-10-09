@@ -194,6 +194,7 @@ test('walk-up creates competitor (overlay on readout — C-M3 LOCKED)', async ({
   // First "Är det någon som är anmäld?" — Erik is not entered.
   await expect(page.getByTestId('entered-step')).toBeVisible();
   await page.getByTestId('walkup-not-entered').click();
+  await expect(page.getByRole('heading', { name: 'Direktanmälan' })).toBeVisible();
 
   await page.getByTestId('walkup-name').fill('Erik Eriksson');
   // Klubb is optional; leave blank to also cover the null path.
