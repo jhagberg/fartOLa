@@ -58,9 +58,9 @@
     color: var(--fg);
   }
   .nav-item.active {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    font-weight: 500;
+    background: var(--bg-sunken);
+    color: var(--fg);
+    font-weight: 600;
   }
   .nav-item.active::before {
     content: '';
@@ -70,7 +70,7 @@
     bottom: 8px;
     width: 3px;
     border-radius: 2px;
-    background: var(--accent);
+    background: var(--fg);
   }
   .nav-item:disabled {
     opacity: 0.55;

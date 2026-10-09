@@ -40,10 +40,10 @@
   --receipt-w: 300px;
 
   /* ───── Radii + shadows ───────────────────────────────────────────── */
-  --radius: 8px;
-  --radius-lg: 12px;
-  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.04), 0 0 0 1px rgba(20, 20, 30, 0.04);
-  --shadow-md: 0 4px 12px rgba(20, 20, 30, 0.06), 0 0 0 1px rgba(20, 20, 30, 0.04);
+  --radius: 6px;
+  --radius-lg: 8px;
+  --shadow-sm: 0 0 0 1px var(--border);
+  --shadow-md: 0 0 0 1px var(--border);
   --shadow-lg: 0 12px 40px rgba(20, 20, 30, 0.12), 0 0 0 1px rgba(20, 20, 30, 0.04);
 
   /* ───── Color tokens — locked oklch palette ───────────────────────── */
@@ -51,10 +51,10 @@
   --bg-elev: oklch(1 0 0);
   --bg-sunken: oklch(0.96 0.006 90);
   --fg: oklch(0.22 0.01 240);
-  --fg-muted: oklch(0.5 0.01 240);
-  --fg-faint: oklch(0.68 0.01 240);
+  --fg-muted: oklch(0.42 0.01 240);
+  --fg-faint: oklch(0.52 0.01 240);
   --border: oklch(0.9 0.005 90);
-  --border-strong: oklch(0.82 0.005 90);
+  --border-strong: oklch(0.62 0.005 90);
 
   /* Accent — forest green (orienteering map vibe). Default of 4 variants. */
   --accent: oklch(0.5 0.08 145);
@@ -71,22 +71,38 @@
        - DQ   → violet ("operator rule decision")
        - CANCEL → cool slate ("pre-race withdrawal")
        - MAX  → deep amber-red ("over time", between MP amber and DNF red) */
-  --ok: oklch(0.55 0.13 145);
+  --ok: oklch(0.46 0.13 145);
   --ok-soft: oklch(0.94 0.05 145);
   --mp: oklch(0.7 0.15 75);
   --mp-soft: oklch(0.95 0.06 80);
-  --dnf: oklch(0.55 0.18 25);
+  --dnf: oklch(0.48 0.18 25);
   --dnf-soft: oklch(0.94 0.05 25);
   --pend: oklch(0.7 0.005 240);
   --pend-soft: oklch(0.94 0.005 240);
-  --dns: oklch(0.55 0.04 240);
+  --dns: oklch(0.46 0.04 240);
   --dns-soft: oklch(0.94 0.02 240);
-  --dq: oklch(0.5 0.16 320);
+  --dq: oklch(0.46 0.16 320);
   --dq-soft: oklch(0.94 0.05 320);
-  --cancel: oklch(0.55 0.02 220);
+  --cancel: oklch(0.46 0.02 220);
   --cancel-soft: oklch(0.94 0.01 220);
-  --max: oklch(0.55 0.15 50);
+  --max: oklch(0.46 0.15 50);
   --max-soft: oklch(0.94 0.06 50);
+
+  /* MP text on --mp-soft: --mp itself is too light for text (2.33:1). */
+  --mp-fg: oklch(0.45 0.12 70);
+
+  /* Punch tiles (spec "Punch tiles"): each state differs in lightness,
+     border and word, not only in hue. */
+  --punch-ok-fill: oklch(0.93 0.06 150);
+  --punch-ok-line: oklch(0.42 0.11 150);
+  --punch-miss-fill: oklch(0.44 0.17 27);
+  --punch-miss-fg: #ffffff;
+  --punch-order-fill: oklch(0.93 0.08 85);
+  --punch-order-line: oklch(0.45 0.11 65);
+
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
 
   /* ───── Typography ────────────────────────────────────────────────── */
   --fs-caption: 12px;
@@ -158,6 +174,12 @@
   --ok: #005f1a;
   --mp: #8a4a00;
   --dnf: #8a0010;
+  --mp-fg: #8a4a00;
+  --punch-ok-fill: #d8eedd;
+  --punch-ok-line: #005f1a;
+  --punch-miss-fill: #8a0010;
+  --punch-order-fill: #ffe9b3;
+  --punch-order-line: #5c3200;
   --shadow-sm: 0 0 0 1px #000;
   --shadow-md: 0 0 0 1.5px #000;
   --shadow-lg: 0 0 0 2px #000;

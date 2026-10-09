@@ -473,7 +473,7 @@
     font-size: 44px;
     font-weight: 500;
     letter-spacing: -0.02em;
-    color: var(--accent-strong);
+    color: var(--fg);
     line-height: 1;
   }
   .runner-name {
