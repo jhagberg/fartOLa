@@ -198,7 +198,8 @@ index and split separately from the tile.
   "PEND"/"DNF"). Readout and history pass `t('status.<code>')`;
   `ResultsTable` keeps passing the published SOFT label
   (`soft.status.*`: "Ej godkänd", "Deltagit"), as today. UI font 14 px,
-  icon + text, text ≥4.5:1.
+  dot + text (the word is the non-colour cue; a per-status icon set adds
+  little next to the word), text ≥4.5:1.
 - **Button:** `size-sm` gets `min-height: var(--hit)` (44 px) and its
   label goes from 13 to 14 px; the small custom controls listed in X6
   too; ≥8 px between targets.
@@ -206,15 +207,16 @@ index and split separately from the tile.
   2px `--fg` outline with a 2px offset, so the ring sits on the page
   background (≥7:1), not on the button fill (`--fg` on `--accent` is
   only 2.99).
-- **Card / Modal look:** flat, 1px border, radius from tokens. (Modal
-  focus behaviour is out of scope.)
-- **Readout action bar:** `LatestReadCard` keeps `overflow: hidden` on
-  the card, so the bar is not sticky inside the page scroll. Instead the
-  punch area scrolls inside the card (max height = viewport minus top
-  bar, header and action bar) and the action bar sits below it, always
-  in view (ADR-0016 rule 4). The status picker that today opens below
-  the bar opens upwards. Checked with 35 controls at 1366×768 and
-  820×1180: every action reachable without page scroll.
+- **Card / Modal look:** flat, 1px border, radius from tokens. The
+  modal keeps `--shadow-lg` because it floats over a scrim. (Modal focus
+  behaviour is out of scope.)
+- **Readout action bar:** the punch area scrolls inside the card (max
+  height = viewport minus top bar, header and action bar, floor 120 px)
+  and the action bar sits below it, always in view (ADR-0016 rule 4).
+  The card's `overflow: hidden` goes so the status picker, which now
+  opens upwards, is never clipped. Checked with 35 controls at 1366×768
+  and 820×1180 (no page scroll) and at 200 % zoom, 683×384 (page may
+  scroll, every action reachable and unclipped).
 - **Icons:** `@lucide/svelte` replaces `ui/Icon.svelte` and the about
   90 emoji/Unicode symbols. Decorative icons `aria-hidden`; icon-only
   buttons get `aria-label`. Symbols leave the i18n strings; components
@@ -322,3 +324,7 @@ components; layout; wording; screens in groups), not one large one.
   keys, rulebook edition, real e2e dependencies, separate icon check.
   Not taken: dropping the full audit (Jonas asked for a complete
   re-check with ui-ux-pro-max).
+- 2026-10-09, Codex, read-only review of plan 1: 13 findings, all
+  taken. Spec changes from it: status pills keep dot + text; the modal
+  keeps its shadow; the readout card drops `overflow: hidden` and is
+  checked at 200 % zoom (683×384).
