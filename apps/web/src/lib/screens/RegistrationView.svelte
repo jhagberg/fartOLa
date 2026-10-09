@@ -41,6 +41,8 @@
     setActiveCompetition,
   } from '#lib/api/client.ts';
   import WalkupModal from '#lib/screens/WalkupModal.svelte';
+  import CardRebindNotice from '#lib/components/CardRebindNotice.svelte';
+  import type { CardRebind } from '#lib/api/client.ts';
   import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import type { ClassDTO, EventorLookupHit, EventorLookupMany, CompetitorDTO } from '@fartola/shared-types';
@@ -77,6 +79,8 @@
   let knownCard: { card: number; competitor: CompetitorDTO } | null = $state(null);
   let cancelBusy = $state(false);
   let cancelErr: string | null = $state(null);
+  /** The last card replacement for an entered runner, with undo. */
+  let lastRebind: CardRebind | null = $state(null);
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let subscription: ReturnType<typeof createCardSubscription> | null = null;
@@ -513,8 +517,17 @@
         cardHolderHint={currentCard.cardHolderHint}
         eventorHint={currentEventorHint}
         onClose={onWalkupClose}
+        onRebound={(r) => (lastRebind = r)}
       />
     {/key}
+  {/if}
+
+  {#if lastRebind}
+    <CardRebindNotice
+      {competitionId}
+      rebind={lastRebind}
+      onClose={() => (lastRebind = null)}
+    />
   {/if}
 
   {#if toastMessage !== null}
