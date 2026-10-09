@@ -121,6 +121,10 @@ function installFetch(): void {
           },
         ],
       });
+    if (url.endsWith('/card-binds/undo')) {
+      rebound = false;
+      return json({ competitor_id: EVA, card_number: 1111111, local_seq: 99 });
+    }
     if (url === '/api/competitors' && init?.method === 'POST') {
       rebound = true;
       postSeq += 1;
@@ -222,5 +226,19 @@ describe('ReadoutView — first-read prompts after a card replacement', () => {
     await settle();
     expect(notices()).toHaveLength(1);
     expect(document.querySelectorAll('[data-testid="card-rebind-undo"]')).toHaveLength(1);
+  });
+
+  it('undoing a wrong pick withdraws the prompts that pick raised', async () => {
+    hired = true;
+    await replaceCard();
+    expect(q('consent-confirmation-toast')).not.toBeNull();
+    expect(q('hyrbricka-toast')).not.toBeNull();
+
+    q('card-rebind-undo')!.click();
+    await settle();
+    expect(q('card-rebind-notice')?.textContent).toContain('Bytet ångrat');
+    // Confirming consent now would write it to the wrongly chosen runner.
+    expect(q('consent-confirmation-toast')).toBeNull();
+    expect(q('hyrbricka-toast')).toBeNull();
   });
 });
