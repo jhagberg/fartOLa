@@ -28,7 +28,8 @@
 
   let file = $state<File | null>(null);
   let busy = $state(false);
-  let result = $state<PreviousResultsImport | null>(null);
+  /** The last upload's answer, with the name of the file it read. */
+  let result = $state<(PreviousResultsImport & { file: string }) | null>(null);
   let error = $state<string | null>(null);
 
   const ERRORS: Record<string, string> = {
@@ -40,12 +41,13 @@
 
   async function upload(): Promise<void> {
     if (file === null) return;
+    const sent = file;
     busy = true;
     onbusy?.(true);
     error = null;
     result = null;
     try {
-      result = await importPreviousResults(competitionId, file);
+      result = { ...(await importPreviousResults(competitionId, sent)), file: sent.name };
     } catch (e) {
       const code =
         e instanceof ApiError && e.body !== null && typeof e.body === 'object'
@@ -70,6 +72,7 @@
       type="file"
       accept=".xml,application/xml,text/xml"
       aria-describedby="pursuit-results-hint"
+      disabled={busy}
       onchange={(e) => {
         file = e.currentTarget.files?.[0] ?? null;
         result = null;
@@ -94,7 +97,11 @@
   {#if result !== null}
     <div role="status" data-testid="pursuit-results-done">
       <p class="done">
-        {t('pursuitResults.done', { results: result.results, matched: result.matched })}
+        {t('pursuitResults.done', {
+          file: result.file,
+          results: result.results,
+          matched: result.matched,
+        })}
       </p>
       {#if result.unmatched.length > 0}
         <p>{t('pursuitResults.unmatched', { count: result.unmatched.length })}</p>
