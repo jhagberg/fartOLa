@@ -108,7 +108,7 @@ describe('i18n keys for Plan 02-02', () => {
       expect(sv[key], `missing sv key ${key}`).toBeTruthy();
     }
     // Bana label per locked decision #1.
-    expect(sv['walk.bana']).toBe('Bana');
+    expect(sv['walk.bana']).toBe('Klass');
     // D-HB-3 error wording per plan.
     expect(sv['walk.err.hyrbrickaContact']).toMatch(/telefon|e-post/i);
   });

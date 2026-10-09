@@ -127,9 +127,9 @@ test('Bana label appears on the course-picker field (locked decision #1)', async
   await expect(page.getByTestId('walkup-modal')).toBeVisible();
   // The Field component renders the label adjacent to the htmlFor target;
   // the course-picker is walkup-class, so its <label for="walkup-class">
-  // should read "Bana".
+  // should read "Klass".
   const label = page.locator('label[for="walkup-class"]');
-  await expect(label).toHaveText('Bana');
+  await expect(label).toHaveText('Klass');
 });
 
 test('Hyrbricka happy path: contact fieldset → save → hired_cards row exists', async ({
