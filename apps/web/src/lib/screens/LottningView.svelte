@@ -161,12 +161,11 @@
       // A late-entrant choice only means something next to an existing list.
       if (startList.length === 0) drawType = 'All';
       classRunners = runners.competitors.filter((r) => r.class_id === classId);
-      // The stored seeding groups of the drawn runners (a redraw reuses
+      // The stored seeding groups of every runner in the class, drawn or
+      // not (a redraw reuses them; a refused seeded draw has already stored
       // them); what the operator has typed and not yet drawn with stays.
       seedTyped = {
-        ...Object.fromEntries(
-          res.start_list.map((r) => [r.id, r.seed_group === null ? '' : String(r.seed_group)])
-        ),
+        ...Object.fromEntries(res.seeding.map((r) => [r.id, String(r.seed_group)])),
         ...seedTyped,
       };
       startListLoaded = true;

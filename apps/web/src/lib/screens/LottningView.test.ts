@@ -159,6 +159,7 @@ describe('LottningView (mounted)', () => {
   let puts: Array<{ url: string; body: unknown }>;
   let drawAnswer: { status: number; body: unknown };
   let startList: unknown[];
+  let seeding: Array<{ id: string; seed_group: number }>;
   let classKindSource: string;
 
   const settle = async (): Promise<void> => {
@@ -173,6 +174,7 @@ describe('LottningView (mounted)', () => {
     posts = [];
     puts = [];
     startList = [];
+    seeding = [];
     classKindSource = 'name';
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -222,7 +224,7 @@ describe('LottningView (mounted)', () => {
           ],
         });
       if (url.includes('/lottning/'))
-        return json({ class: { id: 'h12', name: 'H12' }, start_list: startList });
+        return json({ class: { id: 'h12', name: 'H12' }, start_list: startList, seeding });
       if (url.endsWith('/competitors'))
         return json({
           competitors: [
@@ -326,6 +328,23 @@ describe('LottningView (mounted)', () => {
     });
     expect(posts[0]!.body).toMatchObject({ mode: 'Seeded', bestFirst: false });
     expect($('lottning-done')!.textContent).toBe('Klart: 2 löpare i H12 fick starttid.');
+  });
+
+  it('SOFT TR 7.4.5: groups stored for runners not yet drawn are shown and sent again, not erased', async () => {
+    // A seeded draw refused earlier (e.g. level unset) has already stored
+    // the groups; nobody in the class has a start time.
+    seeding = [{ id: 'r2', seed_group: 1 }];
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await choose('lottning-mode-select', 'Seeded');
+    const inputs = document.querySelectorAll<HTMLInputElement>(
+      '[data-testid="lottning-seed-input"]'
+    );
+    expect([...inputs].map((i) => i.value)).toEqual(['', '1']);
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect(puts[0]!.body).toEqual({ groups: [['r2']] });
   });
 
   it('SOFT TR 7.5.8: with a start list, late entrants can be placed without a redraw', async () => {

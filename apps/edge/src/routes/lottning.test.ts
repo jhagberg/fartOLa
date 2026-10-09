@@ -781,6 +781,28 @@ describe('lottning route', () => {
     }
   });
 
+  test('SOFT TR 7.4.5: GET lottning returns the stored seeding groups of runners not yet drawn', async () => {
+    const [a, b] = [...timesOf().keys()];
+    assert.equal((await putSeeding([[a!], [b!]])).statusCode, 200);
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as {
+      start_list: unknown[];
+      seeding: Array<{ id: string; seed_group: number }>;
+    };
+    assert.equal(body.start_list.length, 0);
+    assert.deepEqual(
+      [...body.seeding].sort((x, y) => x.seed_group - y.seed_group),
+      [
+        { id: a, seed_group: 1 },
+        { id: b, seed_group: 2 },
+      ]
+    );
+  });
+
   test('SOFT TR 7.4.5: seeding in elite classes at nivå 1 and in any class at a training, refused otherwise (422)', async () => {
     const body = { mode: 'Seeded', firstStartMs: at(10), intervalSec: 60 };
     assert.equal((await putSeeding([[...timesOf().keys()].slice(0, 2)])).statusCode, 200);
