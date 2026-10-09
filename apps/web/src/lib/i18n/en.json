@@ -263,6 +263,7 @@
   "ro.split": "Split",
   "ro.cumul": "Total",
   "ro.struck": "struck",
+  "ro.missing": "missing",
   "ro.extra": "extra",
   "ro.order": "wrong ord.",
   "ro.untimed": "Untimed",

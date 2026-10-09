@@ -854,7 +854,10 @@
           {#if tweaks.density === 'high'}
             <SplitsTable punches={receiptRead.punches} />
           {:else}
-            <PunchGrid punches={receiptRead.punches} />
+            <PunchGrid
+              punches={receiptRead.punches}
+              verdict={(currentRow?.expected_codes.length ?? 0) > 0}
+            />
           {/if}
         {/if}
       {/snippet}
