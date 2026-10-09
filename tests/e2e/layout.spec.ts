@@ -74,3 +74,29 @@ test('walk-up overlay covers the whole viewport, not just the readout area', asy
   // block of the fixed overlay (Chromium does not, others may).
   expect(await overlay.evaluate((e) => e.closest('.readout-wrap') === null)).toBe(true);
 });
+
+for (const viewport of [
+  { width: 820, height: 1180 },
+  { width: 1180, height: 820 },
+]) {
+  test(`stacked readout at ${viewport.width}×${viewport.height}: rail right below the card`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { competitionId } = await seedCompetition(request, { controls: 4 });
+    await page.goto(`/competition/${competitionId}/readout`);
+    await simulateRead(request, competitionId, 7_500_123, [31, 32, 33, 34]);
+    await simulateRead(request, competitionId, 7_501_853, [31, 32, 33, 34]);
+    await expect(page.getByTestId('runner-name')).toBeVisible();
+
+    const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+    const card = await box('[data-testid="latest-read"]');
+    const history = await box('[data-testid="history-list"]');
+    const unknown = await box('[data-testid="pending-unknown-row"]');
+    const receipt = await box('.receipt-mirror');
+    expect(history.y).toBeGreaterThanOrEqual(card.y + card.height);
+    expect(history.y + history.height).toBeLessThanOrEqual(receipt.y);
+    expect(unknown.y + unknown.height).toBeLessThanOrEqual(receipt.y);
+  });
+}
