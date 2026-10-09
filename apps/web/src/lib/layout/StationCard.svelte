@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import PulseDot from '../ui/PulseDot.svelte';
+  import Icon from '../ui/Icon.svelte';
   import { t } from '../i18n/index.ts';
   import { reconnectBridge, ApiError } from '../api/client.ts';
 
@@ -76,7 +77,7 @@
   </div>
   <div class="row spread">
     <span class="mono faint">{serial}</span>
-    <span class="status-label" style="color: {labelColor}">● {label}</span>
+    <span class="status-label" style="color: {labelColor}"><Icon name="circle" size={10} fill="currentColor" /> {label}</span>
   </div>
   <div class="row spread small">
     <span class="faint">{devicePath}</span>

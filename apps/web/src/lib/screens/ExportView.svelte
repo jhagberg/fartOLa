@@ -30,6 +30,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import {
     exportPreview,
     exportDownloadUrl,
@@ -155,7 +156,7 @@
       <p class="muted">—</p>
     {:else if preview.valid}
       <div class="box ok" data-testid="export-valid">
-        <strong>✓ Validering OK</strong>
+        <strong><Icon name="check" size={18} /> Validering OK</strong>
         <p>
           {preview.summary.class_count} klasser · {preview.summary.person_result_count} personresultat
           · status {preview.summary.status}
@@ -163,7 +164,7 @@
       </div>
     {:else}
       <div class="box err" data-testid="export-invalid">
-        <strong>✗ XSD-fel</strong>
+        <strong><Icon name="x" size={18} /> XSD-fel</strong>
         <ul>
           {#each errorRows() as e, i (i)}
             <li>
@@ -211,7 +212,7 @@
         if (!canDownload) ev.preventDefault();
       }}
     >
-      ↓ Hämta ResultList.xml
+      <Icon name="download" size={18} /> Hämta ResultList.xml
     </a>
   </section>
 </div>

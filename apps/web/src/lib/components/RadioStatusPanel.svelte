@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import { getRadioStatus } from '#lib/api/client.ts';
   import type { RadioStatus } from '@fartola/shared-types';
   import { baselineKey, latestOnly, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
@@ -63,11 +64,11 @@
       <h3>{t('radio.title')}</h3>
       <span class="muted">
         {#if linkProblem}
-          <span data-testid="radio-link-problem">✕ {t('radio.linkProblem')}</span>
+          <span data-testid="radio-link-problem"><Icon name="x" size={16} /> {t('radio.linkProblem')}</span>
         {:else if failed}
-          <span>✕ {t('radio.loadError')}</span>
+          <span><Icon name="x" size={16} /> {t('radio.loadError')}</span>
         {:else}
-          <span>✓ {t('radio.linkOk')}</span>
+          <span><Icon name="check" size={16} /> {t('radio.linkOk')}</span>
         {/if}
       </span>
     </header>

@@ -36,6 +36,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
   import PulseDot from '#lib/ui/PulseDot.svelte';
 
@@ -203,7 +204,7 @@
     <span class="meta mono">{t('ro.feed.live')}</span>
     <div class="actions">
       <button type="button" class="btn ghost" data-testid="simulate-btn" onclick={() => onSimulate?.()}>
-        ↳ {t('ro.simulate')}
+        <Icon name="corner-down-right" size={16} /> {t('ro.simulate')}
       </button>
     </div>
   </header>
@@ -211,7 +212,7 @@
   {#if !read}
     <div class="body">
       <div class="ro-empty">
-        <div class="blink mono">SI ▢</div>
+        <div class="blink"><Icon name="credit-card" size={32} /></div>
         <div class="empty-title">{t('ro.waiting')}</div>
         <div class="empty-sub">{t('ro.waiting.desc')}</div>
       </div>
@@ -221,7 +222,7 @@
       <div class="runner-row">
         <div class="runner-info">
           <div class="card-num mono" data-testid="card-number">{read.cardNumber}</div>
-          <h2 class="runner-name warn">⚠ {t('ro.unknownCard')}</h2>
+          <h2 class="runner-name warn"><Icon name="alert-triangle" size={24} /> {t('ro.unknownCard')}</h2>
           <div class="runner-meta">
             <span>{t('ro.card')} <b class="mono">{read.cardNumber}</b></span>
             <span>{t('ro.time')} <b class="mono">{read.readTime}</b></span>
@@ -272,13 +273,13 @@
 
       {#if read.startWarning}
         <div class="start-warning mono" role="status" data-testid="start-warning">
-          ⚠ {t(read.startWarning.key, { diff: read.startWarning.diff })}
+          <Icon name="alert-triangle" size={16} /> {t(read.startWarning.key, { diff: read.startWarning.diff })}
         </div>
       {/if}
 
       {#if read.missingStart && read.competitorId}
         <div class="missing-start" role="alert" data-testid="missing-start">
-          <b>⚠ {t('ro.missingStart')}</b>
+          <b><Icon name="alert-triangle" size={16} /> {t('ro.missingStart')}</b>
           {#if read.missingStartHint}
             <span class="mono" data-testid="missing-start-hint">
               {t('ro.missingStart.hint', read.missingStartHint)}
@@ -315,7 +316,7 @@
         disabled={autoPrint}
         onclick={() => onPrint?.()}
       >
-        🖨 {t('ro.print')}
+        <Icon name="printer" size={20} /> {t('ro.print')}
       </button>
       {#if read.competitorId}
         <button
@@ -324,7 +325,7 @@
           data-testid="edit-competitor-btn"
           onclick={() => read.competitorId && onEdit?.(read.competitorId)}
         >
-          ✎ {t('ro.edit')}
+          <Icon name="edit" size={20} /> {t('ro.edit')}
         </button>
         <div class="dnf-wrap">
           <button

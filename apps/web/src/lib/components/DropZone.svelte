@@ -25,6 +25,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
 
   interface Props {
     /** Currently selected file (display-only); the parent owns state. */
@@ -121,11 +122,11 @@
     <div class="title">{error}</div>
     <div class="sub">{t('wiz.drop.formats')}</div>
   {:else if file}
-    <div class="icon ok">✓</div>
+    <div class="icon ok"><Icon name="check" size={28} /></div>
     <div class="title">{t('wiz.imported')}: {file.name}</div>
     <div class="sub">Klicka för att byta fil</div>
   {:else}
-    <div class="icon">↓ XML</div>
+    <div class="icon"><Icon name="download" size={28} /> XML</div>
     <div class="title">{t('wiz.drop')}</div>
     <div class="sub">{t('wiz.drop.formats')}</div>
   {/if}

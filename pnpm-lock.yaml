@@ -150,6 +150,9 @@ importers:
       '@fartola/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@lucide/svelte':
+        specifier: ^1.54.0
+        version: 1.54.0(svelte@5.57.1(@typescript-eslint/types@8.71.0))
       i18next:
         specifier: ^26.4.2
         version: 26.4.2(typescript@6.0.3)
@@ -1311,6 +1314,11 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@lucide/svelte@1.54.0':
+    resolution: {integrity: sha512-PbUrcmVPU71zmcs1Kc5RlgF83SsBsSNC+MeuttAHMmvPMuoIJfyDPjit5kpAJxJwsmN2Pk1Bx75AwZxP8vkDvw==}
+    peerDependencies:
+      svelte: ^5
 
   '@lukeed/ms@2.0.2':
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
@@ -4134,6 +4142,10 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@lucide/svelte@1.54.0(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
+    dependencies:
+      svelte: 5.57.1(@typescript-eslint/types@8.71.0)
 
   '@lukeed/ms@2.0.2': {}
 

@@ -25,6 +25,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import Icon from '#lib/ui/Icon.svelte';
   import Button from '#lib/ui/Button.svelte';
 
   interface Props {
@@ -69,7 +70,7 @@
   aria-labelledby="hyrbricka-toast-title"
   data-testid="hyrbricka-toast"
 >
-  <h3 id="hyrbricka-toast-title" class="title">{t('readout.hyrbricka.title')}</h3>
+  <h3 id="hyrbricka-toast-title" class="title"><Icon name="alert-triangle" size={20} /> {t('readout.hyrbricka.title')}</h3>
   <p class="card-line" data-testid="hyrbricka-card">
     <span class="lbl">{t('ro.card')}:</span>
     <span class="mono">{cardNumber}</span>
