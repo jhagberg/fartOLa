@@ -971,6 +971,8 @@ export interface LottningResponse {
     max_time_sec: number | null;
   };
   start_list: StartListEntry[];
+  /** Stored seeding groups of every runner in the class, drawn or not. */
+  seeding: Array<{ id: string; seed_group: number }>;
 }
 
 /** POST /api/competitions/:id/lottning/:classId — draw start times for a class.

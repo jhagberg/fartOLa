@@ -5,7 +5,8 @@
 // Routes registered here:
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
 //   PUT  /api/competitions/:id/lottning/:classId/seeding — store seeding groups
-//   GET  /api/competitions/:id/lottning/:classId — fetch current start list
+//   GET  /api/competitions/:id/lottning/:classId — fetch current start list,
+//        plus the stored seeding groups of every runner in the class
 //
 // POST semantics:
 //   1. Validate the body with Zod. intervalSec must be > 0 except for
@@ -327,6 +328,14 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         .orderBy(asc(competitors.startTimeMs))
         .all();
 
+      // Seeding groups of every runner in the class, drawn or not: the
+      // groups are stored before the first seeded draw (PUT …/seeding).
+      const seeding = app.fartolaDb.db
+        .select({ id: competitors.id, seedGroup: competitors.seedGroup })
+        .from(competitors)
+        .where(and(eq(competitors.classId, classId), isNotNull(competitors.seedGroup)))
+        .all();
+
       return {
         class: {
           id: classRow.id,
@@ -344,6 +353,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           start_time_ms: r.startTimeMs,
           seed_group: r.seedGroup,
         })),
+        seeding: seeding.map((r) => ({ id: r.id, seed_group: r.seedGroup! })),
       };
     }
   );
