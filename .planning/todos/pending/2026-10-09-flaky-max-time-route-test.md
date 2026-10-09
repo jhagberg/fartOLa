@@ -1,6 +1,6 @@
 ---
 created: 2026-10-09T09:00:00+02:00
-title: Max-time route test fails between about 08:00 and 08:12 local time
+title: Route tests with fixed card times fail at some times of day (max time, liveresultat)
 area: tests
 files:
   - apps/edge/src/routes/competitions.test.ts
@@ -14,6 +14,12 @@ run between about 08:00 and 08:12 local time and passes otherwise. Its card
 times are pinned to 09:00-09:11:40, but the read is stamped with the current
 time, so in that window the finish lands on the wrong day. Seen 2026-10-09
 (it passed again at 08:13).
+
+Probably the same pattern: `liveresultat.test.ts` "SOFT TR 7.7.1: once the
+credentials are set the push queue posts the runners' results to
+liveresultat" (line ~242) failed once in CI on PR #87 (2026-10-09, 07:22 UTC)
+and passed on rerun. Its card times are fixed at 10:00-10:30 while
+`eventTimeMs`/`recordedAtMs` are `Date.now()`.
 
 ## Fix
 
