@@ -23,8 +23,9 @@
      * (GET lottning), so the status survives a reload. */
     className?: string;
     loaded?: { results: number; ok: number } | null;
-    /** Called after a file was read in, so the parent refreshes `loaded`. */
-    onuploaded?: () => void;
+    /** Called after a file was read in, so the parent refreshes `loaded`;
+     * the upload counts as busy until the refresh it returns is done. */
+    onuploaded?: () => void | Promise<void>;
     /** Told when an upload starts and ends: the parent holds the pursuit
      * draw until the input times are in. */
     onbusy?: (busy: boolean) => void;
@@ -54,7 +55,7 @@
     result = null;
     try {
       result = { ...(await importPreviousResults(competitionId, sent)), file: sent.name };
-      onuploaded?.();
+      await onuploaded?.();
     } catch (e) {
       const code =
         e instanceof ApiError && e.body !== null && typeof e.body === 'object'
