@@ -66,9 +66,18 @@
     (data?.items ?? []).filter((i) => onlyClassId === null || i.class_id === onlyClassId)
   );
   const unconfirmed = $derived(items.filter((i) => !isConfirmed(i)).length);
+  /** A row whose kind or age the operator changed but that is not saved
+   * (the save failed or waits for an age). Confirming its suggestion
+   * would overwrite the edit, so the bulk confirm leaves it out. */
+  const pending = (item: ClassKindItem): boolean =>
+    chosen[item.class_id] !== undefined || ageText[item.class_id] !== undefined;
   const confirmable = $derived(
-    items.map(confirmItem).filter((i): i is NonNullable<typeof i> => i !== null)
+    items
+      .filter((i) => !pending(i))
+      .map(confirmItem)
+      .filter((i): i is NonNullable<typeof i> => i !== null)
   );
+  const pendingCount = $derived(items.filter((i) => !isConfirmed(i) && pending(i)).length);
 
   const kindOf = (item: ClassKindItem): ClassKind | null =>
     chosen[item.class_id] ?? proposed(item).kind;
@@ -148,6 +157,11 @@
               {t('classKinds.confirmAll', { count: confirmable.length })}
             </Button>
           {/if}
+          {#if pendingCount > 0}
+            <p data-testid="class-kinds-pending">
+              {t('classKinds.pendingExcluded', { count: pendingCount })}
+            </p>
+          {/if}
         {:else if items.length > 0}
           <p data-testid="class-kinds-all-confirmed">{t('classKinds.allConfirmed')}</p>
         {/if}
@@ -220,7 +234,7 @@
                       data-testid="class-kind-status"
                       data-status={status}>{t(`classKinds.status.${status}`)}</span
                     >
-                    {#if confirmItem(item) !== null && chosen[item.class_id] === undefined}
+                    {#if confirmItem(item) !== null && !pending(item)}
                       <Button
                         variant="secondary"
                         disabled={busy}

@@ -203,6 +203,51 @@ describe('ClassKindsPanel (mounted)', () => {
     ).toBeNull();
   });
 
+  it('confirm-all leaves out a row whose edit is not saved, keeps the edit and its error, and says so', async () => {
+    const D10 = item({
+      class_id: 'd10',
+      name: 'D10',
+      class_kind: 'ungdom',
+      age_class: 10,
+      class_kind_source: 'name',
+      suggestion: { class_kind: 'ungdom', age_class: 10, source: 'name' },
+    });
+    items = [H21, D10];
+    component = mount(ClassKindsPanel, {
+      target: document.body,
+      props: { competitionId: 'comp-1' },
+    });
+    await settle();
+    // The operator clears H21's age: nothing is saved, the row asks for it.
+    const age = document.querySelector(
+      '[data-class-id="h21"] [data-testid="class-kind-age"]'
+    ) as HTMLInputElement;
+    age.value = '';
+    age.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(puts).toEqual([]);
+
+    expect(document.querySelector('[data-testid="class-kinds-pending"]')!.textContent).toContain(
+      'tas inte med: 1'
+    );
+    (
+      document.querySelector('[data-testid="class-kinds-confirm-all"]') as HTMLButtonElement
+    ).click();
+    await settle();
+    expect(puts).toEqual([{ items: [{ class_id: 'd10', class_kind: 'ungdom', age_class: 10 }] }]);
+    expect(
+      (
+        document.querySelector(
+          '[data-class-id="h21"] [data-testid="class-kind-age"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('');
+    expect(
+      document.querySelector('[data-class-id="h21"] [data-testid="class-kind-error"]')!.textContent
+    ).toContain('Ange ålder');
+    expect(status('h21')).toBe('Förslag från klassnamnet, inte bekräftad');
+  });
+
   it('onlyClassId shows that class alone, without the summary', async () => {
     component = mount(ClassKindsPanel, {
       target: document.body,
