@@ -351,12 +351,6 @@ export function reduce(input: ReduceInput): CompetitionState {
         }
         break;
       }
-      case 'card_bound': {
-        // Once an operator binds a card via walk-up, drop it from the
-        // pending set so the modal closes.
-        pendingUnknownCards.delete(payload.card_number);
-        break;
-      }
       case 'race_started': {
         // Phase 2.1: flip the in-pass race-phase gate so subsequent
         // card_read events in this same reduce() pass score. The DB
@@ -533,6 +527,12 @@ export function reduce(input: ReduceInput): CompetitionState {
         }
         break;
       }
+      // card_bound / card_unbound: reads attach by the competitors' CURRENT
+      // card numbers (cardIndex), and every bind writes the row in the same
+      // transaction as its event. A bound card's reads, also those made
+      // before the bind, attach and never become pending; a bind that is
+      // undone or changed leaves its reads unknown again.
+      //
       // card_inserted, card_removed, frame_error, connection_changed,
       // consent_confirmed do not change the projection state. consent_confirmed
       // flips a competitor's consent_status column (mutated outside the reducer

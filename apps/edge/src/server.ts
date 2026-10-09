@@ -49,6 +49,7 @@ import registerCompetitions from './routes/competitions.ts';
 import registerClasses from './routes/classes.ts';
 import registerCourses from './routes/courses.ts';
 import registerCompetitors from './routes/competitors.ts';
+import registerCardBindsRoutes from './routes/cardBinds.ts';
 import registerMissingStarts from './routes/missingStarts.ts';
 import registerClubs from './routes/clubs.ts';
 import registerImportRoutes from './routes/import.ts';
@@ -326,6 +327,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerClasses);
     await app.register(registerCourses);
     await app.register(registerCompetitors);
+    await app.register(registerCardBindsRoutes);
     await app.register(registerMissingStarts);
     await app.register(registerClubs);
     // Phase 2.0 Plan 02-02 — Eventor lookup + status (walk-up autocomplete).
