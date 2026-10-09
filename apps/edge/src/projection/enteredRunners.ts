@@ -73,9 +73,16 @@ export function rankEnteredRunners(
   };
   const classNames = new Map(input.classes.map((c) => [c.id, c.name]));
 
+  // Read out = a read the race-phase gate lets score (as the reducer does).
+  // A pre-race identity scan of the entered card at the registration desk
+  // stays in card_read_history but is not a read-out.
+  const raceStart = input.race_started_at_ms;
+  const readOut = (atMs: number): boolean =>
+    raceStart === undefined || (raceStart !== null && atMs >= raceStart);
+
   const runners: EnteredRunner[] = [];
   for (const view of state.competitors.values()) {
-    if (view.card_read_history.length > 0) continue;
+    if (view.card_read_history.some((r) => readOut(r.event_time_ms))) continue;
     const course = courseOf(view.class_id);
     const codes = course?.control_codes.filter((c) => !voided.has(c)) ?? [];
     const match =
