@@ -398,7 +398,7 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
+    overflow: visible;
   }
   .latest[data-flash]:not([data-flash='']) {
     animation: flashIn 1.6s ease-out;
@@ -432,6 +432,11 @@
   }
   .body {
     padding: 16px 18px;
+    /* The punch area scrolls inside the card so the action bar (.foot)
+       stays in view on long courses (ADR-0016 rule 4). 240px = top bar +
+       page padding + card header + action bar; 120px floor for 200 % zoom. */
+    max-height: max(120px, calc(100dvh - 240px));
+    overflow-y: auto;
   }
   .ro-empty {
     display: grid;
@@ -567,7 +572,7 @@
   }
   .dnf-pop {
     position: absolute;
-    top: calc(100% + 8px);
+    bottom: calc(100% + 8px);
     left: 0;
     background: var(--bg-elev);
     border: 1px solid var(--border-strong);
@@ -577,7 +582,7 @@
     display: grid;
     gap: 8px;
     min-width: 320px;
-    z-index: 10;
+    z-index: 20;
   }
   .status-picker {
     display: flex;
