@@ -197,6 +197,9 @@
     competitorId: string;
     competitorName: string;
     className: string;
+    /** The card replacement that raised it (rebindKey); undoing that
+     * replacement withdraws it. */
+    fromRebind?: string;
   } | null = $state(null);
   /** Per-session set of competitor ids the operator has dismissed (chose
    * "Avfärda") so the toast doesn't re-pop on subsequent reads for the
@@ -213,6 +216,7 @@
     contactPhone: string | null;
     contactEmail: string | null;
     note: string | null;
+    fromRebind?: string;
   } | null = $state(null);
   /** Per-session set of card_numbers the operator has acknowledged (via
    * Returnerad OR Ignorera). RESEARCH §Assumption A8: Svelte 5's
@@ -537,7 +541,11 @@
    * (C-M4) and the hyrbricka return (Plan 02-05). Run for the latest read
    * and for a read just attached by a card replacement. `row` is the
    * refetched history row of `cardNumber`. */
-  function firstReadPrompts(row: ReadoutHistoryRow, cardNumber: number): void {
+  function firstReadPrompts(
+    row: ReadoutHistoryRow,
+    cardNumber: number,
+    fromRebind?: string
+  ): void {
     // C-M4: first card_read for a competitor whose consent_status ===
     // 'pending_first_read' surfaces the one-time confirmation toast. The
     // toast is local UI sugar — the card_read is fully accepted server-
@@ -556,6 +564,7 @@
           competitorId: competitor.id,
           competitorName: competitor.name,
           className: cls?.name ?? '—',
+          ...(fromRebind !== undefined ? { fromRebind } : {}),
         };
       }
     }
@@ -579,17 +588,34 @@
         contactPhone: hco.contact_phone,
         contactEmail: hco.contact_email,
         note: hco.note,
+        ...(fromRebind !== undefined ? { fromRebind } : {}),
       };
     }
   }
 
   /** A card replacement attached an unknown read to an entered runner: it
    * is that runner's read-out now, so refetch and raise its prompts. */
+  const rebindKey = (r: CardRebind): string => `${r.card_event.node_id}:${r.card_event.local_seq}`;
+  /** Replacements undone this session: their prompts must not (re)appear. */
+  const undoneRebinds = new Set<string>();
+
   async function onRebound(r: CardRebind): Promise<void> {
     rebinds = [r, ...rebinds];
     await Promise.all([refetchCompetitors(), refetchReadout()]);
+    if (undoneRebinds.has(rebindKey(r))) return;
     const row = history.find((h) => h.card_number === r.card_number && !h.unmatched);
-    if (row) firstReadPrompts(row, r.card_number);
+    if (row) firstReadPrompts(row, r.card_number, rebindKey(r));
+  }
+
+  /** Undo of a replacement: the read is unknown again, so the consent and
+   * hyrbricka prompts it raised for the chosen runner are withdrawn. */
+  function onRebindUndone(r: CardRebind): void {
+    const key = rebindKey(r);
+    undoneRebinds.add(key);
+    if (pendingConsentToast?.fromRebind === key) pendingConsentToast = null;
+    if (pendingHyrbrickaToast?.fromRebind === key) pendingHyrbrickaToast = null;
+    void refetchCompetitors();
+    void refetchReadout();
   }
 
   async function onHyrbrickaReturn(cardNumber: number): Promise<void> {
@@ -872,10 +898,7 @@
     <CardRebindNotices
       {competitionId}
       {rebinds}
-      onUndone={() => {
-        void refetchCompetitors();
-        void refetchReadout();
-      }}
+      onUndone={onRebindUndone}
       onClose={(r) => {
         rebinds = rebinds.filter((x) => x !== r);
       }}

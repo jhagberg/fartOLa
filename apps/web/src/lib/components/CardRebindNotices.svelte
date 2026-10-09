@@ -13,7 +13,7 @@
   interface Props {
     competitionId: string;
     rebinds: CardRebind[];
-    onUndone?: (() => void) | undefined;
+    onUndone?: ((r: CardRebind) => void) | undefined;
     onClose: (r: CardRebind) => void;
   }
 
@@ -21,5 +21,10 @@
 </script>
 
 {#each rebinds as r (`${r.card_event.node_id}:${r.card_event.local_seq}`)}
-  <CardRebindNotice {competitionId} rebind={r} {onUndone} onClose={() => onClose(r)} />
+  <CardRebindNotice
+    {competitionId}
+    rebind={r}
+    onUndone={() => onUndone?.(r)}
+    onClose={() => onClose(r)}
+  />
 {/each}
