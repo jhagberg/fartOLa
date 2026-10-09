@@ -44,7 +44,7 @@
   );
 
   const labelColor = $derived(
-    status === 'online' ? 'var(--ok)' : status === 'connecting' ? 'var(--mp)' : 'var(--dnf)'
+    status === 'online' ? 'var(--ok)' : status === 'connecting' ? 'var(--mp-fg)' : 'var(--dnf)'
   );
 
   let reconnecting = $state(false);

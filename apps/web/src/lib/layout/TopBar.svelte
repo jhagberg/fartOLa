@@ -52,7 +52,7 @@
   );
 
   const color = $derived(
-    wsStatus === 'open' ? 'var(--ok)' : wsStatus === 'connecting' ? 'var(--mp)' : 'var(--dnf)'
+    wsStatus === 'open' ? 'var(--ok)' : wsStatus === 'connecting' ? 'var(--mp-fg)' : 'var(--dnf)'
   );
 </script>
 
