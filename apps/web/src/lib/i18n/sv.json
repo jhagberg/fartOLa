@@ -421,11 +421,11 @@
   "consent.dismiss": "Avfärda",
 
   "status.OK": "Godkänd",
-  "status.MP": "Felstämpling",
-  "status.DNF": "Bröt",
+  "status.MP": "Felstämplad",
+  "status.DNF": "Utgått",
   "status.PEND": "Väntar",
   "status.DNS": "Ej start",
-  "status.DQ": "Disk.",
+  "status.DQ": "Diskad",
   "status.CANCEL": "Återbud",
   "status.MAX": "Maxtid",
 
