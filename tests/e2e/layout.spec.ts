@@ -59,3 +59,18 @@ for (const width of [1366, 1280, 1180, 1025, 1024, 820, 683]) {
     expect(box?.width ?? 0).toBeGreaterThanOrEqual(560);
   });
 }
+
+test('walk-up overlay covers the whole viewport, not just the readout area', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const { competitionId } = await seedCompetition(request, { controls: 4 });
+  await page.goto(`/competition/${competitionId}/readout?walkup=9999999`);
+  await expect(page.getByTestId('walkup-modal')).toBeVisible();
+  const overlay = page.getByTestId('walkup-overlay');
+  expect(await overlay.boundingBox()).toEqual({ x: 0, y: 0, width: 1366, height: 768 });
+  // Outside the size container, so no engine can make it the containing
+  // block of the fixed overlay (Chromium does not, others may).
+  expect(await overlay.evaluate((e) => e.closest('.readout-wrap') === null)).toBe(true);
+});
