@@ -536,6 +536,7 @@
   "lottning.startMethod.start_time": "Starttid",
   "lottning.startMethod.start_punch": "Startstämpling",
   "lottning.invalidTime": "Ogiltigt tidsformat. Använd HH:MM eller HH:MM:SS.",
+  "lottning.waitResults": "Resultatlistan läses in. Lotta när den är klar.",
   "pursuitResults.label": "Resultatlista från förra etappen (IOF XML)",
   "pursuitResults.hint": "Från MeOS, OLA eller Eventor. En ny fil ersätter tidigare inlästa resultat för klasserna i filen.",
   "pursuitResults.upload": "Läs in resultatlista",

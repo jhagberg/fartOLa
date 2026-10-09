@@ -162,6 +162,8 @@ describe('LottningView (mounted)', () => {
   let seeding: Array<{ id: string; seed_group: number }>;
   /** When set, the competition GET (the clock) waits for it. */
   let holdClock: Promise<void> | null;
+  /** The previous-results upload waits for it. */
+  let holdUpload: Promise<void>;
   let classKindSource: string;
 
   const settle = async (): Promise<void> => {
@@ -178,6 +180,7 @@ describe('LottningView (mounted)', () => {
     startList = [];
     seeding = [];
     holdClock = null;
+    holdUpload = Promise.resolve();
     classKindSource = 'name';
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -187,6 +190,10 @@ describe('LottningView (mounted)', () => {
           status,
           headers: { 'content-type': 'application/json' },
         });
+      if (url.endsWith('/import/previous-results')) {
+        await holdUpload;
+        return json({ results: 2, matched: 2, unmatched: [] }, 201);
+      }
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
       if (init?.method === 'POST') {
         posts.push({ url, body });
@@ -349,6 +356,34 @@ describe('LottningView (mounted)', () => {
     await settle();
     expect(posts[0]!.body).toMatchObject({ mode: 'SOFT', intervalSec: 120 });
     expect(($('lottning-settings') as HTMLFieldSetElement).disabled).toBe(false);
+  });
+
+  it('SOFT TR 7.4.1: a pursuit cannot be drawn while the previous stage is being read in', async () => {
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await choose('lottning-mode-select', 'Pursuit');
+    let release!: () => void;
+    holdUpload = new Promise((r) => (release = r));
+    const input = $('pursuit-results-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File(['<ResultList/>'], 'dag1.xml', { type: 'application/xml' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    ($('pursuit-results-upload') as HTMLButtonElement).click();
+    await settle();
+    const draw = $('lottning-draw-btn') as HTMLButtonElement;
+    expect(draw.disabled).toBe(true);
+    expect($('lottning-wait-results')).not.toBeNull();
+    draw.click();
+    await settle();
+    expect(posts).toEqual([]);
+
+    release();
+    await settle();
+    expect(draw.disabled).toBe(false);
+    expect($('lottning-wait-results')).toBeNull();
   });
 
   it('SOFT TR 7.4.5: groups stored for runners not yet drawn are shown and sent again, not erased', async () => {
