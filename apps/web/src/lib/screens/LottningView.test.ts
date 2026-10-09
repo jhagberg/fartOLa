@@ -160,6 +160,7 @@ describe('LottningView (mounted)', () => {
   let drawAnswer: { status: number; body: unknown };
   let startList: unknown[];
   let seeding: Array<{ id: string; seed_group: number }>;
+  let previousResults: { results: number; ok: number };
   /** When set, the competition GET (the clock) waits for it. */
   let holdClock: Promise<void> | null;
   /** The previous-results upload waits for it. */
@@ -179,6 +180,7 @@ describe('LottningView (mounted)', () => {
     puts = [];
     startList = [];
     seeding = [];
+    previousResults = { results: 0, ok: 0 };
     holdClock = null;
     holdUpload = Promise.resolve();
     classKindSource = 'name';
@@ -234,7 +236,12 @@ describe('LottningView (mounted)', () => {
           ],
         });
       if (url.includes('/lottning/'))
-        return json({ class: { id: 'h12', name: 'H12' }, start_list: startList, seeding });
+        return json({
+          class: { id: 'h12', name: 'H12' },
+          start_list: startList,
+          seeding,
+          previous_results: previousResults,
+        });
       if (url.endsWith('/competitors'))
         return json({
           competitors: [
@@ -356,6 +363,28 @@ describe('LottningView (mounted)', () => {
     await settle();
     expect(posts[0]!.body).toMatchObject({ mode: 'SOFT', intervalSec: 120 });
     expect(($('lottning-settings') as HTMLFieldSetElement).disabled).toBe(false);
+  });
+
+  it('SOFT TR 7.4.1: the pursuit fields say what is read in for the class, also after a reload', async () => {
+    previousResults = { results: 2, ok: 1 };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await choose('lottning-mode-select', 'Pursuit');
+    expect($('pursuit-results-status')!.textContent!.trim()).toBe(
+      'Inläst för H12: 2 resultat från förra etappen, varav 1 godkända.'
+    );
+    // A new file is read in: the status follows the server.
+    previousResults = { results: 2, ok: 2 };
+    const input = $('pursuit-results-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File(['<ResultList/>'], 'dag1.xml', { type: 'application/xml' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    ($('pursuit-results-upload') as HTMLButtonElement).click();
+    await settle();
+    expect($('pursuit-results-status')!.textContent).toContain('varav 2 godkända');
   });
 
   it('SOFT TR 7.4.1: a pursuit cannot be drawn while the previous stage is being read in', async () => {

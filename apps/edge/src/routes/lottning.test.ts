@@ -884,6 +884,25 @@ describe('lottning route', () => {
     maxBehindSec: 3600,
   };
 
+  test('SOFT TR 7.4.1: GET lottning says how many previous-stage results the class has, and how many are OK', async () => {
+    const get = async () =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'GET',
+            url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+          })
+        ).json() as { previous_results: { results: number; ok: number } }
+      ).previous_results;
+    assert.deepEqual(await get(), { results: 0, ok: 0 });
+    setInput({
+      'Runner 0': [30 * 60_000, 'OK'],
+      'Runner 1': [31 * 60_000, 'MissingPunch'],
+      'Runner 3': [32 * 60_000, 'OK'],
+    });
+    assert.deepEqual(await get(), { results: 3, ok: 2 });
+  });
+
   test('SOFT TR 7.4.1: Pursuit — start = first start + time behind the leader in the imported ResultList', async () => {
     setInput({
       'Runner 0': [30 * 60_000, 'OK'],
