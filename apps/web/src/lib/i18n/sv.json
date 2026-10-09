@@ -540,6 +540,8 @@
   "lottning.waitResults": "Resultatlistan läses in. Lotta när den är klar.",
   "pursuitResults.label": "Resultatlista från förra etappen (IOF XML)",
   "pursuitResults.hint": "Från MeOS, OLA eller Eventor. En ny fil ersätter tidigare inlästa resultat för klasserna i filen.",
+  "pursuitResults.status": "Inläst för {{class}}: {{results}} resultat från förra etappen, varav {{ok}} godkända.",
+  "pursuitResults.statusNone": "Ingen resultatlista från förra etappen är inläst för {{class}}.",
   "pursuitResults.upload": "Läs in resultatlista",
   "pursuitResults.uploading": "Läser in…",
   "pursuitResults.done": "Inläst från {{file}}. Resultat i filen: {{results}}. Matchade löpare: {{matched}}.",

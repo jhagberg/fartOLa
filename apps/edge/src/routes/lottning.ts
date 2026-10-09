@@ -6,7 +6,8 @@
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
 //   PUT  /api/competitions/:id/lottning/:classId/seeding — store seeding groups
 //   GET  /api/competitions/:id/lottning/:classId — fetch current start list,
-//        plus the stored seeding groups of every runner in the class
+//        plus the stored seeding groups of every runner in the class and
+//        how many runners have a previous-stage result (pursuit, TR 7.4.1)
 //
 // POST semantics:
 //   1. Validate the body with Zod. intervalSec must be > 0 except for
@@ -336,6 +337,14 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         .where(and(eq(competitors.classId, classId), isNotNull(competitors.seedGroup)))
         .all();
 
+      // The previous stage's results stored on the runners by POST
+      // …/import/previous-results: how many, and how many of them OK.
+      const inputs = app.fartolaDb.db
+        .select({ status: competitors.inputStatus })
+        .from(competitors)
+        .where(and(eq(competitors.classId, classId), isNotNull(competitors.inputStatus)))
+        .all();
+
       return {
         class: {
           id: classRow.id,
@@ -354,6 +363,10 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           seed_group: r.seedGroup,
         })),
         seeding: seeding.map((r) => ({ id: r.id, seed_group: r.seedGroup! })),
+        previous_results: {
+          results: inputs.length,
+          ok: inputs.filter((r) => r.status === 'OK').length,
+        },
       };
     }
   );

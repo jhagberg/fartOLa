@@ -80,6 +80,9 @@ test('a pursuit refused for an unconfirmed class kind is confirmed in place, the
   await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
   await expect(page.getByTestId('lottning-class-kind')).toContainText('inte bekräftad');
   await page.getByTestId('lottning-mode-select').selectOption('Pursuit');
+  await expect(page.getByTestId('pursuit-results-status')).toHaveText(
+    'Ingen resultatlista från förra etappen är inläst för H21.'
+  );
   await page.getByTestId('lottning-draw-btn').click();
 
   await expect(page.getByTestId('lottning-refusal')).toContainText(
@@ -98,6 +101,9 @@ test('a pursuit refused for an unconfirmed class kind is confirmed in place, the
   await page.getByTestId('pursuit-results-upload').click();
   await expect(page.getByTestId('pursuit-results-done')).toContainText(
     'Resultat i filen: 3. Matchade löpare: 3.'
+  );
+  await expect(page.getByTestId('pursuit-results-status')).toHaveText(
+    'Inläst för H21: 2 resultat från förra etappen, varav 1 godkända.'
   );
   await page.getByTestId('lottning-draw-btn').click();
   await expect(page.getByTestId('lottning-done')).toContainText(

@@ -19,12 +19,18 @@
 
   interface Props {
     competitionId: string;
+    /** The class shown, and the previous-stage results it has stored
+     * (GET lottning), so the status survives a reload. */
+    className?: string;
+    loaded?: { results: number; ok: number } | null;
+    /** Called after a file was read in, so the parent refreshes `loaded`. */
+    onuploaded?: () => void;
     /** Told when an upload starts and ends: the parent holds the pursuit
      * draw until the input times are in. */
     onbusy?: (busy: boolean) => void;
   }
 
-  let { competitionId, onbusy }: Props = $props();
+  let { competitionId, className = '', loaded = null, onbusy, onuploaded }: Props = $props();
 
   let file = $state<File | null>(null);
   let busy = $state(false);
@@ -48,6 +54,7 @@
     result = null;
     try {
       result = { ...(await importPreviousResults(competitionId, sent)), file: sent.name };
+      onuploaded?.();
     } catch (e) {
       const code =
         e instanceof ApiError && e.body !== null && typeof e.body === 'object'
@@ -66,6 +73,13 @@
 <div class="upload" data-testid="pursuit-results">
   <label class="file-label" for="pursuit-results-file">{t('pursuitResults.label')}</label>
   <p class="hint" id="pursuit-results-hint">{t('pursuitResults.hint')}</p>
+  {#if loaded !== null}
+    <p data-testid="pursuit-results-status">
+      {loaded.results === 0
+        ? t('pursuitResults.statusNone', { class: className })
+        : t('pursuitResults.status', { class: className, results: loaded.results, ok: loaded.ok })}
+    </p>
+  {/if}
   <div class="row">
     <input
       id="pursuit-results-file"

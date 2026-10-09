@@ -973,6 +973,8 @@ export interface LottningResponse {
   start_list: StartListEntry[];
   /** Stored seeding groups of every runner in the class, drawn or not. */
   seeding: Array<{ id: string; seed_group: number }>;
+  /** Previous-stage results stored for the class's runners (pursuit). */
+  previous_results: { results: number; ok: number };
 }
 
 /** POST /api/competitions/:id/lottning/:classId — draw start times for a class.

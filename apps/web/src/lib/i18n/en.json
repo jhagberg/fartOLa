@@ -540,6 +540,8 @@
   "lottning.waitResults": "The result list is being read. Draw when it is done.",
   "pursuitResults.label": "Result list from the previous stage (IOF XML)",
   "pursuitResults.hint": "From MeOS, OLA or Eventor. A new file replaces earlier results for the classes in the file.",
+  "pursuitResults.status": "Read in for {{class}}: {{results}} results from the previous stage, {{ok}} of them OK.",
+  "pursuitResults.statusNone": "No result list from the previous stage is read in for {{class}}.",
   "pursuitResults.upload": "Read result list",
   "pursuitResults.uploading": "Reading…",
   "pursuitResults.done": "Read from {{file}}. Results in the file: {{results}}. Runners matched: {{matched}}.",

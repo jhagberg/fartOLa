@@ -94,6 +94,17 @@ describe('PreviousResultsUpload (mounted)', () => {
     expect($('pursuit-results-done')!.textContent).toContain('Inläst från dag1.xml.');
   });
 
+  it('says when the class has no previous-stage results read in', async () => {
+    component = mount(PreviousResultsUpload, {
+      target: document.body,
+      props: { competitionId: 'c1', className: 'H21', loaded: { results: 0, ok: 0 } },
+    });
+    await settle();
+    expect($('pursuit-results-status')!.textContent!.trim()).toBe(
+      'Ingen resultatlista från förra etappen är inläst för H21.'
+    );
+  });
+
   it('a file that is not an IOF XML 3.0 ResultList is explained, not silently dropped', async () => {
     answer = { status: 400, body: { error: 'xsd_invalid', errors: [] } };
     await pickAndUpload();

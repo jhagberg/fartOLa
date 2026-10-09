@@ -112,6 +112,8 @@
   let level: CompetitionLevel | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
+  /** Previous-stage results stored for the selected class (pursuit). */
+  let previousResults: { results: number; ok: number } | null = $state(null);
   /** A previous-stage result list is being read in: a pursuit drawn now
    * would use the old input times, so the draw waits. */
   let resultsBusy = $state(false);
@@ -161,6 +163,7 @@
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       startList = res.start_list;
+      previousResults = res.previous_results;
       // A late-entrant choice only means something next to an existing list.
       if (startList.length === 0) drawType = 'All';
       classRunners = runners.competitors.filter((r) => r.class_id === classId);
@@ -176,6 +179,7 @@
     } catch {
       startList = [];
       classRunners = [];
+      previousResults = null;
       startListLoaded = true;
     }
   }
@@ -621,7 +625,13 @@
         <fieldset class="group" data-testid="lottning-pursuit">
           <legend>{t('lottning.pursuitSettings')}</legend>
           <p class="hint">{t('lottning.pursuitHint')}</p>
-          <PreviousResultsUpload {competitionId} onbusy={(b) => (resultsBusy = b)} />
+          <PreviousResultsUpload
+          {competitionId}
+          className={selectedClassName}
+          loaded={previousResults}
+          onbusy={(b) => (resultsBusy = b)}
+          onuploaded={() => void loadStartList()}
+        />
           <Field label={t('lottning.restart')} htmlFor="lottning-restart">
             <Input
               id="lottning-restart"
