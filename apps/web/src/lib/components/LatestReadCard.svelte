@@ -34,7 +34,7 @@
   - 01-UI-SPEC.md §"Readout view live behavior"
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
@@ -136,6 +136,10 @@
   };
 
   let dnfOpen = $state(false);
+  let popEl = $state<HTMLElement | null>(null);
+  // Opens upwards over the punch area; flips down when that would start
+  // above the scroll origin of the page, where scrolling cannot reach it.
+  let popDown = $state(false);
   let dnfReason = $state('');
   let pickedStatus = $state<ManualStatus>('DNF');
 
@@ -160,6 +164,16 @@
     if (dnfOpen) {
       pickedStatus = 'DNF';
       dnfReason = REASON_BY_STATUS.DNF;
+      popDown = false;
+      void tick().then(() => {
+        const scroller = popEl?.closest('.content');
+        if (!popEl || !scroller) return;
+        const top =
+          popEl.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop;
+        if (top < 0) popDown = true;
+      });
     }
   }
 
@@ -337,7 +351,7 @@
             {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
           </button>
           {#if dnfOpen}
-            <div class="dnf-pop" role="dialog">
+            <div class="dnf-pop" class:down={popDown} role="dialog" bind:this={popEl}>
               <div class="status-picker" role="radiogroup" aria-label={t('ro.dnf')}>
                 {#each MANUAL_STATUSES as s (s)}
                   <button
@@ -433,8 +447,9 @@
   .body {
     padding: 16px 18px;
     /* The punch area scrolls inside the card so the action bar (.foot)
-       stays in view on long courses (ADR-0016 rule 4). 240px = top bar +
-       page padding + card header + action bar; 120px floor for 200 % zoom. */
+       stays in view on long courses (ADR-0016 rule 4). 240px roughly = top bar
+       + page padding + card header + action bar; if the action bar wraps
+       the page may scroll a little. 120px floor for 200 % zoom. */
     max-height: max(120px, calc(100dvh - 240px));
     overflow-y: auto;
   }
@@ -583,6 +598,10 @@
     gap: 8px;
     min-width: 320px;
     z-index: 20;
+  }
+  .dnf-pop.down {
+    bottom: auto;
+    top: calc(100% + 8px);
   }
   .status-picker {
     display: flex;
