@@ -77,6 +77,23 @@ describe('PreviousResultsUpload (mounted)', () => {
     expect($('pursuit-results-unmatched')!.textContent).toContain('D21: Cecilia, OK C');
   });
 
+  it('the picker is locked while a file uploads, and the answer names the file it read', async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((r) => (release = r));
+    const inner = global.fetch;
+    global.fetch = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      await hold;
+      return inner(...args);
+    }) as unknown as typeof fetch;
+    await pickAndUpload();
+    const input = $('pursuit-results-file') as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    release();
+    await settle();
+    expect(input.disabled).toBe(false);
+    expect($('pursuit-results-done')!.textContent).toContain('Inläst från dag1.xml.');
+  });
+
   it('a file that is not an IOF XML 3.0 ResultList is explained, not silently dropped', async () => {
     answer = { status: 400, body: { error: 'xsd_invalid', errors: [] } };
     await pickAndUpload();

@@ -542,7 +542,7 @@
   "pursuitResults.hint": "Från MeOS, OLA eller Eventor. En ny fil ersätter tidigare inlästa resultat för klasserna i filen.",
   "pursuitResults.upload": "Läs in resultatlista",
   "pursuitResults.uploading": "Läser in…",
-  "pursuitResults.done": "Resultat i filen: {{results}}. Matchade löpare: {{matched}}.",
+  "pursuitResults.done": "Inläst från {{file}}. Resultat i filen: {{results}}. Matchade löpare: {{matched}}.",
   "pursuitResults.unmatched": "Löpare i tävlingen som inte finns i filen: {{count}}. De startar i omstarten:",
   "pursuitResults.allMatched": "Alla löpare i filens klasser hittades.",
   "pursuitResults.err.xsdInvalid": "Filen är inte en giltig IOF XML 3.0-resultatlista. Exportera resultatlistan som IOF XML 3.0 och försök igen.",

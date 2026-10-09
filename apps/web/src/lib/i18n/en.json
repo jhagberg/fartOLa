@@ -542,7 +542,7 @@
   "pursuitResults.hint": "From MeOS, OLA or Eventor. A new file replaces earlier results for the classes in the file.",
   "pursuitResults.upload": "Read result list",
   "pursuitResults.uploading": "Reading…",
-  "pursuitResults.done": "Results in the file: {{results}}. Runners matched: {{matched}}.",
+  "pursuitResults.done": "Read from {{file}}. Results in the file: {{results}}. Runners matched: {{matched}}.",
   "pursuitResults.unmatched": "Runners in the competition not in the file: {{count}}. They start in the restart block:",
   "pursuitResults.allMatched": "Every runner in the file's classes was found.",
   "pursuitResults.err.xsdInvalid": "The file is not a valid IOF XML 3.0 result list. Export the result list as IOF XML 3.0 and try again.",
