@@ -98,7 +98,7 @@
     background: var(--bg-sunken);
   }
   .hist-row.active {
-    background: var(--accent-soft);
+    background: var(--bg-sunken);
   }
   .hist-row.active::before {
     content: '';
@@ -107,7 +107,7 @@
     top: 6px;
     bottom: 6px;
     width: 3px;
-    background: var(--accent);
+    background: var(--fg);
     border-radius: 2px;
   }
   .hist-row.flash {

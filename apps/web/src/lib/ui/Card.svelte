@@ -38,7 +38,6 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
   }
   .card-head {
     padding: 14px 18px;
