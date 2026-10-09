@@ -165,6 +165,10 @@ describe('LottningView (mounted)', () => {
   let holdClock: Promise<void> | null;
   /** The previous-results upload waits for it. */
   let holdUpload: Promise<void>;
+  /** When set, GET lottning for H12 / D10 waits for it (the answer is the
+   * state at request time, as a slow server would send it). */
+  let holdH12: Promise<void> | null;
+  let holdD10: Promise<void> | null;
   let classKindSource: string;
 
   const settle = async (): Promise<void> => {
@@ -183,6 +187,8 @@ describe('LottningView (mounted)', () => {
     previousResults = { results: 0, ok: 0 };
     holdClock = null;
     holdUpload = Promise.resolve();
+    holdH12 = null;
+    holdD10 = null;
     classKindSource = 'name';
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -233,15 +239,36 @@ describe('LottningView (mounted)', () => {
               age_class: 12,
               class_kind_source: classKindSource,
             },
+            {
+              id: 'd10',
+              competition_id: 'c1',
+              name: 'D10',
+              short_name: null,
+              class_kind: 'ungdom',
+              age_class: 10,
+              class_kind_source: 'operator',
+            },
           ],
         });
-      if (url.includes('/lottning/'))
+      if (url.includes('/lottning/d10')) {
+        if (holdD10 !== null) await holdD10;
         return json({
+          class: { id: 'd10', name: 'D10' },
+          start_list: [],
+          seeding: [],
+          previous_results: { results: 0, ok: 0 },
+        });
+      }
+      if (url.includes('/lottning/')) {
+        const answer = {
           class: { id: 'h12', name: 'H12' },
           start_list: startList,
           seeding,
           previous_results: previousResults,
-        });
+        };
+        if (holdH12 !== null) await holdH12;
+        return json(answer);
+      }
       if (url.endsWith('/competitors'))
         return json({
           competitors: [
@@ -385,6 +412,53 @@ describe('LottningView (mounted)', () => {
     ($('pursuit-results-upload') as HTMLButtonElement).click();
     await settle();
     expect($('pursuit-results-status')!.textContent).toContain('varav 2 godkända');
+  });
+
+  it('SOFT TR 7.4.1: the draw stays locked until the refresh after an upload is in', async () => {
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await choose('lottning-mode-select', 'Pursuit');
+    let release!: () => void;
+    holdH12 = new Promise((r) => (release = r));
+    const input = $('pursuit-results-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File(['<ResultList/>'], 'dag1.xml', { type: 'application/xml' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    ($('pursuit-results-upload') as HTMLButtonElement).click();
+    await settle();
+    // The upload is in, its refresh is not: still locked.
+    expect($('pursuit-results-done')).not.toBeNull();
+    expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await settle();
+    expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('an older start-list answer that arrives last does not replace the newer one', async () => {
+    startList = [
+      {
+        id: 'r1',
+        name: 'Anna',
+        club: 'OK A',
+        card_number: null,
+        start_time_ms: 1,
+        seed_group: null,
+      },
+    ];
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    let release!: () => void;
+    holdD10 = new Promise((r) => (release = r));
+    await choose('lottning-class-select', 'd10');
+    await choose('lottning-class-select', 'h12');
+    expect(document.querySelectorAll('[data-testid="lottning-row"]')).toHaveLength(1);
+    release();
+    await settle();
+    expect(document.querySelectorAll('[data-testid="lottning-row"]')).toHaveLength(1);
   });
 
   it('SOFT TR 7.4.1: a pursuit cannot be drawn while the previous stage is being read in', async () => {

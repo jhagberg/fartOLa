@@ -150,8 +150,13 @@
     }
   }
 
+  /** Loads overlap (an upload refresh, a class switch, a draw); only the
+   * latest may set the list, so an older answer never replaces newer state. */
+  let loadGeneration = 0;
+
   async function loadStartList(): Promise<void> {
     if (!selectedClassId) return;
+    const mine = ++loadGeneration;
     try {
       // The clock with the list it formats: both reflect the server now.
       const classId = selectedClassId;
@@ -160,6 +165,7 @@
         getCompetition(competitionId),
         listCompetitors(competitionId),
       ]);
+      if (mine !== loadGeneration) return;
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       startList = res.start_list;
@@ -177,6 +183,7 @@
       startListLoaded = true;
       historyKey++;
     } catch {
+      if (mine !== loadGeneration) return;
       startList = [];
       classRunners = [];
       previousResults = null;
@@ -630,7 +637,7 @@
           className={selectedClassName}
           loaded={previousResults}
           onbusy={(b) => (resultsBusy = b)}
-          onuploaded={() => void loadStartList()}
+          onuploaded={() => loadStartList()}
         />
           <Field label={t('lottning.restart')} htmlFor="lottning-restart">
             <Input
