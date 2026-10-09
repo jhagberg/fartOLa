@@ -214,14 +214,14 @@
   }
   .start-btn {
     width: 100%;
-    min-height: 40px;
+    min-height: var(--hit);
     padding: 0 var(--space-md);
     border: 1px solid var(--accent);
     border-radius: var(--radius);
     background: var(--accent);
     color: var(--accent-fg);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-label);
     font-weight: 600;
     cursor: pointer;
   }
