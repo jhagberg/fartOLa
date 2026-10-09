@@ -22,7 +22,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       `/competition/${id}/readout`,
       (p) => p.getByTestId('latest-read').filter({ hasText: '7501853' }),
     ],
-    [`/competition/${id}/readout?walkup=7500123`, (p) => p.getByRole('dialog')],
+    [`/competition/${id}/readout?walkup=7500123`, (p) => p.getByTestId('walkup-modal')],
     [`/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
     [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],

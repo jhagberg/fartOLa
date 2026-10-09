@@ -1,4 +1,3 @@
-// apps/web/src/lib/layout/StatusLabel.test.ts
 // Authored for fartola. Not ported from upstream.
 //
 // The "searching for reader" label is text on a light surface, so it must

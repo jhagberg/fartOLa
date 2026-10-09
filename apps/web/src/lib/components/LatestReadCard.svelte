@@ -658,7 +658,7 @@
     padding: 8px 12px;
     border: 1px solid var(--mp);
     border-radius: var(--radius);
-    color: var(--mp);
+    color: var(--mp-fg);
     font-size: 14px;
     font-weight: 600;
   }
