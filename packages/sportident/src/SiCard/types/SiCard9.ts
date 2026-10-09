@@ -9,16 +9,15 @@
 //   - Test-only `_decodeFromStorage(bytes)` helper that splices a multi-page
 //     storage blob (pages 0+1 expected for SI9 since max 50 punches in 2 pages).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN plus PTD bit 6; touch-free start/finish records read it from block 1) read into startCode/finishCode/checkCode.
+//   - Start/finish/check station codes (CN plus PTD bit 6; lost on a start/finish record with PTD bit 7) read into startCode/finishCode/checkCode.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import {
   SiTime,
   arr2cardNumber,
   siPunchCode,
-  siStationCode,
+  siRecordCode,
   siSubsec256,
-  siTouchFree,
 } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
@@ -82,17 +81,14 @@ export const siCard9StorageLocations: SiStorageLocations<ISiCard9StorageFields> 
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
-  // Station codes; a touch-free (PTD bit 7) start/finish record keeps its code
-  // in block 1 (0xa5 / 0xa9), see siStationCode. The check record's code is
-  // always its own CN + PTD bit 6, bit 7 or not (SPORTident.Communication 2.59.0, simulated readout of memory images (check PTD 0x81/0xC1, CN 77, 0xA1 = 99) on SI8, SI9, SI10 and SIAC, 2026-10-08).
-  startCode: siStationCode(0x0c, 0xa5),
-  finishCode: siStationCode(0x10, 0xa9),
+  // Station codes, see siRecordCode. Block 1 holds punches on SI8/SI9, so a
+  // start/finish code lost to PTD bit 7 is not kept anywhere. The check
+  // record's code is its own CN + PTD bit 6.
+  startCode: siRecordCode(0x0c),
+  finishCode: siRecordCode(0x10),
   checkCode: siPunchCode(0x08),
   startSubsec256: siSubsec256(0x0c),
   finishSubsec256: siSubsec256(0x10),
-  startTouchFree: siTouchFree(0x0c),
-  finishTouchFree: siTouchFree(0x10),
-  checkTouchFree: siTouchFree(0x08),
   punchCount: new SiInt([[0x16]]),
   punches: new SiModified(
     new SiArray(
@@ -164,8 +160,6 @@ export class SiCard9 extends ModernSiCard {
     if (startTime !== undefined) this.raceResult.startTime = startTime;
     const startCode = this.storage.get('startCode')?.value;
     if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
-    if (this.storage.get('startTouchFree')?.value === true && startTime != null)
-      this.raceResult.startTouchFree = true;
     const startSubsec = this.storage.get('startSubsec256')?.value;
     if (startTime != null && startSubsec !== undefined)
       this.raceResult.startSubsec256 = startSubsec;
@@ -173,8 +167,6 @@ export class SiCard9 extends ModernSiCard {
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
     const finishCode = this.storage.get('finishCode')?.value;
     if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
-    if (this.storage.get('finishTouchFree')?.value === true && finishTime != null)
-      this.raceResult.finishTouchFree = true;
     const finishSubsec = this.storage.get('finishSubsec256')?.value;
     if (finishTime != null && finishSubsec !== undefined)
       this.raceResult.finishSubsec256 = finishSubsec;
@@ -182,8 +174,6 @@ export class SiCard9 extends ModernSiCard {
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
     if (checkTime != null && checkCode !== undefined) this.raceResult.checkCode = checkCode;
-    if (this.storage.get('checkTouchFree')?.value === true && checkTime != null)
-      this.raceResult.checkTouchFree = true;
     const punches = this.storage.get('punches')?.value;
     if (punches !== undefined) this.raceResult.punches = punches as IPunch[];
     const cardHolder = this.storage.get('cardHolder')?.value;

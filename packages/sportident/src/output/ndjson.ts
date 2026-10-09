@@ -67,11 +67,6 @@ export interface HalfDayClock {
   /** Station code (CN) of the unit that stamped this time. Start, finish and
    * check on SI6 and newer only; absent otherwise. */
   code?: number;
-  /** PTD bit 7 of the record. SPORTident documents it as the subsecond marker
-   * of start/finish (see subsec_256); in practice it is set for AIR+ timing-mode
-   * punches, hence the name. Start, finish and check on SI8 and newer; absent
-   * when not set. */
-  touch_free?: true;
   /** Subsecond of a start/finish time in 1/256 s (0-255): the record's PTD bit 7
    * was set, so its CN byte is TSS (SPORTident card data structure doc, provided
    * on request). Absent: no fraction (also always absent on check/clear/punches). */
@@ -185,7 +180,6 @@ const snakeCaseKeys = (obj: Record<string, unknown>): Record<string, unknown> =>
 export const toHalfDayClock = (
   raw: number | null | undefined,
   code?: number | null,
-  touchFree?: boolean,
   subsec256?: number
 ): HalfDayClock | null => {
   if (raw === null || raw === undefined) return null;
@@ -194,7 +188,6 @@ export const toHalfDayClock = (
   const clock: HalfDayClock = { seconds_in_half_day, half_day, weekday: null };
   // Only start/finish/check from SI6 and newer carry a station code.
   if (typeof code === 'number') clock.code = code;
-  if (touchFree === true) clock.touch_free = true;
   if (typeof subsec256 === 'number') clock.subsec_256 = subsec256;
   return clock;
 };
@@ -286,19 +279,13 @@ export class NdjsonEmitter {
       ...this._base('card_read'),
       card_type,
       card_number: raceResult.cardNumber ?? card.cardNumber,
-      start: toHalfDayClock(
-        raceResult.startTime,
-        raceResult.startCode,
-        raceResult.startTouchFree,
-        raceResult.startSubsec256
-      ),
+      start: toHalfDayClock(raceResult.startTime, raceResult.startCode, raceResult.startSubsec256),
       finish: toHalfDayClock(
         raceResult.finishTime,
         raceResult.finishCode,
-        raceResult.finishTouchFree,
         raceResult.finishSubsec256
       ),
-      check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode, raceResult.checkTouchFree),
+      check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode),
       clear: toHalfDayClock(raceResult.clearTime),
       punch_count: c.punchCount ?? punches.length,
       punches,

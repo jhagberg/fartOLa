@@ -94,19 +94,13 @@ export function buildCardReadPayload(card: BaseSiCard): CardReadPayload {
     event_type: 'card_read',
     card_type: cardTypeFromNumber(cardNumber),
     card_number: cardNumber,
-    start: toHalfDayClock(
-      raceResult.startTime,
-      raceResult.startCode,
-      raceResult.startTouchFree,
-      raceResult.startSubsec256
-    ),
+    start: toHalfDayClock(raceResult.startTime, raceResult.startCode, raceResult.startSubsec256),
     finish: toHalfDayClock(
       raceResult.finishTime,
       raceResult.finishCode,
-      raceResult.finishTouchFree,
       raceResult.finishSubsec256
     ),
-    check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode, raceResult.checkTouchFree),
+    check: toHalfDayClock(raceResult.checkTime, raceResult.checkCode),
     clear: toHalfDayClock(raceResult.clearTime),
     punch_count: c.punchCount ?? punches.length,
     punches,

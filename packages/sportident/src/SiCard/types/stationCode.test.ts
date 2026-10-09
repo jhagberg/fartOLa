@@ -27,9 +27,6 @@ interface Decodable {
     startCode?: number;
     finishCode?: number;
     checkCode?: number;
-    startTouchFree?: boolean;
-    finishTouchFree?: boolean;
-    checkTouchFree?: boolean;
   };
 }
 
@@ -86,48 +83,20 @@ describe('station codes of start, finish and check', () => {
     assert.equal(card6.raceResult.startCode, 259);
   });
 
-  test('PTD bit 7 is not a code bit: 0xC1 with CN 3 and no block 1 has no code, only touch_free', () => {
+  test('PTD bit 7 is not a code bit: a bit-7 SI10 finish has no code, whatever 0xa9 holds', () => {
+    // Bit 7 marks a subsecond (CN = TSS): documented (SPORTident doc). SI10/SI11
+    // do not use 0xa5 / 0xa9 (SPORTident (Thomas, 2026-10-09)); SIAC: block1Codes.test.ts.
     const bytes: (number | undefined)[] = si10.storageData.map((b) => b ?? 0xee);
     bytes.splice(0x10, 4, 0xc1, 3, 0x0e, 0x10);
-    // Bit 7 not a code bit: documented (it is the subsecond marker); that a bit-7 record's
-    // code lives in block 1: MeOS behaviour, not in the SPORTident doc.
-    bytes[0xa9] = undefined; // block 1 not read
+    bytes[0xa9] = 20;
     const card: Decodable = new SiCard10(0);
     card._decodeFromStorage(bytes);
-    assert.equal(card.raceResult.finishTouchFree, true);
-    // Block 1 (0xa9) unread: the code is unknown rather than a wrong 3 or 771.
     assert.equal(card.raceResult.finishCode, undefined);
   });
 
-  test('a touch-free start/finish takes its code from block 1 (0xa5 / 0xa9)', () => {
-    const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
-    // Offsets 0xa5 / 0xa9 and "bit 7 -> code from block 1": MeOS behaviour (SportIdent.cpp:1929);
-    // not in the SPORTident card doc. The check record never uses 0xa1 (next test).
-    bytes.splice(0x0c, 4, 0x81, 3, 0x0e, 0x10); // start: touch-free, CN ignored
-    bytes.splice(0x10, 4, 0x81, 10, 0x0e, 0x10); // finish
-    bytes.splice(0x08, 4, 0x01, 2, 0x0e, 0x10); // check: contact, own CN
-    bytes[0xa5] = 13;
-    bytes[0xa9] = 20;
-    bytes[0xa1] = 99; // ignored: check is not touch-free
-    const card: Decodable = new SiCard10(0);
-    card._decodeFromStorage(bytes);
-    assert.deepEqual(
-      [card.raceResult.startCode, card.raceResult.finishCode, card.raceResult.checkCode],
-      [13, 20, 2]
-    );
-    assert.deepEqual(
-      [
-        card.raceResult.startTouchFree,
-        card.raceResult.finishTouchFree,
-        card.raceResult.checkTouchFree,
-      ],
-      [true, true, undefined]
-    );
-  });
-
   test('a bit-7 check record keeps its own code: CN + 256 × bit 6, not 0xa1', () => {
-    // MeOS reads 0xa1 for a bit-7 check; SPORTident's library takes CN on SI8, SI9, SI10
-    // and SIAC (SPORTident.Communication 2.59.0, simulated readout of memory images, 2026-10-08).
+    // MeOS reads 0xa1 for a bit-7 check; SPORTident takes CN (SPORTident (Thomas,
+    // 2026-10-09); SPORTident.Communication 2.59.0 on card images, 2026-10-08).
     for (const [ptd, code] of [
       [0x81, 77],
       [0xc1, 333],
@@ -138,28 +107,7 @@ describe('station codes of start, finish and check', () => {
       const card: Decodable = new SiCard10(0);
       card._decodeFromStorage(bytes);
       assert.equal(card.raceResult.checkCode, code);
-      assert.equal(card.raceResult.checkTouchFree, true);
     }
-  });
-
-  test('PTD bit 6 adds 256 to a touch-free code too: 0xC1 + block 1 = 10 gives 266, 0x81 gives 10', () => {
-    // Bit 6 added after choosing the byte: MeOS behaviour (SportIdent.cpp:1932). Whether a station
-    // stores bit 6 for a block-1 code is assumption, unverified (the doc says start/finish codes < 256).
-    const bytes = new Array<number>(0x100).fill(0xee).map((_, i) => si10.storageData[i] ?? 0xee);
-    bytes.splice(0x10, 4, 0xc1, 3, 0x0e, 0x10);
-    bytes[0xa9] = 10;
-    const card: Decodable = new SiCard10(0);
-    card._decodeFromStorage(bytes);
-    assert.equal(card.raceResult.finishCode, 266);
-    bytes.splice(0x10, 4, 0x81, 3, 0x0e, 0x10);
-    const card2: Decodable = new SiCard10(0);
-    card2._decodeFromStorage(bytes);
-    assert.equal(card2.raceResult.finishCode, 10);
-  });
-
-  test('toHalfDayClock carries touch_free only when true', () => {
-    assert.equal(toHalfDayClock(100, 20, true)?.touch_free, true);
-    assert.equal('touch_free' in (toHalfDayClock(100, 20, false) ?? {}), false);
   });
 
   test('a missing time carries no code', () => {

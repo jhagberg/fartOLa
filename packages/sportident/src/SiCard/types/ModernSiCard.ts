@@ -18,10 +18,11 @@
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
 //   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
-//   - Start/finish/check station codes (CN plus PTD bit 6; touch-free start/finish records read it from block 1) read into startCode/finishCode/checkCode.
-//   - Block 1 (page 1) is also fetched when a start/finish record is touch-free
-//     (PTD bit 7) and the card holder step did not read it; MeOS SportIdent.cpp:1366
-//     reads it for every SI10/SI11/SIAC card.
+//   - Start/finish/check station codes (CN plus PTD bit 6) read into startCode/finishCode/checkCode;
+//     a start/finish record with PTD bit 7 has lost its code, except on SIAC
+//     firmware 4.0+, which keeps it in block 1 (0xa5 / 0xa9).
+//   - Block 1 (page 1) is also fetched on SIAC firmware 4.0+ when a start/finish
+//     record has PTD bit 7 and the card holder step did not read it.
 //   - Block 3 (page 3) is read on SIAC (static readsBlock3) for battery voltage and
 //     hardware/software version.
 // See packages/sportident/NOTICE.md for cumulative attribution.
@@ -31,9 +32,9 @@ import {
   SiTime,
   arr2cardNumber,
   siPunchCode,
-  siStationCode,
+  siRecordCode,
   siSubsec256,
-  siTouchFree,
+  siacBlock1Code,
 } from '../../siProtocol.ts';
 import { type SiStorage, type SiStorageLocations, defineStorage } from '../../storage/SiStorage.ts';
 import { SiArray } from '../../storage/SiArray.ts';
@@ -127,6 +128,8 @@ export interface IModernSiCardStorageFields extends IBaseSiCardStorageFields {
   batteryMillivolts?: number;
   hardwareVersion?: string;
   softwareVersion?: string;
+  startCodeBlock1?: number;
+  finishCodeBlock1?: number;
 }
 
 /** "major.minor" from two block-3 bytes; undefined while erased (0xEE). */
@@ -151,17 +154,16 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   startTime: new SiTime([[0x0f], [0x0e]], 0x0c),
   finishTime: new SiTime([[0x13], [0x12]], 0x10),
   checkTime: new SiTime([[0x0b], [0x0a]], 0x08),
-  // Station codes; a touch-free (PTD bit 7) start/finish record keeps its code
-  // in block 1 (0xa5 / 0xa9), see siStationCode. The check record's code is
-  // always its own CN + PTD bit 6, bit 7 or not (SPORTident.Communication 2.59.0, simulated readout of memory images (check PTD 0x81/0xC1, CN 77, 0xA1 = 99) on SI8, SI9, SI10 and SIAC, 2026-10-08).
-  startCode: siStationCode(0x0c, 0xa5),
-  finishCode: siStationCode(0x10, 0xa9),
+  // Station codes, see siRecordCode / siacBlock1Code. The check record's code
+  // is always its own CN + PTD bit 6, bit 7 or not (SPORTident (Thomas,
+  // 2026-10-09); SPORTident.Communication 2.59.0 on card images, 2026-10-08).
+  startCode: siRecordCode(0x0c),
+  finishCode: siRecordCode(0x10),
   checkCode: siPunchCode(0x08),
+  startCodeBlock1: siacBlock1Code(0xa5),
+  finishCodeBlock1: siacBlock1Code(0xa9),
   startSubsec256: siSubsec256(0x0c),
   finishSubsec256: siSubsec256(0x10),
-  startTouchFree: siTouchFree(0x0c),
-  finishTouchFree: siTouchFree(0x10),
-  checkTouchFree: siTouchFree(0x08),
   punchCount: new SiInt([[0x16]]),
   punches: new SiModified(
     new SiArray(
@@ -237,7 +239,7 @@ export class ModernSiCard extends BaseSiCard {
     return this.typeSpecificReadBasic()
       .then(() => this.typeSpecificReadBlock3())
       .then(() => this.typeSpecificReadCardHolder())
-      .then(() => this.typeSpecificReadTouchFreeBlock())
+      .then(() => this.typeSpecificReadCodeBlock())
       .then(() => this.typeSpecificReadPunches())
       .then(() => this.populateRaceResult());
   }
@@ -270,20 +272,28 @@ export class ModernSiCard extends BaseSiCard {
     });
   }
 
-  /** True when a start or finish record in page 0 is touch-free (PTD bit 7)
-   * and block 1, which holds its station code, has not been read. A check
-   * record never needs it (its code is CN). An erased record (0xEE) has bit 7
-   * set too, hence the time check. */
+  /** SIAC with firmware 4.0 or later keeps start/finish codes in block 1
+   * (0xa5 / 0xa9); other cards and older firmware never do (SPORTident
+   * (Thomas, 2026-10-09)). Needs block 3 (software version) read first. */
+  protected keepsBlock1Codes(): boolean {
+    if (!(this.constructor as typeof ModernSiCard).readsBlock3) return false;
+    const major = Number(this.storage.get('softwareVersion')?.value?.split('.')[0]);
+    return Number.isInteger(major) && major >= 4;
+  }
+
+  /** True when a start or finish record in page 0 has PTD bit 7 (its CN is a
+   * subsecond), the card keeps such codes in block 1, and block 1 has not been
+   * read. An erased record (0xEE) has bit 7 set too, hence the time check. */
   protected needsBlock1(): boolean {
-    if (this.block1Read) return false;
+    if (this.block1Read || !this.keepsBlock1Codes()) return false;
     return (['start', 'finish'] as const).some(
       (name) =>
-        this.storage.get(`${name}TouchFree`)?.value === true &&
+        this.storage.get(`${name}Subsec256`)?.value !== undefined &&
         this.storage.get(`${name}Time`)?.value != null
     );
   }
 
-  typeSpecificReadTouchFreeBlock(): Promise<void> {
+  typeSpecificReadCodeBlock(): Promise<void> {
     if (!this.needsBlock1()) return Promise.resolve();
     return this.readBlock1();
   }
@@ -339,6 +349,14 @@ export class ModernSiCard extends BaseSiCard {
     this.populateRaceResult();
   }
 
+  /** Start/finish code: the record's own (CN + bit 6) unless PTD bit 7 is
+   * set; then block 1 on SIAC firmware 4.0+, otherwise lost. */
+  private recordCode(name: 'start' | 'finish'): number | undefined {
+    const own = this.storage.get(`${name}Code`)?.value;
+    if (own !== undefined || !this.keepsBlock1Codes()) return own;
+    return this.storage.get(`${name}CodeBlock1`)?.value;
+  }
+
   protected populateRaceResult(): void {
     const cn = this.storage.get('cardNumber')?.value;
     if (cn !== undefined) {
@@ -346,19 +364,15 @@ export class ModernSiCard extends BaseSiCard {
     }
     const startTime = this.storage.get('startTime')?.value;
     if (startTime !== undefined) this.raceResult.startTime = startTime;
-    const startCode = this.storage.get('startCode')?.value;
+    const startCode = this.recordCode('start');
     if (startTime != null && startCode !== undefined) this.raceResult.startCode = startCode;
-    if (this.storage.get('startTouchFree')?.value === true && startTime != null)
-      this.raceResult.startTouchFree = true;
     const startSubsec = this.storage.get('startSubsec256')?.value;
     if (startTime != null && startSubsec !== undefined)
       this.raceResult.startSubsec256 = startSubsec;
     const finishTime = this.storage.get('finishTime')?.value;
     if (finishTime !== undefined) this.raceResult.finishTime = finishTime;
-    const finishCode = this.storage.get('finishCode')?.value;
+    const finishCode = this.recordCode('finish');
     if (finishTime != null && finishCode !== undefined) this.raceResult.finishCode = finishCode;
-    if (this.storage.get('finishTouchFree')?.value === true && finishTime != null)
-      this.raceResult.finishTouchFree = true;
     const finishSubsec = this.storage.get('finishSubsec256')?.value;
     if (finishTime != null && finishSubsec !== undefined)
       this.raceResult.finishSubsec256 = finishSubsec;
@@ -366,8 +380,6 @@ export class ModernSiCard extends BaseSiCard {
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
     if (checkTime != null && checkCode !== undefined) this.raceResult.checkCode = checkCode;
-    if (this.storage.get('checkTouchFree')?.value === true && checkTime != null)
-      this.raceResult.checkTouchFree = true;
     const punches = this.storage.get('punches')?.value;
     if (punches !== undefined) this.raceResult.punches = punches as IPunch[];
     const cardHolder = this.storage.get('cardHolder')?.value;

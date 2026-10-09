@@ -73,7 +73,6 @@ for (const [name, Card, l] of CARDS) {
 
     test('check record with bit 7: CN is no fraction [documented (SPORTident doc)]', () => {
       const r = decode(Card, image(l.size, [[l.check, 0x81, 77]]));
-      assert.equal(r.checkTouchFree, name === 'SI6' ? undefined : true);
       assert.ok(!('checkSubsec256' in r));
       assert.equal(r.startSubsec256, undefined);
       assert.equal(r.finishSubsec256, undefined);
