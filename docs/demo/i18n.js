@@ -106,7 +106,7 @@ window.STRINGS = {
     'res.starters': 'startande',
     'res.finished': 'i mål',
 
-    'walk.title': 'Walk-up registrering',
+    'walk.title': 'Direktanmälan',
     'walk.desc': 'Okänd bricka avläst. Registrera deltagaren och fortsätt.',
     'walk.name': 'Namn',
     'walk.name.ph': 'För- och efternamn',
@@ -284,7 +284,7 @@ window.STRINGS = {
     'res.starters': 'starters',
     'res.finished': 'finished',
 
-    'walk.title': 'Walk-up registration',
+    'walk.title': 'Entry on the day',
     'walk.desc': 'Unknown card read. Register the competitor and continue.',
     'walk.name': 'Name',
     'walk.name.ph': 'First and last name',

@@ -90,7 +90,7 @@ function ReadoutPrint({ read, tpl }) {
   );
 }
 
-/* ---------- Walk-up modal page ---------- */
+/* ---------- Direktanmälan modal page ---------- */
 function WalkupPrint() {
   return (
     <div className="print-content readout-print" style={{position: 'relative', background: 'rgba(20,20,30,0.18)'}}>
@@ -168,7 +168,7 @@ function PrintApp() {
       <PrintPage label={`07 · Avläsning · ${lead.name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={lead} tpl="kids" /></PrintPage>
       <PrintPage label={`08 · Avläsning · ${window.MOCK_READS[1].name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[1]} tpl="kids" /></PrintPage>
       <PrintPage label={`09 · Avläsning · ${window.MOCK_READS[3].name}`} sub="Kvitto: Barn (Skogis)"><ReadoutPrint read={window.MOCK_READS[3]} tpl="kids" /></PrintPage>
-      <PrintPage label="10 · Walk-up registrering" sub="Okänd bricka avläst"><WalkupPrint /></PrintPage>
+      <PrintPage label="10 · Direktanmälan" sub="Okänd bricka avläst"><WalkupPrint /></PrintPage>
       <PrintPage label="11 · Liveresultat" sub="H21"><ResultsPrint /></PrintPage>
     </div>
   );
