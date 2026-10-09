@@ -629,10 +629,8 @@
     color: var(--accent-fg);
   }
   .dnf-label {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
   .dnf-input {
     height: var(--hit);
