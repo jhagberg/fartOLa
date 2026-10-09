@@ -23,7 +23,8 @@
 //     payloads. WR-005 (Wave 5 review): the optional start/finish fields
 //     are the seam that lets e2e specs avoid the synthetic-DNF foot-gun.
 //   - broadcasts via WS readout:<competition_id> with seq populated.
-//   - calls printerSink.print() so the stdout sink emits one JSON line.
+//   - calls printerSink.print() so the stdout sink emits one JSON line; a
+//     sink that fails on this partial envelope does not fail the read.
 //
 // Walking-skeleton convenience: if `competition_id` is unknown the route
 // auto-seeds the competition row so the FK accepts the events insert. Plan
@@ -214,12 +215,18 @@ export default async function registerDevRoutes(app: FastifyInstance): Promise<v
     app.projectionStore.markDirty(validated.competition_id);
 
     // Walking-skeleton "thermal print" — stdout-sink writes one JSON line.
-    await app.printerSink.print({
-      template: 'classic',
-      competition_id: validated.competition_id,
-      card_number: validated.card_number,
-      data: { punches: validated.punches },
-    });
+    // Best effort: this envelope carries only the punches, which a real sink
+    // (CUPS, ESC/POS) can't render into a receipt; the read itself has landed.
+    try {
+      await app.printerSink.print({
+        template: 'classic',
+        competition_id: validated.competition_id,
+        card_number: validated.card_number,
+        data: { punches: validated.punches },
+      });
+    } catch (err) {
+      app.log.warn({ err }, 'simulate-read: dev print failed');
+    }
 
     return reply.code(201).send({ local_seq: inserted.local_seq, broadcasted: true });
   });
