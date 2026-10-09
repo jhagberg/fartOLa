@@ -827,6 +827,7 @@
   }
 </script>
 
+<div class="readout-wrap">
 <div class="readout" data-density={tweaks.density} data-testid="readout-view">
   <div class="ro-main">
     <LatestReadCard
@@ -984,8 +985,13 @@
     }}
   />
 </div>
+</div>
 
 <style>
+  .readout-wrap {
+    container: readout / inline-size;
+    height: 100%;
+  }
   .readout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 380px;
@@ -993,9 +999,17 @@
     height: 100%;
     position: relative;
   }
-  @media (max-width: 1280px) {
+  @container readout (max-width: 1280px) {
     .readout {
       grid-template-columns: minmax(0, 1fr) 340px;
+    }
+  }
+  /* History rail below the card whenever the readout column would be
+     narrower than ~600px (340 rail + 18 gap + 600). */
+  @container readout (max-width: 958px) {
+    .readout {
+      grid-template-columns: minmax(0, 1fr);
+      height: auto;
     }
   }
   .ro-main {

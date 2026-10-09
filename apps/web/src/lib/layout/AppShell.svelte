@@ -6,8 +6,8 @@
     topbar: var(--topbar-h)                       (56px topbar)
   per 01-UI-SPEC.md §"Layout shell" + sketches/app.jsx lines 100-145.
 
-  Mobile (≤720px): sidebar collapses to off-canvas drawer triggered by
-  a hamburger in TopBar. This restores Settings + TweaksPanel access on
+  Drawer mode (≤1024px, phones and tablets): sidebar collapses to an
+  off-canvas drawer triggered by a hamburger in TopBar. This restores Settings + TweaksPanel access on
   phones (without it, the entire /installningar route was unreachable +
   high-contrast bright-sun mode was a desktop-only toggle).
 
@@ -21,6 +21,7 @@
   import TopBar from './TopBar.svelte';
   import Icon from '../ui/Icon.svelte';
   import { t } from '../i18n/index.ts';
+  import { DRAWER_QUERY } from './breakpoints.ts';
 
   type WsStatus = 'open' | 'connecting' | 'closed';
   type StationStatus = 'online' | 'offline' | 'connecting';
@@ -54,6 +55,16 @@
   }: Props = $props();
 
   let drawerOpen = $state(false);
+  /** True in drawer mode; the closed drawer is then inert (no Tab stops
+   * in an off-screen sidebar, WCAG 2.4.3). */
+  let narrow = $state(false);
+  $effect(() => {
+    const mq = window.matchMedia(DRAWER_QUERY);
+    narrow = mq.matches;
+    const onChange = (e: MediaQueryListEvent) => (narrow = e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  });
   /** Element refs for focus management. When the drawer opens we move
    * focus to the close button so screen readers + keyboard users land
    * inside the drawer instead of on the hidden-behind-scrim hamburger.
@@ -95,7 +106,7 @@
 <a href="#main" class="skip-link">{t('a11y.skipToContent')}</a>
 
 <div class="app" class:drawer-open={drawerOpen}>
-  <div class="sidebar-slot">
+  <div class="sidebar-slot" inert={narrow && !drawerOpen}>
     <Sidebar
       {route}
       onNavigate={handleNavigate}
@@ -168,7 +179,8 @@
   /* Mobile drawer mode. Sidebar lifts out of the grid into a fixed off-
      canvas position so we can slide it in over the content. The TopBar
      hamburger is gated by the same breakpoint. */
-  @media (max-width: 720px) {
+  /* = DRAWER_MAX_PX in breakpoints.ts */
+  @media (max-width: 1024px) {
     .app {
       /* Single source-of-truth width — used by sidebar-slot AND
          drawer-close so they stay in sync if we ever bump the size. */

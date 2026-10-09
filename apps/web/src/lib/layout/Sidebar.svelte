@@ -179,6 +179,9 @@
     flex-direction: column;
     padding: var(--space-md) var(--space-sm);
     gap: var(--space-2xs);
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
   }
   .brand {
     padding: var(--space-xs) var(--space-sm) var(--space-lg);

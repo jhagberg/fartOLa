@@ -25,7 +25,7 @@
     wsStatus?: WsStatus;
     showWs?: boolean;
     /** Mobile drawer trigger. When provided, a hamburger renders at the
-     * left of the topbar but only at ≤720px (CSS-gated). At desktop the
+     * left of the topbar but only at ≤1024px (CSS-gated). At desktop the
      * sidebar is permanently visible, so the hamburger is hidden even if
      * onMenu is set. */
     onMenu?: () => void;
@@ -112,7 +112,8 @@
   .menu-btn:focus-visible {
     background: var(--bg-sunken);
   }
-  @media (max-width: 720px) {
+  /* = DRAWER_MAX_PX in breakpoints.ts */
+  @media (max-width: 1024px) {
     .topbar {
       padding: 0 var(--space-md);
     }
