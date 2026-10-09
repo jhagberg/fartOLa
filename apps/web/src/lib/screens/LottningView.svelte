@@ -266,14 +266,32 @@
     error = null;
     refusal = null;
     done = null;
+    // Everything the draw uses is read now, before the first await: the
+    // form is disabled while it runs, and a change made meanwhile must not
+    // reach this draw.
     const classId = selectedClassId;
     const className = selectedClassName;
+    const mode = drawMode;
+    const settings = {
+      drawType: effectiveDrawType,
+      firstStartHHMM,
+      restartHHMM,
+      intervalSec: intervalSec ?? 0,
+      vacantSlots: vacantSlots ?? 0,
+      vacantPosition,
+      bestFirst,
+      maxBehindMin: maxBehindMin ?? 0,
+      scale: scale || 1,
+    };
+    const groups =
+      mode === 'Seeded'
+        ? seedGroupsFromInput(
+            classRunners.map((r) => r.id),
+            seedTyped
+          )
+        : null;
     try {
-      if (drawMode === 'Seeded') {
-        const groups = seedGroupsFromInput(
-          classRunners.map((r) => r.id),
-          seedTyped
-        );
+      if (mode === 'Seeded') {
         if (groups === null) {
           error = t('lottning.err.seedInvalid');
           return;
@@ -283,16 +301,16 @@
       // Fetched now: the offset may have been corrected since the list loaded.
       const c = await fetchCompetitionClock(competitionId);
       const body = buildLottningBody({
-        mode: drawMode,
-        drawType: effectiveDrawType,
-        firstStartMs: hhmmToMs(firstStartHHMM, c),
-        intervalSec: intervalSec ?? 0,
-        vacantSlots: vacantSlots ?? 0,
-        vacantPosition,
-        bestFirst,
-        restartMs: hhmmToMs(restartHHMM, c),
-        maxBehindMin: maxBehindMin ?? 0,
-        scale: scale || 1,
+        mode,
+        drawType: settings.drawType,
+        firstStartMs: hhmmToMs(settings.firstStartHHMM, c),
+        intervalSec: settings.intervalSec,
+        vacantSlots: settings.vacantSlots,
+        vacantPosition: settings.vacantPosition,
+        bestFirst: settings.bestFirst,
+        restartMs: hhmmToMs(settings.restartHHMM, c),
+        maxBehindMin: settings.maxBehindMin,
+        scale: settings.scale,
       });
       const res = await postLottning(competitionId, classId, body);
       done = summaryOf(res, className);
@@ -422,209 +440,213 @@
   </header>
 
   <div class="lottning-form">
-    <!-- Class selector -->
-    <Field label={t('common.class')} htmlFor="lottning-class">
-      <Select
-        id="lottning-class"
-        bind:value={selectedClassId}
-        onchange={onClassChange}
-        data-testid="lottning-class-select"
-      >
-        {#each classes as klass (klass.id)}
-          <option value={klass.id}>{klass.name}</option>
-        {/each}
-      </Select>
-    </Field>
-
-    <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
-    {#if selectedClass !== null && selectedKindStatus !== null}
-      <div class="context">
-        <p data-testid="lottning-class-kind" data-status={selectedKindStatus}>
-          {t('classKinds.kind')}:
-          <strong
-            >{selectedClass.class_kind
-              ? t(`classKinds.kind.${selectedClass.class_kind}`)
-              : '–'}</strong
-          >
-          ({t(`classKinds.status.${selectedKindStatus}`)})
-          {#if selectedKindStatus !== 'eventor' && selectedKindStatus !== 'operator'}
-            <a href={`${infoHref}#klasser`}>{t('lottning.confirmKindLink')}</a>
-          {/if}
-        </p>
-        <p data-testid="lottning-level">
-          {t('info.level.label')}:
-          <strong>{level === null ? t('info.level.none') : t(`info.level.${level}`)}</strong>
-          <a href={infoHref}>{t('lottning.changeLevelLink')}</a>
-        </p>
-      </div>
-    {/if}
-
-    <!-- Draw mode -->
-    <Field label={t('lottning.mode')} htmlFor="lottning-mode">
-      <Select id="lottning-mode" bind:value={drawMode} data-testid="lottning-mode-select">
-        {#each DRAW_MODES as m (m)}
-          <option value={m}>{t(MODE_KEYS[m])}</option>
-        {/each}
-      </Select>
-    </Field>
-
-    <!-- Whole class or late entrants only (SOFT TR 7.5.7, 7.5.8) -->
-    {#if startList.length > 0 && lateEntrantsAllowed(drawMode)}
-      <fieldset class="radio-group" data-testid="lottning-draw-type">
-        <legend>{t('lottning.drawType')}</legend>
-        {#each DRAW_TYPES as dt (dt)}
-          <label class="radio-row">
-            <input type="radio" name="lottning-draw-type" value={dt} bind:group={drawType} />
-            <span>{t(`lottning.drawType.${dt}`)}</span>
-          </label>
-        {/each}
-      </fieldset>
-    {/if}
-
-    <!-- First start time -->
-    {#if fields.firstStart}
-      <Field
-        label={t(fields.pursuit ? 'lottning.firstStartPursuit' : 'lottning.firstStart')}
-        htmlFor="lottning-first-start"
-      >
-        <Input
-          id="lottning-first-start"
-          type="time"
-          bind:value={firstStartHHMM}
-          data-testid="lottning-first-start"
-        />
+    <!-- The draw's settings, locked while a draw runs -->
+    <fieldset class="draw-settings" disabled={submitting} data-testid="lottning-settings">
+      <!-- Class selector -->
+      <Field label={t('common.class')} htmlFor="lottning-class">
+        <Select
+          id="lottning-class"
+          bind:value={selectedClassId}
+          onchange={onClassChange}
+          data-testid="lottning-class-select"
+        >
+          {#each classes as klass (klass.id)}
+            <option value={klass.id}>{klass.name}</option>
+          {/each}
+        </Select>
       </Field>
-    {/if}
 
-    <!-- Interval (hidden for Simultaneous) -->
-    {#if fields.interval}
-      <Field
-        label={t('lottning.interval')}
-        htmlFor="lottning-interval"
-        {...!fields.firstStart
-          ? { hint: t('lottning.intervalLateHint') }
-          : fields.pursuit
-            ? { hint: t('lottning.intervalPursuitHint') }
-            : {}}
-      >
-        <Input
-          id="lottning-interval"
-          type="number"
-          min="0"
-          bind:value={intervalSec}
-          data-testid="lottning-interval"
-        />
-      </Field>
-    {/if}
+      <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
+      {#if selectedClass !== null && selectedKindStatus !== null}
+        <div class="context">
+          <p data-testid="lottning-class-kind" data-status={selectedKindStatus}>
+            {t('classKinds.kind')}:
+            <strong
+              >{selectedClass.class_kind
+                ? t(`classKinds.kind.${selectedClass.class_kind}`)
+                : '–'}</strong
+            >
+            ({t(`classKinds.status.${selectedKindStatus}`)})
+            {#if selectedKindStatus !== 'eventor' && selectedKindStatus !== 'operator'}
+              <a href={`${infoHref}#klasser`}>{t('lottning.confirmKindLink')}</a>
+            {/if}
+          </p>
+          <p data-testid="lottning-level">
+            {t('info.level.label')}:
+            <strong>{level === null ? t('info.level.none') : t(`info.level.${level}`)}</strong>
+            <a href={infoHref}>{t('lottning.changeLevelLink')}</a>
+          </p>
+        </div>
+      {/if}
 
-    <!-- Vacant slots and where they go -->
-    {#if fields.vacancies}
-      <Field label={t('lottning.vacants')} htmlFor="lottning-vacants">
-        <Input
-          id="lottning-vacants"
-          type="number"
-          min="0"
-          bind:value={vacantSlots}
-          data-testid="lottning-vacants"
-        />
+      <!-- Draw mode -->
+      <Field label={t('lottning.mode')} htmlFor="lottning-mode">
+        <Select id="lottning-mode" bind:value={drawMode} data-testid="lottning-mode-select">
+          {#each DRAW_MODES as m (m)}
+            <option value={m}>{t(MODE_KEYS[m])}</option>
+          {/each}
+        </Select>
       </Field>
-      {#if vacantSlots > 0}
-        <Field label={t('lottning.vacantPosition')} htmlFor="lottning-vacant-position">
-          <Select
-            id="lottning-vacant-position"
-            bind:value={vacantPosition}
-            data-testid="lottning-vacant-position"
-          >
-            {#each VACANT_POSITIONS as vp (vp)}
-              <option value={vp}>{t(`lottning.vacantPosition.${vp}`)}</option>
-            {/each}
-          </Select>
+
+      <!-- Whole class or late entrants only (SOFT TR 7.5.7, 7.5.8) -->
+      {#if startList.length > 0 && lateEntrantsAllowed(drawMode)}
+        <fieldset class="radio-group" data-testid="lottning-draw-type">
+          <legend>{t('lottning.drawType')}</legend>
+          {#each DRAW_TYPES as dt (dt)}
+            <label class="radio-row">
+              <input type="radio" name="lottning-draw-type" value={dt} bind:group={drawType} />
+              <span>{t(`lottning.drawType.${dt}`)}</span>
+            </label>
+          {/each}
+        </fieldset>
+      {/if}
+
+      <!-- First start time -->
+      {#if fields.firstStart}
+        <Field
+          label={t(fields.pursuit ? 'lottning.firstStartPursuit' : 'lottning.firstStart')}
+          htmlFor="lottning-first-start"
+        >
+          <Input
+            id="lottning-first-start"
+            type="time"
+            bind:value={firstStartHHMM}
+            data-testid="lottning-first-start"
+          />
         </Field>
       {/if}
-    {/if}
 
-    <!-- Seeding groups (SOFT TR 7.4.5) -->
-    {#if fields.seeding}
-      <fieldset class="group" data-testid="lottning-seeding">
-        <legend>{t('lottning.seeding')}</legend>
-        <p class="hint">{t('lottning.seedingHint')}</p>
-        <label class="check-row">
-          <input type="checkbox" bind:checked={bestFirst} data-testid="lottning-best-first" />
-          <span>{t('lottning.bestFirst')}</span>
-        </label>
-        {#if namedRunners.length === 0}
-          <p class="hint">{t('lottning.seedingEmpty')}</p>
-        {:else}
-          <table class="start-table seed-table">
-            <thead>
-              <tr>
-                <th>{t('runners.addSheet.nameLabel')}</th>
-                <th>{t('runners.addSheet.clubLabel')}</th>
-                <th>{t('lottning.seedGroup')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each namedRunners as r (r.id)}
-                <tr>
-                  <td>{r.name}</td>
-                  <td class="col-club">{r.club ?? '–'}</td>
-                  <td>
-                    <input
-                      class="seed-input"
-                      type="text"
-                      inputmode="numeric"
-                      aria-label={t('lottning.seedGroupFor', { name: r.name })}
-                      value={seedTyped[r.id] ?? ''}
-                      oninput={(e) => {
-                        seedTyped = { ...seedTyped, [r.id]: e.currentTarget.value };
-                      }}
-                      data-testid="lottning-seed-input"
-                    />
-                  </td>
-                </tr>
+      <!-- Interval (hidden for Simultaneous) -->
+      {#if fields.interval}
+        <Field
+          label={t('lottning.interval')}
+          htmlFor="lottning-interval"
+          {...!fields.firstStart
+            ? { hint: t('lottning.intervalLateHint') }
+            : fields.pursuit
+              ? { hint: t('lottning.intervalPursuitHint') }
+              : {}}
+        >
+          <Input
+            id="lottning-interval"
+            type="number"
+            min="0"
+            bind:value={intervalSec}
+            data-testid="lottning-interval"
+          />
+        </Field>
+      {/if}
+
+      <!-- Vacant slots and where they go -->
+      {#if fields.vacancies}
+        <Field label={t('lottning.vacants')} htmlFor="lottning-vacants">
+          <Input
+            id="lottning-vacants"
+            type="number"
+            min="0"
+            bind:value={vacantSlots}
+            data-testid="lottning-vacants"
+          />
+        </Field>
+        {#if vacantSlots > 0}
+          <Field label={t('lottning.vacantPosition')} htmlFor="lottning-vacant-position">
+            <Select
+              id="lottning-vacant-position"
+              bind:value={vacantPosition}
+              data-testid="lottning-vacant-position"
+            >
+              {#each VACANT_POSITIONS as vp (vp)}
+                <option value={vp}>{t(`lottning.vacantPosition.${vp}`)}</option>
               {/each}
-            </tbody>
-          </table>
+            </Select>
+          </Field>
         {/if}
-      </fieldset>
-    {/if}
+      {/if}
 
-    <!-- Pursuit and reverse pursuit (SOFT TR 7.4.1) -->
-    {#if fields.pursuit}
-      <fieldset class="group" data-testid="lottning-pursuit">
-        <legend>{t('lottning.pursuitSettings')}</legend>
-        <p class="hint">{t('lottning.pursuitHint')}</p>
-        <PreviousResultsUpload {competitionId} />
-        <Field label={t('lottning.restart')} htmlFor="lottning-restart">
-          <Input
-            id="lottning-restart"
-            type="time"
-            bind:value={restartHHMM}
-            data-testid="lottning-restart"
-          />
-        </Field>
-        <Field label={t('lottning.maxBehind')} htmlFor="lottning-max-behind">
-          <Input
-            id="lottning-max-behind"
-            type="number"
-            min="1"
-            bind:value={maxBehindMin}
-            data-testid="lottning-max-behind"
-          />
-        </Field>
-        <Field label={t('lottning.scale')} hint={t('lottning.scaleHint')} htmlFor="lottning-scale">
-          <Input
-            id="lottning-scale"
-            type="number"
-            min="0.1"
-            max="10"
-            step="0.1"
-            bind:value={scale}
-            data-testid="lottning-scale"
-          />
-        </Field>
-      </fieldset>
-    {/if}
+      <!-- Seeding groups (SOFT TR 7.4.5) -->
+      {#if fields.seeding}
+        <fieldset class="group" data-testid="lottning-seeding">
+          <legend>{t('lottning.seeding')}</legend>
+          <p class="hint">{t('lottning.seedingHint')}</p>
+          <label class="check-row">
+            <input type="checkbox" bind:checked={bestFirst} data-testid="lottning-best-first" />
+            <span>{t('lottning.bestFirst')}</span>
+          </label>
+          {#if namedRunners.length === 0}
+            <p class="hint">{t('lottning.seedingEmpty')}</p>
+          {:else}
+            <table class="start-table seed-table">
+              <thead>
+                <tr>
+                  <th>{t('runners.addSheet.nameLabel')}</th>
+                  <th>{t('runners.addSheet.clubLabel')}</th>
+                  <th>{t('lottning.seedGroup')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each namedRunners as r (r.id)}
+                  <tr>
+                    <td>{r.name}</td>
+                    <td class="col-club">{r.club ?? '–'}</td>
+                    <td>
+                      <input
+                        class="seed-input"
+                        type="text"
+                        inputmode="numeric"
+                        aria-label={t('lottning.seedGroupFor', { name: r.name })}
+                        value={seedTyped[r.id] ?? ''}
+                        oninput={(e) => {
+                          seedTyped = { ...seedTyped, [r.id]: e.currentTarget.value };
+                        }}
+                        data-testid="lottning-seed-input"
+                      />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </fieldset>
+      {/if}
+
+      <!-- Pursuit and reverse pursuit (SOFT TR 7.4.1) -->
+      {#if fields.pursuit}
+        <fieldset class="group" data-testid="lottning-pursuit">
+          <legend>{t('lottning.pursuitSettings')}</legend>
+          <p class="hint">{t('lottning.pursuitHint')}</p>
+          <PreviousResultsUpload {competitionId} />
+          <Field label={t('lottning.restart')} htmlFor="lottning-restart">
+            <Input
+              id="lottning-restart"
+              type="time"
+              bind:value={restartHHMM}
+              data-testid="lottning-restart"
+            />
+          </Field>
+          <Field label={t('lottning.maxBehind')} htmlFor="lottning-max-behind">
+            <Input
+              id="lottning-max-behind"
+              type="number"
+              min="1"
+              bind:value={maxBehindMin}
+              data-testid="lottning-max-behind"
+            />
+          </Field>
+          <Field label={t('lottning.scale')} hint={t('lottning.scaleHint')} htmlFor="lottning-scale">
+            <Input
+              id="lottning-scale"
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              bind:value={scale}
+              data-testid="lottning-scale"
+            />
+          </Field>
+        </fieldset>
+      {/if}
+
+    </fieldset>
 
     <!-- Max time -->
     <Field
@@ -851,6 +873,15 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+  }
+  .draw-settings {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
   }
   .context {
     display: grid;
