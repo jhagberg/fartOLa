@@ -319,7 +319,9 @@
         </div>
       {/if}
 
-      {@render controls?.()}
+      <div class="punch-scroll" data-testid="punch-scroll">
+        {@render controls?.()}
+      </div>
     </div>
 
     <div class="foot">
@@ -452,6 +454,19 @@
        the page may scroll a little. 120px floor for 200 % zoom. */
     max-height: max(120px, calc(100dvh - 240px));
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Only the punches scroll, so number, name and status stay in view. It
+     takes what the runner row leaves; below 120px (200 % zoom) the whole
+     body scrolls instead. */
+  .punch-scroll {
+    flex: 1 1 auto;
+    min-height: 120px;
+    overflow-y: auto;
+    /* scrollHeight is rounded; without this the last row can stay clipped
+       by a fraction of a pixel when scrolled to the end. */
+    padding-bottom: 2px;
   }
   .ro-empty {
     display: grid;

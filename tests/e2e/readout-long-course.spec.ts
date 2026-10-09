@@ -103,14 +103,17 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openLongRead(page, request);
 
-    const body = page.locator('[data-testid="latest-read"] .body');
-    expect(await body.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+    // Only the punch area scrolls; the runner's identity stays put.
+    const punches = page.getByTestId('punch-scroll');
+    expect(await punches.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
     await expect(page.getByTestId('print-btn')).toBeInViewport({ ratio: 1 });
 
-    await body.evaluate((e) => (e.scrollTop = e.scrollHeight));
+    await punches.evaluate((e) => (e.scrollTop = e.scrollHeight));
     const last = page.locator('[data-testid="punch-grid"] .punch').last();
     await expect(last).toBeInViewport({ ratio: 1 });
     await expect(page.getByTestId('print-btn')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('card-number')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('runner-name')).toBeInViewport({ ratio: 1 });
     expect(await pageScroll(page)).toBe(0);
 
     await page.getByTestId('manual-dnf-btn').click();
