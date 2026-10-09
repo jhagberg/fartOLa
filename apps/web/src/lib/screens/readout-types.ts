@@ -378,7 +378,7 @@ export function classBehind(
  * history row + competition meta. */
 /** The label a published surface (results screen, receipts) shows for a
  * status: SOFT's names, TA till TR 7.8.2 / TR 4.21.3. The operator's own
- * views keep the detailed status.* labels (Felstämpling, Bröt …). */
+ * views keep the detailed status.* labels (Felstämplad, Utgått …). */
 export function softStatusLabel(key: SoftStatus): string {
   return t(`soft.status.${key}`);
 }

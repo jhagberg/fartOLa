@@ -61,7 +61,7 @@
 </script>
 
 <span class={klass} title={tipText || undefined} aria-describedby={describedBy}>
-  {label ?? status}
+  {label ?? t(`status.${status}`)}
 </span>
 {#if tooltip && tipText}
   <span class="sr-only" id={describedBy}>{tipText}</span>
@@ -74,10 +74,9 @@
     gap: 6px;
     padding: 4px 10px;
     border-radius: 999px;
-    font-size: var(--fs-caption);
+    font-size: var(--fs-label);
     font-weight: 600;
-    font-family: var(--font-mono);
-    letter-spacing: 0.02em;
+    font-family: var(--font-ui);
   }
   .status::before {
     content: '';
@@ -92,7 +91,7 @@
   }
   .status.mp {
     background: var(--mp-soft);
-    color: oklch(0.45 0.12 70);
+    color: var(--mp-fg);
   }
   .status.dnf {
     background: var(--dnf-soft);
@@ -123,7 +122,6 @@
   }
   .status.small {
     padding: 2px 8px;
-    font-size: 11px;
   }
   .sr-only {
     position: absolute;

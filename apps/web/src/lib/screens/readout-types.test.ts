@@ -63,7 +63,7 @@ describe('toReceiptRead — class without timing', () => {
 });
 
 // The results screen and the receipts are published: they use SOFT's names,
-// the operator's own views keep Felstämpling, Bröt … (status.*).
+// the operator's own views keep Felstämplad, Utgått … (status.*).
 describe('SOFT status names on published surfaces', () => {
   it('SOFT TA till TR 7.8.2: results screen labels — "Ej godkänd", "Diskad", "Ej start", "Ej utläst"', () => {
     const label = (s: Parameters<typeof softStatus>[0]): string => softStatusLabel(softStatus(s));
