@@ -330,7 +330,7 @@
     font-feature-settings: 'tnum' 1;
   }
   .row-check {
-    color: var(--mp);
+    color: var(--mp-fg);
     font-size: 10px;
   }
   .empty-state {

@@ -565,7 +565,7 @@
   }
   .warn {
     margin: 4px 0 0;
-    color: var(--mp);
+    color: var(--mp-fg);
   }
   .card {
     background: var(--bg-elev);

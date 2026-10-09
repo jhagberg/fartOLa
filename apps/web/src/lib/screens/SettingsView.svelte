@@ -943,7 +943,7 @@
     margin: 0;
     padding: 8px 12px;
     background: var(--mp-soft);
-    color: var(--mp);
+    color: var(--mp-fg);
     border: 1px solid color-mix(in oklch, var(--mp) 35%, transparent);
     border-radius: var(--radius);
     font-size: 13px;
