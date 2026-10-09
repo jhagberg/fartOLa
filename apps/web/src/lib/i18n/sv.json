@@ -72,6 +72,7 @@
   "classKinds.unconfirmed": "Klasser utan bekräftad klasstyp: {{count}}.",
   "classKinds.whyConfirm": "Jaktstart, seedning och vakanta platser kontrolleras mot klasstypen och kräver att den är bekräftad.",
   "classKinds.allConfirmed": "Alla klasser har bekräftad klasstyp.",
+  "classKinds.pendingExcluded": "Klasser med en ändring som inte är sparad tas inte med: {{count}}. Rätta dem i raden.",
   "classKinds.eventor.no_key": "Ingen Eventor-nyckel är inlagd. Förslagen bygger på klassnamnen.",
   "classKinds.eventor.failed": "Kunde inte hämta klasstyper från Eventor. Förslagen bygger på klassnamnen.",
   "classKinds.err.ageRequired": "Ange ålder, till exempel 12 för H12. Klasstypen sparas när åldern är ifylld.",

@@ -72,6 +72,7 @@
   "classKinds.unconfirmed": "Classes without a confirmed class kind: {{count}}.",
   "classKinds.whyConfirm": "Pursuit, seeding and vacant places are checked against the class kind and need it confirmed.",
   "classKinds.allConfirmed": "Every class has a confirmed class kind.",
+  "classKinds.pendingExcluded": "Classes with an unsaved change are left out: {{count}}. Fix them in their row.",
   "classKinds.eventor.no_key": "No Eventor key is set. The suggestions come from the class names.",
   "classKinds.eventor.failed": "Could not fetch class kinds from Eventor. The suggestions come from the class names.",
   "classKinds.err.ageRequired": "Enter the age, for example 12 for M12. The class kind is saved once the age is filled in.",
