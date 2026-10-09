@@ -160,6 +160,8 @@ describe('LottningView (mounted)', () => {
   let drawAnswer: { status: number; body: unknown };
   let startList: unknown[];
   let seeding: Array<{ id: string; seed_group: number }>;
+  /** When set, the competition GET (the clock) waits for it. */
+  let holdClock: Promise<void> | null;
   let classKindSource: string;
 
   const settle = async (): Promise<void> => {
@@ -175,6 +177,7 @@ describe('LottningView (mounted)', () => {
     puts = [];
     startList = [];
     seeding = [];
+    holdClock = null;
     classKindSource = 'name';
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -238,6 +241,7 @@ describe('LottningView (mounted)', () => {
             { id: 'r2', name: 'Bo', club: 'OK B', class_id: 'h12', start_time_ms: null },
           ],
         });
+      if (holdClock !== null) await holdClock;
       return json({
         competition: { id: 'c1', date: '2026-10-08', clock_offset_min: 120, level: 'niva3' },
         classes: [],
@@ -328,6 +332,23 @@ describe('LottningView (mounted)', () => {
     });
     expect(posts[0]!.body).toMatchObject({ mode: 'Seeded', bestFirst: false });
     expect($('lottning-done')!.textContent).toBe('Klart: 2 löpare i H12 fick starttid.');
+  });
+
+  it('the draw uses the settings as they were when Lotta was pressed, and locks them meanwhile', async () => {
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    let release!: () => void;
+    holdClock = new Promise((r) => (release = r));
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect(($('lottning-settings') as HTMLFieldSetElement).disabled).toBe(true);
+    // A change that still gets through (e.g. a keyboard event already queued).
+    await choose('lottning-mode-select', 'Simultaneous');
+    release();
+    await settle();
+    expect(posts[0]!.body).toMatchObject({ mode: 'SOFT', intervalSec: 120 });
+    expect(($('lottning-settings') as HTMLFieldSetElement).disabled).toBe(false);
   });
 
   it('SOFT TR 7.4.5: groups stored for runners not yet drawn are shown and sent again, not erased', async () => {
