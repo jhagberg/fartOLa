@@ -167,6 +167,7 @@ describe('WalkupModal — is the runner entered?', () => {
     await settle();
     expect(q('walkup-name')).not.toBeNull();
     expect(q('walkup-save')).not.toBeNull();
+    expect(document.querySelector('h2')?.textContent).toBe('Direktanmälan');
   });
 
   it('no unread entries → straight to the form', async () => {

@@ -55,4 +55,13 @@ describe('@fartola/web i18n bootstrap', () => {
     const enKeys = Object.keys(en).sort();
     expect(enKeys).toEqual(svKeys);
   });
+
+  it('calls entry at the event "Direktanmälan" (MeOS, OLA), never "walk-up"', () => {
+    const walkUp = (catalog: Record<string, string>) =>
+      Object.entries(catalog).filter(([, text]) => /walk.?up/i.test(text));
+    expect(walkUp(sv)).toEqual([]);
+    expect(walkUp(en)).toEqual([]);
+    expect(sv['walk.title']).toBe('Direktanmälan');
+    expect(en['walk.title']).toBe('Entry on the day');
+  });
 });

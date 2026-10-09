@@ -362,7 +362,7 @@
   "registration.cancelling": "Avregistrerar…",
   "registration.cancelToast": "{{name}} avregistrerad",
 
-  "walk.title": "Walk-up registrering",
+  "walk.title": "Direktanmälan",
   "walk.desc": "Okänd bricka avläst. Registrera deltagaren och fortsätt.",
   "walk.name": "Namn",
   "walk.name.ph": "För- och efternamn",
@@ -726,7 +726,7 @@
   "access.error.unknown": "Inloggning misslyckades",
 
   "settings.helperCodes.title": "Hjälpkoder",
-  "settings.helperCodes.description": "Koder för sekretariatshjälpare att registrera walk-up-deltagare från telefon.",
+  "settings.helperCodes.description": "Koder för sekretariatshjälpare att ta emot direktanmälningar från telefon.",
   "settings.helperCodes.generate": "Generera ny kod",
   "settings.helperCodes.generating": "Genererar…",
   "settings.helperCodes.noCompetition": "Välj en tävling ovan.",
