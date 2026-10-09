@@ -281,8 +281,8 @@
     background: transparent;
     color: var(--fg);
     font: inherit;
-    font-size: 13px;
-    min-height: 24px;
+    font-size: var(--fs-label);
+    min-height: var(--hit);
   }
   .search-input::placeholder {
     color: var(--fg-faint);
@@ -305,10 +305,10 @@
     background: transparent;
     color: var(--fg);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--fs-label);
     text-align: left;
     cursor: pointer;
-    min-height: 36px;
+    min-height: var(--hit);
   }
   .row:hover,
   .row:focus-visible {

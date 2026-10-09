@@ -43,6 +43,12 @@ test('frame and readout targets are at least 44 px', async ({ page, request }) =
   await expect(page.getByTestId('print-btn')).toBeVisible({ timeout: 5_000 });
   expect(await smallTargets(page)).toEqual([]);
 
+  await page.getByTestId('active-comp-pill').click();
+  await expect(page.getByTestId('active-comp-panel')).toBeVisible();
+  expect(await smallTargets(page)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('active-comp-panel')).toBeHidden();
+
   await page.getByTestId('manual-dnf-btn').click();
   await expect(page.getByTestId('dnf-reason-input')).toBeVisible();
   expect(await smallTargets(page)).toEqual([]);
@@ -74,6 +80,8 @@ test('start-race confirmation targets are at least 44 px', async ({ page, reques
   expect(active.status()).toBe(200);
 
   await page.goto(`/competition/${id}/readout`);
+  await expect(page.getByTestId('start-race-btn')).toBeVisible();
+  expect(await smallTargets(page)).toEqual([]);
   await page.getByTestId('start-race-btn').click();
   await expect(page.getByTestId('start-race-cancel')).toBeVisible();
   expect(await smallTargets(page)).toEqual([]);
