@@ -83,7 +83,7 @@
   import HistoryList from '#lib/components/HistoryList.svelte';
   import ReceiptMirror from '#lib/components/ReceiptMirror.svelte';
   import WalkupModal from '#lib/screens/WalkupModal.svelte';
-  import CardRebindNotice from '#lib/components/CardRebindNotice.svelte';
+  import CardRebindNotices from '#lib/components/CardRebindNotices.svelte';
   import type { CardRebind } from '#lib/api/client.ts';
   import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
   import ConsentConfirmationToast from '#lib/components/ConsentConfirmationToast.svelte';
@@ -225,9 +225,10 @@
   // (PATCH /api/competitors/:id/profile) and refetchCompetitors.
   let editingCompetitorId: string | null = $state(null);
 
-  /** The last card replacement from the walk-up overlay's "anmäld?" step,
-   * shown with undo until the operator closes it (ADR-0016 rule 2). */
-  let lastRebind: CardRebind | null = $state(null);
+  /** Card replacements from the walk-up overlay's "anmäld?" step, newest
+   * first, each shown with undo until the operator closes it (ADR-0016
+   * rule 2). */
+  let rebinds: CardRebind[] = $state([]);
 
   // --- derived UI shapes ----------------------------------------------------
 
@@ -585,7 +586,7 @@
   /** A card replacement attached an unknown read to an entered runner: it
    * is that runner's read-out now, so refetch and raise its prompts. */
   async function onRebound(r: CardRebind): Promise<void> {
-    lastRebind = r;
+    rebinds = [r, ...rebinds];
     await Promise.all([refetchCompetitors(), refetchReadout()]);
     const row = history.find((h) => h.card_number === r.card_number && !h.unmatched);
     if (row) firstReadPrompts(row, r.card_number);
@@ -868,19 +869,17 @@
       onSelect={onSelectHistory}
     />
 
-    {#if lastRebind}
-      <CardRebindNotice
-        {competitionId}
-        rebind={lastRebind}
-        onUndone={() => {
-          void refetchCompetitors();
-          void refetchReadout();
-        }}
-        onClose={() => {
-          lastRebind = null;
-        }}
-      />
-    {/if}
+    <CardRebindNotices
+      {competitionId}
+      {rebinds}
+      onUndone={() => {
+        void refetchCompetitors();
+        void refetchReadout();
+      }}
+      onClose={(r) => {
+        rebinds = rebinds.filter((x) => x !== r);
+      }}
+    />
 
     {#if pendingUnknownCards.length > 0}
       <section class="card pending-card">

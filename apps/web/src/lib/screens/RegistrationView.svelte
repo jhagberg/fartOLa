@@ -41,7 +41,7 @@
     setActiveCompetition,
   } from '#lib/api/client.ts';
   import WalkupModal from '#lib/screens/WalkupModal.svelte';
-  import CardRebindNotice from '#lib/components/CardRebindNotice.svelte';
+  import CardRebindNotices from '#lib/components/CardRebindNotices.svelte';
   import type { CardRebind } from '#lib/api/client.ts';
   import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
   import Icon from '#lib/ui/Icon.svelte';
@@ -79,8 +79,8 @@
   let knownCard: { card: number; competitor: CompetitorDTO } | null = $state(null);
   let cancelBusy = $state(false);
   let cancelErr: string | null = $state(null);
-  /** The last card replacement for an entered runner, with undo. */
-  let lastRebind: CardRebind | null = $state(null);
+  /** Card replacements for entered runners, newest first, each with undo. */
+  let rebinds: CardRebind[] = $state([]);
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let subscription: ReturnType<typeof createCardSubscription> | null = null;
@@ -517,18 +517,16 @@
         cardHolderHint={currentCard.cardHolderHint}
         eventorHint={currentEventorHint}
         onClose={onWalkupClose}
-        onRebound={(r) => (lastRebind = r)}
+        onRebound={(r) => (rebinds = [r, ...rebinds])}
       />
     {/key}
   {/if}
 
-  {#if lastRebind}
-    <CardRebindNotice
-      {competitionId}
-      rebind={lastRebind}
-      onClose={() => (lastRebind = null)}
-    />
-  {/if}
+  <CardRebindNotices
+    {competitionId}
+    {rebinds}
+    onClose={(r) => (rebinds = rebinds.filter((x) => x !== r))}
+  />
 
   {#if toastMessage !== null}
     <div class="toast" role="status" data-testid="reg-toast">{toastMessage}</div>
