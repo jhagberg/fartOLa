@@ -37,6 +37,8 @@ function runner(id: string, name: string, card: number | null, suggested: boolea
 
 let entries: unknown[];
 let posts: Array<{ url: string; body: Record<string, unknown> }>;
+/** When set, the replacement POST waits until the test releases it. */
+let holdPost: { release: () => void } | null;
 
 function installFetch(): void {
   posts = [];
@@ -52,6 +54,7 @@ function installFetch(): void {
     if (url === '/api/competitors' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       posts.push({ url, body });
+      if (holdPost) await new Promise<void>((r) => (holdPost!.release = r));
       return json({
         id: body['replace_card_for_competitor_id'],
         name: 'Eva Ek',
@@ -93,6 +96,7 @@ describe('WalkupModal — is the runner entered?', () => {
 
   beforeEach(() => {
     entries = [runner(EVA, 'Eva Ek', 1111111, true), runner(BO, 'Bo Berg', null, false)];
+    holdPost = null;
     installFetch();
   });
   afterEach(() => {
@@ -131,6 +135,30 @@ describe('WalkupModal — is the runner entered?', () => {
       card_event: { node_id: 'n', local_seq: 7, previous_card_number: 1111111 },
     });
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it('dismissed while the replacement is saving: the late answer does not close the next card', async () => {
+    holdPost = { release: () => {} };
+    await open();
+    all('entered-suggestion')[0]!.click();
+    await settle();
+    q('entered-save')!.click();
+    await settle();
+    expect(posts).toHaveLength(1);
+
+    // The operator taps the scrim; the registration desk moves on to the
+    // next queued card and this modal is unmounted.
+    q('walkup-overlay')!.click();
+    await settle();
+    expect(onClose.mock.calls).toEqual([[false]]);
+    void unmount(component!);
+    component = null;
+
+    holdPost.release();
+    await settle();
+    expect(onClose.mock.calls).toEqual([[false]]);
+    // The card was replaced all the same: still reported, so undo is offered.
+    expect(onRebound).toHaveBeenCalledOnce();
   });
 
   it('searches the entries by name; a runner without a card shows "ingen bricka"', async () => {
