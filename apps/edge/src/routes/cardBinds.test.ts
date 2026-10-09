@@ -116,7 +116,8 @@ function addRead(
   nodeId: string,
   cardNumber: number,
   codes: number[],
-  withStart = true
+  withStart = true,
+  atMs?: number
 ): void {
   seq += 1;
   handle.db
@@ -126,8 +127,8 @@ function addRead(
       localSeq: seq,
       competitionId: COMP,
       eventType: 'card_read',
-      eventTimeMs: READ_AT_MS + seq,
-      recordedAtMs: READ_AT_MS + seq,
+      eventTimeMs: atMs ?? READ_AT_MS + seq,
+      recordedAtMs: atMs ?? READ_AT_MS + seq,
       payload: {
         event_type: 'card_read',
         card_number: cardNumber,
@@ -376,6 +377,21 @@ describe('GET /api/competitions/:id/cards/:cardNumber/entries', () => {
     assert.deepEqual(
       runners.map((r) => r.competitor_id),
       [B]
+    );
+  });
+
+  test('a pre-race scan of the old card (registration desk) does not count as read out', async () => {
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET race_started_at_ms = ? WHERE id = ?')
+      .run(READ_AT_MS, COMP);
+    addRunner(ctx.handle, A, 'H21', 500);
+    // Identity scan of A's entered card at 07:00, before the race started.
+    addRead(ctx.handle, ctx.nodeId, 500, [], true, READ_AT_MS - 4 * 3600_000);
+    addRead(ctx.handle, ctx.nodeId, NEW, [31, 32, 33, 34]);
+    const runners = await entries(ctx.app, NEW);
+    assert.deepEqual(
+      runners.map((r) => [r.competitor_id, r.suggested]),
+      [[A, true]]
     );
   });
 
