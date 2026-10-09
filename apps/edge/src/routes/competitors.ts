@@ -45,12 +45,16 @@
 //     4. In a single sqlite.transaction:
 //          - UPDATE competitors SET card_number=? WHERE id=?.
 //          - Insert events row eventType='card_bound' + payload preserving
-//            the original consent_at_ms (REQ-PRIV-001). local_seq via
+//            the original consent_at_ms (REQ-PRIV-001) and logging the
+//            previous card (previous_card_number). local_seq via
 //            app.fartolaNextLocalSeq.
+//          - hired_card=true (same contact rule as create mode): open the
+//            rental of the new card in hired_cards.
 //     5. After commit, app.wsBroadcast on readout:<competition_id> with
 //        type='card_bound' + payload AND projectionStore.markDirty so the
 //        re-binding clears pending_unknown_cards on next recompute.
-//     6. Return 200 + updated CompetitorDTO.
+//     6. Return 200 + updated CompetitorDTO + `card_event` { node_id,
+//        local_seq, previous_card_number } for POST .../card-binds/undo.
 //
 // REQ-PRIV-001: server attests consent_at_ms (Date.now()) in create mode;
 // preserves the original row's consent_at_ms in replace mode (consent was
@@ -141,6 +145,48 @@ function competitorRowToDTO(row: Competitor): CompetitorDTO {
   };
 }
 
+/** D-HB-3: a hired card needs a phone number or an e-mail address. */
+function hiredContactMissing(input: CompetitorCreateInput): boolean {
+  if (input.hired_card !== true) return false;
+  const hc = input.hired_contact;
+  return (hc?.phone?.trim() ?? '') === '' && (hc?.email?.trim() ?? '') === '';
+}
+
+/** Open (or reopen) the rental of `cardNumber`. Run inside the write's
+ * transaction so a failure leaves no orphan rental. The compound PK
+ * [competitionId, cardNumber] upserts (Pitfall 10): re-renting a card resets
+ * marked_at_ms and clears returned_at_ms. */
+function upsertHiredCard(
+  app: FastifyInstance,
+  input: CompetitorCreateInput,
+  cardNumber: number,
+  now: number
+): void {
+  const hc = input.hired_contact ?? null;
+  const orNull = (v: string | null | undefined): string | null =>
+    v && v.trim() !== '' ? v.trim() : null;
+  const contact = {
+    contactName: orNull(hc?.name),
+    contactPhone: orNull(hc?.phone),
+    contactEmail: orNull(hc?.email),
+    note: orNull(hc?.note),
+  };
+  app.fartolaDb.db
+    .insert(hiredCards)
+    .values({
+      competitionId: input.competition_id,
+      cardNumber,
+      markedAtMs: now,
+      returnedAtMs: null,
+      ...contact,
+    })
+    .onConflictDoUpdate({
+      target: [hiredCards.competitionId, hiredCards.cardNumber],
+      set: { markedAtMs: now, returnedAtMs: null, ...contact },
+    })
+    .run();
+}
+
 export default async function registerCompetitors(app: FastifyInstance): Promise<void> {
   // POST /api/competitors — walk-up registration (D-04 first-class) OR
   // replace-card-for-competitor (plan 10 misread correction).
@@ -189,6 +235,10 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             { path: 'card_number', code: 'custom', message: 'card_number required for replace' },
           ],
         });
+      }
+
+      if (hiredContactMissing(input)) {
+        return reply.code(400).send({ error: 'hyrbricka_contact_required' });
       }
 
       // (4r) Collision check — another competitor in this competition
@@ -245,9 +295,12 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
                 // Fallback to `now` only if the row pre-existed without a
                 // consent_at_ms (legacy data from plan 05 EntryList import).
                 consent_at_ms: target.consentAtMs ?? now,
+                // Logged so the replacement can be undone.
+                previous_card_number: target.cardNumber,
               },
             })
             .run();
+          if (input.hired_card === true) upsertHiredCard(app, input, newCardNumber, now);
         })();
       } catch (err) {
         // The pre-flight SELECT above is non-transactional, so a concurrent
@@ -303,7 +356,15 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         scrubbed_at_ms: target.scrubbedAtMs,
         start_time_ms: target.startTimeMs ?? null,
       };
-      return reply.code(200).send(dto);
+      // card_event: the logged change, for POST .../card-binds/undo.
+      return reply.code(200).send({
+        ...dto,
+        card_event: {
+          node_id: app.fartolaNodeId,
+          local_seq: seq,
+          previous_card_number: target.cardNumber,
+        },
+      });
     }
 
     // -------------------------------------------------------------------
@@ -345,13 +406,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
     // leaves zero side effects). If hired_card=true the operator MUST
     // supply at least phone OR email; the rental is the lever for
     // chasing down non-returners.
-    if (input.hired_card === true) {
-      const hc = input.hired_contact;
-      const phone = hc?.phone?.trim() ?? '';
-      const email = hc?.email?.trim() ?? '';
-      if (phone === '' && email === '') {
-        return reply.code(400).send({ error: 'hyrbricka_contact_required' });
-      }
+    if (hiredContactMissing(input)) {
+      return reply.code(400).send({ error: 'hyrbricka_contact_required' });
     }
 
     // (4) Card-taken check — D-11 partial unique index covers this at the
@@ -437,42 +493,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         // Phase 2.0 D-HB-1 / Plan 02-02 task 2 — write the hired_cards row
         // inside the SAME transaction so a failure anywhere above rolls
         // back the rental too (no orphan rentals).
-        //
-        // Compound PK [competitionId, cardNumber] uses onConflictDoUpdate
-        // (Pitfall 10 mitigation) so re-renting the same card after a
-        // delete-then-re-insert flow lands cleanly. The conflict path
-        // resets marked_at_ms + null returned_at_ms which is the desired
-        // "open rental again" semantics.
         if (input.hired_card === true && input.card_number !== null) {
-          const hc = input.hired_contact ?? null;
-          const contactName = hc?.name && hc.name.trim() !== '' ? hc.name.trim() : null;
-          const contactPhone = hc?.phone && hc.phone.trim() !== '' ? hc.phone.trim() : null;
-          const contactEmail = hc?.email && hc.email.trim() !== '' ? hc.email.trim() : null;
-          const note = hc?.note && hc.note.trim() !== '' ? hc.note.trim() : null;
-          app.fartolaDb.db
-            .insert(hiredCards)
-            .values({
-              competitionId: input.competition_id,
-              cardNumber: input.card_number,
-              markedAtMs: now,
-              returnedAtMs: null,
-              contactName,
-              contactPhone,
-              contactEmail,
-              note,
-            })
-            .onConflictDoUpdate({
-              target: [hiredCards.competitionId, hiredCards.cardNumber],
-              set: {
-                markedAtMs: now,
-                returnedAtMs: null,
-                contactName,
-                contactPhone,
-                contactEmail,
-                note,
-              },
-            })
-            .run();
+          upsertHiredCard(app, input, input.card_number, now);
         }
       })();
     } catch (err) {
