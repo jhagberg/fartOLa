@@ -19,9 +19,12 @@
 
   interface Props {
     competitionId: string;
+    /** Told when an upload starts and ends: the parent holds the pursuit
+     * draw until the input times are in. */
+    onbusy?: (busy: boolean) => void;
   }
 
-  let { competitionId }: Props = $props();
+  let { competitionId, onbusy }: Props = $props();
 
   let file = $state<File | null>(null);
   let busy = $state(false);
@@ -38,6 +41,7 @@
   async function upload(): Promise<void> {
     if (file === null) return;
     busy = true;
+    onbusy?.(true);
     error = null;
     result = null;
     try {
@@ -52,6 +56,7 @@
         key !== undefined ? t(key) : t('pursuitResults.err.failed', { error: (e as Error).message });
     } finally {
       busy = false;
+      onbusy?.(false);
     }
   }
 </script>

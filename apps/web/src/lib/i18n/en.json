@@ -536,6 +536,7 @@
   "lottning.startMethod.start_time": "Start time",
   "lottning.startMethod.start_punch": "Start punch",
   "lottning.invalidTime": "Invalid time format. Use HH:MM or HH:MM:SS.",
+  "lottning.waitResults": "The result list is being read. Draw when it is done.",
   "pursuitResults.label": "Result list from the previous stage (IOF XML)",
   "pursuitResults.hint": "From MeOS, OLA or Eventor. A new file replaces earlier results for the classes in the file.",
   "pursuitResults.upload": "Read result list",

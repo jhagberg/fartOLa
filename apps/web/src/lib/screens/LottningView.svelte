@@ -112,6 +112,9 @@
   let level: CompetitionLevel | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
+  /** A previous-stage result list is being read in: a pursuit drawn now
+   * would use the old input times, so the draw waits. */
+  let resultsBusy = $state(false);
   /** Bumped whenever start times may have changed: the history refetches. */
   let historyKey = $state(0);
 
@@ -255,7 +258,7 @@
   }
 
   async function submitDraw(): Promise<void> {
-    if (!selectedClassId) return;
+    if (!selectedClassId || resultsBusy) return;
     if (effectiveDrawType === 'All' && startList.length > 0 && !redrawConfirmOpen) {
       // Existing start list — ask for confirmation
       redrawConfirmOpen = true;
@@ -441,7 +444,11 @@
 
   <div class="lottning-form">
     <!-- The draw's settings, locked while a draw runs -->
-    <fieldset class="draw-settings" disabled={submitting} data-testid="lottning-settings">
+    <fieldset
+      class="draw-settings"
+      disabled={submitting || resultsBusy}
+      data-testid="lottning-settings"
+    >
       <!-- Class selector -->
       <Field label={t('common.class')} htmlFor="lottning-class">
         <Select
@@ -614,7 +621,7 @@
         <fieldset class="group" data-testid="lottning-pursuit">
           <legend>{t('lottning.pursuitSettings')}</legend>
           <p class="hint">{t('lottning.pursuitHint')}</p>
-          <PreviousResultsUpload {competitionId} />
+          <PreviousResultsUpload {competitionId} onbusy={(b) => (resultsBusy = b)} />
           <Field label={t('lottning.restart')} htmlFor="lottning-restart">
             <Input
               id="lottning-restart"
@@ -724,12 +731,18 @@
       <p class="preview" data-testid="lottning-preview">{preview}</p>
     {/if}
 
+    {#if resultsBusy}
+      <p class="preview" role="status" data-testid="lottning-wait-results">
+        {t('lottning.waitResults')}
+      </p>
+    {/if}
+
     <!-- Draw button — label changes based on whether a start list exists -->
     <div class="draw-btn-row">
       <Button
         variant="primary"
         onclick={() => void submitDraw()}
-        disabled={submitting || !selectedClassId}
+        disabled={submitting || resultsBusy || !selectedClassId}
         data-testid="lottning-draw-btn"
       >
         {submitting
