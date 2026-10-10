@@ -96,6 +96,17 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
           classKindSource: 'operator',
           startMethod: 'start_punch',
         },
+        // The same but drawn: start punching is allowed (TR 4.18.16).
+        {
+          id: 'd18',
+          competitionId: COMP,
+          name: 'D18',
+          classKind: 'junior',
+          ageClass: 18,
+          classKindSource: 'operator',
+          startMethod: 'start_punch',
+          firstStartMs: 1,
+        },
         // The same with a kind only guessed from the name: not flagged.
         {
           id: 'h16',
@@ -148,6 +159,7 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     runner('d10', 'Gun Liten', 'd10', 8_000_004, 'OK Ek');
     runner('si5mid', 'Ivar Femma', 'h35', 12_347, 'OK Ek', 3_000);
     runner('d16', 'Jill Punch', 'd16', 8_000_005, 'OK Ek');
+    runner('d18', 'Lo Lottad', 'd18', 8_000_007, 'OK Ek', 4_000);
     runner('h16', 'Kim Punch', 'h16', 8_000_006, 'OK Ek');
     runner('gone', 'Hans Återbud', 'h21', null, null);
     handle.db
@@ -196,7 +208,7 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     );
     assert.deepEqual(
       body.classes_without_course.map((c) => c.class_id),
-      ['d10', 'd16', 'h16']
+      ['d10', 'd16', 'd18', 'h16']
     );
     assert.deepEqual(body.start_punch_not_allowed, [
       { class_id: 'd16', class_name: 'D16', runners: 1 },
