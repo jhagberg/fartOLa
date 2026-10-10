@@ -36,6 +36,7 @@
   "export.invalid": "The file is not valid",
   "export.valid": "The file is valid",
   "export.error": "Error:",
+  "export.loadError": "Could not check the file. Try again.",
   "export.details": "Show details",
   "export.line": "line {{line}}:",
   "export.counts": "{{classes}} classes · {{results}} results",

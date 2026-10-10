@@ -37,6 +37,7 @@
   "export.invalid": "Filen är inte giltig",
   "export.valid": "Filen är giltig",
   "export.error": "Fel:",
+  "export.loadError": "Kunde inte kontrollera filen. Försök igen.",
   "export.details": "Visa detaljer",
   "export.line": "rad {{line}}:",
   "export.counts": "{{classes}} klasser · {{results}} resultat",
