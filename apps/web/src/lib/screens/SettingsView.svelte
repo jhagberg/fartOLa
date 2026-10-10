@@ -58,6 +58,7 @@
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
+  import AppearanceSettings from '#lib/components/AppearanceSettings.svelte';
   import { baselineKey, latestOnly } from '#lib/screens/radio-status.ts';
   import type { RadioStatus } from '@fartola/shared-types';
 
@@ -868,6 +869,13 @@
         </ul>
       {/if}
     {/if}
+  </section>
+
+  <section class="card" id="utseende" data-testid="appearance-section">
+    <header class="section-head">
+      <h2 tabindex="-1">{t('tw.title')}</h2>
+    </header>
+    <AppearanceSettings />
   </section>
 </section>
 

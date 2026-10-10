@@ -5,8 +5,7 @@
 // convention; see ActiveHyrbrickorView.test.ts header).
 //
 // We exercise the observable contracts:
-//   1. The new i18n keys (sv + en) under the `settings.*` namespace
-//      and the TweaksPanel "Hantera nycklar" key.
+//   1. The new i18n keys (sv + en) under the `settings.*` namespace.
 //   2. listIntegrations / setIntegration use the right URLs + methods.
 //   3. The view's pure helpers (visibility toggle, masked text,
 //      env-banner predicate) — mirrors the in-component derivations
@@ -42,11 +41,10 @@ const SETTINGS_KEYS = [
   'settings.integrations.key.EVENTOR_API_KEY',
   'settings.integrations.key.LIVELOX_API_KEY',
   'settings.integrations.key.LIVERESULTAT_API_KEY',
-  'tweaks.settings.manageKeys',
 ] as const;
 
-describe('Plan 02-07 — i18n keys for SettingsView + TweaksPanel link', () => {
-  it('sv.json has all settings.* + tweaks.settings.manageKeys keys', async () => {
+describe('Plan 02-07 — i18n keys for SettingsView', () => {
+  it('sv.json has all settings.* keys', async () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
     for (const key of SETTINGS_KEYS) {
       expect(sv[key], `missing sv key ${key}`).toBeTruthy();
@@ -56,20 +54,18 @@ describe('Plan 02-07 — i18n keys for SettingsView + TweaksPanel link', () => {
     expect(sv['settings.integrations.notConfigured']).toBe('Inte konfigurerad');
     expect(sv['settings.integrations.masked']).toBe('••••••••');
     expect(sv['settings.integrations.show']).toBe('Visa');
-    expect(sv['tweaks.settings.manageKeys']).toBe('Hantera nycklar');
     // sourceEnvBanner must mention ~/.env.fartola so operators recognise
     // the override warning.
     expect(sv['settings.integrations.sourceEnvBanner']).toContain('~/.env.fartola');
   });
 
-  it('en.json mirrors all settings.* + tweaks.settings.manageKeys keys', async () => {
+  it('en.json mirrors all settings.* keys', async () => {
     const en = (await import('../i18n/en.json')).default as Record<string, string>;
     for (const key of SETTINGS_KEYS) {
       expect(en[key], `missing en key ${key}`).toBeTruthy();
     }
     expect(en['settings.title']).toBe('Settings');
     expect(en['settings.integrations.notConfigured']).toBe('Not configured');
-    expect(en['tweaks.settings.manageKeys']).toBe('Manage keys');
   });
 });
 
