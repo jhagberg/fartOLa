@@ -69,6 +69,11 @@ describe('Plan 02-05 — i18n keys for ActiveHyrbrickorView + Sidebar', () => {
     expect(i18n.t('hyrbrickor.markedAt', { time: '14:25' })).toMatch(/14:25/);
     expect(i18n.t('hyrbrickor.returnedAt', { time: '15:30' })).toMatch(/15:30/);
   });
+
+  it('SOFT TR 4.12.4: hyrbrickor.fee shows the rental fee in kronor', async () => {
+    const i18n = await import('../i18n/index.ts');
+    expect(i18n.t('hyrbrickor.fee', { fee: 30 })).toMatch(/30 kr/);
+  });
 });
 
 describe('Plan 02-05 — ActiveHyrbrickorView api fetch wires', () => {

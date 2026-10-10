@@ -336,6 +336,47 @@ export function putClassKinds(
   });
 }
 
+/** One class's fees (GET …/fees, SOFT TR 4.12.6). Kronor; null = not set. */
+export interface ClassFeeItem {
+  class_id: string;
+  name: string;
+  class_kind: ClassKind | null;
+  entry_fee: number | null;
+  youth_entry_fee: number | null;
+  late_fee_pct: number | null;
+}
+
+export interface FeesResponse {
+  card_fee: number | null;
+  classes: ClassFeeItem[];
+}
+
+export function getFees(competitionId: string): Promise<FeesResponse> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/fees`);
+}
+
+/** Set the card fee and class fees. All or nothing. */
+export function putFees(
+  competitionId: string,
+  body: {
+    card_fee: number | null;
+    classes: Array<Omit<ClassFeeItem, 'name' | 'class_kind'>>;
+  }
+): Promise<{ updated: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/fees`, {
+    method: 'PUT',
+    body,
+  });
+}
+
+/** Copy the class fees of the linked Eventor event. 409 eventor_unavailable
+ * with eventor 'not_linked' | 'no_key' | 'failed'. */
+export function feesFromEventor(competitionId: string): Promise<{ updated: number }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/fees/from-eventor`, {
+    method: 'POST',
+  });
+}
+
 export function listCourses(competitionId: string): Promise<{ courses: CourseDTO[] }> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/courses`);
 }
