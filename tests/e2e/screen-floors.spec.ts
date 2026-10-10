@@ -8,6 +8,7 @@ import { test, expect, type APIRequestContext, type Locator, type Page } from '@
 import { seedCompetition } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
+import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -55,6 +56,18 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/export`,
     ready: (p) => p.getByTestId('export-view'),
     prepare: async (page) => prepareExportError(page, 'network'),
+  },
+  {
+    name: 'Eventor',
+    url: (id) => `/competition/${id}/eventor-publish`,
+    ready: (p) => p.getByTestId('eventor-publish-view'),
+    prepare: async (page) => prepareEventor(page),
+  },
+  {
+    name: 'Eventor utan nyckel',
+    url: (id) => `/competition/${id}/eventor-publish`,
+    ready: (p) => p.getByTestId('eventor-publish-view'),
+    prepare: async (page) => prepareEventorNoKey(page),
   },
 ];
 

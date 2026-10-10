@@ -10,6 +10,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
+import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -43,6 +44,16 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       `/competition/${exId}/export`,
       (p) => p.getByTestId('export-view'),
       (p) => prepareExportError(p, 'network'),
+    ],
+    [
+      `/competition/${exId}/eventor-publish`,
+      (p) => p.getByTestId('eventor-publish-view'),
+      prepareEventor,
+    ],
+    [
+      `/competition/${exId}/eventor-publish`,
+      (p) => p.getByTestId('eventor-publish-view'),
+      prepareEventorNoKey,
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];
