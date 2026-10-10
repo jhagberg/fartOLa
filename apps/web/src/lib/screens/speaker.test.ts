@@ -113,6 +113,20 @@ describe('speakerPanel', () => {
   });
 });
 
+describe('a finished runner without a ranked time', () => {
+  it('counts as finished, not in the forest (untimed class, missing start)', () => {
+    const c = cls([
+      runner({ competitor_id: 'ok', status: 'OK' }),
+      runner({ competitor_id: 'run', passings: [split(9, 1), null] }),
+    ]);
+    const p = speakerPanel(c, NOW);
+    expect(p.inForest).toBe(0);
+    expect(p.rows.map((r) => r.competitor_id)).toEqual(['ok', 'run']);
+    expect(p.onWay).toEqual([]);
+    expect(passedCounts(c).at(-1)).toBe(1);
+  });
+});
+
 describe('passedCounts', () => {
   it('counts the runners through each radio control and the finish', () => {
     const counts = passedCounts(

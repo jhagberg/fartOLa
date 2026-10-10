@@ -30,9 +30,12 @@ export interface SpeakerPanel {
   out: Array<{ status: OutStatus; runners: SpeakerRunner[] }>;
 }
 
-/** How far a runner has come (higher = further) and its place there. */
+/** How far a runner has come (higher = further) and its place there. A
+ * runner read out OK without a ranked time (class without timing, missing
+ * start) is finished too, after those with a place. */
 function progress(r: SpeakerRunner): [number, number] {
   if (r.finish) return [r.passings.length + 2, r.finish.place];
+  if (r.status === 'OK') return [r.passings.length + 2, Number.MAX_SAFE_INTEGER];
   if (r.radio_finish_ms !== null) return [r.passings.length + 1, r.radio_finish_ms];
   const j = r.passings.findLastIndex((p) => p !== null);
   return j < 0 ? [0, 0] : [j + 1, r.passings[j]!.place];
@@ -51,7 +54,7 @@ export function speakerPanel(cls: SpeakerClass, nowMs: number): SpeakerPanel {
     if (point > 0) panel.rows.push(r);
     else if (r.start_ms === null || r.start_ms > nowMs) panel.notStarted.push(r);
     else panel.inForest++;
-    if (last >= 0 && r.passings[last] && !r.finish && r.radio_finish_ms === null) {
+    if (last >= 0 && r.passings[last] && r.status !== 'OK' && r.radio_finish_ms === null) {
       panel.onWay.push(r);
     }
   }
@@ -70,11 +73,12 @@ export function speakerPanel(cls: SpeakerClass, nowMs: number): SpeakerPanel {
   return panel;
 }
 
-/** How many are through each radio control, then the finish. The leader
- * there is the row with place 1 in that column. */
+/** How many are through each radio control, then the finish (read out
+ * OK, with or without a ranked time). The leader at a point is the row with
+ * place 1 in that column. */
 export function passedCounts(cls: SpeakerClass): number[] {
   return [
     ...cls.controls.map((_, i) => cls.runners.filter((r) => r.passings[i]).length),
-    cls.runners.filter((r) => r.finish).length,
+    cls.runners.filter((r) => r.status === 'OK').length,
   ];
 }
