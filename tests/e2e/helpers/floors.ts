@@ -15,12 +15,17 @@ export type FloorOpts = {
   width?: boolean;
   /** Measure the label row of checkboxes and radios (default false). */
   labels?: boolean;
+  /** Fail when fewer elements than this were measured (default 1). */
+  min?: number;
 };
+
+const nothing = (root: string | undefined, n: number, min: number): string[] =>
+  n < min ? [`measured ${n} elements under ${root ?? 'body'} — nothing checked`] : [];
 
 const HIDDEN = '[inert], [aria-hidden="true"], .skip-link, .receipt-mirror';
 
 export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<string[]> {
-  return page
+  const { out, n } = await page
     .locator(opts.root ?? 'body')
     .first()
     .evaluate(
@@ -36,12 +41,22 @@ export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<st
         const name = (e: Element, r: DOMRect) =>
           `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${Math.round(r.width)}×${Math.round(r.height)}`;
         const out: string[] = [];
+        let n = 0;
         const sel =
           'button, a[href], input:not([type=checkbox]):not([type=radio]):not([type=file]), select, [role="button"]';
         for (const e of root.querySelectorAll(sel)) {
           if (!seen(e)) continue;
-          // WCAG 2.5.8 inline exception: a link inside running text.
-          if (e.tagName === 'A' && getComputedStyle(e).display === 'inline') continue;
+          n++;
+          // WCAG 2.5.8 inline exception: a link inside running text, i.e.
+          // inline and its parent has text of its own.
+          if (
+            e.tagName === 'A' &&
+            getComputedStyle(e).display === 'inline' &&
+            [...(e.parentElement?.childNodes ?? [])].some(
+              (c) => c.nodeType === Node.TEXT_NODE && (c.textContent ?? '').trim() !== ''
+            )
+          )
+            continue;
           const r = e.getBoundingClientRect();
           if (Math.round(r.height) < 44 || (width && Math.round(r.width) < 44))
             out.push(name(e, r));
@@ -51,26 +66,29 @@ export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<st
             const l =
               i.closest('label') ?? (i.id ? root.querySelector(`label[for="${i.id}"]`) : null);
             if (!l || !seen(l)) continue;
+            n++;
             const r = l.getBoundingClientRect();
             if (Math.round(r.height) < 44) out.push(name(l, r));
           }
         }
-        return out;
+        return { out, n };
       },
       { hidden: HIDDEN, width: opts.width ?? true, labels: opts.labels ?? false }
     );
+  return [...nothing(opts.root, n, opts.min ?? 1), ...out];
 }
 
 export async function smallText(
   page: Page,
   opts: FloorOpts & { minPx?: number } = {}
 ): Promise<string[]> {
-  return page
+  const { out, n } = await page
     .locator(opts.root ?? 'body')
     .first()
     .evaluate(
-      (root, { hidden, min }) =>
-        [...root.querySelectorAll('*')]
+      (root, { hidden, min }) => {
+        let n = 0;
+        const out = [...root.querySelectorAll('*')]
           .filter((e) => {
             if (e.closest(`${hidden}, script, style`)) return false;
             const own = [...e.childNodes]
@@ -83,12 +101,16 @@ export async function smallText(
             const s = getComputedStyle(e);
             if (r.width <= 1 || r.height <= 1 || s.visibility === 'hidden') return false;
             if (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)') return false;
+            n++;
             return parseFloat(s.fontSize) < min;
           })
           .map(
             (e) =>
               `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${getComputedStyle(e).fontSize}`
-          ),
+          );
+        return { out, n };
+      },
       { hidden: HIDDEN, min: opts.minPx ?? 14 }
     );
+  return [...nothing(opts.root, n, opts.min ?? 1), ...out];
 }
