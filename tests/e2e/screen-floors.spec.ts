@@ -15,6 +15,7 @@ import {
   prepareWizardStep1,
   prepareWizardStep2,
   prepareWizardImportError,
+  prepareWizardDiscard,
 } from './helpers/wizard.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
@@ -123,6 +124,12 @@ const SCREENS: Screen[] = [
     url: () => '/competition/_new?wizard=1',
     ready: (p) => p.getByTestId('wiz-name'),
     prepare: async (page) => prepareWizardImportError(page),
+  },
+  {
+    name: 'Ny tävling med avbrytsfråga',
+    url: () => '/competition/_new?wizard=1',
+    ready: (p) => p.getByTestId('wiz-name'),
+    prepare: async (page) => prepareWizardDiscard(page),
   },
 ];
 

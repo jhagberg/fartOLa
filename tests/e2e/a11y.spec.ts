@@ -17,6 +17,7 @@ import {
   prepareWizardStep1,
   prepareWizardStep2,
   prepareWizardImportError,
+  prepareWizardDiscard,
 } from './helpers/wizard.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
@@ -80,6 +81,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep1],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep2],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardImportError],
+    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardDiscard],
   ];
   const known = JSON.parse(
     readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
@@ -92,7 +94,11 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       await expect(ready(page)).toBeVisible();
       if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
       await prepare?.(page);
-      if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
+      if (high) {
+        await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
+        // Buttons fade their colours (0.12 s): let that finish or axe reads a mid-fade colour.
+        await page.waitForTimeout(300);
+      }
       const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
       // The walk-up modal over registration belongs to another screen pass.
       if (url.endsWith('/registration')) axe.exclude('[data-testid=walkup-modal]');

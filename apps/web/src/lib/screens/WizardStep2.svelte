@@ -58,8 +58,8 @@
     let head: string;
     try {
       head = await slice.text();
-    } catch (e) {
-      onerror((e as Error).message);
+    } catch {
+      onerror(t('wiz.err.file'));
       return;
     }
     // Strip BOM / leading whitespace / XML declaration / comments to
