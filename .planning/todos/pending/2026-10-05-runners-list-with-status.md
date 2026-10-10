@@ -1,6 +1,6 @@
 ---
 created: 2026-10-05T10:00:00+02:00
-title: Runners list with status — filter on "saknar starttid", MP, not read out
+title: Runners list with status — row actions, live updates, 600+ runners
 area: web
 files:
   - apps/web/src/lib/screens/RunnersListView.svelte
@@ -8,19 +8,17 @@ files:
 
 ## Problem
 
-The runners list only knows name, club, class and card (class chips and a
-text search). It has no projection data, so the secretariat cannot ask the
-everyday questions from the list: who has no start time, who mispunched, who
-is not read out yet, who has a manual status.
+The runners list now has status filters from the projection (M2 4d:
+Saknar starttid, Felstämplad, Ej utläst, Manuell status, Utan
+tidtagning, with counts, `?status=` in the URL, a status pill on each
+read-out row; `GET …/runner-status`, `screens/runner-status.ts`). What
+is left is acting on what the filters find without leaving the list.
 
 ## What
 
-- Feed the list from the projection (same data as the results / readout
-  views): status, missing_start, manual_status, elapsed, read-out yes/no.
-- Filters: Saknar starttid, Felstämplad, Ej utläst, Manuell status,
-  Utan tidtagning; counts on each chip.
 - Row actions that already exist elsewhere: set start time, set status.
-- Keep the list fast for 600+ runners (virtualised or paged), live via WS.
+- Live via WS (today the statuses load with the page).
+- Keep the list fast for 600+ runners (virtualised or paged).
 
 Related: "Fastställ saknade starttider" (02.1-14 Task 15) covers the
 end-of-race batch; this is the general view.
