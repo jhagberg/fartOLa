@@ -122,12 +122,15 @@ export function drawSOFT(runners: DrawRunner[], opts: DrawSOFTOptions = {}): Dra
 // uniform rng. Exact BigInt counts; random BigInts by rejection.
 //
 // Limits. N has about K·n entries; a step costs (d values) · c · min(c, d)
-// · (plus+1) BigInt products, n·Σc² overall at worst. That is polynomial
-// in the class size whatever the clubs, so there is no state budget and no
-// fallback chain. Measured (Node 26, median draw, draw-benchmark.ts): 200
-// runners in a few big and many small clubs 9 ms, 10 clubs × 20 18 ms,
-// 20 clubs × 15 (300 runners) 42 ms, one club of 150 + 50 0.1 ms; the
-// worst case is many big clubs, 50 clubs × 20 (1000 runners) 1.4 s.
+// · (plus+1) products of small binomials and (d values) · (2c + 1)
+// products with the large N[t][d], n·Σc² overall at worst. Words that can
+// no longer get down to the fewest neighbours are not counted. That is
+// polynomial in the class size whatever the clubs, so there is no state
+// budget and no fallback chain. Measured (Node 24, median draw,
+// draw-benchmark.ts): 200 runners in a few big and many small clubs 8 ms,
+// 10 clubs × 20 10 ms, 20 clubs × 15 (300 runners) 23 ms, one club of
+// 150 + 50 0.5 ms; the worst case is many big clubs, 50 clubs × 20 (1000
+// runners) 0.5 s (1.4 s before the large products were batched).
 
 /** Rows of Pascal's triangle as BigInts, grown on demand. */
 const pascal: bigint[][] = [[1n]];
@@ -168,7 +171,15 @@ function gapClasses(tb: Table, t: number, d: number) {
   return { minus: d, plus, zero: tb.gaps[t]! - d - plus };
 }
 
-function buildTable(counts: readonly number[], before: number, after: number): Table {
+/** `maxPairs`: only words that can still end with at most this many pairs
+ * are counted (a later letter breaks at most one pair), which leaves
+ * N[K][d] exact for d ≤ maxPairs. */
+function buildTable(
+  counts: readonly number[],
+  before: number,
+  after: number,
+  maxPairs = Infinity
+): Table {
   // A fixed letter of a club with no runners here can never be a neighbour,
   // except of the other fixed letter when the word is empty.
   const empty = counts.every((c) => c === 0);
@@ -193,26 +204,36 @@ function buildTable(counts: readonly number[], before: number, after: number): T
     fewest: 0,
   };
   let m = ends;
+  let left = tb.sizes.reduce((sum, c) => sum + c, 0);
   for (let t = 0; t < order.length; t++) {
     const c = tb.sizes[t]!;
+    left -= c;
     tb.gaps.push(m + 1 - ends);
     const prev = tb.layers[t]!;
-    const next = new Array<bigint>(prev.length + c + 2).fill(0n);
+    const next = new Array<bigint>(Math.min(prev.length + c + 2, maxPairs + left + 1)).fill(0n);
+    // The step's small factors for one d, summed per k (index k − d + c),
+    // then one multiplication by the large N[t][d] per k.
+    const ways = new Array<bigint>(2 * c + 1);
     for (let d = 0; d < prev.length; d++) {
       const w = prev[d]!;
       if (w === 0n) continue;
       const { minus, plus, zero } = gapClasses(tb, t, d);
+      ways.fill(0n);
       for (let s = 1; s <= c; s++) {
-        const ws = w * binom(c - 1, s - 1);
+        const ws = binom(c - 1, s - 1);
         for (let pa = 0; pa <= Math.min(plus, s); pa++) {
           const wa = ws * binom(plus, pa);
           for (let j = 0; j <= Math.min(minus, s - pa); j++) {
             const z = binom(zero, s - j - pa);
             if (z === 0n) continue;
-            const k = d + c - s - j + pa;
-            next[k] = next[k]! + wa * binom(minus, j) * z;
+            const e = 2 * c - s - j + pa;
+            ways[e] = ways[e]! + wa * binom(minus, j) * z;
           }
         }
+      }
+      for (let e = 0; e <= 2 * c; e++) {
+        const k = d - c + e;
+        if (ways[e] !== 0n && k < next.length) next[k] = next[k]! + w * ways[e]!;
       }
     }
     tb.layers.push(next);
@@ -278,7 +299,12 @@ export function samplePattern(
   rng: RngFn,
   pairs?: number
 ): number[] {
-  const tb = buildTable(counts, before, after);
+  // The fewest is max(0, 2·M − n − 1) inside the word, plus at most one
+  // pair per seam: words that cannot get down to that are not counted.
+  const n = counts.reduce((sum, c) => sum + c, 0);
+  const seams = (before >= 0 ? 1 : 0) + (after >= 0 ? 1 : 0);
+  const most = Math.max(0, 2 * Math.max(0, ...counts) - n - 1) + seams;
+  const tb = buildTable(counts, before, after, Math.max(most, pairs ?? 0));
   const K = tb.order.length;
   let d = pairs ?? tb.fewest;
   if (!(tb.layers[K]![d]! > 0n)) throw new RangeError(`no club pattern with ${d} neighbours`);
