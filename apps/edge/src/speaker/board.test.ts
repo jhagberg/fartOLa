@@ -271,4 +271,16 @@ describe('speaker board', () => {
       ]
     );
   });
+
+  test('a busy class does not push the other classes out of the events', () => {
+    const many = Array.from({ length: 60 }, (_, i) => runner({ id: `a${i}`, card: 100 + i }));
+    const b = buildSpeakerBoard(
+      input({
+        runners: [...many, runner({ id: 'x', card: 9, class_id: 'c2' })],
+        radio: [punch(9, 60, 5), ...many.map((r, i) => punch(r.card_number!, 50, 10 + i))],
+      })
+    );
+    assert.equal(b.events.filter((e) => e.class_id === 'c1').length, 30);
+    assert.ok(b.events.some((e) => e.competitor_id === 'x'));
+  });
 });
