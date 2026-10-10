@@ -476,7 +476,7 @@
     </button>
   {/snippet}
   {#snippet body()}
-    <ImportRunnersView {competitionId} embedded />
+    <ImportRunnersView {competitionId} embedded onDone={closeImportSheet} />
   {/snippet}
 </Modal>
 
@@ -770,8 +770,8 @@
   .sheet-close {
     background: transparent;
     border: 0;
-    width: 36px;
-    height: 36px;
+    width: var(--hit);
+    height: var(--hit);
     display: inline-flex;
     align-items: center;
     justify-content: center;

@@ -118,15 +118,15 @@
     data-testid="drop-zone-input"
   />
   {#if error}
-    <div class="icon">!</div>
+    <div class="icon"><Icon name="alert-triangle" size={32} /></div>
     <div class="title">{error}</div>
     <div class="sub">{t('wiz.drop.formats')}</div>
   {:else if file}
-    <div class="icon ok"><Icon name="check" size={28} /></div>
-    <div class="title">{t('wiz.imported')}: {file.name}</div>
-    <div class="sub">Klicka för att byta fil</div>
+    <div class="icon ok"><Icon name="check" size={32} /></div>
+    <div class="title">{t('wiz.drop.chosen', { name: file.name })}</div>
+    <div class="sub">{t('wiz.drop.change')}</div>
   {:else}
-    <div class="icon"><Icon name="download" size={28} /> XML</div>
+    <div class="icon"><Icon name="download" size={32} /> XML</div>
     <div class="title">{t('wiz.drop')}</div>
     <div class="sub">{t('wiz.drop.formats')}</div>
   {/if}
@@ -163,7 +163,6 @@
     color: var(--dnf);
   }
   .drop-zone .icon {
-    font-size: 32px;
     margin-bottom: 8px;
     font-family: var(--font-mono);
   }
