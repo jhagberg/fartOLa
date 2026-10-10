@@ -76,7 +76,7 @@
 
 | ID | fartOLa-status | MeOS | MeOS-belägg | Anmärkning |
 |---|---|---|---|---|
-| TA till TR 6.5.1, TR 7.5.3 (första stycket) | SAKNAS | UPPFYLLER | Varningarna "Samma bana och starttid i X" och "Samma bana på angränsande starttid: X" (`oEventDraw.cpp:1351`, `oEventDraw.cpp:1367`). Lottningen över klasser undviker samma förstakontroll (`oEventDraw.cpp:3172-3229`, `allowSameFirstControl`). | Kryssrutan "Tillåt samma bana inom basintervall" är förkryssad som standard (`TabClass.cpp:1773`, `DrawInterlace` = 1). Det är saxning, som TR 7.5.5 förbjuder för rankingklasser. |
+| TA till TR 6.5.1, TR 7.5.3 (första stycket) | DELVIS | UPPFYLLER | Varningarna "Samma bana och starttid i X" och "Samma bana på angränsande starttid: X" (`oEventDraw.cpp:1351`, `oEventDraw.cpp:1367`). Lottningen över klasser undviker samma förstakontroll (`oEventDraw.cpp:3172-3229`, `allowSameFirstControl`). | Kryssrutan "Tillåt samma bana inom basintervall" är förkryssad som standard (`TabClass.cpp:1773`, `DrawInterlace` = 1). Det är saxning, som TR 7.5.5 förbjuder för rankingklasser. fartOLa stoppar samma bana samma minut vid lottning och listar krockarna i Kontroll, men varnar inte för angränsande starttid och lottar inte över klasser. |
 | TA till TR 6.8.2 | SAKNAS | UPPFYLLER INTE | `oControl.cpp:296` kontrollerar bara att koden ligger mellan 1 och 1023. | Sökt: "< 31", "förväxl", "confus". |
 
 ### Kapitel 7. Särskilt om tävlingsadministration
@@ -143,7 +143,7 @@
 | EJ TILLÄMPLIG | 6 |
 | **Totalt** | **75** |
 
-Som jämförelse har fartOLa 36 UPPFYLLD, 18 DELVIS, 16 SAKNAS och 5 EJ TILLÄMPLIG.
+Som jämförelse har fartOLa 36 UPPFYLLD, 19 DELVIS, 15 SAKNAS och 5 EJ TILLÄMPLIG.
 
 MeOS-betygen är rättade efter en oberoende källkodsgranskning (Codex, MeOS 5.0 U3 build 1851, utan att programmet byggts eller körts): TR 3.4.8/4.14.1 (utan tidtagning), TR 4.14.4, TA till TR 4.18.9 och TR 4.23.3 blev UPPFYLLER, och TA till TR 7.8.3 (koppling) och TR 10.2.2/10.2.3 EJ TILLÄMPLIG. Anmärkningarna för TR 4.14.1 (direktanmälan), 4.18.9, 4.20.6, 4.20.7, 4.20.8, 4.20.9, 4.20.10, 4.21.1, 4.21.3, 7.5.2 och 10.4.10 är preciserade. TR 7.6.1 är DELVIS för båda av samma skäl (godkännande och angivelse i Eventor ligger utanför programmet).
 
@@ -170,7 +170,7 @@ Med samma status har fartOLa dessutom några kvalitativa fördelar. SOFT-lottnin
 - Modellering: TR 3.2.1, TR 3.4.4 m.fl., TR 3.4.8/4.14.1 (utan tidtagning per deltagare), TR 3.4.11 (patrull), TR 3.6.3 m.fl. (distrikt), TR 4.14.3 m.fl. (stafett), TR 4.23.1 (ogiltig klass), TR 4.23.3 (avkortad bana).
 - Rättning: TA till TR 4.18.9 (kommentar om ny starttid).
 - Listor och publicering: TR 4.22.1, TR 7.5.4.
-- Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
+- Lottning: TA till TR 6.5.1 (MeOS lottar över klasser och undviker samma förstakontroll; fartOLa stoppar och varnar bara), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
 - TR 7.1.2: MeOS används som godkänt huvudsystem, vilket fartOLa inte är. Det går inte att belägga i koden.
 
 **Lika (44 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.18.14, TR 4.20.6 och TR 8.1.4 (rättning i sekretariatet), TR 4.16.1 (startlista med startnummer, startplats och banlängd), TR 7.4.1 (fartOLa spärrar jaktstart i inskolning och D/H10–12 men saknar bokning av fri intervallstart, MeOS tvärtom), TR 7.4.5 (seedning), TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
@@ -272,7 +272,7 @@ Storlek är en grov uppskattning av arbetet i fartOLa: S är några dagar, M är
 
 Urvalet utgår från luckorna i `soft-regelverk-2026.md` ("Störst luckor") som MeOS redan har löst. Det är filtrerat till en individuell tävling på nivå 2–3 och ordnat efter hur mycket luckan blockerar en sanktionerad tävling, och därefter efter storlek.
 
-På grenen `feat/soft-small-gaps` är punkt 3 (person-id och banlängd), 6 (onlineresultat) och maxtidsdelen av 7 gjorda, liksom "Ej start" för ej avlästa och SOFT:s benämningar i punkt 4. Kvar i punkt 4 är "Utan tidtagning" per löpare. På grenen `feat/secretariat-corrections` är punkt 1 gjord.
+På grenen `feat/soft-small-gaps` är punkt 3 (person-id och banlängd), 6 (onlineresultat) och maxtidsdelen av 7 gjorda, liksom "Ej start" för ej avlästa och SOFT:s benämningar i punkt 4. Kvar i punkt 4 är "Utan tidtagning" per löpare. På grenen `feat/secretariat-corrections` är punkt 1 gjord. På grenen `feat/m3a-start-clash` är varningarna i punkt 8 gjorda.
 
 1. **Manuell inmatning i sekretariatet (S).** Det gäller måltid för hand, manuella stämplar och tidstillägg som ingår i tid, placering och export (TR 4.20.6, TR 8.1.4, TR 4.18.14, TR 10.4.2, TR 10.4.10). Förebilder i MeOS: "Måltid:", "<< Lägg till stämpling" och "Tidstillägg:" i löparfliken. Utan detta går en vanlig tävlingsdag inte att avsluta när en målenhet krånglar eller en tjuvstart döms.
 2. **Utskrivbara listor för arenan (M).** Start-, resultat-, minutstart-, Kvar-i-skogen- och prisutdelningslista som utskrift, HTML och PDF, med banlängd och startplats (TR 4.16.1, TR 4.21.3, TR 7.5.4, TR 7.8.2). Förebild: Listor-fliken med "Skriv ut...", "Webb..." och "PDF...".
