@@ -44,7 +44,7 @@
     CompetitionLevel,
     CompetitionDistance,
   } from '@fartola/shared-types';
-  import { formatClockTime } from '@fartola/shared-types';
+  import { clockHmLabel } from './competition-clock.ts';
 
   interface Props {
     competitionId: string;
@@ -121,9 +121,10 @@
   const LEVEL_OPTIONS: CompetitionLevel[] = ['niva1', 'niva2', 'niva3', 'niva4', 'traning'];
   const DISTANCE_OPTIONS: CompetitionDistance[] = ['sprint', 'medel', 'lang', 'ultralang', 'natt'];
 
-  /** HH:MM on the competition clock (ADR-0012). */
+  /** HH:MM on the competition clock (ADR-0012), marked after midnight. */
   function clockHm(ms: number): string {
-    return formatClockTime(ms, competition?.clock_offset_min ?? 0).slice(0, 5);
+    if (competition === null) return '';
+    return clockHmLabel(ms, { date: competition.date, offsetMin: competition.clock_offset_min });
   }
 
   const RECEIPT_OPTIONS: Array<CompetitionDTO['receipt_template']> = [

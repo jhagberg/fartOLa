@@ -161,6 +161,14 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     expect(startOrderNote({ free_start_banned: true, without_start_time: 0 })).toBeNull();
     expect(startOrderNote({ free_start_banned: null, without_start_time: 3 })).toBeNull();
     expect(startOrderNote({ class_kind: 'inskolning' })?.key).toBe('lottning.openClassFreeStart');
+    // Start-punch timing set before the kind or level made it banned.
+    expect(
+      startOrderNote({
+        free_start_banned: true,
+        without_start_time: 0,
+        start_method: 'start_punch',
+      })?.key
+    ).toBe('lottning.startPunchBanned');
   });
 
   it('every refusal and mode label exists in sv and en, and names the SOFT rule', async () => {
@@ -370,6 +378,19 @@ describe('LottningView (mounted)', () => {
     h12Class = { class_kind: 'oppen', free_start_banned: false, without_start_time: 2 };
     await mountView();
     expect($('lottning-start-note')!.textContent).toContain('fri starttid (TR 7.4.3)');
+  });
+
+  it('a reload of the same class keeps the interval the operator typed', async () => {
+    h12Class = { suggested_interval_sec: 60 };
+    await mountView();
+    const input = $('lottning-interval') as HTMLInputElement;
+    input.value = '90';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect(posts[0]!.body.intervalSec).toBe(90);
+    expect(input.value).toBe('90');
   });
 
   it('SOFT TR 4.16.3: a draw that moves the closing time says from what to what', async () => {

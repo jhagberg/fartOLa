@@ -34,6 +34,7 @@
     ApiError,
     type DrawMode,
     type DrawType,
+    type LottningResponse,
     type LottningResult,
     type VacantPosition,
   } from '#lib/api/client.ts';
@@ -52,7 +53,11 @@
     StartMethod,
   } from '@fartola/shared-types';
   import { clockToEpochMs, formatClockTime } from '@fartola/shared-types';
-  import { fetchCompetitionClock, type CompetitionClock } from './competition-clock.ts';
+  import {
+    clockHmLabel,
+    fetchCompetitionClock,
+    type CompetitionClock,
+  } from './competition-clock.ts';
   import { kindStatus } from './class-kinds.ts';
   import {
     DRAW_MODES,
@@ -117,8 +122,11 @@
   let level: CompetitionLevel | null = $state(null);
   /** Distance (SOFT TA till TR 7.4.4): the interval hint names its norm. */
   let distance: CompetitionDistance | null = $state(null);
-  /** SOFT TR 7.4.2/7.4.3 note for the selected class, from GET lottning. */
-  let startNote: { key: string; vars?: Record<string, unknown> } | null = $state(null);
+  /** GET lottning's class (SOFT TR 7.4.2/7.4.3 fields), for the start note. */
+  let lottClass: LottningResponse['class'] | null = $state(null);
+  /** The class the interval was last prefilled for: a reload of the same
+   * class keeps what the operator typed. */
+  let intervalClassId = '';
   /** SOFT TR 4.16.3: the last draw moved the closing time (for the PM). */
   let closingMove: { from: number; to: number } | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
@@ -181,8 +189,11 @@
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       distance = detail.competition.distance ?? null;
-      if (res.class.suggested_interval_sec != null) intervalSec = res.class.suggested_interval_sec;
-      startNote = startOrderNote(res.class);
+      if (classId !== intervalClassId) {
+        intervalClassId = classId;
+        if (res.class.suggested_interval_sec != null) intervalSec = res.class.suggested_interval_sec;
+      }
+      lottClass = res.class;
       startList = res.start_list;
       previousResults = { classId, ...res.previous_results };
       // A late-entrant choice only means something next to an existing list.
@@ -202,7 +213,7 @@
       startList = [];
       classRunners = [];
       previousResults = null;
-      startNote = null;
+      lottClass = null;
       startListLoaded = true;
     }
   }
@@ -211,6 +222,7 @@
     startListLoaded = false;
     startList = [];
     previousResults = null;
+    lottClass = null;
     refusal = null;
     done = null;
     closingMove = null;
@@ -384,6 +396,10 @@
     classes.find((c) => c.id === selectedClassId)?.start_method ?? 'auto'
   );
   const START_METHODS: StartMethod[] = ['auto', 'start_time', 'start_punch'];
+  const startNote = $derived.by(() => {
+    const c = lottClass;
+    return c === null ? null : startOrderNote({ ...c, start_method: selectedStartMethod });
+  });
 
   async function saveClassFlag(
     flag: { no_timing: boolean } | { start_method: StartMethod }
@@ -519,7 +535,7 @@
           </p>
           {#if startNote !== null}
             <p
-              class:warn={startNote.key === 'lottning.freeStartBanned'}
+              class:warn={startNote.key !== 'lottning.openClassFreeStart'}
               data-testid="lottning-start-note"
             >
               {t(startNote.key, startNote.vars)}
@@ -782,8 +798,8 @@
     {#if closingMove !== null && clock !== null}
       <p class="warn" role="status" data-testid="lottning-closing-moved">
         {t('lottning.closingMoved', {
-          from: formatClockTime(closingMove.from, clock.offsetMin).slice(0, 5),
-          to: formatClockTime(closingMove.to, clock.offsetMin).slice(0, 5),
+          from: clockHmLabel(closingMove.from, clock),
+          to: clockHmLabel(closingMove.to, clock),
         })}
       </p>
     {/if}
