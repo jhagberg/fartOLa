@@ -383,6 +383,41 @@ describe('LottningView (mounted)', () => {
     expect(input.value).toBe('90');
   });
 
+  it('an interval typed while the class is still loading is not replaced by the suggestion', async () => {
+    h12Class = { suggested_interval_sec: 60 };
+    let release!: () => void;
+    holdH12 = new Promise((r) => (release = r));
+    await mountView();
+    const input = $('lottning-interval') as HTMLInputElement;
+    input.value = '90';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    release();
+    await settle();
+    expect(input.value).toBe('90');
+  });
+
+  it('SOFT TR 7.4.2: confirming the class kind in place brings the start-order warning', async () => {
+    h12Class = {
+      get free_start_banned() {
+        return classKindSource === 'operator' ? true : null;
+      },
+      without_start_time: 2,
+    };
+    drawAnswer = {
+      status: 409,
+      body: { error: 'class_kind_unconfirmed', message: 'Bekräfta klasstyp för H12' },
+    };
+    await mountView();
+    await choose('lottning-mode-select', 'Pursuit');
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect($('lottning-start-note')).toBeNull();
+    ($('class-kind-confirm') as HTMLButtonElement).click();
+    await settle();
+    await settle();
+    expect($('lottning-start-note')?.textContent).toContain('2 löpare saknar starttid');
+  });
+
   it('SOFT TR 4.16.3: a draw that moves the closing time says from what to what', async () => {
     // 13:04 → 13:06 on the clock (UTC+2).
     drawAnswer = {

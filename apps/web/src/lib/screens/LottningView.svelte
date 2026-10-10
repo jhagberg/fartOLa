@@ -123,9 +123,11 @@
   let distance: CompetitionDistance | null = $state(null);
   /** GET lottning's class (SOFT TR 7.4.2/7.4.3 fields), for the start note. */
   let lottClass: LottningResponse['class'] | null = $state(null);
-  /** The class the interval was last prefilled for: a reload of the same
-   * class keeps what the operator typed. */
+  /** The class the interval was last prefilled for, and whether the
+   * operator has typed one for this class: neither a reload of the same
+   * class nor a slow first load replaces a typed interval (ADR-0016). */
   let intervalClassId = '';
+  let intervalTouched = false;
   /** SOFT TR 4.16.3: the last draw moved the closing time (for the PM). */
   let closingMove: { from: number; to: number } | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
@@ -190,7 +192,8 @@
       distance = detail.competition.distance ?? null;
       if (classId !== intervalClassId) {
         intervalClassId = classId;
-        if (res.class.suggested_interval_sec != null) intervalSec = res.class.suggested_interval_sec;
+        if (!intervalTouched && res.class.suggested_interval_sec != null)
+          intervalSec = res.class.suggested_interval_sec;
       }
       lottClass = res.class;
       startList = res.start_list;
@@ -228,6 +231,7 @@
     error = null;
     redrawConfirmOpen = false;
     drawType = 'All';
+    intervalTouched = false;
     await loadStartList();
   }
 
@@ -236,6 +240,8 @@
     refusal = null;
     done = t('lottning.kindSaved');
     classes = (await listClasses(competitionId)).classes;
+    // The start-order rule reads the confirmed kind (SOFT TR 7.4.2).
+    await loadStartList();
   }
 
   // --- helpers --------------------------------------------------------------
@@ -594,6 +600,7 @@
             type="number"
             min="0"
             bind:value={intervalSec}
+            oninput={() => (intervalTouched = true)}
             data-testid="lottning-interval"
           />
         </Field>
