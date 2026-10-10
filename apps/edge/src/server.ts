@@ -73,6 +73,7 @@ import registerLottningRoutes from './routes/lottning.ts';
 import registerStartTimesRoutes from './routes/startTimes.ts';
 import registerLiveresultatRoutes from './routes/liveresultat.ts';
 import registerRadioRoutes from './routes/radio.ts';
+import registerSpeakerRoutes from './routes/speaker.ts';
 import registerEventorPushRoutes from './routes/eventorPush.ts';
 import registerCheckunitRoutes from './routes/checkunit.ts';
 import registerEventCodesRoutes from './routes/event-codes.ts';
@@ -373,6 +374,7 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     await app.register(registerStartTimesRoutes);
     await app.register(registerLiveresultatRoutes);
     await app.register(registerRadioRoutes);
+    await app.register(registerSpeakerRoutes);
     // Phase 2.1 Plan 02.1-08 — Eventor results + startlist push.
     // POST /api/competitions/:id/eventor/push-results|push-startlist.
     await app.register(registerEventorPushRoutes);

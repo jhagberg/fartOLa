@@ -119,6 +119,15 @@ export type {
   RadioPollStatus,
   RadioStatus,
 } from './radio.ts';
+export type {
+  SpeakerBoard,
+  SpeakerClass,
+  SpeakerEvent,
+  SpeakerEventKind,
+  SpeakerRunner,
+  SpeakerRunnerStatus,
+  SpeakerSplit,
+} from './speaker.ts';
 
 // --- Result statuses as SOFT names them (TA till TR 7.8.2) -----------------
 export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
