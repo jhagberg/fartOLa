@@ -25,7 +25,7 @@
   const passed = $derived(passedCounts(cls));
   const finished = $derived(passed.at(-1) ?? 0);
   const out = $derived(
-    panel.inForest + panel.rows.filter((r) => !r.finish && r.radio_finish_ms === null).length
+    panel.inForest + panel.rows.filter((r) => r.status !== 'OK' && r.radio_finish_ms === null).length
   );
   const pointLabel = (code: number | null): string =>
     code === null ? t('spk.finish') : t('spk.control', { code });
@@ -112,6 +112,8 @@
                 <span class="plc">{r.finish.place}.</span>
                 {formatElapsed(r.finish.elapsed_ms)}
                 <span class="bh">{behind(r.finish)}</span>
+              {:else if r.status === 'OK'}
+                {t('status.OK')}
               {:else if r.radio_finish_ms !== null}
                 {formatElapsed(r.radio_finish_ms)}
                 <span class="bh">{t('spk.notRead')}</span>
