@@ -17,9 +17,11 @@
 //     card but has more controls than the card stores with time (an SI5
 //     over 30), so the course is checked but splits after 30 are missing.
 //   - classes_without_course: a class with runners but no course.
-//   - start_punch_not_allowed: a class timed from the start punch that
-//     turns out to be a confirmed age class at nivå 1-3, where free start
-//     time is not allowed (TR 7.4.2); its start times must be drawn.
+//   - start_punch_not_allowed: an undrawn class timed from the start punch
+//     that turns out to be a confirmed age class at nivå 1-3: that is free
+//     start time, which is not allowed there (TR 7.4.2); its start times
+//     must be drawn. A drawn class may still time from the start punch
+//     (TR 4.18.16).
 //
 // MeOS's "Löpare utan klass" and "SI-dubbletter" cannot happen here:
 // competitors.class_id is NOT NULL and a card is unique per competition
@@ -160,7 +162,13 @@ export function preRaceCheck(
     if (runners > 0 && !controlsByClass.has(cls.id)) {
       out.classes_without_course.push({ class_id: cls.id, class_name: cls.name, runners });
     }
-    if (runners > 0 && cls.startMethod === 'start_punch' && freeStartForbidden(cls, level)) {
+    if (
+      runners > 0 &&
+      cls.startMethod === 'start_punch' &&
+      cls.firstStartMs === null &&
+      !drawn.has(cls.id) &&
+      freeStartForbidden(cls, level)
+    ) {
       out.start_punch_not_allowed.push({ class_id: cls.id, class_name: cls.name, runners });
     }
   }
