@@ -24,6 +24,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
     getCompetition,
@@ -69,6 +71,10 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let copySuccess = $state(false);
+  /** When the last successful fetch finished (epoch ms). */
+  let fetchedAt = $state<number | null>(null);
+  /** Bumped once a minute so the gångtid column re-renders. */
+  let tick = $state(0);
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -86,6 +92,14 @@
   /** Diff: started but not returned and not confirmed safe. */
   const missingCards = $derived(
     startedCards.filter((cn) => !returnedCards.has(cn) && !confirmedSafe.has(cn))
+  );
+
+  /** Started cards that were physically read out at the finish. */
+  const backCards = $derived(startedCards.filter((cn) => returnedCards.has(cn)));
+
+  /** Started cards the operator marked safe without a finish read. */
+  const markedCards = $derived(
+    startedCards.filter((cn) => !returnedCards.has(cn) && confirmedSafe.has(cn))
   );
 
   /** Known competitors still in forest (have a competitor record). */
@@ -130,6 +144,7 @@
 
   /** Elapsed since start_time_ms (epoch ms); 0 before the start. */
   function elapsed(startMs: number | null | undefined): string {
+    void tick;
     if (startMs == null) return '—';
     return formatTime(Math.max(0, Date.now() - startMs));
   }
@@ -151,6 +166,7 @@
       startedCards = result.cardNumbers;
       returnedCards = new Set(result.returnedCardNumbers ?? []);
       overflow = result.overflow;
+      fetchedAt = Date.now();
       hasFetched = true;
     } catch (err) {
       // The edge returns { error: 'station_asleep' } (503) when the coupled
@@ -198,6 +214,11 @@
     }
   }
 
+  function fetchedText(ms: number): string {
+    if (clockOffsetMin !== null) return formatClockTime(ms, clockOffsetMin).slice(0, 5);
+    return new Date(ms).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+  }
+
   function startText(ms: number | null): string {
     return ms == null || clockOffsetMin === null ? '—' : formatClockTime(ms, clockOffsetMin);
   }
@@ -222,6 +243,13 @@
     }
   }
 
+  $effect(() => {
+    const timer = setInterval(() => {
+      tick += 1;
+    }, 60_000);
+    return () => clearInterval(timer);
+  });
+
   onMount(() => {
     void loadCompetitors();
     void loadClasses();
@@ -238,31 +266,36 @@
   <!-- How-to instructions (always visible — the wake step is easy to forget) -->
   <section class="sec box info" data-testid="kvariskov-instructions">
     <strong>{t('kvariskov.instructions')}</strong>
-    <p class="step">{t('kvariskov.step1')}</p>
-    <p class="step">{t('kvariskov.step2')}</p>
-    <p class="step">{t('kvariskov.step3')}</p>
+    <ol class="steps">
+      <li>{t('kvariskov.step1')}</li>
+      <li>{t('kvariskov.step2')}</li>
+      <li>{t('kvariskov.step3')}</li>
+    </ol>
   </section>
 
   <!-- Fetch button -->
   <section class="sec">
-    <button class="btn primary" onclick={() => void fetchSnapshot()} disabled={loading}>
+    <Button onclick={() => void fetchSnapshot()} disabled={loading} data-testid="kvariskov-fetch">
       {#if loading}
         {t('kvariskov.fetching')}
       {:else}
         {t('kvariskov.fetch')}
       {/if}
-    </button>
+    </Button>
     {#if asleep}
       <div class="box warn" data-testid="kvariskov-asleep">
-        <strong>{t('kvariskov.asleep')}</strong>
+        <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
+        {t('kvariskov.asleep')}
       </div>
     {:else if error !== null}
       <div class="box err" data-testid="kvariskov-error">
-        <strong>{error}</strong>
+        <strong><Icon name="alert-triangle" size={18} /> {t('export.error')}</strong>
+        {error}
       </div>
     {/if}
     {#if overflow}
       <div class="box warn" data-testid="kvariskov-overflow">
+        <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
         {t('kvariskov.overflow')}
       </div>
     {/if}
@@ -271,29 +304,51 @@
   {#if hasFetched}
     <!-- Summary banner -->
     <section class="sec summary-banner" data-testid="kvariskov-summary">
-      <div class="count-badge" class:urgent={missingCards.length > 0}>
-        {t('kvariskov.result', { count: missingCards.length })}
-      </div>
-      {#if safetySummary}
-        <p class="summary-text" data-testid="kvariskov-summary-text">{safetySummary}</p>
-        <button
-          class="btn secondary"
-          onclick={() => void copyToClipboard()}
-          data-testid="kvariskov-copy"
-        >
-          {#if copySuccess}
-            {t('kvariskov.copied')}
-          {:else}
-            {t('kvariskov.copyClipboard')}
-          {/if}
-        </button>
+      {#if startedCards.length === 0}
+        <div class="box warn" data-testid="kvariskov-empty-read">
+          <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
+          {t('kvariskov.emptyRead')}
+        </div>
+      {:else}
+        <div class="count-badge" class:urgent={missingCards.length > 0}>
+          {t('kvariskov.result', { count: missingCards.length })}
+        </div>
+        <p class="summary-text" data-testid="kvariskov-summary-text">
+          {t('kvariskov.summary', { missing: missingCards.length, back: backCards.length })}
+        </p>
+        {#if safetySummary}
+          <Button variant="secondary" onclick={() => void copyToClipboard()} data-testid="kvariskov-copy">
+            {#if copySuccess}
+              {t('kvariskov.copied')}
+            {:else}
+              {t('kvariskov.copyClipboard')}
+            {/if}
+          </Button>
+        {/if}
       {/if}
     </section>
+
+    <!-- Table heading with fetch time -->
+    <div class="fetch-row">
+      <h2 class="h1">{t('kvariskov.missing')} — {t('kvariskov.started')}</h2>
+      {#if fetchedAt !== null}
+        <span class="fetched" data-testid="kvariskov-fetched-at"
+          >{t('kvariskov.fetchedAt', { time: fetchedText(fetchedAt) })}</span
+        >
+      {/if}
+      <Button
+        variant="secondary"
+        onclick={() => void fetchSnapshot()}
+        disabled={loading}
+        data-testid="kvariskov-refetch"
+      >
+        {t('kvariskov.refetch')}
+      </Button>
+    </div>
 
     <!-- Missing runners table -->
     {#if missingKnown.length > 0}
       <section class="sec" data-testid="kvariskov-missing-table">
-        <h2 class="h1">{t('kvariskov.missing')} — {t('kvariskov.started')}</h2>
         <table class="tbl">
           <thead>
             <tr>
@@ -314,13 +369,14 @@
                 <td>{startText(competitor.start_time_ms)}</td>
                 <td>{elapsed(competitor.start_time_ms)}</td>
                 <td>
-                  <button
-                    class="btn xs"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onclick={() => markSafe(competitor.card_number!)}
                     data-testid="kvariskov-mark-safe"
                   >
                     {t('kvariskov.markSafe')}
-                  </button>
+                  </Button>
                 </td>
               </tr>
             {/each}
@@ -337,23 +393,50 @@
           {#each missingUnknownCards as cn (cn)}
             <li>
               #{cn}
-              <button
-                class="btn xs"
+              <Button
+                variant="secondary"
+                size="sm"
                 onclick={() => markSafe(cn)}
                 data-testid="kvariskov-mark-unknown-safe"
               >
                 {t('kvariskov.markSafe')}
-              </button>
+              </Button>
             </li>
           {/each}
         </ul>
       </section>
     {/if}
 
-    {#if missingCards.length === 0}
-      <div class="box ok" data-testid="kvariskov-all-returned">
-        <strong>Alla löpare har återkommit.</strong>
-      </div>
+    {#if startedCards.length > 0 && missingCards.length === 0}
+      {#if markedCards.length === 0}
+        <div class="box ok" data-testid="kvariskov-all-returned">
+          <strong><Icon name="check" size={18} /> {t('kvariskov.allBack')}</strong>
+        </div>
+      {:else}
+        <div class="box ok" data-testid="kvariskov-none-missing">
+          <strong
+            ><Icon name="check" size={18} />
+            {t('kvariskov.noneMissing', { back: backCards.length, marked: markedCards.length })}</strong
+          >
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Marked safe (this computer only) -->
+    {#if markedCards.length > 0}
+      <section class="sec" data-testid="kvariskov-marked">
+        <h2 class="h1">{t('kvariskov.markedHeading', { n: markedCards.length })}</h2>
+        <p class="muted">{t('kvariskov.markedLocal')}</p>
+        <ul class="card-list">
+          {#each markedCards as cn (cn)}
+            {@const c = competitorByCard.get(cn)}
+            <li data-testid="kvariskov-marked-row">
+              <span class="name">{c ? c.name : `#${cn}`}</span>
+              {#if c}<span>#{cn}</span><span>{className(c.class_id)}</span>{/if}
+            </li>
+          {/each}
+        </ul>
+      </section>
     {/if}
   {/if}
 </div>
@@ -371,12 +454,12 @@
   }
   .h0 {
     margin: 0;
-    font-size: 28px;
+    font-size: var(--fs-display);
     font-weight: 600;
   }
   .h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-heading);
     font-weight: 600;
   }
   .sec {
@@ -384,41 +467,8 @@
     flex-direction: column;
     gap: 8px;
   }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    width: max-content;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
-  .btn.secondary {
-    background: var(--bg-elev);
-    color: var(--fg);
-    border: 1px solid var(--border);
-  }
-  .btn.xs {
-    min-height: var(--hit);
-    padding: 0 var(--space-sm);
-    font-size: var(--fs-label);
-    background: var(--bg-elev);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
   .box {
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 12px 16px;
   }
   .box.err {
@@ -435,10 +485,11 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
   }
-  .box.info .step {
+  .steps {
     margin: 6px 0 0;
+    padding-left: 24px;
     color: var(--fg-muted);
-    font-size: 14px;
+    font-size: var(--fs-label);
   }
   .box.ok {
     background: color-mix(in srgb, var(--ok) 12%, transparent);
@@ -447,7 +498,7 @@
   .summary-banner {
     background: var(--bg-elev);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 16px;
     gap: 12px;
   }
@@ -459,16 +510,13 @@
     color: var(--dnf);
   }
   .summary-text {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    color: var(--fg-muted);
-    word-break: break-all;
+    font-size: var(--fs-body);
     margin: 0;
   }
   .tbl {
     width: 100%;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: var(--fs-label);
   }
   .tbl th {
     text-align: left;
@@ -500,6 +548,15 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-family: var(--font-mono);
+  }
+  .fetch-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .fetched {
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
   }
 </style>
