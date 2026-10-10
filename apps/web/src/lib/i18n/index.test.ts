@@ -31,13 +31,13 @@ describe('@fartola/web i18n bootstrap', () => {
     // Fresh import each test — vitest module isolation is per-file, so we
     // use `await import()` and trust the first call to hit the sync init.
     const mod = await import('./index.ts');
-    expect(mod.t('home.new')).toBe('+ Ny tävling');
+    expect(mod.t('home.new')).toBe('Ny tävling');
   });
 
   it('switches to English when setLocale("en") is called', async () => {
     const mod = await import('./index.ts');
     mod.setLocale('en');
-    expect(mod.t('home.new')).toBe('+ New competition');
+    expect(mod.t('home.new')).toBe('New competition');
     expect(mod.currentLocale()).toBe('en');
   });
 

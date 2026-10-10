@@ -3,15 +3,13 @@
 
   Single competition tile rendered inside HomeView's auto-fill grid.
   Mirrors `screens-home.jsx` `.comp-card`:
-    - hover lifts border to accent + adds shadow
-    - top row: title + ISO date + StatusPill
-    - progress bar (finished / starters)
-    - bottom meta row: starters · finished · status label
+    - hover darkens the border
+    - top row: title + ISO date + status pill (from date and race start)
+    - optional Eventor chip
 
-  The card is `<button>` for tap-target compliance — the whole tile is
-  clickable per UI-SPEC §"Component Inventory" and screens-home.jsx.
-  44px min-height is already exceeded by the inner padding so the --hit
-  token doesn't need an explicit clamp here.
+  The card is an `<a>` to the readout, so it opens in a new tab and is
+  announced as a link. 44px min-height is already exceeded by the inner
+  padding so the --hit token doesn't need an explicit clamp here.
 
   Locked by:
   - 01-UI-SPEC.md §HomeView
@@ -21,32 +19,16 @@
 <script lang="ts">
   import type { CompetitionDTO } from '@fartola/shared-types';
   import { t } from '#lib/i18n/index.ts';
+  import { competitionStatus } from './competitionStatus.ts';
 
-  interface Props {
-    competition: CompetitionDTO;
-    /** Optional pre-aggregated counts; falls back to `—` placeholders if
-     * the caller hasn't computed them yet (Phase 1 readout view owns the
-     * authoritative counts). */
-    starters?: number | null;
-    finished?: number | null;
-    status?: 'live' | 'done';
-    onclick?: (c: CompetitionDTO) => void;
-  }
+  let { competition }: { competition: CompetitionDTO } = $props();
 
-  let { competition, starters = null, finished = null, status = 'live', onclick }: Props =
-    $props();
-
-  const progressPct = $derived(
-    starters && finished !== null && starters > 0
-      ? Math.min(100, Math.round((finished / starters) * 100))
-      : 0
-  );
+  const status = $derived(competitionStatus(competition));
 </script>
 
-<button
-  type="button"
+<a
   class="comp-card"
-  onclick={() => onclick?.(competition)}
+  href="/competition/{competition.id}/readout"
   data-testid="competition-card"
 >
   <div class="top">
@@ -54,21 +36,16 @@
       <h3>{competition.name}</h3>
       <div class="date">{competition.date}</div>
     </div>
-    <span class="pill pill-{status}">
-      {status === 'live' ? t('home.status.live') : t('home.status.done')}
-    </span>
+    <span class="pill pill-{status}">{t(`home.status.${status}`)}</span>
   </div>
-  <div class="progress-bar"><div style="width: {progressPct}%"></div></div>
-  <div class="meta">
-    <span>{t('home.starters')} <b>{starters ?? '—'}</b></span>
-    <span>{t('home.finished')} <b>{finished ?? '—'}</b></span>
-    {#if competition.eventor_event_id}
+  {#if competition.eventor_event_id}
+    <div class="meta">
       <span class="eventor-chip" data-testid="eventor-chip">
         {t('competition.eventorChip', { id: competition.eventor_event_id })}
       </span>
-    {/if}
-  </div>
-</button>
+    </div>
+  {/if}
+</a>
 
 <style>
   .comp-card {
@@ -80,17 +57,16 @@
     flex-direction: column;
     gap: 10px;
     cursor: pointer;
-    transition:
-      border 0.12s,
-      box-shadow 0.12s;
+    transition: border 0.12s;
     text-align: left;
+    text-decoration: none;
     font: inherit;
     color: inherit;
     width: 100%;
+    box-sizing: border-box;
   }
   .comp-card:hover {
-    border-color: var(--accent);
-    box-shadow: var(--shadow-md);
+    border-color: var(--border-strong);
   }
   .top {
     display: flex;
@@ -100,60 +76,44 @@
   }
   .comp-card h3 {
     margin: 0;
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 600;
   }
   .date {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     margin-top: 2px;
   }
   .pill {
-    font-size: 11px;
+    font-size: var(--fs-label);
     padding: 2px 8px;
     border-radius: 999px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    white-space: nowrap;
   }
-  .pill-live {
+  .pill-running {
     background: var(--ok-soft);
     color: var(--ok);
   }
-  .pill-done {
+  .pill-today,
+  .pill-finished,
+  .pill-upcoming {
     background: var(--bg-sunken);
     color: var(--fg-muted);
   }
-  .progress-bar {
-    height: 6px;
-    background: var(--bg-sunken);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-  .progress-bar div {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 999px;
-  }
   .meta {
     display: flex;
-    gap: 18px;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     margin-top: auto;
     padding-top: 8px;
     border-top: 1px solid var(--border);
   }
-  .meta b {
-    color: var(--fg);
-    font-weight: 600;
-    font-family: var(--font-mono);
-  }
-  /* Plan 11 — Eventor linkage chip inside the card meta row */
+  /* Plan 11 — Eventor linkage chip */
   .eventor-chip {
     margin-left: auto;
-    font-size: 11px;
+    font-size: var(--fs-label);
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--bg-sunken);
