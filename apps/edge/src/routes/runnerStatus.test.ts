@@ -21,7 +21,13 @@ describe('GET /api/competitions/:id/runner-status', () => {
   beforeEach(async () => {
     handle = openDatabase(':memory:');
     const nodeId = ensureNodeId(handle);
-    app = await buildServer({ logger: false, dbHandle: handle, nodeId, projectionDebounceMs: 0 });
+    // A long debounce: the route must not answer from a stale cache.
+    app = await buildServer({
+      logger: false,
+      dbHandle: handle,
+      nodeId,
+      projectionDebounceMs: 60_000,
+    });
     handle.sqlite
       .prepare(
         `INSERT INTO competitions (id, name, date, receipt_template, auto_print, created_at_ms)
@@ -70,6 +76,22 @@ describe('GET /api/competitions/:id/runner-status', () => {
         { competitor_id: 'b', status: 'DNS', manual_status: 'DNS', missing_start: false },
       ]
     );
+  });
+
+  test('a runner written after the last read is in the next answer', async () => {
+    const get = async () =>
+      (
+        (
+          await app.inject({ method: 'GET', url: `/api/competitions/${COMP}/runner-status` })
+        ).json() as { runners: unknown[] }
+      ).runners;
+    assert.equal((await get()).length, 2);
+    handle.db
+      .insert(competitors)
+      .values({ id: 'c', competitionId: COMP, name: 'Cia', classId: 'h21', cardNumber: 3 })
+      .run();
+    app.projectionStore.markDirty(COMP);
+    assert.equal((await get()).length, 3);
   });
 
   test('404 for an unknown competition', async () => {
