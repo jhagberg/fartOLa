@@ -704,11 +704,9 @@
   "lottning.intervalNorm.natt": "Natt: normalt 2 minuter (120 s), TA till TR 7.4.4.",
   "lottning.intervalNorm.ultralang": "Ultralång distans: normalt gemensam start, TA till TR 7.4.4.",
   "lottning.freeStartBanned": "{{count}} löpare saknar starttid. Fri starttid är inte tillåten i åldersklass på nivå 1–3 (TR 7.4.2). Lotta klassen eller lotta in efteranmälda.",
-  "lottning.startPunchBanned": "Tid räknas från startstämplingen, och det är fri starttid, som inte är tillåten i åldersklass på nivå 1–3 (TR 7.4.2). Välj Starttid eller Automatiskt.",
   "clock.nextDay": "{{time}} (dagen efter)",
   "lottning.openClassFreeStart": "Öppen klass: fri starttid (TR 7.4.3). Löparna tidtas från startstämpeln, så klassen behöver ingen lottning.",
   "lottning.closingMoved": "Målet stänger nu {{to}} (var {{from}}). Uppdatera PM (TR 4.16.3).",
-  "lottning.err.freeStartNotAllowed": "Tid räknad från startstämplingen är fri starttid, och det är inte tillåtet i åldersklass på nivå 1–3 (TR 7.4.2). Välj Starttid eller Automatiskt för {{class}}.",
 
   "settings.timing.label": "Tidvisning",
   "settings.timing.seconds": "Sekunder",

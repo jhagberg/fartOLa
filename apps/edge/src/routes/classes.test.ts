@@ -21,7 +21,6 @@ import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { runMigrations } from '../db/migrate.ts';
 import { competitions, classes } from '../db/schema.ts';
-import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
 
 interface Ctx {
   app: FastifyInstance;
@@ -214,52 +213,6 @@ describe('classes route (PATCH maxTimeSec)', () => {
       payload: { ignore_start_punch: true },
     });
     assert.equal(old.statusCode, 400, 'the Task 11 flag is gone');
-  });
-
-  test('SOFT TR 7.4.2: no start-punch timing (free start time) in a confirmed age class at nivå 1–3 (422); open class, nivå 4 and an unconfirmed kind may', async () => {
-    const url = `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`;
-    const setUp = (
-      level: CompetitionLevel | null,
-      classKind: ClassKind,
-      source: ClassKindSource
-    ) => {
-      ctx.handle.db
-        .update(competitions)
-        .set({ level })
-        .where(eq(competitions.id, ctx.competitionId))
-        .run();
-      ctx.handle.db
-        .update(classes)
-        .set({
-          classKind,
-          classKindSource: source,
-          ageClass: classKind === 'oppen' ? null : 21,
-          startMethod: 'auto',
-        })
-        .where(eq(classes.id, ctx.classId))
-        .run();
-    };
-    const startPunch = () =>
-      ctx.app.inject({ method: 'PATCH', url, payload: { start_method: 'start_punch' } });
-
-    for (const level of ['niva1', 'niva2', 'niva3'] as const) {
-      setUp(level, 'senior', 'operator');
-      const res = await startPunch();
-      assert.equal(res.statusCode, 422, `${level}: ${res.body}`);
-      assert.deepEqual(res.json(), { error: 'free_start_not_allowed', rule: 'SOFT TR 7.4.2' });
-      assert.equal(ctx.handle.db.select().from(classes).get()?.startMethod, 'auto');
-    }
-    for (const [level, kind, source] of [
-      ['niva1', 'oppen', 'operator'],
-      ['niva4', 'senior', 'eventor'],
-      ['traning', 'senior', 'operator'],
-      ['niva1', 'senior', 'name'],
-      [null, 'senior', 'operator'],
-    ] as const) {
-      setUp(level, kind, source);
-      const res = await startPunch();
-      assert.equal(res.statusCode, 200, `${level} ${kind} ${source}: ${res.body}`);
-    }
   });
 
   test('SOFT TR 3.4.2: class kind — suggested from the name on create, none for an unknown name, in the DTO', async () => {
