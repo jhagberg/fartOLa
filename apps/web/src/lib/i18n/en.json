@@ -929,7 +929,7 @@
   "settings.radio.heard": "Heard codes not yet listed: {{codes}}",
   "settings.radio.loadError": "Could not load the settings. Reload the page.",
   "fees.heading": "Fees",
-  "fees.hint": "Apply to walk-ups and hired cards. Pre-entries pay what Eventor says. TR 4.12.6: the surcharge is a percentage of the class fee with a cap per class type; fartOLa never charges more than the cap. TR 4.12.4: card rental is charged only for a hired card.",
+  "fees.hint": "Apply to entries on the day, late entries and hired cards. Pre-entries pay what Eventor says. TR 4.12.6: the surcharge is a percentage of the class fee with a cap per class type; fartOLa never charges more than the cap. TR 4.12.4: card rental is charged only for a hired card.",
   "fees.cardFee": "Card rental (kr)",
   "fees.entryFee": "Fee (kr)",
   "fees.youthFee": "Youth (kr)",
