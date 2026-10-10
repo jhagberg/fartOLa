@@ -67,81 +67,99 @@ describe('speaker route', () => {
     handle.close();
   });
 
-  it('puts a stored radio punch on the board with its place', async () => {
+  const MIN = 60_000;
+  const clock = (min: number) => ({
+    seconds_in_half_day: 10 * 3600 + min * 60,
+    half_day: 0 as const,
+    weekday: null,
+  });
+  const ev = (type: string, atMs: number, payload: Record<string, unknown>) =>
     insertEvent(
       handle,
       nodeId,
-      'radio_punch',
-      START + 12 * 60_000,
-      {
-        event_type: 'radio_punch',
-        source: 'roc',
-        idempotency_key: '2380:1',
-        roc_id: 1,
-        card_number: 9000001,
-        control_code: 50,
-        time_of_day: '10:12:00',
-        received_at_ms: START + 12 * 60_000 + 5_000,
-        roc_date: DATE,
-        date_mismatch: false,
-      },
+      type as never,
+      atMs,
+      { event_type: type, ...payload } as never,
       COMP
     );
+  const radioAt = (code: number, min: number) =>
+    ev('radio_punch', START + min * MIN, {
+      source: 'roc',
+      idempotency_key: `2380:${code}:${min}`,
+      roc_id: 1,
+      card_number: 9000001,
+      control_code: code,
+      time_of_day: `10:${String(min).padStart(2, '0')}:00`,
+      received_at_ms: START + min * MIN + 5_000,
+      roc_date: DATE,
+      date_mismatch: false,
+    });
+  /** Race started, then a read: start and finish punch at these minutes past 10. */
+  const readOut = (startMin: number, finishMin: number) => {
+    ev('race_started', START - MIN, { started_at_ms: START - MIN });
+    ev('card_read', START + (finishMin + 1) * MIN, {
+      card_number: 9000001,
+      card_type: 'SI10',
+      start: clock(startMin),
+      finish: clock(finishMin),
+      check: null,
+      clear: null,
+      punch_count: 3,
+      punches: [
+        { code: 31, ...clock(startMin + 3) },
+        { code: 50, ...clock(startMin + 10) },
+        { code: 32, ...clock(startMin + 15) },
+      ],
+      card_holder: null,
+    });
+  };
+  const getBoard = async () =>
+    (
+      await app.inject({ method: 'GET', url: `/api/competitions/${COMP}/speaker` })
+    ).json() as SpeakerBoard;
+
+  it('puts a stored radio punch on the board with its place', async () => {
+    radioAt(50, 12);
     const res = await app.inject({ method: 'GET', url: `/api/competitions/${COMP}/speaker` });
     assert.equal(res.statusCode, 200);
     const board = res.json() as SpeakerBoard;
     assert.deepEqual(board.classes[0]!.controls, [50]);
     const r = board.classes[0]!.runners[0]!;
     assert.equal(r.name, 'Anna Test');
-    assert.deepEqual(r.passings, [{ elapsed_ms: 12 * 60_000, place: 1, behind_ms: 0 }]);
+    assert.deepEqual(r.passings, [{ elapsed_ms: 12 * MIN, place: 1, behind_ms: 0 }]);
     assert.equal(board.events[0]!.new_leader, true);
   });
 
   it('a finish event is at the finish punch, not at the readout', async () => {
     // No drawn start: timed from the start punch, read out a minute later.
     handle.sqlite.prepare(`UPDATE competitors SET start_time_ms = NULL WHERE id = 'r1'`).run();
-    const clock = (min: number) => ({
-      seconds_in_half_day: 10 * 3600 + min * 60,
-      half_day: 0 as const,
-      weekday: null,
+    readOut(0, 30);
+    const board = await getBoard();
+    assert.equal(board.classes[0]!.runners[0]!.finish?.elapsed_ms, 30 * MIN);
+    assert.equal(board.events.find((e) => e.kind === 'finish')!.at_ms, START + 30 * MIN);
+  });
+
+  it('splits run from the start punch in a start-punch class', async () => {
+    // Drawn 10:00, punched start 10:05: the radio split at 10:15 is 10 min.
+    handle.sqlite.prepare(`UPDATE classes SET start_method = 'start_punch' WHERE id = 'c1'`).run();
+    radioAt(50, 15);
+    readOut(5, 30);
+    const r = (await getBoard()).classes[0]!.runners[0]!;
+    assert.equal(r.passings[0]?.elapsed_ms, 10 * MIN);
+    assert.equal(r.finish?.elapsed_ms, 25 * MIN);
+  });
+
+  it('a manual finish sets the clock time; a time addition does not move it', async () => {
+    readOut(0, 30);
+    ev('manual_finish_set', START + 40 * MIN, {
+      competitor_id: 'r1',
+      finish_ms: START + 29 * MIN,
+      reason: 'test',
     });
-    insertEvent(
-      handle,
-      nodeId,
-      'race_started',
-      START - 60_000,
-      { event_type: 'race_started', started_at_ms: START - 60_000 },
-      COMP
-    );
-    insertEvent(
-      handle,
-      nodeId,
-      'card_read',
-      START + 31 * 60_000,
-      {
-        event_type: 'card_read',
-        card_number: 9000001,
-        card_type: 'SI10',
-        start: clock(0),
-        finish: clock(30),
-        check: null,
-        clear: null,
-        punch_count: 3,
-        punches: [
-          { code: 31, ...clock(5) },
-          { code: 50, ...clock(12) },
-          { code: 32, ...clock(20) },
-        ],
-        card_holder: null,
-      },
-      COMP
-    );
-    const board = (
-      await app.inject({ method: 'GET', url: `/api/competitions/${COMP}/speaker` })
-    ).json() as SpeakerBoard;
-    assert.equal(board.classes[0]!.runners[0]!.finish?.elapsed_ms, 30 * 60_000);
-    const fin = board.events.find((e) => e.kind === 'finish')!;
-    assert.equal(fin.at_ms, START + 30 * 60_000);
+    ev('time_addition_set', START + 41 * MIN, { competitor_id: 'r1', minutes: 2, reason: 'test' });
+    const board = await getBoard();
+    assert.equal(board.classes[0]!.runners[0]!.finish?.elapsed_ms, 31 * MIN);
+    assert.equal(board.events.find((e) => e.kind === 'finish')!.at_ms, START + 29 * MIN);
   });
 
   it('404 for an unknown competition', async () => {

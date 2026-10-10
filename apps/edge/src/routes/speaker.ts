@@ -12,6 +12,7 @@ import { classes, competitions, events } from '../db/schema.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { placeTimeOfDay } from '../integrations/roc/place.ts';
 import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { startMs } from '../projection/dnfMp.ts';
 import { parseRocControls } from '../integrations/roc/status.ts';
 import { buildSpeakerBoard, type BoardRunnerIn } from '../speaker/board.ts';
 import { loadCourseDTOs } from './_courses.ts';
@@ -40,6 +41,7 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
         name: classes.name,
         course_id: classes.courseId,
         no_timing: classes.noTiming,
+        start_method: classes.startMethod,
       })
       .from(classes)
       .where(eq(classes.competitionId, id))
@@ -50,24 +52,37 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
     const resultById = new Map(
       [...state.results_by_class.values()].flat().map((r) => [r.competitor_id, r])
     );
+    const startMethodOf = new Map(classRows.map((c) => [c.id, c.start_method]));
     const runners: BoardRunnerIn[] = [...state.competitors.values()].map((c) => {
       const res = resultById.get(c.id);
-      // The clock time the speaker reads out is the finish punch itself, not
-      // the readout and not start + running time (a time addition changes
-      // the time, not when the runner crossed the line).
       const read = c.card_read_history.at(-1);
-      const finishAt = read?.finish
-        ? cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, offsetMin)
-        : c.start_time_ms !== null && c.elapsed_time_ms !== null
-          ? c.start_time_ms + c.elapsed_time_ms
-          : (read?.event_time_ms ?? null);
+      // Splits run from the start the result runs from: by the class's start
+      // method, the start punch of the read or the drawn start (dnfMp).
+      const start = startMs({
+        start: read?.start ?? null,
+        cardType: read?.card_type ?? 'SI10',
+        readAtMs: read?.event_time_ms ?? 0,
+        drawnStartMs: c.start_time_ms,
+        clockOffsetMin: offsetMin,
+        startMethod: startMethodOf.get(c.class_id) ?? 'auto',
+      });
+      // The clock time the speaker reads out is when the runner crossed the
+      // line: the manual finish, else the finish punch, else start + running
+      // time without the time addition (which changes the time, not when).
+      const finishAt =
+        c.manual_finish_ms ??
+        (read?.finish
+          ? cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, offsetMin)
+          : start !== null && c.elapsed_time_ms !== null
+            ? start + c.elapsed_time_ms - c.time_addition_min * 60_000
+            : (read?.event_time_ms ?? null));
       return {
         id: c.id,
         name: c.name,
         club: c.club,
         class_id: c.class_id,
         card_number: c.card_number,
-        start_time_ms: c.start_time_ms,
+        start_time_ms: start,
         status: c.status,
         elapsed_time_ms: res?.elapsed_time_ms ?? null,
         place: res?.place ?? null,
