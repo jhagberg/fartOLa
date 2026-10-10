@@ -195,6 +195,9 @@
         distance: formDistance === '' ? null : formDistance,
       });
       competition = updated;
+      // A new date can move the clock offset; the server shifts the starts,
+      // so the closing time is fetched again with it (ADR-0017).
+      closing = (await getCompetition(competitionId)).closing;
       flashSaved();
     } catch (e) {
       saveErr = (e as Error).message ?? 'save failed';
