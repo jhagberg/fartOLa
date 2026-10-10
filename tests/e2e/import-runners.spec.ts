@@ -169,3 +169,52 @@ test('retrying a failed link save does not import the runners again', async ({ p
   expect(imports).toBe(1);
   expect(patches).toBe(3);
 });
+
+test('a failed import of another event does not offer to save the first event link', async ({
+  page,
+  request,
+}) => {
+  const id = await createEmptyCompetition(request);
+  await request.patch(`${BASE}/api/competitions/${id}`, { data: { eventor_event_id: 1111 } });
+  const other = { ...EVENT, eventId: 4243, name: 'Annan tävling' };
+  await page.route('**/api/eventor/events?**', (r) =>
+    r.fulfill({ json: { events: [EVENT, other] } })
+  );
+  await page.route('**/api/eventor/events/1111', (r) =>
+    r.fulfill({
+      json: { eventId: 1111, name: 'Länkad tävling', startDate: '2026-10-09', organisation: null },
+    })
+  );
+  let imports = 0;
+  await page.route('**/eventor-import**', (r) => {
+    imports += 1;
+    return imports === 1
+      ? r.fulfill({
+          status: 201,
+          json: {
+            kind: 'EntryList',
+            competitors_created: 2,
+            competitors_skipped_duplicate: 0,
+            classes_missing: [],
+            auto_bound: [],
+          },
+        })
+      : r.fulfill({ status: 500, json: { error: 'boom' } });
+  });
+  await page.route(`**/api/competitions/${id}`, (r) =>
+    r.request().method() === 'PATCH'
+      ? r.fulfill({ status: 500, json: { error: 'boom' } })
+      : r.fallback()
+  );
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('linked-relink-btn').click();
+  await page.getByTestId('import-search').click();
+  await page.getByTestId('import-event-btn').first().click();
+  await expect(page.getByTestId('import-relink-retry')).toBeVisible();
+  // A different event whose import fails: the retry would save the first link.
+  await page.getByTestId('import-event-btn').nth(1).click();
+  await expect(async () => expect(imports).toBe(2)).toPass();
+  await expect(page.getByTestId('import-relink-error')).not.toContainText('kopplingen');
+  await expect(page.getByTestId('import-relink-retry')).toHaveCount(0);
+});

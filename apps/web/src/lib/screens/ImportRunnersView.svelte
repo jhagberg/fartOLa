@@ -288,6 +288,8 @@
       pendingLink = ev;
     } catch (e) {
       lastImportedEvent = null;
+      // This message is about another event: a retry must not save the earlier link.
+      pendingLink = null;
       if (e instanceof ApiError && e.status === 503) {
         relinkError = t('importRunners.errNoKey');
         relinkNoKey = true;
@@ -412,7 +414,8 @@
     {:else}
       <!-- Normal date-picker search flow. Also used when relinking=true so
            the operator can pick a new event. On successful import while
-           relinking=true, relinkEvent() PATCHes eventor_event_id + imports. -->
+           relinking=true, relinkEvent() imports first, then PATCHes
+           eventor_event_id. -->
 
       <!-- Form wrap: Enter on the date input submits the search instead of
            being swallowed (audit follow-up #5). preventDefault on submit
