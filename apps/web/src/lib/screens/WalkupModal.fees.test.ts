@@ -24,9 +24,11 @@ const cls = (id: string, name: string): ClassDTO => ({
 });
 
 let posts: Array<Record<string, unknown>>;
+let collide = false;
 
 function installFetch(): void {
   posts = [];
+  collide = false;
   global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const json = (body: unknown, status = 200) =>
@@ -63,6 +65,8 @@ function installFetch(): void {
     if (url === '/api/competitors' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       posts.push(body);
+      if (collide && body.replace_card_for_competitor_id === undefined)
+        return json({ error: 'card_taken', existing_competitor_id: 'e1' }, 409);
       return json({ id: 'x', ...body }, 201);
     }
     return json({ suggestions: [], hit: false });
@@ -151,6 +155,23 @@ describe('WalkupModal — fee and consent', () => {
     await settle();
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({ paid_method: 'swish' });
+  });
+
+  it('SOFT TR 4.12.4: paid_method also goes with the card correction after a taken card', async () => {
+    collide = true;
+    await open();
+    (q('walkup-name') as HTMLInputElement).value = 'Eva Ek';
+    q('walkup-name')!.dispatchEvent(new Event('input', { bubbles: true }));
+    choose(q<HTMLSelectElement>('walkup-class')!, H21);
+    q<HTMLInputElement>('walkup-consent')!.click();
+    await settle();
+    choose(q<HTMLSelectElement>('walkup-paid')!, 'cash');
+    await settle();
+    q('walkup-save')!.click();
+    await settle();
+    q('walkup-correct-card')!.click();
+    await settle();
+    expect(posts[1]).toMatchObject({ replace_card_for_competitor_id: 'e1', paid_method: 'cash' });
   });
 
   it('open class: the birth year decides the youth fee and is sent', async () => {

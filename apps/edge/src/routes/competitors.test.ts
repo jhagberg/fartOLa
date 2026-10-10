@@ -1498,4 +1498,23 @@ describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.equal(fees.get(paid.id)?.paid, 390);
     assert.equal(fees.get(unpaid.id)?.paid, 0);
   });
+
+  test('SOFT TR 4.12.4: paid on site is recorded also when the walk-up corrects a misread card', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    const first = await register(competitionId, h21, 1030);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 1031,
+        replace_card_for_competitor_id: first.id,
+        paid_method: 'cash',
+      },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.json().paid_amount, 360);
+    const row = ctx.handle.db.select().from(competitors).where(eq(competitors.id, first.id)).get()!;
+    assert.deepEqual([row.cardNumber, row.paidAmount, row.paidMethod], [1031, 360, 'cash']);
+  });
 });
