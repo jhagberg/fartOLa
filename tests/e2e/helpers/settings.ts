@@ -15,9 +15,9 @@ export async function pinActive(page: Page, id: string): Promise<void> {
 }
 
 export async function prepareSettings(page: Page, id: string): Promise<void> {
+  // Every mock goes in before the reload, so no real first answer can land
+  // after the fields below are filled.
   await pinActive(page, id);
-  await page.reload();
-  await expect(page.getByTestId('appearance-section')).toBeVisible();
   await page.route(`**/api/competitions/${id}/liveresultat/credentials`, (r) =>
     r.fulfill({
       json:
@@ -57,10 +57,20 @@ export async function prepareSettings(page: Page, id: string): Promise<void> {
   await page.route('**/api/settings/meos', (r) =>
     r.fulfill({ json: { has_meos_password: true, meos_allow_without_password: false } })
   );
+  const liveLoaded = page.waitForResponse(
+    (r) => r.url().includes('/liveresultat/credentials') && r.request().method() === 'GET'
+  );
+  await page.reload();
+  await expect(page.getByTestId('appearance-section')).toBeVisible();
   const heads = page.getByTestId('settings-view').getByRole('heading', { level: 2 });
   await expect(heads).toHaveCount(2);
   await expect(heads.first()).toContainText('Den här tävlingen:');
   await expect(heads.nth(1)).toHaveText('Alla tävlingar på den här datorn');
+
+  // Wait for each card's first load before editing it.
+  await liveLoaded;
+  await expect(page.locator('#hjalpkoder').getByTestId('helper-code-row')).toHaveCount(2);
+  await expect(page.locator('#meos').getByTestId('meos-password-input')).toBeVisible();
 
   const live = page.locator('#liveresultat');
   await live.getByTestId('liveresultat-id').fill('123');
