@@ -492,6 +492,7 @@
         club: null,
         card_number: cardNumberLocal as number,
         hired_card: hiredCard,
+        ...(paidMethod !== '' && fee !== null && fee.total > 0 ? { paid_method: paidMethod } : {}),
         replace_card_for_competitor_id: cardTakenExistingId,
       });
       // Same as the main save path — saved=true so the parent's queue
