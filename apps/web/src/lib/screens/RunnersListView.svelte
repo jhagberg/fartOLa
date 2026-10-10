@@ -10,6 +10,7 @@
     - listCompetitors(competitionId)   — pre-registered + walk-ups
     - listClasses(competitionId)        — filter chips + class label resolution
     - listHiredCards(competitionId)     — bricka-chip variant lookup
+    - getRunnerStatus(competitionId)    — status filters (?status=) + pill
 
   Surface contract (consumed by /competition/:id/runners/+page.svelte):
     - URL param ?import=1 opens the Importera sheet on mount; closing
@@ -27,6 +28,8 @@
     listCompetitors,
     listClasses,
     listHiredCards,
+    getRunnerStatus,
+    type RunnerStatus,
   } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
   import { formatClockTime } from '@fartola/shared-types';
@@ -34,9 +37,16 @@
   import Input from '#lib/ui/Input.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import Modal from '#lib/ui/Modal.svelte';
+  import StatusPill from '#lib/ui/StatusPill.svelte';
   import EditCompetitorModal from '#lib/components/EditCompetitorModal.svelte';
   import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
   import ImportRunnersView from './ImportRunnersView.svelte';
+  import {
+    STATUS_FILTERS,
+    isStatusFilter,
+    matchesStatus,
+    type StatusFilter,
+  } from './runner-status.ts';
 
   interface Props {
     competitionId: string;
@@ -49,12 +59,19 @@
   /** Set of card_numbers currently rented out (open hyrbrickor). Lets us
    * render the "hyrbricka" chip variant without N+1 lookups. */
   let hiredCardSet = $state<Set<number>>(new Set());
+  /** Projected status per competitor id (GET …/runner-status). */
+  let statusById = $state<Map<string, RunnerStatus>>(new Map());
 
   let loading = $state(true);
   let loadError = $state<string | null>(null);
 
   let query = $state('');
   let selectedClassId = $state<string | null>(null); // null = Alla
+  /** Status filter from the URL (?status=mp), so back and reload keep it. */
+  const statusParam = $derived(page.url.searchParams.get('status'));
+  const statusFilter = $derived<StatusFilter | null>(
+    isStatusFilter(statusParam) ? statusParam : null
+  );
 
   // Edit modal state
   let editTarget = $state<CompetitorDTO | null>(null);
@@ -78,12 +95,14 @@
     loading = true;
     loadError = null;
     try {
-      const [compRes, classRes, hiredRes, competitionRes] = await Promise.all([
+      const [compRes, classRes, hiredRes, competitionRes, statusRes] = await Promise.all([
         listCompetitors(competitionId),
         listClasses(competitionId),
         listHiredCards(competitionId),
         getCompetition(competitionId),
+        getRunnerStatus(competitionId),
       ]);
+      statusById = new Map(statusRes.runners.map((r) => [r.competitor_id, r]));
       clockOffsetMin = competitionRes.competition.clock_offset_min;
       competitors = compRes.competitors;
       classes = classRes.classes;
@@ -110,6 +129,8 @@
     const q = query.trim().toLowerCase();
     return competitors.filter((c) => {
       if (selectedClassId !== null && c.class_id !== selectedClassId) return false;
+      if (statusFilter !== null && !matchesStatus(statusFilter, c, statusById.get(c.id), classById))
+        return false;
       if (q.length === 0) return true;
       if (c.name.toLowerCase().includes(q)) return true;
       if (c.club && c.club.toLowerCase().includes(q)) return true;
@@ -123,6 +144,22 @@
   const sortedVisible = $derived(
     [...visible].sort((a, b) => a.name.localeCompare(b.name, 'sv'))
   );
+
+  const statusCounts = $derived(
+    new Map(
+      STATUS_FILTERS.map((f) => [
+        f,
+        competitors.filter((c) => matchesStatus(f, c, statusById.get(c.id), classById)).length,
+      ])
+    )
+  );
+
+  function setStatusFilter(f: StatusFilter | null): void {
+    const u = new URL(page.url.href);
+    if (f === null) u.searchParams.delete('status');
+    else u.searchParams.set('status', f);
+    void goto(u.pathname + u.search, { replace: true, reset: false });
+  }
 
   function clearSearch(): void {
     query = '';
@@ -273,6 +310,34 @@
           </button>
         {/each}
       </div>
+      <div
+        class="chip-row"
+        role="group"
+        aria-label={t('runners.status.label')}
+        data-testid="runners-status-filter"
+      >
+        <button
+          type="button"
+          class="chip"
+          aria-pressed={statusFilter === null}
+          class:active={statusFilter === null}
+          onclick={() => setStatusFilter(null)}
+        >
+          {t('runners.status.all')}
+        </button>
+        {#each STATUS_FILTERS as f (f)}
+          <button
+            type="button"
+            class="chip"
+            aria-pressed={statusFilter === f}
+            class:active={statusFilter === f}
+            onclick={() => setStatusFilter(f)}
+            data-testid={`runners-status-${f}`}
+          >
+            {t(`runners.status.${f}`)} <span class="mono">{statusCounts.get(f)}</span>
+          </button>
+        {/each}
+      </div>
     </div>
 
     {#if sortedVisible.length === 0}
@@ -285,6 +350,7 @@
         {#each sortedVisible as c (c.id)}
           {@const klass = c.class_id ? classById.get(c.class_id) : null}
           {@const isHire = c.card_number !== null && hiredCardSet.has(c.card_number)}
+          {@const st = statusById.get(c.id)}
           <li>
             <button
               type="button"
@@ -300,6 +366,9 @@
                 </span>
               </div>
               <div class="row-meta">
+                {#if st && st.status !== 'PEND'}
+                  <StatusPill status={st.status} label={t(`status.${st.status}`)} />
+                {/if}
                 <span class="chip-data class">
                   {klass ? (klass.short_name ?? klass.name) : t('runners.row.class.missing')}
                 </span>
@@ -470,7 +539,7 @@
   }
   .chip-row {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
@@ -486,11 +555,11 @@
     color: var(--fg);
     padding: 8px 14px;
     border-radius: 999px;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
-    min-height: 36px;
+    min-height: var(--hit);
     transition:
       background 120ms,
       border-color 120ms,

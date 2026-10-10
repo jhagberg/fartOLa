@@ -1170,6 +1170,20 @@ export interface PreRaceCheck {
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
+/** One runner's projected state (GET …/runner-status). */
+export interface RunnerStatus {
+  competitor_id: string;
+  status: 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+  manual_status: 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP' | null;
+  missing_start: boolean;
+}
+
+/** GET /api/competitions/:id/runner-status — each runner's projected state
+ * for the Anmälda status filters. */
+export function getRunnerStatus(competitionId: string): Promise<{ runners: RunnerStatus[] }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/runner-status`);
+}
+
 /** GET /api/competitions/:id/pre-race-check. */
 export function getPreRaceCheck(competitionId: string): Promise<PreRaceCheck> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/pre-race-check`);
