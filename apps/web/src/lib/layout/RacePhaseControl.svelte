@@ -193,7 +193,7 @@
     gap: 8px;
     padding: 6px 10px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: 0.02em;
     line-height: 1;
@@ -257,13 +257,13 @@
   }
   .confirm-title {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg);
   }
   .confirm-body {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     line-height: 1.4;
   }
@@ -317,7 +317,7 @@
   .confirm-err {
     margin: 0;
     color: var(--dnf);
-    font-size: 11px;
+    font-size: var(--fs-label);
     word-break: break-word;
   }
 </style>

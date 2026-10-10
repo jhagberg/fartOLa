@@ -91,7 +91,7 @@
   .badge {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-label);
     background: var(--bg-sunken);
     border: 1px solid var(--border);
     border-radius: 4px;

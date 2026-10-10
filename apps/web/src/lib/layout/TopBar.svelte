@@ -136,7 +136,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .ws-label {
     font-weight: 500;

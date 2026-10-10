@@ -49,7 +49,7 @@
     gap: 6px;
   }
   .caption {
-    font-size: 10px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     font-family: var(--font-ui);
     text-transform: uppercase;

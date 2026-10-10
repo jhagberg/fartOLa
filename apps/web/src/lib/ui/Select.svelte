@@ -34,8 +34,6 @@
     color: var(--fg);
   }
   .select:focus {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
     border-color: var(--accent);
   }
 </style>
