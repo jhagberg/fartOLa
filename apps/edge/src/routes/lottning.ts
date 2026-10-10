@@ -25,7 +25,8 @@
 //   6. Write through writeStartTimes: one start_times_set event plus the
 //      start_time_ms cache (ADR-0003 update 2026-10). Undo: POST
 //      …/start-times/undo. A DrawError → 409 { error, message }; nothing written.
-//   7. markDirty; 201 { drawn: N, … }.
+//   7. markDirty; 201 { drawn: N, …, previous_closing_time_ms,
+//      closing_time_ms } (SOFT TR 4.16.3: the UI warns when it moved).
 //
 // T-02.1-04: mode and drawType are Zod enums.
 
@@ -44,6 +45,7 @@ import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
+import { closingTime } from './_closingTime.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 import { StartTimeMs } from './competitors.ts';
@@ -238,6 +240,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         throw e;
       }
 
+      // SOFT TR 4.16.3: the closing time is in the PM; the response carries
+      // it before and after so the UI can warn when a draw moves it.
+      const before = closingTime(app.fartolaDb, competitionId).closing_time_ms;
       const at = new Map(plan.assignments.map((a) => [a.id, a.startTimeMs]));
       writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
         cause: plan.wholeClass ? 'draw' : 'late_entrants',
@@ -250,7 +255,12 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
 
       app.projectionStore.markDirty(competitionId);
 
-      return reply.code(201).send({ drawn: plan.assignments.length, ...plan.extra });
+      return reply.code(201).send({
+        drawn: plan.assignments.length,
+        ...plan.extra,
+        previous_closing_time_ms: before,
+        closing_time_ms: closingTime(app.fartolaDb, competitionId).closing_time_ms,
+      });
     }
   );
 

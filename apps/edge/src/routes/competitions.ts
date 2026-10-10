@@ -49,6 +49,7 @@ import { issuesToErrors } from './_zod-errors.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { readoutChannel } from '@fartola/shared-types';
 import { z } from 'zod';
+import { closingTime } from './_closingTime.ts';
 import { maxTimeLocked } from './_maxTime.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
@@ -189,6 +190,8 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       competition: competitionRowToDTO(compRow),
       classes: classDTOs,
       courses: courseDTOs,
+      // SOFT TR 4.16.3, TR 4.22.1: when the finish closes (for the PM).
+      closing: closingTime(app.fartolaDb, id),
     };
   });
 
