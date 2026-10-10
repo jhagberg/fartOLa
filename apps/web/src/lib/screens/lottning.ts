@@ -6,11 +6,13 @@
 // typed per runner, and a refused draw as plain Swedish (ADR-0016 rule 6).
 // The server is the judge of the SOFT rules; the view shows its answer.
 
+import type { ClassKind } from '@fartola/shared-types';
 import {
   ApiError,
   type DrawMode,
   type DrawType,
   type LottningBody,
+  type LottningResult,
   type VacantPosition,
 } from '#lib/api/client.ts';
 
@@ -144,6 +146,7 @@ const BY_CODE: Record<string, Refusal> = {
   restart_overlaps_pursuit: { key: 'lottning.err.restartOverlaps' },
   one_seeding_group: { key: 'lottning.err.oneSeedingGroup' },
   class_not_found: { key: 'lottning.err.classNotFound' },
+  free_start_not_allowed: { key: 'lottning.err.freeStartNotAllowed' },
 };
 
 /** A refused draw (or seeding save) as an i18n key, with the class name. */
@@ -159,4 +162,28 @@ export function refusalOf(e: unknown, className: string): Refusal {
       };
   }
   return { key: 'lottning.err.failed', vars: { error: (e as Error).message } };
+}
+
+/** SOFT TR 4.16.3: the closing time is in the PM, so a draw that moved it
+ * says from what to what. Null when it did not move or is not known. */
+export function closingMoved(res: LottningResult): { from: number; to: number } | null {
+  const from = res.previous_closing_time_ms ?? null;
+  const to = res.closing_time_ms ?? null;
+  return from !== null && to !== null && from !== to ? { from, to } : null;
+}
+
+/** The start-order note for a class (SOFT TR 7.4.2, TR 7.4.3): runners
+ * without a start time where free start time is banned, or the reminder
+ * that an open class uses free start time. */
+export function startOrderNote(cls: {
+  class_kind?: ClassKind | null;
+  free_start_banned?: boolean | null;
+  without_start_time?: number;
+}): { key: string; vars?: Record<string, unknown> } | null {
+  const without = cls.without_start_time ?? 0;
+  if (cls.free_start_banned === true && without > 0)
+    return { key: 'lottning.freeStartBanned', vars: { count: without } };
+  if (cls.class_kind === 'oppen' || cls.class_kind === 'inskolning')
+    return { key: 'lottning.openClassFreeStart' };
+  return null;
 }

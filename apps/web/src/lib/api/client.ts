@@ -1132,6 +1132,9 @@ export interface LottningResult {
   drawn: number;
   restarted?: number;
   without_result?: number;
+  /** SOFT TR 4.16.3: the closing time (epoch ms) before and after the draw. */
+  previous_closing_time_ms?: number | null;
+  closing_time_ms?: number | null;
 }
 
 export interface StartListEntry {
@@ -1153,6 +1156,13 @@ export interface LottningResponse {
     first_start_ms: number | null;
     start_interval_sec: number | null;
     max_time_sec: number | null;
+    class_kind?: ClassKind | null;
+    /** SOFT TA till TR 7.4.4: the class's interval, else the distance's norm. */
+    suggested_interval_sec?: number | null;
+    /** SOFT TR 7.4.2: free start time banned; null = kind or level unknown. */
+    free_start_banned?: boolean | null;
+    /** Named runners of the class without a start time. */
+    without_start_time?: number;
   };
   start_list: StartListEntry[];
   /** Stored seeding groups of every runner in the class, drawn or not. */

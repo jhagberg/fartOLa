@@ -31,6 +31,7 @@
     patchClass,
     patchCompetitorStartTime,
     putSeeding,
+    ApiError,
     type DrawMode,
     type DrawType,
     type LottningResult,
@@ -45,6 +46,7 @@
   import PreviousResultsUpload from '#lib/components/PreviousResultsUpload.svelte';
   import type {
     ClassDTO,
+    CompetitionDistance,
     CompetitionLevel,
     CompetitorDTO,
     StartMethod,
@@ -57,9 +59,11 @@
     DRAW_TYPES,
     VACANT_POSITIONS,
     buildLottningBody,
+    closingMoved,
     lateEntrantsAllowed,
     refusalOf,
     seedGroupsFromInput,
+    startOrderNote,
     visibleFields,
     type Refusal,
   } from './lottning.ts';
@@ -92,7 +96,8 @@
    * the competition clock (02.1-14 Task 1: start times are epoch ms). */
   let firstStartHHMM: string = $state('10:00');
 
-  /** Start interval in seconds. Default 120 for sprints per D-07. */
+  /** Start interval in seconds: the class's, else the distance's norm (SOFT
+   * TA till TR 7.4.4) once the class loads; 120 until then (D-07). */
   let intervalSec: number = $state(120);
 
   /** Number of vacant slots to insert. Default 0. */
@@ -110,6 +115,12 @@
 
   /** Competition level (SOFT TR 3.3.1), shown because seeding depends on it. */
   let level: CompetitionLevel | null = $state(null);
+  /** Distance (SOFT TA till TR 7.4.4): the interval hint names its norm. */
+  let distance: CompetitionDistance | null = $state(null);
+  /** SOFT TR 7.4.2/7.4.3 note for the selected class, from GET lottning. */
+  let startNote: { key: string; vars?: Record<string, unknown> } | null = $state(null);
+  /** SOFT TR 4.16.3: the last draw moved the closing time (for the PM). */
+  let closingMove: { from: number; to: number } | null = $state(null);
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
   /** Previous-stage results stored for a class (pursuit), with the class
@@ -169,6 +180,9 @@
       if (mine !== loadGeneration) return;
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
+      distance = detail.competition.distance ?? null;
+      if (res.class.suggested_interval_sec != null) intervalSec = res.class.suggested_interval_sec;
+      startNote = startOrderNote(res.class);
       startList = res.start_list;
       previousResults = { classId, ...res.previous_results };
       // A late-entrant choice only means something next to an existing list.
@@ -188,6 +202,7 @@
       startList = [];
       classRunners = [];
       previousResults = null;
+      startNote = null;
       startListLoaded = true;
     }
   }
@@ -198,6 +213,7 @@
     previousResults = null;
     refusal = null;
     done = null;
+    closingMove = null;
     error = null;
     redrawConfirmOpen = false;
     drawType = 'All';
@@ -282,6 +298,7 @@
     error = null;
     refusal = null;
     done = null;
+    closingMove = null;
     // Everything the draw uses is read now, before the first await: the
     // form is disabled while it runs, and a change made meanwhile must not
     // reach this draw.
@@ -330,6 +347,7 @@
       });
       const res = await postLottning(competitionId, classId, body);
       done = summaryOf(res, className);
+      closingMove = closingMoved(res);
       await loadStartList();
     } catch (e) {
       refusal = refusalOf(e, className);
@@ -369,14 +387,18 @@
 
   async function saveClassFlag(
     flag: { no_timing: boolean } | { start_method: StartMethod }
-  ): Promise<void> {
-    if (!selectedClassId) return;
+  ): Promise<boolean> {
+    if (!selectedClassId) return false;
     const id = selectedClassId;
     try {
       await patchClass(competitionId, id, flag);
       classes = classes.map((c) => (c.id === id ? { ...c, ...flag } : c));
+      return true;
     } catch (e) {
-      error = (e as Error).message;
+      // SOFT TR 7.4.2 refuses start-punch timing (422) with a reason.
+      if (e instanceof ApiError && e.status === 422) refusal = refusalOf(e, selectedClassName);
+      else error = (e as Error).message;
+      return false;
     }
   }
 
@@ -495,6 +517,14 @@
             <strong>{level === null ? t('info.level.none') : t(`info.level.${level}`)}</strong>
             <a href={infoHref}>{t('lottning.changeLevelLink')}</a>
           </p>
+          {#if startNote !== null}
+            <p
+              class:warn={startNote.key === 'lottning.freeStartBanned'}
+              data-testid="lottning-start-note"
+            >
+              {t(startNote.key, startNote.vars)}
+            </p>
+          {/if}
         </div>
       {/if}
 
@@ -544,7 +574,9 @@
             ? { hint: t('lottning.intervalLateHint') }
             : fields.pursuit
               ? { hint: t('lottning.intervalPursuitHint') }
-              : {}}
+              : distance !== null
+                ? { hint: t(`lottning.intervalNorm.${distance}`) }
+                : {}}
         >
           <Input
             id="lottning-interval"
@@ -711,8 +743,12 @@
         id="lottning-start-method"
         value={selectedStartMethod}
         disabled={!selectedClassId}
-        onchange={(e) =>
-          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
+        onchange={(e) => {
+          const el = e.currentTarget;
+          void saveClassFlag({ start_method: el.value as StartMethod }).then((ok) => {
+            if (!ok) el.value = selectedStartMethod;
+          });
+        }}
         data-testid="lottning-start-method"
       >
         {#each START_METHODS as m (m)}
@@ -742,6 +778,14 @@
 
     {#if done !== null}
       <p class="done" role="status" data-testid="lottning-done">{done}</p>
+    {/if}
+    {#if closingMove !== null && clock !== null}
+      <p class="warn" role="status" data-testid="lottning-closing-moved">
+        {t('lottning.closingMoved', {
+          from: formatClockTime(closingMove.from, clock.offsetMin).slice(0, 5),
+          to: formatClockTime(closingMove.to, clock.offsetMin).slice(0, 5),
+        })}
+      </p>
     {/if}
 
     <!-- What the draw will do (ADR-0016 rule 1) -->
@@ -920,9 +964,14 @@
   }
   .context p,
   .preview,
-  .done {
+  .done,
+  .warn {
     margin: 0;
     font-size: var(--fs-body);
+  }
+  .warn {
+    color: var(--mp-fg);
+    font-weight: 600;
   }
   .context a,
   .refusal a {

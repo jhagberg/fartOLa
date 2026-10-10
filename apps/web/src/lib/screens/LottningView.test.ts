@@ -10,7 +10,9 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import {
   buildLottningBody,
+  closingMoved,
   refusalOf,
+  startOrderNote,
   seedGroupsFromInput,
   visibleFields,
   type DrawForm,
@@ -139,6 +141,28 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     ).toEqual({ key: 'lottning.err.invalidField', fieldKey: 'lottning.restart' });
   });
 
+  it('SOFT TR 4.16.3: closingMoved only when both times are known and differ', () => {
+    expect(closingMoved({ drawn: 1 })).toBeNull();
+    expect(
+      closingMoved({ drawn: 1, previous_closing_time_ms: null, closing_time_ms: 5 })
+    ).toBeNull();
+    expect(closingMoved({ drawn: 1, previous_closing_time_ms: 5, closing_time_ms: 5 })).toBeNull();
+    expect(closingMoved({ drawn: 1, previous_closing_time_ms: 5, closing_time_ms: 7 })).toEqual({
+      from: 5,
+      to: 7,
+    });
+  });
+
+  it('SOFT TR 7.4.2/7.4.3: startOrderNote — banned with runners left, open class, else none', () => {
+    expect(startOrderNote({ free_start_banned: true, without_start_time: 3 })).toEqual({
+      key: 'lottning.freeStartBanned',
+      vars: { count: 3 },
+    });
+    expect(startOrderNote({ free_start_banned: true, without_start_time: 0 })).toBeNull();
+    expect(startOrderNote({ free_start_banned: null, without_start_time: 3 })).toBeNull();
+    expect(startOrderNote({ class_kind: 'inskolning' })?.key).toBe('lottning.openClassFreeStart');
+  });
+
   it('every refusal and mode label exists in sv and en, and names the SOFT rule', async () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
     const en = (await import('../i18n/en.json')).default as Record<string, string>;
@@ -170,6 +194,10 @@ describe('LottningView (mounted)', () => {
   let holdH12: Promise<void> | null;
   let holdD10: Promise<void> | null;
   let classKindSource: string;
+  /** Extra fields on GET lottning's class for H12, and the distance. */
+  let h12Class: Record<string, unknown>;
+  let distance: string | null;
+  let patchAnswer: { status: number; body: unknown };
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -190,6 +218,9 @@ describe('LottningView (mounted)', () => {
     holdH12 = null;
     holdD10 = null;
     classKindSource = 'name';
+    h12Class = {};
+    distance = null;
+    patchAnswer = { status: 200, body: { ok: true } };
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -207,6 +238,7 @@ describe('LottningView (mounted)', () => {
         posts.push({ url, body });
         return json(drawAnswer.body, drawAnswer.status);
       }
+      if (init?.method === 'PATCH') return json(patchAnswer.body, patchAnswer.status);
       if (init?.method === 'PUT') {
         puts.push({ url, body });
         if (url.endsWith('/classes/kinds')) classKindSource = 'operator';
@@ -261,7 +293,7 @@ describe('LottningView (mounted)', () => {
       }
       if (url.includes('/lottning/')) {
         const answer = {
-          class: { id: 'h12', name: 'H12' },
+          class: { id: 'h12', name: 'H12', ...h12Class },
           start_list: startList,
           seeding,
           previous_results: previousResults,
@@ -284,7 +316,13 @@ describe('LottningView (mounted)', () => {
         });
       if (holdClock !== null) await holdClock;
       return json({
-        competition: { id: 'c1', date: '2026-10-08', clock_offset_min: 120, level: 'niva3' },
+        competition: {
+          id: 'c1',
+          date: '2026-10-08',
+          clock_offset_min: 120,
+          level: 'niva3',
+          distance,
+        },
         classes: [],
         courses: [],
       });
@@ -303,6 +341,63 @@ describe('LottningView (mounted)', () => {
     el.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
   };
+
+  const mountView = async () => {
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+  };
+
+  it('SOFT TA till TR 7.4.4: the interval starts at the suggested one and the hint names the distance norm', async () => {
+    distance = 'sprint';
+    h12Class = { suggested_interval_sec: 60 };
+    await mountView();
+    expect(($('lottning-interval') as HTMLInputElement).value).toBe('60');
+    expect(document.body.textContent).toContain('Sprint: normalt 1 minut');
+    await choose('lottning-mode-select', 'SOFT');
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect(posts[0]!.body.intervalSec).toBe(60);
+  });
+
+  it('SOFT TR 7.4.2: an age class at nivå 1–3 with runners without a start time is flagged; an open class is told it uses free start time', async () => {
+    h12Class = { free_start_banned: true, without_start_time: 2 };
+    await mountView();
+    expect($('lottning-start-note')!.textContent).toContain('2 löpare saknar starttid');
+    expect($('lottning-start-note')!.textContent).toContain('TR 7.4.2');
+    if (component) void unmount(component);
+    document.body.innerHTML = '';
+    h12Class = { class_kind: 'oppen', free_start_banned: false, without_start_time: 2 };
+    await mountView();
+    expect($('lottning-start-note')!.textContent).toContain('fri starttid (TR 7.4.3)');
+  });
+
+  it('SOFT TR 4.16.3: a draw that moves the closing time says from what to what', async () => {
+    // 13:04 → 13:06 on the clock (UTC+2).
+    drawAnswer = {
+      status: 201,
+      body: {
+        drawn: 2,
+        previous_closing_time_ms: Date.UTC(2026, 9, 8, 11, 4),
+        closing_time_ms: Date.UTC(2026, 9, 8, 11, 6),
+      },
+    };
+    await mountView();
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect($('lottning-closing-moved')!.textContent).toContain(
+      'Målet stänger nu 13:06 (var 13:04)'
+    );
+  });
+
+  it('SOFT TR 7.4.2: start-punch timing refused (422) is explained and the select goes back', async () => {
+    patchAnswer = { status: 422, body: { error: 'free_start_not_allowed', rule: 'SOFT TR 7.4.2' } };
+    await mountView();
+    await choose('lottning-start-method', 'start_punch');
+    await settle();
+    expect($('lottning-refusal')!.textContent).toContain('TR 7.4.2');
+    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('auto');
+  });
 
   it('shows the class kind, its status and the level; previews what the draw will do', async () => {
     const { default: LottningView } = await import('./LottningView.svelte');
