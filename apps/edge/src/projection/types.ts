@@ -117,6 +117,11 @@ export interface CompetitorView {
    * entered (no time). Each takes one missing course position, so it is
    * not in missing_codes (projection/corrections.ts). */
   manual_punches: Array<{ control_code: number; reason: string }>;
+  /** SOFT TR 10.4.2 / TR 4.18.14: time addition in whole minutes (0 for
+   * none) and why. Already in elapsed_time_ms, so places, MAX and every
+   * export include it (projection/corrections.ts). */
+  time_addition_min: number;
+  time_addition_reason: string | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection

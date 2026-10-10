@@ -756,3 +756,59 @@ describe('POST …/competitors/:competitorId/manual-punch (SOFT TR 8.1.4)', () =
     assert.equal(res.statusCode, 404);
   });
 });
+
+describe('POST …/competitors/:competitorId/time-addition (SOFT TR 10.4.2)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+  const post = (competitionId: string, competitorId: string, path: string, payload: unknown) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/${path}`,
+      payload: payload as object,
+    });
+
+  test('1–5 whole minutes with a reason → 201; clear → 0', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const view = () =>
+      ctx.app.projectionStore.recomputeNow(competitionId)!.competitors.get(competitorId)!;
+    const res = await post(competitionId, competitorId, 'time-addition', {
+      minutes: 1,
+      reason: 'Tjuvstart',
+    });
+    assert.equal(res.statusCode, 201);
+    assert.equal(view().time_addition_min, 1);
+    assert.equal(view().time_addition_reason, 'Tjuvstart');
+    assert.equal(
+      (await post(competitionId, competitorId, 'clear-time-addition', {})).statusCode,
+      201
+    );
+    assert.equal(view().time_addition_min, 0);
+  });
+
+  test('0, 6 or 1.5 minutes, or no reason → 400; another competition → 404', async () => {
+    const a = await seedCompetitionAndCompetitor(ctx.app);
+    for (const body of [
+      { minutes: 0, reason: 'x' },
+      { minutes: 6, reason: 'x' },
+      { minutes: 1.5, reason: 'x' },
+      { minutes: 1 },
+    ]) {
+      assert.equal(
+        (await post(a.competitionId, a.competitorId, 'time-addition', body)).statusCode,
+        400
+      );
+    }
+    const b = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await post(a.competitionId, b.competitorId, 'time-addition', {
+      minutes: 1,
+      reason: 'x',
+    });
+    assert.equal(res.statusCode, 404);
+  });
+});

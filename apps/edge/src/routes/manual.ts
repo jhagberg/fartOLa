@@ -57,6 +57,7 @@ import {
   UnvoidLegInput,
   ManualFinishInput,
   ManualPunchInput,
+  TimeAdditionInput,
   RemoveManualPunchInput,
   ClearCorrectionInput,
   readoutChannel,
@@ -75,7 +76,12 @@ type CorrectionPayload = Extract<
   EventPayload,
   {
     event_type:
-      'manual_finish_set' | 'manual_finish_cleared' | 'manual_punch_added' | 'manual_punch_removed';
+      | 'manual_finish_set'
+      | 'manual_finish_cleared'
+      | 'manual_punch_added'
+      | 'manual_punch_removed'
+      | 'time_addition_set'
+      | 'time_addition_cleared';
   }
 >;
 
@@ -470,6 +476,8 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   //   POST …/competitors/:cid/clear-manual-finish  "Måltid:" (TabRunner.cpp:3446)
   //   POST …/competitors/:cid/manual-punch         SOFT TR 8.1.4 (kommentar) — MeOS
   //   POST …/competitors/:cid/remove-manual-punch  "<< Lägg till stämpling" (:3571)
+  //   POST …/competitors/:cid/time-addition        SOFT TR 10.4.2, TR 4.18.14 —
+  //   POST …/competitors/:cid/clear-time-addition  MeOS "Tidstillägg:" (:3455)
   // ---------------------------------------------------------------------------
   const correction = <T>(
     path: string,
@@ -533,5 +541,15 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
     event_type: 'manual_punch_removed',
     competitor_id,
     control_code: body.control_code,
+  }));
+  correction('time-addition', TimeAdditionInput, (competitor_id, body) => ({
+    event_type: 'time_addition_set',
+    competitor_id,
+    minutes: body.minutes,
+    reason: body.reason,
+  }));
+  correction('clear-time-addition', ClearCorrectionInput, (competitor_id) => ({
+    event_type: 'time_addition_cleared',
+    competitor_id,
   }));
 }

@@ -166,7 +166,7 @@ export function reduce(input: ReduceInput): CompetitionState {
           control_codes: c.control_codes.filter((code) => !voidedControls.has(code)),
         }));
 
-  // Secretariat corrections (manual finish, punches …): the final state applies to
+  // Secretariat corrections (finish, punches, time addition): the final state applies to
   // every read, so a later read-out cannot overwrite one.
   const corrections = foldCorrections(sortedEvents, input.competition_id);
 
@@ -211,8 +211,9 @@ export function reduce(input: ReduceInput): CompetitionState {
   ): ControlAlternatives | undefined =>
     course === undefined ? undefined : input.replacementControls?.get(course.id);
   /** Score a read for a competitor: course match (minus voided legs, with
-   * replacement controls), running time, and MAX for an OK run over the
-   * class max time (MP/DNF take precedence, as MeOS — 02.1-14 Task 7). */
+   * replacement controls, plus punches by hand), running time (finish by
+   * hand, time addition), and MAX for an OK run over the class max time
+   * (MP/DNF take precedence, as MeOS — 02.1-14 Task 7). */
   const scoreRead = (view: CompetitorView, read: ReadView): void => {
     const course = courseByClass.get(view.class_id);
     const detected = detectStatus(
@@ -235,7 +236,13 @@ export function reduce(input: ReduceInput): CompetitionState {
     view.missing_codes = detected.missing_codes;
     view.extra_codes = detected.extra_codes;
     view.out_of_order_codes = detected.out_of_order_codes;
-    view.elapsed_time_ms = detected.elapsed_time_ms;
+    // SOFT TR 10.4.2: the time addition is part of the time, also against
+    // the max time, as MeOS (running time incl. adjustment,
+    // oRunner.cpp:821-823, checked against max time at :1612).
+    view.elapsed_time_ms =
+      detected.elapsed_time_ms === null
+        ? null
+        : detected.elapsed_time_ms + view.time_addition_min * 60_000;
     const maxTimeSec = maxTimeByClass.get(view.class_id);
     if (
       view.status === 'OK' &&
@@ -279,6 +286,8 @@ export function reduce(input: ReduceInput): CompetitionState {
       manual_finish_ms: corrected?.finish_ms ?? null,
       manual_finish_reason: corrected?.finish_reason ?? null,
       manual_punches: corrected?.punches ?? [],
+      time_addition_min: corrected?.addition_min ?? 0,
+      time_addition_reason: corrected?.addition_reason ?? null,
     });
   }
   const pendingUnknownCards = new Set<number>();

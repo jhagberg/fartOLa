@@ -206,6 +206,20 @@ export type EventPayload =
       control_code: number;
     }
   | {
+      // SOFT TR 10.4.2 / TR 4.18.14: a time addition of 1–5 whole minutes
+      // (one minute for a false start). Replaces any earlier one; part of
+      // the running time, the place and the export.
+      event_type: 'time_addition_set';
+      competitor_id: string;
+      minutes: number;
+      reason: string;
+    }
+  | {
+      // Undo of time_addition_set.
+      event_type: 'time_addition_cleared';
+      competitor_id: string;
+    }
+  | {
       // Phase 2.0 generalization of un_dnf — clears whatever manual override
       // is in force and re-derives status from the latest card_read (or PEND
       // when no card_read has landed).
