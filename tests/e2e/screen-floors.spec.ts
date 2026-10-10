@@ -9,6 +9,7 @@ import { seedCompetition } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
+import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -68,6 +69,24 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/eventor-publish`,
     ready: (p) => p.getByTestId('eventor-publish-view'),
     prepare: async (page) => prepareEventorNoKey(page),
+  },
+  {
+    name: 'Kvar i skogen',
+    url: (id) => `/competition/${id}/kvar-i-skogen`,
+    ready: (p) => p.getByTestId('kvariskov-view'),
+    prepare: async (page) => prepareKvar(page),
+  },
+  {
+    name: 'Kvar i skogen, dosan sover',
+    url: (id) => `/competition/${id}/kvar-i-skogen`,
+    ready: (p) => p.getByTestId('kvariskov-view'),
+    prepare: async (page) => prepareKvarAsleep(page),
+  },
+  {
+    name: 'Kvar i skogen med fel',
+    url: (id) => `/competition/${id}/kvar-i-skogen`,
+    ready: (p) => p.getByTestId('kvariskov-view'),
+    prepare: async (page) => prepareKvarError(page),
   },
 ];
 

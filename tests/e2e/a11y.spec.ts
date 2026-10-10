@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
+import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -22,6 +23,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   // Registration gets its own competition: its prepared state reads cards,
   // which would replace the latest read the readout screen waits for.
   const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
+  const kvId = (await seedCompetition(request, { controls: 12 })).competitionId;
   const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
   // Each screen is scanned only once its own content is on the page.
   const screens: Array<[string, (page: Page) => Locator, ((page: Page) => Promise<void>)?]> = [
@@ -54,6 +56,17 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       `/competition/${exId}/eventor-publish`,
       (p) => p.getByTestId('eventor-publish-view'),
       prepareEventorNoKey,
+    ],
+    [`/competition/${kvId}/kvar-i-skogen`, (p) => p.getByTestId('kvariskov-view'), prepareKvar],
+    [
+      `/competition/${kvId}/kvar-i-skogen`,
+      (p) => p.getByTestId('kvariskov-view'),
+      prepareKvarAsleep,
+    ],
+    [
+      `/competition/${kvId}/kvar-i-skogen`,
+      (p) => p.getByTestId('kvariskov-view'),
+      prepareKvarError,
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];
