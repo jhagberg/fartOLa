@@ -498,6 +498,14 @@
   "tw.off": "Av",
   "tw.font": "Typsnitt",
 
+  "settings.eventor.ready": "Eventor: cache OK ({{days}} dagar gammal)",
+  "settings.eventor.stale": "Eventor: cachen är gammal — uppdatera när du har internet",
+  "settings.eventor.offline": "Eventor: ingen internetkontakt",
+  "settings.eventor.no_key": "Eventor: nyckel saknas",
+  "settings.eventor.refreshing": "Eventor: hämtar...",
+  "settings.eventor.unknown": "Eventor: kontrollerar...",
+  "settings.eventor.refreshButton": "Uppdatera",
+
   "settings.title": "Inställningar",
   "settings.integrations.title": "Integrationsnycklar",
   "settings.integrations.desc": "API-nycklar för externa system. Värdet sparas lokalt och visas aldrig efter att du klickat Spara — du måste skriva in det på nytt om du vill se det.",
