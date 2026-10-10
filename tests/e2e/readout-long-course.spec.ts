@@ -132,3 +132,18 @@ test('35 controls at 200 % zoom (683×384): every action reachable', async ({ pa
   await page.getByTestId('manual-dnf-btn').click();
   await expectPickerVisible(page, true);
 });
+
+test('"fel ordn." keeps a gap to the edge of a medium tile', async ({ page, request }) => {
+  const { competitionId } = await seedCompetition(request, { controls: 35 });
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto(`/competition/${competitionId}/readout`);
+  const codes = longCourseCodes(35);
+  // 33 punched after 34: 34 matches, 33 is out of order.
+  [codes[2], codes[3]] = [codes[3]!, codes[2]!];
+  await simulateRead(request, competitionId, 7_501_853, codes);
+  const tile = page.locator('[data-testid="punch-grid"] .punch[data-state="order"]').first();
+  await expect(tile).toBeVisible({ timeout: 5_000 });
+  const [t, l] = [(await tile.boundingBox())!, (await tile.locator('.label').boundingBox())!];
+  // 3 px border plus at least 2 px space on the right.
+  expect(l.x + l.width).toBeLessThanOrEqual(t.x + t.width - 5);
+});
