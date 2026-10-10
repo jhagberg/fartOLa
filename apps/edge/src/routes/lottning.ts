@@ -5,6 +5,8 @@
 // Routes registered here:
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
 //   PUT  /api/competitions/:id/lottning/:classId/seeding — store seeding groups
+//   POST /api/competitions/:id/lottning/:classId/bibs — number the class's
+//        bibs in start order (SOFT TR 7.5.4)
 //   GET  /api/competitions/:id/lottning/:classId — fetch current start list,
 //        plus the stored seeding groups of every runner in the class, how
 //        many runners have a previous-stage result (pursuit, TR 7.4.1), the
@@ -34,7 +36,7 @@
 
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
@@ -50,6 +52,7 @@ import { freeStartForbidden } from '../projection/preRaceCheck.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
+import { classCourseLength } from './_courses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 import { StartTimeMs } from './competitors.ts';
@@ -105,6 +108,13 @@ const LottningInput = z
 type LottningBody = z.infer<typeof LottningInput>;
 
 const SeedingInput = z.object({ groups: z.array(z.array(z.string().min(1)).min(1)) }).strict();
+
+const BibsInput = z
+  .object({
+    bib_prefix: z.string().trim().max(8).nullable(),
+    bib_base: z.number().int().nonnegative().max(99999),
+  })
+  .strict();
 
 interface Row {
   id: string;
@@ -185,6 +195,10 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         classKind: classes.classKind,
         classKindSource: classes.classKindSource,
         ageClass: classes.ageClass,
+        courseId: classes.courseId,
+        bibPrefix: classes.bibPrefix,
+        bibBase: classes.bibBase,
+        startName: classes.startName,
         level: competitions.level,
         distance: competitions.distance,
       })
@@ -312,6 +326,82 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
   );
 
   // ---------------------------------------------------------------------------
+  // POST /api/competitions/:id/lottning/:classId/bibs — bibs (SOFT TR 7.5.4)
+  // in start order: prefix + base, base + 1, … (OLA's "Nummerlappsprefix"
+  // and "Nummerlappsnummer bas"; MeOS oEvent::addBib, oEvent.cpp:4975, also
+  // numbers a class in start-time order). Stores the numbering on the class.
+  // Runners without a start time or a name get no bib. Re-run after a redraw.
+  // → 200 { numbered }; 409 { error: 'bib_taken', bib } when a bib belongs
+  // to a runner in another class (nothing written).
+  // ---------------------------------------------------------------------------
+  app.post<{ Params: { id: string; classId: string } }>(
+    '/api/competitions/:id/lottning/:classId/bibs',
+    async (req, reply) => {
+      const { id: competitionId, classId } = req.params;
+      const parsed = BibsInput.safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send(issuesToErrors(parsed.error.issues));
+      if (!classOf(competitionId, classId))
+        return reply.code(404).send({ error: 'class_not_found' });
+      const prefix = parsed.data.bib_prefix || null;
+      const base = parsed.data.bib_base;
+
+      const inClass = app.fartolaDb.db
+        .select({
+          id: competitors.id,
+          name: competitors.name,
+          startTimeMs: competitors.startTimeMs,
+        })
+        .from(competitors)
+        .where(eq(competitors.classId, classId))
+        .all();
+      // Start order; equal times (a mass start) by name, as the pursuit.
+      const numbered = inClass
+        .filter((r) => r.startTimeMs !== null && r.name.trim().length > 0)
+        .sort((a, b) => a.startTimeMs! - b.startTimeMs! || a.name.localeCompare(b.name, 'sv'))
+        .map((r, k) => ({ id: r.id, bib: `${prefix ?? ''}${base + k}` }));
+
+      const elsewhere = new Set(
+        app.fartolaDb.db
+          .select({ bib: competitors.bib })
+          .from(competitors)
+          .where(
+            and(
+              eq(competitors.competitionId, competitionId),
+              ne(competitors.classId, classId),
+              isNotNull(competitors.bib)
+            )
+          )
+          .all()
+          .map((r) => r.bib)
+      );
+      const taken = numbered.find((n) => elsewhere.has(n.bib));
+      if (taken !== undefined) return reply.code(409).send({ error: 'bib_taken', bib: taken.bib });
+
+      app.fartolaDb.sqlite.transaction(() => {
+        app.fartolaDb.db
+          .update(classes)
+          .set({ bibPrefix: prefix, bibBase: base })
+          .where(eq(classes.id, classId))
+          .run();
+        // Clear first, so a shifted number never collides inside the class.
+        app.fartolaDb.db
+          .update(competitors)
+          .set({ bib: null })
+          .where(eq(competitors.classId, classId))
+          .run();
+        for (const n of numbered)
+          app.fartolaDb.db
+            .update(competitors)
+            .set({ bib: n.bib })
+            .where(eq(competitors.id, n.id))
+            .run();
+      })();
+      app.projectionStore.markDirty(competitionId);
+      return { numbered: numbered.length };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
   // GET /api/competitions/:id/lottning/:classId — fetch current start list
   // ---------------------------------------------------------------------------
   app.get<{ Params: { id: string; classId: string } }>(
@@ -333,6 +423,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           cardNumber: competitors.cardNumber,
           startTimeMs: competitors.startTimeMs,
           seedGroup: competitors.seedGroup,
+          bib: competitors.bib,
         })
         .from(competitors)
         .where(and(eq(competitors.classId, classId), isNotNull(competitors.startTimeMs)))
@@ -382,6 +473,11 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           // while the kind is unconfirmed or the level unset.
           free_start_banned: freeStartForbidden(classRow, classRow.level),
           without_start_time: withoutStart,
+          // SOFT TR 7.5.4: the start list's class fields.
+          bib_prefix: classRow.bibPrefix,
+          bib_base: classRow.bibBase,
+          start_name: classRow.startName,
+          course_length_m: classCourseLength(app.fartolaDb, competitionId, classRow),
         },
         start_list: startList.map((r) => ({
           id: r.id,
@@ -390,6 +486,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           card_number: r.cardNumber,
           start_time_ms: r.startTimeMs,
           seed_group: r.seedGroup,
+          bib: r.bib,
         })),
         seeding: seeding.map((r) => ({ id: r.id, seed_group: r.seedGroup! })),
         previous_results: {

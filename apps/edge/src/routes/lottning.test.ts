@@ -22,7 +22,7 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitions, classes, competitors } from '../db/schema.ts';
+import { competitions, classes, competitors, courses } from '../db/schema.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** Epoch ms at h:m local on the test competition's date (2026-05-24). */
@@ -1110,5 +1110,122 @@ describe('lottning route', () => {
     const res = await post({ ...pursuitBody, mode: 'Pursuit' });
     assert.equal(res.statusCode, 409, res.body);
     assert.equal((res.json() as { error: string }).error, 'class_kind_unconfirmed');
+  });
+
+  // ---- SOFT TR 7.5.4: bibs and the start list's class fields --------------
+  const postBibs = (payload: Record<string, unknown>, classId = ctx.classId) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${classId}/bibs`,
+      payload,
+    });
+  const bibsOf = (classId = ctx.classId) =>
+    ctx.handle.db
+      .select({ startTimeMs: competitors.startTimeMs, bib: competitors.bib })
+      .from(competitors)
+      .where(eq(competitors.classId, classId))
+      .orderBy(asc(competitors.startTimeMs))
+      .all();
+
+  test('SOFT TR 7.5.4: bibs are numbered from the base in start order and stored on the class', async () => {
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+    addRunner('Not drawn', 'Gamma');
+    const res = await postBibs({ bib_prefix: 'A', bib_base: 101 });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(res.json(), { numbered: 5 });
+    assert.deepEqual(
+      bibsOf().map((r) => r.bib),
+      [null, 'A101', 'A102', 'A103', 'A104', 'A105'] // the runner without a start sorts first
+    );
+    const cls = ctx.handle.db
+      .select({ p: classes.bibPrefix, b: classes.bibBase })
+      .from(classes)
+      .where(eq(classes.id, ctx.classId))
+      .get();
+    assert.deepEqual(cls, { p: 'A', b: 101 });
+  });
+
+  test('SOFT TR 7.5.4: renumbering after a redraw follows the new start order', async () => {
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+    assert.equal((await postBibs({ bib_prefix: null, bib_base: 1 })).statusCode, 200);
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(11), intervalSec: 60 })).statusCode,
+      201
+    );
+    assert.equal((await postBibs({ bib_prefix: null, bib_base: 1 })).statusCode, 200);
+    assert.deepEqual(
+      bibsOf().map((r) => r.bib),
+      ['1', '2', '3', '4', '5']
+    );
+  });
+
+  test('SOFT TR 7.5.4: a bib held in another class → 409 bib_taken, nothing written', async () => {
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+    const other = ctx.handle.db
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(eq(competitors.classId, ctx.otherClassId))
+      .get()!;
+    ctx.handle.db.update(competitors).set({ bib: '103' }).where(eq(competitors.id, other.id)).run();
+    const res = await postBibs({ bib_prefix: null, bib_base: 101 });
+    assert.equal(res.statusCode, 409, res.body);
+    assert.deepEqual(res.json(), { error: 'bib_taken', bib: '103' });
+    assert.ok(bibsOf().every((r) => r.bib === null));
+  });
+
+  test('SOFT TR 7.5.4: GET lottning returns bib, start place and course length', async () => {
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+    assert.equal((await postBibs({ bib_prefix: 'H', bib_base: 1 })).statusCode, 200);
+    ctx.handle.db
+      .insert(courses)
+      .values({ id: 'co1', competitionId: ctx.competitionId, name: 'Bana 1', lengthM: 5400 })
+      .run();
+    ctx.handle.db
+      .update(classes)
+      .set({ courseId: 'co1', startName: 'Start 1' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as {
+      class: Record<string, unknown>;
+      start_list: Array<{ bib: string | null }>;
+    };
+    assert.deepEqual(
+      [
+        body.class.bib_prefix,
+        body.class.bib_base,
+        body.class.start_name,
+        body.class.course_length_m,
+      ],
+      ['H', 1, 'Start 1', 5400]
+    );
+    assert.deepEqual(
+      body.start_list.map((r) => r.bib),
+      ['H1', 'H2', 'H3', 'H4', 'H5']
+    );
+  });
+
+  test('bibs: bad body → 400; unknown class → 404', async () => {
+    assert.equal((await postBibs({ bib_base: -1, bib_prefix: null })).statusCode, 400);
+    assert.equal(
+      (await postBibs({ bib_base: 1, bib_prefix: null }, crypto.randomUUID())).statusCode,
+      404
+    );
   });
 });

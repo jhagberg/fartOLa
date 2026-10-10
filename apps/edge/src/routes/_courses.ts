@@ -2,9 +2,10 @@
 //
 // A competition's courses as CourseDTOs with their controls in order. Used
 // by GET /api/competitions/:id and the IOF ResultList exports (course
-// length per class, SOFT TR 7.8.2).
+// length per class, SOFT TR 7.8.2). classCourseLength: a class's course
+// length for the start list (SOFT TR 7.5.4).
 
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
 import type { CourseControlDTO, CourseDTO } from '@fartola/shared-types';
 import type { DbHandle } from '../db/index.ts';
@@ -48,4 +49,23 @@ export function loadCourseDTOs(handle: DbHandle, competitionId: string): CourseD
     climb_m: c.climbM,
     controls: controlsByCourse.get(c.id) ?? [],
   }));
+}
+
+/** The length in metres of the class's course: its course_id, else the
+ * legacy course whose class_id matches (as routes/print.ts); null if none. */
+export function classCourseLength(
+  handle: DbHandle,
+  competitionId: string,
+  cls: { id: string; courseId: string | null }
+): number | null {
+  const row = handle.db
+    .select({ lengthM: courses.lengthM })
+    .from(courses)
+    .where(
+      cls.courseId !== null
+        ? eq(courses.id, cls.courseId)
+        : and(eq(courses.competitionId, competitionId), eq(courses.classId, cls.id))
+    )
+    .get();
+  return row?.lengthM ?? null;
 }
