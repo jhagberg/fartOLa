@@ -24,6 +24,7 @@
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-04-PLAN.md task 2
 
+import { resultListInputs } from './_resultListInputs.ts';
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -1464,5 +1465,56 @@ describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
         [1007, 30],
       ])
     );
+  });
+
+  test('SOFT TR 4.12.4: paid on site: the whole charge (fee, surcharge, card rental) is recorded as paid, corrected by PATCH, summed per method, and reaches the ResultList input', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    const paid = await register(competitionId, h21, 1020, {
+      paid_method: 'swish',
+      hired_card: true,
+      hired_contact: { name: null, phone: '0701234567', email: null, note: null },
+    });
+    assert.deepEqual([paid.paidAmount, paid.paidMethod], [390, 'swish']);
+    const unpaid = await register(competitionId, h21, 1021);
+    assert.equal(unpaid.paidAmount, 0);
+    const cash = await register(competitionId, h21, 1022, { paid_method: 'cash' });
+    assert.equal(cash.paidAmount, 360);
+
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitors/${cash.id}/profile`,
+      payload: { paid_amount: 180 },
+    });
+    assert.equal(patch.statusCode, 200, patch.body);
+    assert.equal(patch.json().competitor.paid_amount, 180);
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${competitionId}/hired-cards`,
+    });
+    assert.deepEqual(list.json().paid_on_site, { cash: 180, swish: 390, other: 0, total: 570 });
+
+    const fees = resultListInputs(ctx.handle, competitionId).fees!;
+    assert.equal(fees.get(paid.id)?.paid, 390);
+    assert.equal(fees.get(unpaid.id)?.paid, 0);
+  });
+
+  test('SOFT TR 4.12.4: paid on site is recorded also when the walk-up corrects a misread card', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    const first = await register(competitionId, h21, 1030);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 1031,
+        replace_card_for_competitor_id: first.id,
+        paid_method: 'cash',
+      },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(res.json().paid_amount, 360);
+    const row = ctx.handle.db.select().from(competitors).where(eq(competitors.id, first.id)).get()!;
+    assert.deepEqual([row.cardNumber, row.paidAmount, row.paidMethod], [1031, 360, 'cash']);
   });
 });

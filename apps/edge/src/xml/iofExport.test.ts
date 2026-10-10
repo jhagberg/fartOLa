@@ -542,7 +542,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     const anna = person('Andersson');
     assert.match(
       anna,
-      /<Status>OK<\/Status>\s*<AssignedFee>\s*<Fee type="Normal">\s*<Id>234128<\/Id>\s*<Name>Anmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>\s*<\/Fee>\s*<\/AssignedFee>\s*<AssignedFee>\s*<Fee type="Late">\s*<Id>234132<\/Id>\s*<Name>Efteranmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>/
+      /<Status>OK<\/Status>\s*<AssignedFee>\s*<Fee type="Normal">\s*<Id>234128<\/Id>\s*<Name>Anmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>\s*<\/Fee>\s*<PaidAmount currency="SEK">0<\/PaidAmount>\s*<\/AssignedFee>\s*<AssignedFee>\s*<Fee type="Late">\s*<Id>234132<\/Id>\s*<Name>Efteranmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>/
     );
     assert.match(
       anna,
@@ -558,6 +558,38 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     // No Eventor fee id: no Fee/Id.
     assert.doesNotMatch(cia, /<Fee type="Normal">\s*<Id>/);
     assert.doesNotMatch(cia, /ServiceRequest/);
+  });
+
+  test('SOFT TR 4.12.4: paid on site goes out as PaidAmount (MeOS semantics: card rental first, then class fee, then late fee), XSD-valid', async () => {
+    const res = await validateAndBuild(
+      makeInput({
+        fees: new Map([
+          // Paid everything: 180 + 90 + 30 card.
+          ['cmp-anna', { entry: 180, late: 90, card: 30, paid: 300 }],
+          // A walk-up paid the class fee only.
+          ['cmp-bo', { entry: 180, late: 0, card: null, paid: 180 }],
+          // Paid less than the card rental: nothing marked paid on the card.
+          ['cmp-cia', { entry: 180, late: 0, card: 30, paid: 20 }],
+        ]),
+      })
+    );
+    if (!res.valid) assert.fail(`XSD-invalid: ${JSON.stringify(res.errors)}`);
+    const xml = res.build.xml;
+    const person = (family: string) =>
+      new RegExp(`<Family>${family}</Family>[\\s\\S]*?</PersonResult>`).exec(xml)![0];
+    const paidOf = (block: string) =>
+      [...block.matchAll(/<PaidAmount currency="SEK">(\d+)<\/PaidAmount>/g)].map((m) =>
+        Number(m[1])
+      );
+    // Class fee 180, late fee 90, rental 30, all paid: 180, 90 and 30.
+    assert.deepEqual(paidOf(person('Andersson')), [180, 90, 30]);
+    assert.deepEqual(paidOf(person('Berg')), [180]);
+    assert.deepEqual(paidOf(person('Carlsson')), [20]);
+    // PaidAmount comes right after Fee inside AssignedFee (XSD order).
+    assert.match(
+      person('Berg'),
+      /<\/Fee>\s*<PaidAmount currency="SEK">180<\/PaidAmount>\s*<\/AssignedFee>/
+    );
   });
 
   test('test 8: round-trip parse confirms structural fields', () => {

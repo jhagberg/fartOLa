@@ -43,6 +43,7 @@
   let club = $state('');
   let classId = $state('');
   let cardNumber = $state('');
+  let paid = $state('');
   let saving = $state(false);
   let error: string | null = $state(null);
   let confirmingWithdraw = $state(false);
@@ -58,6 +59,7 @@
     club = competitor?.club ?? '';
     classId = competitor?.class_id ?? '';
     cardNumber = competitor?.card_number == null ? '' : String(competitor.card_number);
+    paid = String(competitor?.paid_amount ?? 0);
     error = null;
     confirmingWithdraw = false;
   });
@@ -94,6 +96,12 @@
     if (parsedCard !== competitor.card_number) {
       patch.card_number = parsedCard;
     }
+    const parsedPaid = paid.trim() === '' ? 0 : Number(paid.trim());
+    if (!Number.isInteger(parsedPaid) || parsedPaid < 0) {
+      error = t('err.required');
+      return;
+    }
+    if (parsedPaid !== (competitor.paid_amount ?? 0)) patch.paid_amount = parsedPaid;
     if (Object.keys(patch).length === 0) {
       onClose();
       return;
@@ -183,6 +191,17 @@
           inputmode="numeric"
           bind:value={cardNumber}
           data-testid="edit-card"
+          autocomplete="off"
+          pattern="[0-9]*"
+        />
+      </label>
+      <label class="field">
+        <span>{t('edit.paid')}</span>
+        <input
+          type="text"
+          inputmode="numeric"
+          bind:value={paid}
+          data-testid="edit-paid"
           autocomplete="off"
           pattern="[0-9]*"
         />

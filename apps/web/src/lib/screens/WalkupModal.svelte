@@ -207,6 +207,8 @@
   // "at least phone OR email" before save (server is authoritative; UI is
   // best-effort UX so the operator doesn't round-trip to discover the gate).
   let hiredCard = $state(false);
+  // Paid at the desk: the edge records the whole charge shown as paid.
+  let paidMethod = $state<'' | 'cash' | 'swish'>('');
   let contactName = $state('');
   let contactPhone = $state('');
   let contactEmail = $state('');
@@ -382,6 +384,7 @@
         consent_status: 'explicit',
         birth_year: birthYear ?? null,
         hired_card: hiredCard,
+        ...(paidMethod !== '' && fee !== null && fee.total > 0 ? { paid_method: paidMethod } : {}),
         ...(hiredCard
           ? {
               hired_contact: {
@@ -489,6 +492,7 @@
         club: null,
         card_number: cardNumberLocal as number,
         hired_card: hiredCard,
+        ...(paidMethod !== '' && fee !== null && fee.total > 0 ? { paid_method: paidMethod } : {}),
         replace_card_for_competitor_id: cardTakenExistingId,
       });
       // Same as the main save path — saved=true so the parent's queue
@@ -705,6 +709,17 @@
               .join(', ')})</span
           >
         </p>
+      {/if}
+
+      {#if fee !== null && fee.total > 0}
+        <label class="field">
+          <span>{t('walk.paid')}</span>
+          <select bind:value={paidMethod} data-testid="walkup-paid">
+            <option value="">{t('walk.paid.none')}</option>
+            <option value="cash">{t('walk.paid.cash')}</option>
+            <option value="swish">{t('walk.paid.swish')}</option>
+          </select>
+        </label>
       {/if}
 
       {#if fieldError}
