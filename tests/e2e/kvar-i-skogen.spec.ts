@@ -91,6 +91,31 @@ test('a failed refetch removes the all-back box', async ({ page }) => {
   await expect(page.getByTestId('kvariskov-fetched-at')).toBeVisible();
 });
 
+test('a retry after a failed refetch shows no all-clear until it succeeds', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [ANNA]));
+  await expect(page.getByTestId('kvariskov-all-returned')).toBeVisible();
+  await page.unroute('**/checkunit/snapshot');
+  await page.route('**/checkunit/snapshot', (route) =>
+    route.fulfill({ status: 500, json: { error: 'Serverfel' } })
+  );
+  await page.getByTestId('kvariskov-refetch').click();
+  await expect(page.getByTestId('kvariskov-error')).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.unroute('**/checkunit/snapshot');
+  await page.route('**/checkunit/snapshot', async (route) => {
+    await held;
+    await route.fulfill({ json: snap([ANNA], [ANNA]) });
+  });
+  await page.getByTestId('kvariskov-refetch').click();
+  await expect(page.getByTestId('kvariskov-refetch')).toBeDisabled();
+  await expect(page.getByTestId('kvariskov-all-returned')).toHaveCount(0);
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  release();
+  await expect(page.getByTestId('kvariskov-all-returned')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-error')).toHaveCount(0);
+});
+
 test('an unknown card is listed and blocks all back', async ({ page }) => {
   await fetchSnapshot(page, snap([ANNA, 9_999_001], [ANNA]));
   await expect(page.getByTestId('kvariskov-unknown')).toContainText('Okända brickor');

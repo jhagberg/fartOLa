@@ -70,6 +70,9 @@
   let hasFetched = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  /** The latest read failed. Cleared only by a successful read, so a retry
+   * in flight never brings back the all-clear from an older snapshot. */
+  let lastFetchFailed = $state(false);
   let copySuccess = $state(false);
   /** When the last successful fetch finished (epoch ms). */
   let fetchedAt = $state<number | null>(null);
@@ -168,7 +171,9 @@
       overflow = result.overflow;
       fetchedAt = Date.now();
       hasFetched = true;
+      lastFetchFailed = false;
     } catch (err) {
+      lastFetchFailed = true;
       // The edge returns { error: 'station_asleep' } (503) when the coupled
       // unit never synced — almost always because it's asleep. Show the
       // localized wake instructions rather than the raw backend message.
@@ -407,7 +412,7 @@
       </section>
     {/if}
 
-    {#if startedCards.length > 0 && missingCards.length === 0 && error === null}
+    {#if startedCards.length > 0 && missingCards.length === 0 && !loading && !lastFetchFailed}
       {#if overflow}
         <div class="box warn" data-testid="kvariskov-none-missing-overflow">
           <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
