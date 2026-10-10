@@ -118,6 +118,28 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.equal(cls?.maxTimeSec, null);
   });
 
+  test('PATCH bib_prefix, bib_base and start_name → stored; empty text clears', async () => {
+    const patch = (payload: object) =>
+      ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`,
+        payload,
+      });
+    const row = () =>
+      ctx.handle.db
+        .select({ p: classes.bibPrefix, b: classes.bibBase, s: classes.startName })
+        .from(classes)
+        .where(eq(classes.id, ctx.classId))
+        .get();
+    let res = await patch({ bib_prefix: ' A ', bib_base: 101, start_name: 'Start 1' });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(row(), { p: 'A', b: 101, s: 'Start 1' });
+    res = await patch({ bib_prefix: '', start_name: null });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(row(), { p: null, b: 101, s: null });
+    assert.equal((await patch({ bib_base: -1 })).statusCode, 400);
+  });
+
   test('PATCH unknown class → 404', async () => {
     const res = await ctx.app.inject({
       method: 'PATCH',
