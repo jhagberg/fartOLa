@@ -182,5 +182,7 @@ test('the add button says what is missing', async ({ page, request }) => {
   // The button still submits the form: the walk-up modal opens for the card.
   await page.getByTestId('reg-manual-form').getByRole('button', { name: 'Lägg till' }).click();
   await expect(page.getByTestId('walkup-modal')).toBeVisible();
+  await page.getByRole('button', { name: /direktanmälan/ }).click();
+  await expect(page.getByTestId('walkup-card')).toHaveValue('7501853');
   await expect(page.getByTestId('reg-manual-input')).toHaveValue('');
 });

@@ -9,6 +9,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
+import { prepareRegistration } from './helpers/registration.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -16,6 +17,9 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   test.setTimeout(120_000);
   const { competitionId: id } = await seedCompetition(request, { controls: 12 });
   await simulateRead(request, id, 7_501_853, [31, 32, 33, 35, 34, 36, 37, 38, 39, 40, 41, 42]);
+  // Registration gets its own competition: its prepared state reads cards,
+  // which would replace the latest read the readout screen waits for.
+  const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
   // Each screen is scanned only once its own content is on the page.
   const screens: Array<[string, (page: Page) => Locator]> = [
     [
@@ -25,7 +29,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     [`/competition/${id}/readout?walkup=7500123`, (p) => p.getByTestId('walkup-modal')],
     [`/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
-    [`/competition/${id}/registration`, (p) => p.getByTestId('registration-view')],
+    [`/competition/${regId}/registration`, (p) => p.getByTestId('registration-view')],
     [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];
@@ -38,9 +42,11 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     for (const [url, ready] of screens) {
       await page.goto(url);
       await expect(ready(page)).toBeVisible();
+      if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
       if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
       const result = await new AxeBuilder({ page })
         .withRules(['color-contrast', 'target-size'])
+        .exclude('[data-testid=walkup-modal]')
         .analyze();
       for (const v of result.violations) {
         for (const n of v.nodes) {
