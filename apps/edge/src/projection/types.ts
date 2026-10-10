@@ -108,6 +108,11 @@ export interface CompetitorView {
   late_start_ms: number | null;
   /** Same, a start punch before the start time (ms before it; "Tjuvstart?"). */
   early_start_ms: number | null;
+  /** SOFT TR 4.20.6: finish time entered by the secretariat (epoch ms) and
+   * why; it wins over the card's finish (latest_finish keeps the card's, so
+   * the two can be compared). Null when none (projection/corrections.ts). */
+  manual_finish_ms: number | null;
+  manual_finish_reason: string | null;
 }
 
 /** One row in the per-class results table. ResultView is the projection

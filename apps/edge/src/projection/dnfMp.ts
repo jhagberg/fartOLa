@@ -57,6 +57,8 @@ export interface DetectInput {
   clockOffsetMin: number;
   /** The class's start method (02.1-14 Task 14). */
   startMethod: StartMethod;
+  /** Finish entered by hand (epoch ms, SOFT TR 4.20.6); wins over `finish`. */
+  finishMs?: number | null;
 }
 
 export interface StatusResult {
@@ -147,7 +149,7 @@ export function detectStatus(
   const elapsed = raw === null ? null : officialMs(raw);
 
   // Gate 1: no finish stamp → DNF, regardless of punches[] contents.
-  if (input.finish === null) {
+  if (input.finish === null && (input.finishMs ?? null) === null) {
     return {
       status: 'DNF',
       missing_codes: [...expectedControlCodes],
@@ -237,19 +239,18 @@ export function officialMs(ms: number): number {
   return Math.round(ms / 1000) * 1000;
 }
 
-/** Running time = finish − start (02.1-14 Task 3); start per startMs above.
- * Unrounded: detectStatus rounds it to the official time. Null without a
- * finish or any start. */
+/** Running time = finish − start (02.1-14 Task 3); start per startMs above,
+ * finish the one entered by hand, else the card's. Unrounded: detectStatus
+ * rounds it to the official time. Null without a finish or any start. */
 export function rawElapsedMs(input: DetectInput): number | null {
-  if (input.finish === null) return null;
+  const finish =
+    input.finishMs ??
+    (input.finish === null
+      ? null
+      : cardClockToEpochMs(input.finish, input.cardType, input.readAtMs, input.clockOffsetMin));
+  if (finish === null) return null;
   const start = startMs(input);
   if (start === null) return null;
-  const finish = cardClockToEpochMs(
-    input.finish,
-    input.cardType,
-    input.readAtMs,
-    input.clockOffsetMin
-  );
   const elapsed = finish - start;
   // A finish before the start (wrong day / wrong drawn time) is no time,
   // not a winning negative one.

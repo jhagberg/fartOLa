@@ -135,6 +135,11 @@ interface HistoryRow {
    * clock, as the running time is computed): the UI resolves an edited
    * start before it. Null without a finish. */
   finish_ms: number | null;
+  /** SOFT TR 4.20.6 — mirrors CompetitorView.manual_finish_ms / reason:
+   * the competitor's finish entered by hand. It is the latest read's
+   * finish_ms above; finish_seconds_in_half_day stays the card's. */
+  manual_finish_ms: number | null;
+  manual_finish_reason: string | null;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -315,15 +320,12 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         // This read's running time: the projection's for the competitor's
         // latest read (manual status, voided legs, MAX included), else the
         // same scoring helper on this read's own card.
+        const latest = view?.card_read_history[view.card_read_history.length - 1];
+        const isLatest =
+          latest?.event_time_ms === e.eventTimeMs && latest.card_number === payload.card_number;
         const readElapsedMs = (): number | null => {
           if (!view || !competitor || clockOffsetMin === null) return null;
-          const latest = view.card_read_history[view.card_read_history.length - 1];
-          if (
-            latest?.event_time_ms === e.eventTimeMs &&
-            latest.card_number === payload.card_number
-          ) {
-            return view.elapsed_time_ms;
-          }
+          if (isLatest) return view.elapsed_time_ms;
           const raw = rawElapsedMs({
             start: payload.start,
             finish: payload.finish,
@@ -380,14 +382,18 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           suggested_start_ms: view?.suggested_start_ms ?? null,
           suggested_start_offset_ms: view?.suggested_start_offset_ms ?? null,
           finish_ms:
-            payload.finish === null || clockOffsetMin === null
-              ? null
-              : cardClockToEpochMs(
-                  payload.finish,
-                  payload.card_type,
-                  e.eventTimeMs,
-                  clockOffsetMin
-                ),
+            isLatest && view?.manual_finish_ms != null
+              ? view.manual_finish_ms
+              : payload.finish === null || clockOffsetMin === null
+                ? null
+                : cardClockToEpochMs(
+                    payload.finish,
+                    payload.card_type,
+                    e.eventTimeMs,
+                    clockOffsetMin
+                  ),
+          manual_finish_ms: view?.manual_finish_ms ?? null,
+          manual_finish_reason: view?.manual_finish_reason ?? null,
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
           class_place: classRow?.place ?? null,
