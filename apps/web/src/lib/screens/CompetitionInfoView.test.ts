@@ -185,3 +185,107 @@ describe('competition level (SOFT TR 3.3.1)', () => {
     expect((patches[1] as { level: unknown }).level).toBeNull();
   });
 });
+
+// SOFT TR 4.16.3 / TR 4.22.1: the closing time (last start + max time) is
+// shown with the max time, on the competition clock, for the PM. SOFT TA
+// till TR 7.4.4: the distance is set with the other fields.
+describe('closing time and distance (SOFT TR 4.16.3, TA till TR 7.4.4)', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  let patches: Array<Record<string, unknown>>;
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+  };
+
+  const mountWith = async (closing: unknown): Promise<void> => {
+    patches = [];
+    const competition = {
+      id: 'c1',
+      name: 'Stängning',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+      distance: null,
+      max_time_sec: 9000,
+      clock_offset_min: 120,
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        return json({ ...competition, ...body });
+      }
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      if (url.endsWith('/classes/kinds')) return json({ eventor: 'not_linked', items: [] });
+      return json({ competition, classes: [], courses: [], closing });
+    }) as unknown as typeof fetch;
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+  };
+
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('SOFT TR 4.16.3/4.22.1: shows the last start and when the finish closes on the competition clock, with the PM rule', async () => {
+    // 11:30 and 14:00 on the clock (UTC+2).
+    await mountWith({
+      last_start_ms: Date.UTC(2026, 9, 8, 9, 30),
+      closing_time_ms: Date.UTC(2026, 9, 8, 12, 0),
+    });
+    const box = document.querySelector('[data-testid="info-closing"]')!;
+    expect(box.textContent).toContain('Sista start');
+    expect(box.textContent).toContain('11:30');
+    expect(document.querySelector('[data-testid="info-closing-time"]')!.textContent!.trim()).toBe(
+      '14:00'
+    );
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    expect(sv['info.closing.hint']).toContain('PM');
+  });
+
+  it('shows "Inte känt" when there is no closing time yet', async () => {
+    await mountWith({ last_start_ms: null, closing_time_ms: null });
+    expect(document.querySelector('[data-testid="info-closing-time"]')!.textContent!.trim()).toBe(
+      'Inte känt'
+    );
+  });
+
+  it('SOFT TA till TR 7.4.4: saves the chosen distance; none sends null', async () => {
+    await mountWith({ last_start_ms: null, closing_time_ms: null });
+    const select = document.querySelector('[data-testid="info-distance"]') as HTMLSelectElement;
+    expect(select.selectedOptions[0]!.textContent).toBe('Inte angiven');
+    const save = document.querySelector('[data-testid="info-save"]') as HTMLButtonElement;
+    select.value = 'sprint';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    save.click();
+    await settle();
+    expect(patches[0]!.distance).toBe('sprint');
+    select.value = '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    save.click();
+    await settle();
+    expect(patches[1]!.distance).toBeNull();
+  });
+});

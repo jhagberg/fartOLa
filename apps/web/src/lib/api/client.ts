@@ -133,9 +133,19 @@ export function listCompetitions(): Promise<{ competitions: CompetitionDTO[] }> 
   return apiFetch<{ competitions: CompetitionDTO[] }>('/api/competitions');
 }
 
-export function getCompetition(
-  id: string
-): Promise<{ competition: CompetitionDTO; classes: ClassDTO[]; courses: CourseDTO[] }> {
+/** SOFT TR 4.16.3, TR 4.22.1: when the finish closes (epoch ms); null when
+ * nobody has a start time or a starter has no max time. */
+export interface ClosingTime {
+  closing_time_ms: number | null;
+  last_start_ms: number | null;
+}
+
+export function getCompetition(id: string): Promise<{
+  competition: CompetitionDTO;
+  classes: ClassDTO[];
+  courses: CourseDTO[];
+  closing: ClosingTime;
+}> {
   return apiFetch(`/api/competitions/${encodeURIComponent(id)}`);
 }
 

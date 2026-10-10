@@ -32,6 +32,7 @@
     setCompetitionMaxTime,
     setControlVoided,
     ApiError,
+    type ClosingTime,
   } from '#lib/api/client.ts';
   import { goto } from '$app/navigation';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
@@ -41,7 +42,9 @@
     CourseDTO,
     CompetitorDTO,
     CompetitionLevel,
+    CompetitionDistance,
   } from '@fartola/shared-types';
+  import { formatClockTime } from '@fartola/shared-types';
 
   interface Props {
     competitionId: string;
@@ -67,6 +70,10 @@
   let formTimingFormat: 'seconds' | 'tenths' = $state('seconds');
   // SOFT TR 3.3.1: nivå 1–4 or träning; '' = not set (null on the wire).
   let formLevel: CompetitionLevel | '' = $state('');
+  // SOFT TA till TR 7.4.4: the distance gives the normal start interval.
+  let formDistance: CompetitionDistance | '' = $state('');
+  // SOFT TR 4.16.3: the closing time for the PM.
+  let closing: ClosingTime | null = $state(null);
   let saving = $state(false);
   let saveErr: string | null = $state(null);
   let savedToast: string | null = $state(null);
@@ -84,7 +91,8 @@
       formTemplate !== c.receipt_template ||
       formAutoPrint !== c.auto_print ||
       formTimingFormat !== c.timing_format ||
-      formLevel !== (c.level ?? '')
+      formLevel !== (c.level ?? '') ||
+      formDistance !== (c.distance ?? '')
     );
   });
 
@@ -111,6 +119,12 @@
   });
 
   const LEVEL_OPTIONS: CompetitionLevel[] = ['niva1', 'niva2', 'niva3', 'niva4', 'traning'];
+  const DISTANCE_OPTIONS: CompetitionDistance[] = ['sprint', 'medel', 'lang', 'ultralang', 'natt'];
+
+  /** HH:MM on the competition clock (ADR-0012). */
+  function clockHm(ms: number): string {
+    return formatClockTime(ms, competition?.clock_offset_min ?? 0).slice(0, 5);
+  }
 
   const RECEIPT_OPTIONS: Array<CompetitionDTO['receipt_template']> = [
     'classic',
@@ -130,17 +144,14 @@
     loadError = null;
     try {
       const [detail, compsRes, voidedRes] = await Promise.all([
-        getCompetition(competitionId) as Promise<{
-          competition: CompetitionDTO;
-          classes: ClassDTO[];
-          courses: CourseDTO[];
-        }>,
+        getCompetition(competitionId),
         listCompetitors(competitionId),
         listVoidedControls(competitionId),
       ]);
       competition = detail.competition;
       classes = detail.classes;
       courses = detail.courses;
+      closing = detail.closing;
       competitors = compsRes.competitors;
       voidedCodes = voidedRes.control_codes;
       formName = detail.competition.name;
@@ -149,6 +160,7 @@
       formAutoPrint = detail.competition.auto_print;
       formTimingFormat = detail.competition.timing_format;
       formLevel = detail.competition.level ?? '';
+      formDistance = detail.competition.distance ?? '';
       formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
@@ -179,6 +191,7 @@
         auto_print: formAutoPrint,
         timing_format: formTimingFormat,
         level: formLevel === '' ? null : formLevel,
+        distance: formDistance === '' ? null : formDistance,
       });
       competition = updated;
       flashSaved();
@@ -202,6 +215,7 @@
     }
     try {
       competition = await setCompetitionMaxTime(competitionId, sec);
+      closing = (await getCompetition(competitionId)).closing;
       flashSaved();
     } catch (e) {
       maxTimeErr =
@@ -295,6 +309,20 @@
           </select>
           <small class="field-hint" id="info-level-hint">{t('info.level.hint')}</small>
         </label>
+        <label class="field">
+          <span>{t('info.distance.label')}</span>
+          <select
+            bind:value={formDistance}
+            aria-describedby="info-distance-hint"
+            data-testid="info-distance"
+          >
+            <option value="">{t('info.distance.none')}</option>
+            {#each DISTANCE_OPTIONS as d (d)}
+              <option value={d}>{t(`info.distance.${d}`)}</option>
+            {/each}
+          </select>
+          <small class="field-hint" id="info-distance-hint">{t('info.distance.hint')}</small>
+        </label>
       </div>
       <div class="card-foot">
         {#if saveErr}
@@ -329,6 +357,20 @@
           />
         </label>
         <p class="hint">{t('info.maxTime.hint')}</p>
+        <!-- SOFT TR 4.16.3, TR 4.22.1: last start + max time, for the PM -->
+        <dl class="closing" data-testid="info-closing">
+          <dt>{t('info.closing.lastStart')}</dt>
+          <dd class="mono">
+            {closing?.last_start_ms != null ? clockHm(closing.last_start_ms) : t('info.closing.none')}
+          </dd>
+          <dt>{t('info.closing.label')}</dt>
+          <dd class="mono" data-testid="info-closing-time">
+            {closing?.closing_time_ms != null
+              ? clockHm(closing.closing_time_ms)
+              : t('info.closing.none')}
+          </dd>
+        </dl>
+        <p class="hint">{t('info.closing.hint')}</p>
       </div>
       <div class="card-foot">
         {#if maxTimeErr}
@@ -446,6 +488,19 @@
     margin: 4px 0 0;
     color: var(--fg-muted);
     font-size: 13px;
+  }
+  .closing {
+    display: grid;
+    grid-template-columns: max-content auto;
+    gap: 4px 16px;
+    margin: 12px 0 0;
+  }
+  .closing dt {
+    color: var(--fg-muted);
+  }
+  .closing dd {
+    margin: 0;
+    font-weight: 600;
   }
   .muted {
     color: var(--fg-muted);
