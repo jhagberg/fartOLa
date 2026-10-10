@@ -694,6 +694,34 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     assert.equal(res.statusCode, 400);
   });
 
+  test('GET …/corrections shows the corrections in force; another competition → 404', async () => {
+    const a = await seedCompetitionAndCompetitor(ctx.app);
+    await post(a.competitionId, a.competitorId, 'manual-finish', {
+      finish_ms: FINISH_MS,
+      reason: 'Enheten',
+    });
+    const get = (competitionId: string, competitorId: string) =>
+      ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
+      });
+    const res = await get(a.competitionId, a.competitorId);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), {
+      status: 'PEND',
+      elapsed_time_ms: null,
+      start_time_ms: null,
+      missing_codes: [],
+      manual_finish_ms: FINISH_MS,
+      manual_finish_reason: 'Enheten',
+      manual_punches: [],
+      time_addition_min: 0,
+      time_addition_reason: null,
+    });
+    const b = await seedCompetitionAndCompetitor(ctx.app);
+    assert.equal((await get(a.competitionId, b.competitorId)).statusCode, 404);
+  });
+
   test('a competitor in another competition → 404', async () => {
     const a = await seedCompetitionAndCompetitor(ctx.app);
     const b = await seedCompetitionAndCompetitor(ctx.app);

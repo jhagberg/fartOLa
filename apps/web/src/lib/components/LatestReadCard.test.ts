@@ -27,6 +27,7 @@ const read = (over: Partial<Read> = {}): Read => ({
   missingStart: false,
   missingStartHint: null,
   startWarning: null,
+  corrections: [],
   ...over,
 });
 
@@ -71,5 +72,27 @@ describe('LatestReadCard manual-status picker', () => {
     el.querySelector<HTMLButtonElement>('[data-testid="manual-dnf-btn"]')!.click();
     flushSync();
     expect(el.querySelector('[data-testid="dnf-confirm"]')?.textContent?.trim()).toBe('Spara');
+  });
+});
+
+describe('LatestReadCard corrections', () => {
+  it('shows the corrections in force, so a read-out never hides them', () => {
+    const el = html(
+      read({
+        corrections: [
+          {
+            key: 'corr.line.finish',
+            vars: { time: '10:42:30', reason: 'Målenheten fungerade inte' },
+          },
+        ],
+      })
+    ).querySelector('[data-testid="corrections-line"]');
+    expect(el?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Måltid för hand 10:42:30: Målenheten fungerade inte'
+    );
+  });
+
+  it('shows nothing without corrections', () => {
+    expect(html(read()).querySelector('[data-testid="corrections-line"]')).toBeNull();
   });
 });

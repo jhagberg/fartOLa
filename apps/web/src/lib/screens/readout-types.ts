@@ -92,6 +92,10 @@ export interface ReadoutHistoryRow {
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** Secretariat corrections in force for the runner (SOFT TR 4.20.6):
+   * the finish time by hand and why; null when none. */
+  manual_finish_ms: number | null;
+  manual_finish_reason: string | null;
   /** The runner's current standing in the class (projection results rows):
    * place and ms behind the leader are null for MP/DNF/untimed/unplaced;
    * finished = runners with a place, starters = all in the class. */
