@@ -78,3 +78,45 @@ test('relink changes the linked event only after a successful import', async ({
   await expect(page.getByTestId('import-relink-error')).toHaveCount(0);
   await expect(page.getByTestId('import-event-list')).toBeVisible();
 });
+
+test('a failed link save after a good import is not reported as a failed import', async ({
+  page,
+  request,
+}) => {
+  const id = await createEmptyCompetition(request);
+  await request.patch(`${BASE}/api/competitions/${id}`, { data: { eventor_event_id: 1111 } });
+  await mockEventorEvents(page);
+  await page.route('**/api/eventor/events/1111', (r) =>
+    r.fulfill({
+      json: { eventId: 1111, name: 'Länkad tävling', startDate: '2026-10-09', organisation: null },
+    })
+  );
+  await page.route('**/eventor-import**', (r) =>
+    r.fulfill({
+      status: 201,
+      json: {
+        kind: 'EntryList',
+        competitors_created: 2,
+        competitors_skipped_duplicate: 0,
+        classes_missing: [],
+        auto_bound: [],
+      },
+    })
+  );
+  await page.route(`**/api/competitions/${id}`, (r) =>
+    r.request().method() === 'PATCH'
+      ? r.fulfill({ status: 500, json: { error: 'boom' } })
+      : r.fallback()
+  );
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('linked-relink-btn').click();
+  await page.getByTestId('import-search').click();
+  await page.getByTestId('import-event-btn').click();
+  await expect(page.getByTestId('import-result')).toBeVisible();
+  await expect(page.getByTestId('import-relink-error')).toContainText(
+    'Löparna är importerade, men kopplingen till Eventor-tävlingen kunde inte sparas.'
+  );
+  await expect(page.getByText('Importen misslyckades')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Klar – visa anmälda' })).toBeVisible();
+});

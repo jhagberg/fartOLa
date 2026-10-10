@@ -240,6 +240,7 @@
   "importRunners.courseSuccess": "Banfilen är inläst: {{count}} banor.",
   "importRunners.done": "Klar – visa anmälda",
   "importRunners.relink.cancel": "Välj annan tävling",
+  "importRunners.relink.linkFailed": "Löparna är importerade, men kopplingen till Eventor-tävlingen kunde inte sparas. Försök igen.",
 
   "home.title": "Tävlingar",
   "home.empty.title": "Inga aktiva tävlingar",
