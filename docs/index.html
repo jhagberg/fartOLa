@@ -751,9 +751,9 @@
             <tr><th>Status</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
           </thead>
           <tbody>
-            <tr><td>Uppfylld</td><td>26</td><td>36</td></tr>
-            <tr><td>Delvis</td><td>20</td><td>26</td></tr>
-            <tr><td>Saknas</td><td>24</td><td>7</td></tr>
+            <tr><td>Uppfylld</td><td>36</td><td>36</td></tr>
+            <tr><td>Delvis</td><td>18</td><td>26</td></tr>
+            <tr><td>Saknas</td><td>16</td><td>7</td></tr>
             <tr><td>Ej tillämplig (sköts i Eventor eller av SOFT)</td><td>5</td><td>6</td></tr>
             <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
           </tbody>
@@ -765,14 +765,16 @@
             <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Hela regelmatrisen</a> ·
             <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/meos-jamforelse.md" target="_blank" rel="noopener">Jämförelsen med MeOS</a>
           </p>
-          <p class="small">Filerna hamnar i main när PR #51–#53 slås ihop. Till dess finns de i <a href="https://github.com/jhagberg/fartOLa/pull/53/files" target="_blank" rel="noopener">PR #53</a>.</p>
         </div>
       </div>
 
       <div class="cmp-cols">
         <div>
-          <h3 class="sub-head">Här ligger <i>fartOLa</i> före MeOS (9 regler)</h3>
+          <h3 class="sub-head">Här ligger <i>fartOLa</i> före MeOS (12 regler)</h3>
           <ul class="cmp-list">
+            <li><b>Stängningstid</b> (TR 4.16.3, 4.22.1): <i>fartOLa</i> räknar fram när målet stänger (sista start plus maxtid) och varnar när en lottning flyttar det. MeOS räknar inte ut det.</li>
+            <li><b>Klasstyper</b> (TR 3.4.2): SOFT:s klasstyper från Eventor eller bekräftade av arrangören styr direktanmälan, seedning, jaktstart och avgiftstak. MeOS gissar typen ur klassnamnet.</li>
+            <li><b>Avgifter</b> (TR 4.12.4, 4.12.6): brickhyra bara för hyrbricka, och tillägget för efter- och direktanmälan har tak per klasstyp. MeOS har en procentsats för hela tävlingen, utan tak.</li>
             <li><b>Sen start</b> (TR 4.18.9): tiden räknas från starttiden, och sen start flaggas. MeOS gör så bara om ”Ej startstämpling” är påslaget i varje klass.</li>
             <li><b>Hela banans tid</b> (TR 4.20.10): <i>fartOLa</i> drar aldrig av sträcktider. MeOS kan göra det med kontrollstatus ”Utan tidtagning” eller ”Försvunnen”.</li>
             <li><b>Hela sekunder</b> (TR 4.20.7): den officiella tiden avrundas till hel sekund. MeOS klipper av när tiondelar är påslagna.</li>
@@ -784,30 +786,28 @@
           </ul>
         </div>
         <div>
-          <h3 class="sub-head">Här ligger MeOS före (27 regler, plus godkännandet)</h3>
+          <h3 class="sub-head">Här ligger MeOS före (18 regler, plus godkännandet)</h3>
           <ul class="cmp-list">
             <li><b>Tävlingsformer:</b> stafett, patrull, etapper, distrikt och mästerskap (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3 m.fl.).</li>
-            <li><b>Deltagaruppgifter:</b> utan tidtagning per deltagare (TR 3.4.8), födelseår och åldersklass (TR 3.4.4), avgifter (TR 4.12.4, 4.12.6).</li>
-            <li><b>Rättning i sekretariatet:</b> tidstillägg (TR 4.18.14, 10.4.2), måltid för hand (TR 4.20.6), manuella stämplar (TR 8.1.4), anteckning om ny starttid (TA till TR 4.18.9) och rättning av resultatlistan (TR 10.4.10).</li>
-            <li><b>Listor:</b> startlistor att anslå (TR 4.16.1, 7.5.4) och kontroll att alla kommit i mål (TR 4.22.1).</li>
+            <li><b>Deltagaruppgifter:</b> utan tidtagning per deltagare (TR 3.4.8) och åldersklass efter födelseår (TR 3.4.4).</li>
+            <li><b>Sekretariatet:</b> en anteckning om ny starttid utan att den officiella ändras (TA till TR 4.18.9).</li>
+            <li><b>Listor:</b> rankingnummer i startlistan (TR 7.5.4) och kontroll att alla kommit i mål (TR 4.22.1).</li>
             <li><b>Störda klasser:</b> ogiltigförklarad klass och avkortad bana (TR 4.23.1, 4.23.3).</li>
-            <li><b>Lottning:</b> vakanser, efteranmälda utan omlottning, ranking och seedning, jaktstart, startplanering över klasser, kval och final (TA till TR 6.5.1, TR 7.3.2–7.5.9).</li>
+            <li><b>Lottning:</b> vakanser, efteranmälda, ranking och klassdelning, startplanering över klasser, kval och final (TA till TR 6.5.1, TR 7.3.2–7.3.8, 7.5.5, 7.5.7–7.5.9).</li>
           </ul>
-          <p class="small">Lika för 38 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel stängningstid för målet (TR 4.16.3), ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
+          <p class="small">Lika för 44 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
         </div>
       </div>
 
       <h3 class="sub-head">De största luckorna</h3>
       <ol class="cmp-list">
         <li><i>fartOLa</i> är inte godkänt som tidtagnings- eller lottningsprogram (TR 7.1.2, 7.5.2).</li>
-        <li>Stängningstiden för målet (sista start plus maxtid) räknas inte fram. Arrangören får räkna ut den själv (TR 4.16.3, 4.22.1).</li>
-        <li>Det går inte att ge tidstillägg, mata in måltid för hand eller lägga till manuella stämplar (TR 4.18.14, 10.4.2, 4.20.6, 8.1.4).</li>
+        <li>Ingen kontroll av klasser med samma bana som startar samtidigt, och ingen ranking, gallring eller reservlista (TA till TR 6.5.1, TR 7.5.3, 7.3.6, 7.5.5, 7.5.6).</li>
+        <li>Patrull, stafett, etapper och mästerskap saknas (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3).</li>
         <li>”Deltagit” utan tidtagning går bara att välja för en hel klass, inte för en enskild deltagare (TR 3.4.8, 4.21.3).</li>
-        <li>Klasstyp och födelseår saknas. Därför finns ingen spärr mot direktanmälan i elitklass eller fri starttid i åldersklass, och ingen ålderskontroll (TR 3.4.2, 3.4.4, 4.14.1, 7.4.2).</li>
-        <li>Ingen kontroll av klasser med samma bana som startar samtidigt, och ingen seedning eller reservlista (TR 7.5.3, 7.4.5, 7.5.6).</li>
-        <li>Startlistan saknar banlängd, startplats och startnummer (TR 7.5.4, 4.16.1).</li>
+        <li>Ingen ålderskontroll vid anmälan, trots att födelseåret sparas (TR 3.4.4).</li>
+        <li>Vakanser i elitklasser kräver klassens antal platser, som <i>fartOLa</i> inte vet (TR 7.3.2).</li>
         <li>Pushen till liveresultat och uppladdningen till Eventor är testade mot ersatta nätanrop, inte mot de riktiga tjänsterna (TR 7.7.1, 4.21.4).</li>
-        <li>Efteranmälda kan inte läggas in utan att hela klassen lottas om, och vakanser går inte att boka (TR 7.5.7, 7.5.8, 7.3.2).</li>
       </ol>
     </div>
   </section>
@@ -981,7 +981,7 @@
           <span class="ord">Nästa</span>
           <div>
             <h4>Luckorna mot regelverket</h4>
-            <p>Innan <i>fartOLa</i> kan vara huvudsystem behövs bland annat manuell inmatning i sekretariatet (måltid, stämplar, tidstillägg), utskrivbara listor och efteranmälda utan omlottning. Hela listan finns under <a href="#regelverk">Regelverk</a> ovan. Det här är ingen egen fas i roadmapen.</p>
+            <p>Innan <i>fartOLa</i> kan vara huvudsystem behövs bland annat startplanering över klasser, ranking och reservlista, utskrivbara listor samt patrull och stafett. Hela listan finns under <a href="#regelverk">Regelverk</a> ovan. Det här är ingen egen fas i roadmapen.</p>
           </div>
           <span class="pill next">↗ Nästa</span>
         </div>

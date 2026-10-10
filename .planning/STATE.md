@@ -22,11 +22,11 @@ not duplicated here.
 
 ---
 
-## October 2026 status (as of 2026-10-08)
+## October 2026 status (as of 2026-10-10)
 
 Supersedes "Current position" below, which is a May 2026 snapshot kept for history.
 
-**Status:** Phase 2.1 is complete and merged (2026-10-07). Phase 2.2 (SOFT-compliant draw and class model) is in progress: M1, the draw package, merged 2026-10-08 (#77, backend only); its UI and M2 come next. fartOLa has not yet been the main system at a real competition; acceptance is by replay of real competitions (ADR-0014): DM lång 2026 dag 1 633/634 (one intended difference, SOFT TR 4.18.9), Tuna Ting 2026 dag 2 608/609 (the one left has no start time; fartOLa warns). Phase 2.0's 2026-05-20 training ran on MeOS. SOFT compliance matrix: 28 UPPFYLLD, 20 DELVIS, 22 SAKNAS, 5 EJ TILLÄMPLIG of 75 rules (after M1). See `.planning/ROADMAP.md`.
+**Status:** Phase 2.1 is complete and merged (2026-10-07). Phase 2.2 (SOFT-compliant draw and class model) is in progress: M1, the draw package, merged 2026-10-08 (#77); the design-lab building blocks merged 2026-10-10 (#92–#97); M2 merged 2026-10-10: pre-race check and card register (#100), secretariat corrections (#104), closing time and default interval (#103), speaker view (#105), bibs and start-list fields (#101), fees and card rental (#102), and a 4× faster SOFT draw (#99). Design-lab plan 2 (screen passes) is running; M3a (start distribution) is next. fartOLa has not yet been the main system at a real competition; acceptance is by replay of real competitions (ADR-0014): DM lång 2026 dag 1 633/634 (one intended difference, SOFT TR 4.18.9), Tuna Ting 2026 dag 2 608/609 (the one left has no start time; fartOLa warns). Phase 2.0's 2026-05-20 training ran on MeOS. SOFT compliance matrix: 36 UPPFYLLD, 18 DELVIS, 16 SAKNAS, 5 EJ TILLÄMPLIG of 75 rules (after M2). Replays on main after M2 unchanged. See `.planning/ROADMAP.md`.
 
 ### Merged in October 2026 (all 2026-10-07)
 
