@@ -68,6 +68,8 @@ interface HiredCardRow {
   contact_phone: string | null;
   contact_email: string | null;
   note: string | null;
+  /** SOFT TR 4.12.4 — rental fee in kronor; null = none. */
+  fee: number | null;
 }
 
 function rowToDTO(r: {
