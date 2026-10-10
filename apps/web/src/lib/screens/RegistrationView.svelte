@@ -45,6 +45,8 @@
   import type { CardRebind } from '#lib/api/client.ts';
   import AddRunnerSheet from '#lib/components/AddRunnerSheet.svelte';
   import Icon from '#lib/ui/Icon.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import type { ClassDTO, EventorLookupHit, EventorLookupMany, CompetitorDTO } from '@fartola/shared-types';
 
   interface Props {
@@ -84,8 +86,22 @@
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let subscription: ReturnType<typeof createCardSubscription> | null = null;
+  let loadError = $state(false);
 
   // --- lifecycle ------------------------------------------------------------
+
+  /** Fetch the classes. On failure the WalkupModal still mounts with an
+   * empty class list (no silent registration without a class) and the
+   * operator sees a retry. */
+  async function load(): Promise<void> {
+    loadError = false;
+    try {
+      const res = await getCompetition(competitionId);
+      resolvedClasses = res.classes;
+    } catch {
+      loadError = true;
+    }
+  }
 
   onMount(() => {
     // Carry-over from a prior mount — if the user navigated back and the
@@ -99,18 +115,7 @@
     // view fetches its own data). Also claim active-competition so the
     // bridge routes card_reads to this competition's readout channel
     // (same as ReadoutView's mountReadout).
-    if (resolvedClasses.length === 0) {
-      void (async () => {
-        try {
-          const res = await getCompetition(competitionId);
-          resolvedClasses = res.classes;
-        } catch {
-          // Soft fail — the WalkupModal will still mount with an empty
-          // class list; operator sees no Bana options and the line halts
-          // (correct behavior — no silent registration without a class).
-        }
-      })();
-    }
+    if (resolvedClasses.length === 0) void load();
     // Claim active competition so card_reads route here. Soft-fail so a
     // server hiccup doesn't break the page mount.
     void setActiveCompetition(competitionId).catch(() => {
@@ -383,6 +388,10 @@
     {/if}
   </header>
 
+  {#if loadError}
+    <LoadError message={t('registration.loadError')} onretry={load} />
+  {/if}
+
   <form class="manual-row" onsubmit={onManualSubmit} data-testid="reg-manual-form">
     <input
       class="manual-input"
@@ -399,14 +408,15 @@
       aria-describedby={manualError !== null ? 'reg-manual-error' : undefined}
       data-testid="reg-manual-input"
     />
-    <button
-      class="manual-btn"
+    <Button
       type="submit"
+      variant="primary"
       disabled={manualCard.trim() === ''}
+      disabledHint={t('registration.manualEntry.missing')}
       data-testid="reg-manual-submit"
     >
       {t('registration.manualEntry.submit')}
-    </button>
+    </Button>
   </form>
   {#if manualError !== null}
     <p id="reg-manual-error" class="manual-err" role="alert" data-testid="reg-manual-error">
@@ -569,11 +579,12 @@
   .reg-head .badge {
     align-self: flex-start;
     margin-top: 6px;
-    background: var(--accent);
-    color: #fff;
+    background: var(--bg-sunken);
+    color: var(--fg);
+    border: 1px solid var(--border-strong);
     padding: 4px 10px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-family: var(--font-mono);
     font-feature-settings:
       'tnum' 1,
@@ -609,31 +620,12 @@
     color: var(--fg);
   }
   .manual-input:focus {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
     border-color: var(--accent);
-  }
-  .manual-btn {
-    height: var(--hit);
-    min-height: var(--hit);
-    padding: 0 var(--space-md);
-    border: 1px solid var(--accent);
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: var(--accent-fg);
-    font-size: var(--fs-label);
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .manual-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
   }
   .manual-err {
     margin: -4px 0 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .add-manual-btn {
     align-self: flex-start;
@@ -680,12 +672,12 @@
   .reg-queue-count {
     display: inline-flex;
     align-items: center;
-    height: 22px;
+    height: auto;
     padding: 0 8px;
     background: var(--mp-soft);
-    color: oklch(0.45 0.12 70);
+    color: var(--mp-fg);
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
   }
   .reg-queue-items {
@@ -729,7 +721,7 @@
   .reg-queue-chip .cta {
     margin-left: auto;
     color: var(--accent);
-    font-size: 13px;
+    font-size: var(--fs-label);
     font-weight: 600;
   }
   .known-banner {
@@ -762,7 +754,7 @@
   }
   .known-label {
     color: var(--fg-muted);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .known-name {
     font-size: 15px;
@@ -771,7 +763,7 @@
   }
   .known-club {
     color: var(--fg-muted);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .known-actions {
     display: flex;
@@ -799,7 +791,7 @@
   .known-cancel {
     background: var(--dnf);
     border: 1px solid var(--dnf);
-    color: #fff;
+    color: var(--accent-fg);
   }
   .known-cancel:hover:not(:disabled) {
     filter: brightness(0.92);
@@ -812,7 +804,7 @@
   .known-err {
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .toast {
     position: fixed;
@@ -823,7 +815,7 @@
     color: var(--bg-elev);
     padding: 10px 18px;
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
     box-shadow: var(--shadow-lg);
     z-index: 100;
   }
