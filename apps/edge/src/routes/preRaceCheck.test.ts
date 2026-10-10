@@ -20,8 +20,9 @@ describe('classNeedsStartTimes', () => {
   const cls = (
     startMethod: 'auto' | 'start_time' | 'start_punch',
     firstStartMs: number | null,
-    classKind: 'senior' | 'oppen' | 'inskolning' | null
-  ) => ({ startMethod, firstStartMs, classKind });
+    classKind: 'senior' | 'oppen' | 'inskolning' | null,
+    classKindSource: 'eventor' | 'name' | 'operator' | null = classKind && 'operator'
+  ) => ({ startMethod, firstStartMs, classKind, classKindSource });
 
   test('start method decides first, then a draw, then age class at nivå 1-3', () => {
     assert.equal(classNeedsStartTimes(cls('start_punch', 1, 'senior'), 'niva1', true), false);
@@ -34,6 +35,8 @@ describe('classNeedsStartTimes', () => {
     assert.equal(classNeedsStartTimes(cls('auto', null, 'oppen'), 'niva1', false), false);
     assert.equal(classNeedsStartTimes(cls('auto', null, 'inskolning'), 'niva1', false), false);
     assert.equal(classNeedsStartTimes(cls('auto', null, null), 'niva1', false), false);
+    // A kind only guessed from the name is not acted on.
+    assert.equal(classNeedsStartTimes(cls('auto', null, 'senior', 'name'), 'niva1', false), false);
   });
 });
 
@@ -75,7 +78,34 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
       .values([
         { id: 'h21', competitionId: COMP, name: 'H21', classKind: 'senior', firstStartMs: 1 },
         { id: 'open', competitionId: COMP, name: 'Öppen 1', classKind: 'oppen' },
-        { id: 'd10', competitionId: COMP, name: 'D10', classKind: 'ungdom', ageClass: 10 },
+        {
+          id: 'd10',
+          competitionId: COMP,
+          name: 'D10',
+          classKind: 'ungdom',
+          ageClass: 10,
+          classKindSource: 'eventor',
+        },
+        // Timed from the start punch, then confirmed as an age class.
+        {
+          id: 'd16',
+          competitionId: COMP,
+          name: 'D16',
+          classKind: 'ungdom',
+          ageClass: 16,
+          classKindSource: 'operator',
+          startMethod: 'start_punch',
+        },
+        // The same with a kind only guessed from the name: not flagged.
+        {
+          id: 'h16',
+          competitionId: COMP,
+          name: 'H16',
+          classKind: 'ungdom',
+          ageClass: 16,
+          classKindSource: 'name',
+          startMethod: 'start_punch',
+        },
         { id: 'h35', competitionId: COMP, name: 'H35', classKind: 'veteran', firstStartMs: 1 },
       ])
       .run();
@@ -117,6 +147,8 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     runner('x', 'X', 'open', 8_000_003, 'OK Ek');
     runner('d10', 'Gun Liten', 'd10', 8_000_004, 'OK Ek');
     runner('si5mid', 'Ivar Femma', 'h35', 12_347, 'OK Ek', 3_000);
+    runner('d16', 'Jill Punch', 'd16', 8_000_005, 'OK Ek');
+    runner('h16', 'Kim Punch', 'h16', 8_000_006, 'OK Ek');
     runner('gone', 'Hans Återbud', 'h21', null, null);
     handle.db
       .insert(events)
@@ -162,8 +194,12 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
       body.splits_missing.map((r) => [r.competitor_id, r.class_name, r.timed, r.controls]),
       [['si5mid', 'H35', 30, 31]]
     );
-    assert.deepEqual(body.classes_without_course, [
-      { class_id: 'd10', class_name: 'D10', runners: 1 },
+    assert.deepEqual(
+      body.classes_without_course.map((c) => c.class_id),
+      ['d10', 'd16', 'h16']
+    );
+    assert.deepEqual(body.start_punch_not_allowed, [
+      { class_id: 'd16', class_name: 'D16', runners: 1 },
     ]);
   });
 

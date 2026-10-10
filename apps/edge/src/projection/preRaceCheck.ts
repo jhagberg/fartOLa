@@ -17,6 +17,9 @@
 //     card but has more controls than the card stores with time (an SI5
 //     over 30), so the course is checked but splits after 30 are missing.
 //   - classes_without_course: a class with runners but no course.
+//   - start_punch_not_allowed: a class timed from the start punch that
+//     turns out to be a confirmed age class at nivå 1-3, where free start
+//     time is not allowed (TR 7.4.2); its start times must be drawn.
 //
 // MeOS's "Löpare utan klass" and "SI-dubbletter" cannot happen here:
 // competitors.class_id is NOT NULL and a card is unique per competition
@@ -28,6 +31,7 @@
 import type { ReduceInput } from './reduce.ts';
 import type { CompetitionState, CompetitorView } from './types.ts';
 import { cardPunchCapacity } from '../si/cardCapacity.ts';
+import { kindConfirmed } from '../draw/classKind.ts';
 
 type ClassRow = ReduceInput['classes'][number];
 type Level = 'niva1' | 'niva2' | 'niva3' | 'niva4' | 'traning' | null;
@@ -49,6 +53,7 @@ export interface PreRaceCheck {
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
   splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
+  start_punch_not_allowed: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
 /**
@@ -62,16 +67,28 @@ export interface PreRaceCheck {
  *     not confirmed yet is not flagged.
  */
 export function classNeedsStartTimes(
-  cls: Pick<ClassRow, 'startMethod' | 'firstStartMs' | 'classKind'>,
+  cls: Pick<ClassRow, 'startMethod' | 'firstStartMs' | 'classKind' | 'classKindSource'>,
   level: Level,
   anyRunnerHasStartTime: boolean
 ): boolean {
   if (cls.startMethod === 'start_punch') return false;
   if (cls.startMethod === 'start_time') return true;
   if (cls.firstStartMs !== null || anyRunnerHasStartTime) return true;
-  const ageClass =
-    cls.classKind !== null && cls.classKind !== 'oppen' && cls.classKind !== 'inskolning';
-  return ageClass && (level === 'niva1' || level === 'niva2' || level === 'niva3');
+  return freeStartForbidden(cls, level);
+}
+
+/** A confirmed age class (from Eventor or the operator, kindConfirmed) at
+ * nivå 1-3, where free start time is not allowed (TR 7.4.2). */
+export function freeStartForbidden(
+  cls: Pick<ClassRow, 'classKind' | 'classKindSource'>,
+  level: Level
+): boolean {
+  return (
+    kindConfirmed(cls) &&
+    cls.classKind !== 'oppen' &&
+    cls.classKind !== 'inskolning' &&
+    (level === 'niva1' || level === 'niva2' || level === 'niva3')
+  );
 }
 
 export function preRaceCheck(
@@ -114,6 +131,7 @@ export function preRaceCheck(
     card_too_small: [],
     splits_missing: [],
     classes_without_course: [],
+    start_punch_not_allowed: [],
   };
   const runnersPerClass = new Map<string, number>();
   for (const v of active) {
@@ -141,6 +159,9 @@ export function preRaceCheck(
     const runners = runnersPerClass.get(cls.id) ?? 0;
     if (runners > 0 && !controlsByClass.has(cls.id)) {
       out.classes_without_course.push({ class_id: cls.id, class_name: cls.name, runners });
+    }
+    if (runners > 0 && cls.startMethod === 'start_punch' && freeStartForbidden(cls, level)) {
+      out.start_punch_not_allowed.push({ class_id: cls.id, class_name: cls.name, runners });
     }
   }
   return out;
