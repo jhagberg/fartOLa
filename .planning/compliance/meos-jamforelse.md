@@ -55,10 +55,10 @@
 | TR 4.18.9 med TA (sen start) | UPPFYLLD | DELVIS | Startstämpeln ersätter den lottade starttiden (`oRunner.cpp:1331-1344`, `tUseStartPunch` är true som standard enligt `oRunner.cpp:295`). Klassinställningen `IgnoreStart` "Ej startstämpling" (`oEvent.cpp:340-341`, `oClass.cpp:2787-2789`) stänger av det när löparen har starttid (`oRunner.cpp:1226-1227`). Ny starttid skrivs i fältet "Starttid:" (`TabRunner.cpp:3445`). | **Standardinställningen strider mot regeln i klasser med lottade starttider:** startstämpeln ersätter den lottade starttiden (`tUseStartPunch`, `oRunner.cpp:295`; `oRunner.cpp:1331-1344`), så en löpare som är sen av eget fel tidtas från stämpeln. Kryssrutan "Ej startstämpling" (`IgnoreStart`, `oClass.cpp:55`, `oRunner.cpp:1226-1227`) ger det regelrätta beteendet och måste sättas per klass. Startstämpling som startmetod är i sig tillåten (TR 4.18.16). Ingen varning för sen start. |
 | TA till TR 4.18.9 (ny starttid noteras) | DELVIS | UPPFYLLER | Starttid skrivs för hand per löpare i fältet "Starttid:" (`TabRunner.cpp:3445`, sparas på `TabRunner.cpp:680`, `oRunner.cpp:1331`). Kommentar per deltagare: knappen "Kommentar >>" (`TabRunner.cpp:3532`). | Den faktiska starten kan noteras i en kommentar utan att den officiella starttiden ändras. Att meddela tävlingsledningen är arrangörens rutin. (Tidigare anmärkning om saknad samlad panel gällde inte vad anvisningen kräver.) |
 | TR 4.18.10 | UPPFYLLD | UPPFYLLER | SI-lägen "Registrera hyrbrickor", "Tilldela hyrbrickor" och "Avstämning hyrbrickor" (`TabSI.cpp:81-83`). Kryssrutan "Hyrbricka" i anmälan (`TabSI.cpp:3729`). "Vänligen återlämna hyrbrickan" vid avläsning (`TabSI.cpp:3386`). Rapporten "Hyrbricksrapport" (`oListInfo.cpp:4846`). Fältet `Phone` "Telefon" (`oEvent.cpp:267`). | Kontaktuppgift krävs inte för hyrbricka. Avstämningen görs lokalt på en dator och ändrar inte tävlingen (`swedish.lng:2364`). |
-| TR 4.18.14 (tjuvstart) | SAKNAS | UPPFYLLER | `TimeAdjust` "Tidsjustering" per löpare (`oEvent.cpp:271`), inmatningen "Tidstillägg:" (`TabRunner.cpp:3455`). Tillägget ingår i löptiden (`oRunner.cpp:823`). Diskning görs med status "Disk." (`oEvent.cpp:5342`). | Fältet syns först när MeOS-funktionen "TA" är på (`TabRunner.cpp:3448`). Tjuvstart upptäcks inte automatiskt, och minuten läggs på för hand. |
+| TR 4.18.14 (tjuvstart) | UPPFYLLD | UPPFYLLER | `TimeAdjust` "Tidsjustering" per löpare (`oEvent.cpp:271`), inmatningen "Tidstillägg:" (`TabRunner.cpp:3455`). Tillägget ingår i löptiden (`oRunner.cpp:823`). Diskning görs med status "Disk." (`oEvent.cpp:5342`). | Fältet syns först när MeOS-funktionen "TA" är på (`TabRunner.cpp:3448`). Tjuvstart upptäcks inte automatiskt, och minuten läggs på för hand. |
 | TR 4.18.16 | UPPFYLLD | UPPFYLLER | Standardbeteendet: startstämpeln sätter starttiden (`oRunner.cpp:1331-1344`). Per klass: `IgnoreStart` (`TabClass.cpp:4177`) och `FreeStart` "Fri starttid" (`oEvent.cpp:337`). | Valet görs per klass. |
 | TR 4.20.6 (målstämpling) | UPPFYLLD | UPPFYLLER | Måltiden tas från målstämpeln (`oRunner.cpp:1641-1646`). Utan målstämpel blir statusen minst `StatusDNF` med texten "Måltid saknas." (`oRunner.cpp:1647-1650`). |  |
-| TR 4.20.6 (tid vid mållinjen) | SAKNAS | UPPFYLLER | Inmatningen "Måltid:" i löparfliken (`TabRunner.cpp:3446`, sparas med `setFinishTimeS` på `TabRunner.cpp:681-682`). Stämplar, även målstämpeln, redigeras och sparas i stämpellistan (`TabRunner.cpp:3552`, `TabRunner.cpp:3246`). | Fältet "Måltid:" går bara att ändra när brickan saknar målstämpel (`canSetFinish`, `TabRunner.cpp:3888`), men en befintlig målstämpel kan ändras i stämpellistan och kortet bedöms om. |
+| TR 4.20.6 (tid vid mållinjen) | UPPFYLLD | UPPFYLLER | Inmatningen "Måltid:" i löparfliken (`TabRunner.cpp:3446`, sparas med `setFinishTimeS` på `TabRunner.cpp:681-682`). Stämplar, även målstämpeln, redigeras och sparas i stämpellistan (`TabRunner.cpp:3552`, `TabRunner.cpp:3246`). | Fältet "Måltid:" går bara att ändra när brickan saknar målstämpel (`canSetFinish`, `TabRunner.cpp:3888`), men en befintlig målstämpel kan ändras i stämpellistan och kortet bedöms om. |
 | TR 4.20.7 | UPPFYLLD | DELVIS | Tider lagras i tiondelar (`timeconstants.hpp`, `timeUnitsPerSecond = 10`). Tiondelar läses från SI bara med `SubSeconds` "Tiondelar" på (`oEvent.cpp:196`, kryssrutan "Aktivera stöd för tiondels sekunder" på `TabCompetition.cpp:2605`). Formatering `formatTime` (`meos_util.cpp:678-695`). | Villkorligt, inte ett fel i standardinställningen: tiondelar är av som standard (`SportIdent.h:161`), så SI-tider blir hela sekunder. Med tiondelar påslagna (`SportIdent.cpp:1927`) placeras löparna på den oavrundade tiden (`oEventResult.cpp:369`), och visningen klipper av i stället för att avrunda (`meos_util.cpp:687`). |
 | TR 4.20.8 (individuell start) | UPPFYLLD | UPPFYLLER | `calculatePlace` (`oEventResult.cpp:64-100`): lika resultat ger samma placering, och nästa placering hoppar över. | Lika lagrade tider delar placering. Med tiondelar påslagna jämförs oavrundade tider (se TR 4.20.7). |
 | TR 4.20.8 (gemensam start/jaktstart) | SAKNAS | UPPFYLLER INTE | Listan "Målgångsordning" (`swedish.lng:546`) och sortering på måltid (`oRunner.cpp:2301`, `oRunner.cpp:4108`). Placeringen räknas ur tiden (`oEventResult.cpp:369`). | Ingen av dem ger en domarordning för löpare med samma registrerade sekund, och placeringskolumnen går inte att redigera. |
@@ -121,7 +121,7 @@
 | ID | fartOLa-status | MeOS | MeOS-belägg | Anmärkning |
 |---|---|---|---|---|
 | TR 8.1.4, TR 8.5.5, TR 8.5.6 | UPPFYLLD | UPPFYLLER | Avläsning (`SportIdent.cpp`, `TabSI.cpp:80`). Utan målstämpel blir statusen minst `StatusDNF` (`oRunner.cpp:1647-1650`). |  |
-| TR 8.1.4 (kommentar, manuell stämpling) | SAKNAS | UPPFYLLER | Knappen "<< Lägg till stämpling" (`TabRunner.cpp:3571`), sparas med `savePunchTime` (`TabRunner.cpp:3225-3260`). Stämpeln märks som manuell (`PunchOrigin::Manual`, `oRunner.cpp:1296`). |  |
+| TR 8.1.4 (kommentar, manuell stämpling) | UPPFYLLD | UPPFYLLER | Knappen "<< Lägg till stämpling" (`TabRunner.cpp:3571`), sparas med `savePunchTime` (`TabRunner.cpp:3225-3260`). Stämpeln märks som manuell (`PunchOrigin::Manual`, `oRunner.cpp:1296`). |  |
 
 ### Kapitel 10. Åtgärder vid regelöverträdelser
 
@@ -130,8 +130,8 @@
 | TR 10.1.2, TR 10.1.3 | DELVIS | UPPFYLLER INTE | Inget ärenderegister och ingen motivering till manuell status. | Sökt: "protest", "regelanm", "ärende", "påföljd", "besvär". fartOLa sparar i alla fall en motivering i händelseloggen. |
 | TR 10.2.2, TR 10.2.3 | EJ TILLÄMPLIG | EJ TILLÄMPLIG | – | Protesten är skriftlig och handläggs av jury eller tävlingsledning; regeln kräver inget register i programmet. Inget protestregister i MeOS (sökt: "protest", "delgivning", "Klagomål"). |
 | TR 10.4.2 (diskvalificering), TR 10.4.3 | UPPFYLLD | UPPFYLLER | Status "Disk." sätts för hand (`TabRunner.cpp:3473-3477`). En senare avläsning behåller den eftersom den högre statusen vinner (`oRunner.cpp:1630-1632`, där `StatusDQ` = 5 och `StatusMP` = 3). IOF `Disqualified` (`oRunner.cpp:899-901`). | Texten är "Disk.", inte "Diskad". |
-| TR 10.4.2 (tidstillägg) | SAKNAS | UPPFYLLER | `TimeAdjust` "Tidstillägg:" och `PointAdjust` "Poängavdrag:" (`oEvent.cpp:271-272`, `TabRunner.cpp:3455-3458`). Tillägget ingår i löptid, placering och export (`oRunner.cpp:823`). | Kräver MeOS-funktionen "TA" (poängavdrag kräver dessutom rogaining). Intervallet 1–5 minuter kontrolleras inte. |
-| TR 10.4.10 | DELVIS | UPPFYLLER | Starttid, måltid och status rättas i löparfliken (`TabRunner.cpp:680-681`, `TabRunner.cpp:3473`). Onlineresultaten skickar ändringen automatiskt, och IOF kan exporteras igen. | Fältet "Måltid:" går bara att ändra utan målstämpel (`TabRunner.cpp:3888`), men målstämpeln kan ändras i stämpellistan (`TabRunner.cpp:3552`, `TabRunner.cpp:3246`). |
+| TR 10.4.2 (tidstillägg) | UPPFYLLD | UPPFYLLER | `TimeAdjust` "Tidstillägg:" och `PointAdjust` "Poängavdrag:" (`oEvent.cpp:271-272`, `TabRunner.cpp:3455-3458`). Tillägget ingår i löptid, placering och export (`oRunner.cpp:823`). | Kräver MeOS-funktionen "TA" (poängavdrag kräver dessutom rogaining). Intervallet 1–5 minuter kontrolleras inte. |
+| TR 10.4.10 | UPPFYLLD | UPPFYLLER | Starttid, måltid och status rättas i löparfliken (`TabRunner.cpp:680-681`, `TabRunner.cpp:3473`). Onlineresultaten skickar ändringen automatiskt, och IOF kan exporteras igen. | Fältet "Måltid:" går bara att ändra utan målstämpel (`TabRunner.cpp:3888`), men målstämpeln kan ändras i stämpellistan (`TabRunner.cpp:3552`, `TabRunner.cpp:3246`). |
 
 ## 3. Sammanfattning
 
@@ -143,7 +143,7 @@
 | EJ TILLÄMPLIG | 6 |
 | **Totalt** | **75** |
 
-Som jämförelse har fartOLa 26 UPPFYLLD, 20 DELVIS, 24 SAKNAS och 5 EJ TILLÄMPLIG.
+Som jämförelse har fartOLa 33 UPPFYLLD, 19 DELVIS, 18 SAKNAS och 5 EJ TILLÄMPLIG.
 
 MeOS-betygen är rättade efter en oberoende källkodsgranskning (Codex, MeOS 5.0 U3 build 1851, utan att programmet byggts eller körts): TR 3.4.8/4.14.1 (utan tidtagning), TR 4.14.4, TA till TR 4.18.9 och TR 4.23.3 blev UPPFYLLER, och TA till TR 7.8.3 (koppling) och TR 10.2.2/10.2.3 EJ TILLÄMPLIG. Anmärkningarna för TR 4.14.1 (direktanmälan), 4.18.9, 4.20.6, 4.20.7, 4.20.8, 4.20.9, 4.20.10, 4.21.1, 4.21.3, 7.5.2 och 10.4.10 är preciserade. TR 7.6.1 är DELVIS för båda av samma skäl (godkännande och angivelse i Eventor ligger utanför programmet).
 
@@ -162,16 +162,16 @@ Raderna jämförs i ordningen UPPFYLLD/UPPFYLLER > DELVIS > SAKNAS/UPPFYLLER INT
 
 Med samma status har fartOLa dessutom några kvalitativa fördelar. SOFT-lottningen ger så få grannar från samma förening som möjligt (TR 7.5.1–7.5.2). Flera tidsavvikelser flaggas för juryn som varningar. Kvar-i-skogen bygger på backupminnet i check-enheten.
 
-**MeOS ligger före fartOLa (27 rader, plus TR 7.1.2):**
+**MeOS ligger före fartOLa (22 rader, plus TR 7.1.2):**
 
 - Modellering: TR 3.2.1, TR 3.4.4 m.fl., TR 3.4.8/4.14.1 (utan tidtagning per deltagare), TR 3.4.11 (patrull), TR 3.6.3 m.fl. (distrikt), TR 4.14.3 m.fl. (stafett), TR 4.23.1 (ogiltig klass), TR 4.23.3 (avkortad bana).
 - Avgifter: TR 4.12.4, TR 4.12.6.
-- Rättning och manuell inmatning: TA till TR 4.18.9 (kommentar om ny starttid), TR 4.18.14 och TR 10.4.2 (tidstillägg), TR 4.20.6 (måltid för hand), TR 8.1.4 (manuella stämplar), TR 10.4.10.
+- Rättning: TA till TR 4.18.9 (kommentar om ny starttid).
 - Listor och publicering: TR 4.16.1, TR 4.22.1, TR 7.5.4.
 - Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.4.1 (jaktstart och bokning), TR 7.4.5 (seedning), TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
 - TR 7.1.2: MeOS används som godkänt huvudsystem, vilket fartOLa inte är. Det går inte att belägga i koden.
 
-**Lika (38 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: stängningstid för målet (TR 4.16.3), målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
+**Lika (43 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: stängningstid för målet (TR 4.16.3), målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
 
 ## 4. MeOS-funktioner som fartOLa saknar utöver regelraderna
 
@@ -183,9 +183,9 @@ Storlek är en grov uppskattning av arbetet i fartOLa: S är några dagar, M är
 
 | Funktion | Vad det är | Var i MeOS | fartOLa | Storlek |
 |---|---|---|---|---|
-| Manuell måltid och status vid avläsning | Måltid och Godkänd/Utgått matas in när målstämpel saknas. | Kryssrutan "Manuell inmatning" i SI-fliken (`TabSI.cpp:2324`). Fältet "Måltid:" i löparfliken (`TabRunner.cpp:3446`). | Nej. Manuell status finns (`routes/manual.ts`), men ingen måltid (TR 4.20.6). | S |
-| Manuella stämplar | Stämplar läggs till från startkort eller stiftklämma. | "<< Lägg till stämpling" (`TabRunner.cpp:3571`). | Nej (TR 8.1.4). | S |
-| Tidstillägg och poängavdrag | Minuter eller poäng per löpare, som ingår i resultatet. | "Tidstillägg:" och "Poängavdrag:" (`TabRunner.cpp:3455-3458`), MeOS-funktionen "TA". | Nej (TR 10.4.2). | S |
+| Manuell måltid och status vid avläsning | Måltid och Godkänd/Utgått matas in när målstämpel saknas. | Kryssrutan "Manuell inmatning" i SI-fliken (`TabSI.cpp:2324`). Fältet "Måltid:" i löparfliken (`TabRunner.cpp:3446`). | Ja. Måltid för hand med motivering i dialogen "Rätta resultat" (`routes/manual.ts`, TR 4.20.6). Manuell status finns. Ingen kryssruta för manuell inmatning vid avläsningen. | S |
+| Manuella stämplar | Stämplar läggs till från startkort eller stiftklämma. | "<< Lägg till stämpling" (`TabRunner.cpp:3571`). | Ja. Stämplar utan tid i "Rätta resultat" (`routes/manual.ts`, TR 8.1.4). | S |
+| Tidstillägg och poängavdrag | Minuter eller poäng per löpare, som ingår i resultatet. | "Tidstillägg:" och "Poängavdrag:" (`TabRunner.cpp:3455-3458`), MeOS-funktionen "TA". | Delvis. Tidstillägg 1–5 minuter i "Rätta resultat" (`routes/manual.ts`, TR 10.4.2). Poängavdrag saknas (ingen poängorientering). | S |
 | Kontroll inför tävlingen | Rapport över löpare utan bricka, starttid, klass, bana eller klubb, och brickor med för få stämplingsplatser för banan. | "Kör kontroll inför tävlingen..." (`TabList.cpp:2933`, `oReport.cpp:341`). | Ja. Skärmen Kontroll (`PreRaceCheckView.svelte`) med `GET …/pre-race-check` (`projection/preRaceCheck.ts`): utan bricka, starttid, klubb eller namn, klass utan bana och bricka med för få platser (`si/cardCapacity.ts`), varje lista med sin SOFT-regel. Brickregister med sökning på nummer och namn och hyrbrickor. Utan klass och dubbla brickor kan inte uppstå (tvingande klass, unik bricka per tävling). Test: `routes/preRaceCheck.test.ts`, `tests/e2e/prerace.spec.ts`. | S |
 | Interaktiv avläsning och oparade brickor | Okänd bricka sparas och kopplas till en löpare i efterhand. Ny klass och bana kan skapas från brickdata. | "Spara oparad bricka", "Knyt bricka / deltagare" (`TabSI.cpp:3939`). | Delvis. Walk-up på okänd bricka och kö (`apps/web/src/lib/screens/WalkupModal.svelte`). | S |
 | Fler arbetsstationer mot en databas | Flera MeOS-datorer arbetar mot samma MySQL-tävling. | "Databasanslutning..." (`TabCompetition.cpp:2539`), `MeosSQL.cpp`. | Delvis. Flera webbklienter mot en edge-server. Peer-sync är planerad till Fas 4 (REQ-EVT-005/006). | L |
@@ -270,7 +270,7 @@ Storlek är en grov uppskattning av arbetet i fartOLa: S är några dagar, M är
 
 Urvalet utgår från luckorna i `soft-regelverk-2026.md` ("Störst luckor") som MeOS redan har löst. Det är filtrerat till en individuell tävling på nivå 2–3 och ordnat efter hur mycket luckan blockerar en sanktionerad tävling, och därefter efter storlek.
 
-På grenen `feat/soft-small-gaps` är punkt 3 (person-id och banlängd), 6 (onlineresultat) och maxtidsdelen av 7 gjorda, liksom "Ej start" för ej avlästa och SOFT:s benämningar i punkt 4. Kvar i punkt 4 är "Utan tidtagning" per löpare.
+På grenen `feat/soft-small-gaps` är punkt 3 (person-id och banlängd), 6 (onlineresultat) och maxtidsdelen av 7 gjorda, liksom "Ej start" för ej avlästa och SOFT:s benämningar i punkt 4. Kvar i punkt 4 är "Utan tidtagning" per löpare. På grenen `feat/secretariat-corrections` är punkt 1 gjord.
 
 1. **Manuell inmatning i sekretariatet (S).** Det gäller måltid för hand, manuella stämplar och tidstillägg som ingår i tid, placering och export (TR 4.20.6, TR 8.1.4, TR 4.18.14, TR 10.4.2, TR 10.4.10). Förebilder i MeOS: "Måltid:", "<< Lägg till stämpling" och "Tidstillägg:" i löparfliken. Utan detta går en vanlig tävlingsdag inte att avsluta när en målenhet krånglar eller en tjuvstart döms.
 2. **Utskrivbara listor för arenan (M).** Start-, resultat-, minutstart-, Kvar-i-skogen- och prisutdelningslista som utskrift, HTML och PDF, med banlängd och startplats (TR 4.16.1, TR 4.21.3, TR 7.5.4, TR 7.8.2). Förebild: Listor-fliken med "Skriv ut...", "Webb..." och "PDF...".
