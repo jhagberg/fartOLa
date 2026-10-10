@@ -807,4 +807,37 @@ describe('LottningView (mounted)', () => {
     expect(patches.map((p) => p.url.split('/api/')[1])).toEqual(['competitors/r1/profile']);
     expect(patches[0]!.body).toEqual({ bib: '150' });
   });
+
+  it('while another class loads, its start place and bibs cannot be saved with the old values', async () => {
+    startList = [drawnRunner(null)];
+    h12Class = { start_name: 'Start 1' };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    let release = (): void => {};
+    holdD10 = new Promise((r) => (release = r));
+    await choose('lottning-class-select', 'd10');
+    expect(($('lottning-start-name-save') as HTMLButtonElement).disabled).toBe(true);
+    expect(($('lottning-bibs-assign') as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await settle();
+    expect(($('lottning-start-name') as HTMLInputElement).value).toBe('');
+    expect(($('lottning-start-name-save') as HTMLButtonElement).disabled).toBe(false);
+    expect(patches).toEqual([]);
+  });
+
+  it('a start place typed and not saved stays when the list reloads', async () => {
+    startList = [drawnRunner(null)];
+    h12Class = { start_name: 'Start 1' };
+    drawAnswer = { status: 200, body: { numbered: 1 } };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await typeInto('lottning-start-name', 'Start 2');
+    await typeInto('lottning-bib-base', '101');
+    ($('lottning-bibs-assign') as HTMLButtonElement).click();
+    await settle();
+    expect(posts[0]!.url).toContain('/bibs');
+    expect(($('lottning-start-name') as HTMLInputElement).value).toBe('Start 2');
+  });
 });

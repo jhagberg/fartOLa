@@ -212,10 +212,14 @@
       }
       lottClass = res.class;
       startList = res.start_list;
+      // The class fields are filled when the class is loaded, not on every
+      // refresh, so a value typed and not yet saved stays (ADR-0016 rule 3).
+      if (classInfo?.id !== res.class.id) {
+        bibPrefix = res.class.bib_prefix ?? '';
+        bibBaseInput = res.class.bib_base === null ? '' : String(res.class.bib_base);
+        startNameInput = res.class.start_name ?? '';
+      }
       classInfo = res.class;
-      bibPrefix = res.class.bib_prefix ?? '';
-      bibBaseInput = res.class.bib_base === null ? '' : String(res.class.bib_base);
-      startNameInput = res.class.start_name ?? '';
       previousResults = { classId, ...res.previous_results };
       // A late-entrant choice only means something next to an existing list.
       if (startList.length === 0) drawType = 'All';
@@ -457,8 +461,12 @@
 
   // --- SOFT TR 7.5.4: start place and bibs ---------------------------------
 
+  /** The class fields shown belong to the selected class (not the one
+   * before a class switch whose list is still loading). */
+  const classLoaded = $derived(classInfo !== null && classInfo.id === selectedClassId);
+
   async function saveStartName(): Promise<void> {
-    if (!selectedClassId) return;
+    if (!classLoaded) return;
     try {
       await patchClass(competitionId, selectedClassId, {
         start_name: startNameInput.trim() || null,
@@ -471,7 +479,7 @@
 
   let numbering = $state(false);
   async function assignBibs(): Promise<void> {
-    if (!selectedClassId) return;
+    if (!classLoaded) return;
     const bibBase = Number(bibBaseInput.trim());
     if (!/^\d+$/.test(bibBaseInput.trim()) || bibBase > 99999) {
       error = t('lottning.bibs.err.base');
@@ -880,10 +888,10 @@
           type="text"
           placeholder="Start 1"
           bind:value={startNameInput}
-          disabled={!selectedClassId}
+          disabled={!classLoaded}
           data-testid="lottning-start-name"
         />
-        <Button variant="secondary" onclick={saveStartName} disabled={!selectedClassId} data-testid="lottning-start-name-save">
+        <Button variant="secondary" onclick={saveStartName} disabled={!classLoaded} data-testid="lottning-start-name-save">
           {t('info.save')}
         </Button>
       </div>
@@ -894,17 +902,17 @@
       <p class="hint">{t('lottning.bibs.hint')}</p>
       <div class="bib-row">
         <Field label={t('lottning.bibs.prefix')} htmlFor="lottning-bib-prefix">
-          <Input id="lottning-bib-prefix" type="text" maxlength={8} bind:value={bibPrefix} data-testid="lottning-bib-prefix" />
+          <Input id="lottning-bib-prefix" type="text" maxlength={8} bind:value={bibPrefix} disabled={!classLoaded} data-testid="lottning-bib-prefix" />
         </Field>
         <Field label={t('lottning.bibs.base')} htmlFor="lottning-bib-base">
-          <Input id="lottning-bib-base" type="text" inputmode="numeric" placeholder="101" bind:value={bibBaseInput} data-testid="lottning-bib-base" />
+          <Input id="lottning-bib-base" type="text" inputmode="numeric" placeholder="101" bind:value={bibBaseInput} disabled={!classLoaded} data-testid="lottning-bib-base" />
         </Field>
       </div>
       <div class="draw-btn-row">
         <Button
           variant="secondary"
           onclick={() => void assignBibs()}
-          disabled={numbering || !selectedClassId || startList.length === 0}
+          disabled={numbering || !classLoaded || startList.length === 0}
           data-testid="lottning-bibs-assign"
         >
           {t('lottning.bibs.assign')}
