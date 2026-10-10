@@ -371,9 +371,14 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           start_interval_sec: classRow.startIntervalSec,
           max_time_sec: classRow.maxTimeSec,
           class_kind: classRow.classKind,
-          // SOFT TA till TR 7.4.4: the class's interval, else the distance's norm.
-          suggested_interval_sec: classRow.startIntervalSec ?? normalIntervalSec(classRow.distance),
-          // SOFT TR 7.4.2: true/false, null while kind or level is unknown.
+          // SOFT TA till TR 7.4.4: the class's interval, else the distance's
+          // norm. 0 is a mass start's grid, no interval to suggest.
+          suggested_interval_sec:
+            (classRow.startIntervalSec ?? 0) > 0
+              ? classRow.startIntervalSec
+              : normalIntervalSec(classRow.distance),
+          // SOFT TR 7.4.2: start times required (no free start order) —
+          // true/false, null while kind or level is unknown.
           free_start_banned: freeStartBanned(classRow, classRow.level),
           without_start_time: withoutStart,
         },
