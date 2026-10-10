@@ -635,6 +635,7 @@
   "settings.helperCodes.revokeError": "Kunde inte återkalla koden.",
   "settings.helperCodes.revealHint": "Koden visas i 30 sekunder.",
   "settings.meos.clearPassword": "Ta bort lösenord",
+  "settings.meos.saveFirst": "Spara eller ångra ändringen först",
   "settings.title": "Inställningar",
   "settings.integrations.title": "Integrationsnycklar",
   "settings.integrations.desc": "Nycklar för Eventor, Livelox och Liveresultat. Nyckeln visas inte igen efter att du sparat den.",
