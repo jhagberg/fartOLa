@@ -29,9 +29,9 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 
 | Status | Antal |
 |---|---|
-| UPPFYLLD | 35 |
+| UPPFYLLD | 36 |
 | DELVIS | 18 |
-| SAKNAS | 17 |
+| SAKNAS | 16 |
 | PLANERAD | 0 |
 | EJ TILLÄMPLIG | 5 |
 | **Totalt** | **75** |
@@ -52,7 +52,7 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 
 | ID | Regel (parafras) | Vad programvaran ska göra | fartOLa-status | Belägg / vad som saknas |
 |---|---|---|---|---|
-| TR 4.12.4, TR 4.12.6 | Hyrbricka får inte debiteras den som har egen bricka. Efteranmälnings- och direktanmälningstillägg har tak per klasstyp, och inget tillägg i öppna ungdomsklasser. | Registrera avgift och tillägg för direktanmälda och hyrbrickor efter klasstyp. | SAKNAS | Det finns ingen avgiftsmodell. Hyrbrickor spåras (`routes/hiredCards.ts`) men utan avgift. Föranmälningarnas avgifter hanteras i Eventor. |
+| TR 4.12.4, TR 4.12.6 | Hyrbricka får inte debiteras den som har egen bricka. Efteranmälnings- och direktanmälningstillägg har tak per klasstyp, och inget tillägg i öppna ungdomsklasser. | Registrera avgift och tillägg för direktanmälda och hyrbrickor efter klasstyp. | UPPFYLLD | Taket per klasstyp och tidpunkt: `packages/shared-types/src/fees.ts:32` (`surchargeCapPct`), beloppet: `fees.ts:69` (`entryFeeFor`). Tillägget är arrangörens procentsats (som Eventor, `eventor/entryFees.ts`) och sänks till taket. Öppen klass: födelseåret avgör ungdom (16 år eller yngre, TR 3.4.6), inskolning får aldrig tillägg. Direktanmälan bokför avgift och tillägg (`routes/competitors.ts:456`); brickhyra bokförs bara när hyrbrickan öppnas (`routes/competitors.ts:168`). Exporteras som AssignedFee och RentalCard-ServiceRequest (`xml/iofExport.ts:375`). Föranmälda betalar det Eventor bestämt. Test: `packages/shared-types/src/fees.test.ts` › `age class, adult: 50 % late, 100 % on the competition day`, `packages/shared-types/src/fees.test.ts` › `open class, youth and inskolning: no surcharge`, `packages/shared-types/src/fees.test.ts` › `the cap lowers a surcharge above it`, `routes/competitors.test.ts` › `walk-up on the day in an adult age class: fee + surcharge up to 100 %`, `routes/competitors.test.ts` › `open class: the birth year decides — youth (16 or younger) pay the youth fee and no surcharge`, `routes/competitors.test.ts` › `the card fee is charged only with a hired card`, `xml/iofExport.test.ts` › `SOFT TR 4.12.4, 4.12.6, 4.12.9: fees fartOLa charged go out as AssignedFee`. |
 | TR 4.14.1 (via Eventor) | All anmälan till nivå 1–3 ska ske via Eventor. | Importera Eventors anmälningar. | UPPFYLLD | `POST /api/competitions/:id/eventor-import` (`routes/eventorImport.ts`) hämtar IOF EntryList från Eventor (`eventor/entries.ts`), tolkar den och skapar de tävlande (`ingest/entryImport.ts`). Uppladdad EntryList-fil går samma väg via `routes/import.ts`. Test: `routes/eventorImport.test.ts` › `SOFT TR 4.14.1: entries are downloaded from Eventor and parsed into competitors (EntryList through the route)`: den globala `fetch` ersätts i testet och svarar med EntryList-fixturen (`test/fixtures/iof30-entrylist-sample.xml`) bara på Eventors entries-URL med API-nyckeln; routen svarar 201 och tre tävlande med namn, förening, bricka och klass finns i databasen. Fixturen är handskriven i IOF 3.0-format, inte ett sparat Eventor-svar. |
 | TR 4.14.1 (en klass) | En anmälan per deltagare och tävling avser en klass. | Hindra att samma person anmäls i två klasser. | DELVIS | Samma bricka stoppas med 409 `card_taken`, test: `routes/competitors.test.ts` › `test 2: same card_number for same competition twice → second is 409 card_taken`. Samma person utan bricka eller med en annan bricka upptäcks inte. |
 | TR 4.14.1 (direktanmälan) | Direktanmälan får erbjudas i alla åldersklasser utom elit och ska erbjudas i öppna klasser. | Registrera på arenan och spärra elitklasser. | DELVIS | Walk-up: `POST /api/competitors` (`routes/competitors.ts:146`), test `test 6: POST w/o card_number (walk-up scenario A) → 201, no card_bound event`. Klasstypen finns (TR 3.4.2), men direktanmälan spärras ännu inte i elitklass. |
