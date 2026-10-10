@@ -26,6 +26,7 @@
   class="nav-item"
   class:active
   {disabled}
+  aria-current={active ? 'page' : undefined}
   onclick={() => !disabled && onclick?.()}
 >
   {#if icon}

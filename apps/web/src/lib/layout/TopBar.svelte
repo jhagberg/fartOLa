@@ -94,7 +94,7 @@
     flex-shrink: 0;
   }
   /* Hamburger — appears only on viewports where AppShell collapses the
-     sidebar. Keeps Settings + TweaksPanel reachable on mobile. */
+     sidebar. Keeps Settings reachable on mobile. */
   .menu-btn {
     display: none;
     width: 44px;

@@ -7,7 +7,7 @@
   per 01-UI-SPEC.md §"Layout shell" + sketches/app.jsx lines 100-145.
 
   Drawer mode (≤1024px, phones and tablets): sidebar collapses to an
-  off-canvas drawer triggered by a hamburger in TopBar. This restores Settings + TweaksPanel access on
+  off-canvas drawer triggered by a hamburger in TopBar. This restores Settings access on
   phones (without it, the entire /installningar route was unreachable +
   high-contrast bright-sun mode was a desktop-only toggle).
 
@@ -29,7 +29,6 @@
   interface Props {
     route?: string;
     onNavigate?: (route: string) => void;
-    onOpenSettings?: () => void;
     wsStatus?: WsStatus;
     stationStatus?: StationStatus;
     stationSerial?: string;
@@ -44,7 +43,6 @@
   let {
     route = 'home',
     onNavigate,
-    onOpenSettings,
     wsStatus = 'closed',
     stationStatus = 'offline',
     stationSerial = '—',
@@ -96,10 +94,6 @@
     closeDrawer();
     onNavigate?.(r);
   }
-  function handleOpenSettings(): void {
-    closeDrawer();
-    onOpenSettings?.();
-  }
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape' && drawerOpen) closeDrawer();
@@ -115,7 +109,6 @@
     <Sidebar
       {route}
       onNavigate={handleNavigate}
-      onOpenSettings={handleOpenSettings}
       {stationStatus}
       {stationSerial}
       {readoutBadge}

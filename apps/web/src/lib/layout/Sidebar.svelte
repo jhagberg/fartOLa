@@ -22,7 +22,6 @@
   interface Props {
     route?: string;
     onNavigate?: (route: string) => void;
-    onOpenSettings?: () => void;
     stationStatus?: StationStatus;
     stationSerial?: string;
     readoutBadge?: number | null;
@@ -37,7 +36,6 @@
   let {
     route = 'home',
     onNavigate,
-    onOpenSettings,
     stationStatus = 'offline',
     stationSerial = '—',
     readoutBadge = null,
@@ -160,7 +158,7 @@
     {t('nav.info')}
   </NavItem>
 
-  <NavItem onclick={() => onOpenSettings?.()}>
+  <NavItem active={route === 'settings'} onclick={() => onNavigate?.('settings')}>
     {#snippet icon()}<Icon name="settings" />{/snippet}
     {t('nav.settings')}
   </NavItem>
