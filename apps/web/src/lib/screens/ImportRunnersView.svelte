@@ -280,9 +280,6 @@
       const res = await importEntriesFromEventor(competitionId, ev.eventId);
       importResult = res;
       lastImportedEvent = ev;
-      await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
-      linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
-      relinking = false;
     } catch (e) {
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
@@ -293,6 +290,17 @@
       } else {
         relinkError = formatApiError(e, t('importRunners.errImportFailed'));
       }
+      importingEventId = null;
+      return;
+    }
+    // The import went through; a failed link save is a different problem.
+    try {
+      await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
+      linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
+      relinking = false;
+    } catch {
+      // Stay in relink mode so the operator can try the same event again.
+      relinkError = t('importRunners.relink.linkFailed');
     } finally {
       importingEventId = null;
     }

@@ -163,6 +163,7 @@
     color: var(--dnf);
   }
   .drop-zone .icon {
+    font-size: var(--fs-body);
     margin-bottom: 8px;
     font-family: var(--font-mono);
   }

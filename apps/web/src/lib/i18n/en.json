@@ -240,6 +240,7 @@
   "importRunners.courseSuccess": "Course file imported: {{count}} courses.",
   "importRunners.done": "Done – show entries",
   "importRunners.relink.cancel": "Choose another event",
+  "importRunners.relink.linkFailed": "The runners were imported, but the link to the Eventor event could not be saved. Try again.",
 
   "home.title": "Competitions",
   "home.empty.title": "No active competitions",
