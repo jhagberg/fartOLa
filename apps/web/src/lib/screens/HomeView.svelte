@@ -38,6 +38,8 @@
   let loadError: string | null = $state(null);
 
   async function load(): Promise<void> {
+    // A retry shows the placeholder, never "no competitions", until it answers.
+    loaded = false;
     loadError = null;
     try {
       const res = await listCompetitions();

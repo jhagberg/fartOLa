@@ -55,16 +55,23 @@ test('a failed load says so and retry lists the competitions', async ({ page, re
   const name = `Designlabb retry ${Date.now()}`;
   await create(request, name, dayOffset(0));
   let failed = false;
-  await page.route('**/api/competitions', (route) => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/competitions', async (route) => {
     if (!failed && route.request().method() === 'GET') {
       failed = true;
       return route.fulfill({ status: 503, json: { error: 'down' } });
     }
+    // Hold the retry so the screen can be checked while it waits.
+    await held;
     return route.continue();
   });
   await page.goto('/');
   await expect(page.getByText('Kunde inte hämta tävlingar.')).toBeVisible();
   await page.getByRole('button', { name: 'Försök igen' }).click();
+  await expect(page.getByText('Kunde inte hämta tävlingar.')).toBeHidden();
+  await expect(page.getByTestId('home-empty')).toHaveCount(0);
+  release();
   await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible();
   await expect(page.getByText('Kunde inte hämta tävlingar.')).toBeHidden();
 });
