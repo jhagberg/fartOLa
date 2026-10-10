@@ -32,7 +32,7 @@
     gap: 6px;
   }
   label {
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     font-weight: 500;
   }

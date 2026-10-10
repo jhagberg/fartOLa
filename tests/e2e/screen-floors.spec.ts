@@ -11,6 +11,7 @@ import { prepareExport, prepareExportError } from './helpers/export.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
+import { prepareImport } from './helpers/import.ts';
 import {
   prepareWizardStep1,
   prepareWizardStep2,
@@ -130,6 +131,13 @@ const SCREENS: Screen[] = [
     url: () => '/competition/_new?wizard=1',
     ready: (p) => p.getByTestId('wiz-name'),
     prepare: async (page) => prepareWizardDiscard(page),
+  },
+  {
+    name: 'Importera löpare',
+    url: (id) => `/competition/${id}/import`,
+    ready: (p) => p.getByTestId('import-runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page) => prepareImport(page),
   },
 ];
 

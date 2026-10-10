@@ -13,6 +13,7 @@ import { prepareRegistration } from './helpers/registration.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
+import { prepareImport } from './helpers/import.ts';
 import {
   prepareWizardStep1,
   prepareWizardStep2,
@@ -23,6 +24,12 @@ import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
 
+// Buttons fade their colours (0.12 s): switch transitions off so axe never
+// reads a mid-fade colour. (Not reducedMotion: it also drops scrim blur.)
+async function noTransitions(page: Page): Promise<void> {
+  await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
+}
+
 test('no new contrast or target-size violations', async ({ page, request }) => {
   test.setTimeout(120_000);
   const { competitionId: id } = await seedCompetition(request, { controls: 12 });
@@ -31,6 +38,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   // which would replace the latest read the readout screen waits for.
   const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
   const kvId = (await seedCompetition(request, { controls: 12 })).competitionId;
+  const imId = (await seedCompetition(request, { controls: 12 })).competitionId;
   const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
   // Each screen is scanned only once its own content is on the page.
   const screens: Array<[string, (page: Page) => Locator, ((page: Page) => Promise<void>)?]> = [
@@ -78,6 +86,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
     ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
+    [`/competition/${imId}/import`, (p) => p.getByTestId('import-runners-view'), prepareImport],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep1],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep2],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardImportError],
@@ -91,13 +100,14 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   for (const high of [false, true]) {
     for (const [url, ready, prepare] of screens) {
       await page.goto(url);
+      await noTransitions(page);
       await expect(ready(page)).toBeVisible();
       if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
       await prepare?.(page);
+      // A prepare may reload (dropping the style tag): inject again.
+      await noTransitions(page);
       if (high) {
         await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
-        // Buttons fade their colours (0.12 s): let that finish or axe reads a mid-fade colour.
-        await page.waitForTimeout(300);
       }
       const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
       // The walk-up modal over registration belongs to another screen pass.

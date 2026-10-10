@@ -49,9 +49,11 @@
      * the Importera sheet on /runners. Defaults to false so the
      * standalone /import deep-link still renders the full page chrome. */
     embedded?: boolean;
+    /** Called by the "Klar" button shown after a finished import. */
+    onDone?: () => void;
   }
 
-  let { competitionId, embedded = false }: Props = $props();
+  let { competitionId, embedded = false, onDone }: Props = $props();
 
   // --- Linked-event state (Plan 11) -----------------------------------------
   /** When the competition has eventor_event_id set, this holds the fetched
@@ -263,17 +265,24 @@
     relinkNoKey = false;
   }
 
+  /** Dismiss a failed relink and go back to the event list. */
+  function cancelRelinkError(): void {
+    relinkError = null;
+    relinkNoKey = false;
+  }
+
   async function relinkEvent(ev: EventorEventListItem): Promise<void> {
     relinkError = null;
     relinkNoKey = false;
     importingEventId = ev.eventId;
     try {
-      await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
-      linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
-      relinking = false;
+      // Import first: the link changes only once the entries are in.
       const res = await importEntriesFromEventor(competitionId, ev.eventId);
       importResult = res;
       lastImportedEvent = ev;
+      await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
+      linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
+      relinking = false;
     } catch (e) {
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
@@ -377,12 +386,6 @@
           </Button>
         </div>
       </div>
-      {#if relinkError}
-        <p class="err" role="alert" data-testid="import-relink-error">
-        {relinkError}
-        {#if relinkNoKey}<EventorKeyLink />{/if}
-      </p>
-      {/if}
     {:else}
       <!-- Normal date-picker search flow. Also used when relinking=true so
            the operator can pick a new event. On successful import while
@@ -472,6 +475,18 @@
         </ul>
       {/if}
     {/if}
+
+    {#if relinkError}
+      <p class="err" role="alert" data-testid="import-relink-error">
+        {relinkError}
+        {#if relinkNoKey}<EventorKeyLink />{/if}
+      </p>
+      <div>
+        <Button variant="secondary" size="sm" onclick={cancelRelinkError}>
+          {t('importRunners.relink.cancel')}
+        </Button>
+      </div>
+    {/if}
   </section>
 
   <!-- Upload card ----------------------------------------------------- -->
@@ -494,11 +509,12 @@
         data-testid="import-upload-input"
       />
       <Button
-        variant="ghost"
+        variant="secondary"
         onclick={openUploadPicker}
         disabled={uploading}
         data-testid="import-upload-btn"
       >
+        <Icon name="folder-open" size={18} />
         {uploading ? t('importRunners.uploading') : t('importRunners.upload.button')}
       </Button>
     </div>
@@ -547,6 +563,14 @@
     </div>
   {/if}
 
+  {#if onDone && (importResult || courseResult)}
+    <div>
+      <Button variant="primary" onclick={onDone} data-testid="import-done">
+        {t('importRunners.done')}
+      </Button>
+    </div>
+  {/if}
+
   {#if importError}
     <p class="err" role="alert" data-testid="import-error">
         {importError}
@@ -585,7 +609,7 @@
     margin: 0;
   }
   .small {
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .mono {
     font-family: var(--font-mono);
@@ -596,7 +620,7 @@
   .err {
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .warn {
     margin: 4px 0 0;

@@ -1,0 +1,80 @@
+// tests/e2e/import-runners.spec.ts
+// Authored for fartola. Not ported from upstream.
+//
+// Importera löpare: an upload ends with a clear next step, a course file
+// still works from the same sheet, and relinking an event only changes the
+// competition once the import succeeded. Eventor is always mocked.
+import { test, expect } from '@playwright/test';
+import { BASE } from './helpers/seed.ts';
+import { ENTRYLIST_FIXTURE, COURSE_FIXTURE } from './helpers/wizard.ts';
+import { createEmptyCompetition, mockEventorEvents, EVENT } from './helpers/import.ts';
+
+test('an entry list upload ends with Klar and the list shows the names', async ({
+  page,
+  request,
+}) => {
+  const id = await createEmptyCompetition(request, true);
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('import-upload-input').setInputFiles(ENTRYLIST_FIXTURE);
+  await expect(page.getByTestId('import-result')).toContainText(
+    'Klart: 3 löpare importerade och sparade.'
+  );
+  await page.getByRole('button', { name: 'Klar – visa anmälda' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('Andersson')).toBeVisible();
+  await expect(page.getByText('Carlsson')).toBeVisible();
+});
+
+test('a course file still works in the same sheet', async ({ page, request }) => {
+  const id = await createEmptyCompetition(request);
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('import-upload-input').setInputFiles(COURSE_FIXTURE);
+  await expect(page.getByTestId('import-course-result')).toContainText(
+    /Banfilen är inläst: \d+ banor\./
+  );
+  await page.getByRole('button', { name: 'Klar – visa anmälda' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('relink changes the linked event only after a successful import', async ({
+  page,
+  request,
+}) => {
+  const id = await createEmptyCompetition(request);
+  const linked = 1111;
+  const patched = await request.patch(`${BASE}/api/competitions/${id}`, {
+    data: { eventor_event_id: linked },
+  });
+  expect(patched.ok()).toBe(true);
+  await mockEventorEvents(page);
+  await page.route(`**/api/eventor/events/${linked}`, (r) =>
+    r.fulfill({
+      json: {
+        eventId: linked,
+        name: 'Länkad tävling',
+        startDate: '2026-10-09',
+        organisation: null,
+      },
+    })
+  );
+  await page.route('**/eventor-import**', (r) =>
+    r.fulfill({ status: 503, json: { error: 'no_key' } })
+  );
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('linked-relink-btn').click();
+  await page.getByTestId('import-search').click();
+  await expect(page.getByTestId('import-event-row')).toContainText(EVENT.name);
+  await page.getByTestId('import-event-btn').click();
+  await expect(page.getByTestId('import-relink-error')).toBeVisible();
+  const comp = await request.get(`${BASE}/api/competitions/${id}`);
+  const body = (await comp.json()) as { competition?: { eventor_event_id: number | null } };
+  expect(
+    (body.competition ?? (body as never as { eventor_event_id: number })).eventor_event_id
+  ).toBe(linked);
+  await page.getByRole('button', { name: 'Välj annan tävling' }).click();
+  await expect(page.getByTestId('import-relink-error')).toHaveCount(0);
+  await expect(page.getByTestId('import-event-list')).toBeVisible();
+});
