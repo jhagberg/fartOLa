@@ -12,6 +12,7 @@ import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
+import { prepareSettings } from './helpers/settings.ts';
 import {
   prepareWizardStep1,
   prepareWizardStep2,
@@ -138,6 +139,12 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('import-runners-view'),
     root: '[role="dialog"]',
     prepare: async (page) => prepareImport(page),
+  },
+  {
+    name: 'Inställningar',
+    url: () => '/installningar',
+    ready: (p) => p.getByTestId('settings-view'),
+    prepare: async (page, id) => prepareSettings(page, id),
   },
 ];
 

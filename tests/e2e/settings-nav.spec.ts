@@ -6,7 +6,8 @@
 // click from the place that fixes it (ADR-0016 rule 4).
 
 import { test, expect } from '@playwright/test';
-import { seedCompetition } from './helpers/seed.ts';
+import { seedCompetition, BASE } from './helpers/seed.ts';
+import { pinActive } from './helpers/settings.ts';
 
 test('Inställningar in the sidebar opens the settings page, marked active', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -34,26 +35,139 @@ test('/access does not mark Tävlingar active', async ({ page }) => {
 test('/installningar#eventor scrolls to and focuses the Eventor heading', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 600 });
   await page.goto('/installningar#eventor');
-  const heading = page.locator('#eventor h2');
+  const heading = page.locator('#eventor h3');
   await expect(heading).toBeFocused();
   await expect(heading).toBeInViewport();
 });
 
-test('a deep link to a lower section scrolls it into view', async ({ page }) => {
+test('a deep link to a lower section scrolls it into view', async ({ page, request }) => {
+  const { competitionId } = await seedCompetition(request, { controls: 3 });
+  await pinActive(page, competitionId);
   await page.setViewportSize({ width: 1366, height: 600 });
   await page.goto('/installningar#hjalpkoder');
-  const heading = page.locator('#hjalpkoder h2');
+  const heading = page.locator('#hjalpkoder h3');
   await expect(heading).toBeFocused();
   await expect(heading).toBeInViewport();
 });
 
-test('settings sections come in the agreed order', async ({ page }) => {
+test('settings sections come in the agreed order, in two named groups', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await seedCompetition(request, { controls: 3 });
+  const listed = (await (await request.get(`${BASE}/api/competitions`)).json()) as {
+    competitions: Array<{ id: string; name: string }>;
+  };
+  const name = listed.competitions.find((c) => c.id === competitionId)?.name ?? '';
+  await pinActive(page, competitionId);
   await page.goto('/installningar');
   await expect(page.getByTestId('settings-view')).toBeVisible();
+  const view = page.getByTestId('settings-view');
+  await expect(view.getByRole('heading', { level: 2 })).toHaveText([
+    `Den här tävlingen: ${name}`,
+    'Alla tävlingar på den här datorn',
+  ]);
+  await expect(page.locator('#hjalpkoder')).toBeVisible();
   const ids = await page
-    .locator('[data-testid="settings-view"] > section[id]')
+    .locator('[data-testid="settings-view"] section[id]')
     .evaluateAll((els) => els.map((e) => e.id));
-  expect(ids).toEqual(['eventor', 'liveresultat', 'meos', 'radio', 'hjalpkoder', 'utseende']);
+  expect(ids).toEqual(['liveresultat', 'radio', 'hjalpkoder', 'eventor', 'meos', 'utseende']);
+});
+
+test('without an active competition the competition group says so and links home', async ({
+  page,
+}) => {
+  await page.route('**/api/sessions/active-competition', (r) =>
+    r.fulfill({ json: { competition_id: null } })
+  );
+  await page.goto('/installningar');
+  const group = page.locator('.group').first();
+  await expect(group.getByText('Välj en tävling under Tävlingar först.')).toBeVisible();
+  await expect(group.getByRole('link')).toHaveAttribute('href', '/');
+  await expect(page.locator('#liveresultat')).toHaveCount(0);
+  await expect(page.locator('#eventor')).toBeVisible();
+});
+
+test('Liveresultat says whether live results are on or off', async ({ page, request }) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 3 });
+  await pinActive(page, id);
+  const url = `**/api/competitions/${id}/liveresultat/credentials`;
+  await page.route(url, (r) => {
+    const m = r.request().method();
+    if (m === 'PATCH') return r.fulfill({ json: { liveresultat_id: '123', has_password: true } });
+    if (m === 'DELETE') return r.fulfill({ json: { liveresultat_id: null, has_password: false } });
+    return r.fulfill({ json: { liveresultat_id: null, has_password: false } });
+  });
+  await page.goto('/installningar');
+  const sec = page.locator('#liveresultat');
+  await sec.getByTestId('liveresultat-id').fill('123');
+  await sec.getByTestId('liveresultat-password').fill('hemligt');
+  await sec.getByTestId('liveresultat-save').click();
+  await expect(sec.getByRole('status')).toHaveText('Liveresultat är påslaget.');
+  await sec.getByTestId('liveresultat-clear').click();
+  await expect(sec.getByRole('status')).toHaveText('Liveresultat är avstängt.');
+});
+
+test('a failed helper code shows an error in the card', async ({ page, request }) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 3 });
+  await pinActive(page, id);
+  await page.route(`**/api/competitions/${id}/event-codes`, (r) =>
+    r.request().method() === 'POST'
+      ? r.fulfill({ status: 500, json: { error: 'x' } })
+      : r.fulfill({ json: { codes: [] } })
+  );
+  await page.goto('/installningar');
+  await page.getByTestId('helper-codes-generate').click();
+  await expect(page.locator('#hjalpkoder').getByRole('alert')).toHaveText(
+    'Kunde inte skapa en kod.'
+  );
+});
+
+test('MeOS: Sparat disappears when you edit the password', async ({ page }) => {
+  await page.route('**/api/settings/meos', (r) =>
+    r.fulfill({ json: { has_meos_password: true, meos_allow_without_password: false } })
+  );
+  await page.goto('/installningar');
+  const card = page.locator('#meos');
+  await card.getByTestId('meos-password-input').fill('abc');
+  await card.getByTestId('meos-password-save').click();
+  await expect(card.getByTestId('meos-settings-toast')).toHaveText(/^Sparat/);
+  await card.getByTestId('meos-password-input').fill('abcd');
+  await expect(card.getByTestId('meos-settings-toast')).toHaveCount(0);
+});
+
+test('MeOS: the checkbox alone saves without sending a password', async ({ page }) => {
+  const bodies: unknown[] = [];
+  await page.route('**/api/settings/meos', (r) => {
+    if (r.request().method() === 'PUT') {
+      bodies.push(r.request().postDataJSON());
+      return r.fulfill({ json: { has_meos_password: true, meos_allow_without_password: true } });
+    }
+    return r.fulfill({ json: { has_meos_password: true, meos_allow_without_password: false } });
+  });
+  await page.goto('/installningar');
+  const card = page.locator('#meos');
+  await card.getByLabel('Tillåt MeOS utan lösenord').check();
+  expect(bodies).toEqual([]);
+  await card.getByTestId('meos-password-save').click();
+  await expect(card.getByTestId('meos-settings-toast')).toBeVisible();
+  expect(bodies).toEqual([{ meos_allow_without_password: true }]);
+  await card.getByRole('button', { name: 'Ta bort lösenord' }).click();
+  await expect(async () => expect(bodies).toHaveLength(2)).toPass();
+  expect(bodies[1]).toEqual({ meos_password: '' });
+});
+
+test('a deep link waits for the competition to load', async ({ page, request }) => {
+  const { competitionId } = await seedCompetition(request, { controls: 3 });
+  await page.route('**/api/sessions/active-competition', async (r) => {
+    await new Promise((res) => setTimeout(res, 1000));
+    await r.fulfill({ json: { competition_id: competitionId } });
+  });
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.goto('/installningar#hjalpkoder');
+  const heading = page.locator('#hjalpkoder h3');
+  await expect(heading).toBeFocused({ timeout: 10_000 });
+  await expect(heading).toBeInViewport();
 });
 
 test('Utseende toggles bright-sun and it survives a reload', async ({ page }) => {

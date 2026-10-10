@@ -89,12 +89,17 @@
   // target down, so keep it in place until the page settles or the user
   // scrolls.
   let root: HTMLElement | undefined = $state();
+  /** The hash already focused: a deep link is followed once. */
+  let focusedHash = '';
   $effect(() => {
     const id = page.url.hash.slice(1);
-    const heading = id
-      ? root?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"] h2`)
-      : null;
-    if (!root || !heading) return;
+    // The competition sections exist only once the active competition has
+    // loaded, so wait for it; the id is read so a late arrival re-runs this.
+    if (!id || !root || !activeCompetition.initialized || focusedHash === id) return;
+    void activeCompetition.id;
+    const heading = root.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"] h3`);
+    if (!heading) return;
+    focusedHash = id;
     heading.focus();
     const settle = (): void => heading.scrollIntoView({ block: 'start' });
     settle();
@@ -120,12 +125,14 @@
   // MeOS-koppling.
   let meos: MeosSettings | null = $state(null);
   let meosDraft = $state('');
+  let meosAllow = $state(false);
   let meosSaving = $state(false);
   let meosToast: RowState['toast'] = $state(null);
 
   async function fetchMeos(): Promise<void> {
     try {
       meos = await getMeosSettings();
+      meosAllow = meos.meos_allow_without_password;
     } catch {
       meos = null;
     }
@@ -139,6 +146,7 @@
     meosToast = null;
     try {
       meos = await setMeosSettings(body);
+      meosAllow = meos.meos_allow_without_password;
       meosToast = body.meos_password === '' ? 'cleared' : 'saved';
       meosDraft = '';
     } catch {
@@ -146,6 +154,23 @@
     } finally {
       meosSaving = false;
     }
+  }
+
+  const meosDirty = $derived.by(() => {
+    const m: MeosSettings | null = meos;
+    return m !== null && (meosAllow !== m.meos_allow_without_password || meosDraft.length > 0);
+  });
+
+  /** One Spara for both fields. An empty password is never sent from here:
+   * the server would clear it (that is "Ta bort lösenord"). */
+  function saveMeosCard(): void {
+    if (!meos) return;
+    void saveMeos({
+      ...(meosAllow !== meos.meos_allow_without_password
+        ? { meos_allow_without_password: meosAllow }
+        : {}),
+      ...(meosDraft.length > 0 ? { meos_password: meosDraft } : {}),
+    });
   }
 
   async function fetchAll(): Promise<void> {
@@ -243,6 +268,7 @@
   let helperCodesLoading = $state(false);
   let generatingCode = $state(false);
   let revokingId: string | null = $state(null);
+  let codeErr: string | null = $state(null);
   /** id → revealed plaintext code (visible for 30s) */
   let revealedCodes: Record<string, string> = $state({});
   /** id → setTimeout handle */
@@ -266,6 +292,7 @@
   async function handleGenerate(): Promise<void> {
     if (!currentCompId || generatingCode) return;
     generatingCode = true;
+    codeErr = null;
     try {
       const generated = await generateEventCode(currentCompId);
       // Show the plaintext code immediately for 30 seconds.
@@ -277,7 +304,7 @@
       }, 30_000);
       await loadHelperCodes();
     } catch {
-      // soft fail
+      codeErr = t('settings.helperCodes.generateError');
     } finally {
       generatingCode = false;
     }
@@ -286,11 +313,12 @@
   async function handleRevoke(codeId: string): Promise<void> {
     if (!currentCompId || revokingId) return;
     revokingId = codeId;
+    codeErr = null;
     try {
       await revokeEventCode(currentCompId, codeId);
       await loadHelperCodes();
     } catch {
-      // soft fail
+      codeErr = t('settings.helperCodes.revokeError');
     } finally {
       revokingId = null;
     }
@@ -317,10 +345,12 @@
   let livePwd = $state('');
   let liveBusy = $state(false);
   let liveErr: string | null = $state(null);
+  let liveMsg: string | null = $state(null);
 
   async function loadLive(): Promise<void> {
     live = null;
     liveErr = null;
+    liveMsg = null;
     if (!currentCompId) return;
     try {
       live = await getLiveresultatCredentials(currentCompId);
@@ -339,9 +369,11 @@
     }
     liveBusy = true;
     liveErr = null;
+    liveMsg = null;
     try {
       live = await setLiveresultatCredentials(currentCompId, liveId.trim(), livePwd);
       livePwd = '';
+      liveMsg = t('settings.liveresultat.saved');
     } catch {
       liveErr = t('settings.liveresultat.saveError');
     } finally {
@@ -353,10 +385,12 @@
     if (!currentCompId || liveBusy) return;
     liveBusy = true;
     liveErr = null;
+    liveMsg = null;
     try {
       live = await clearLiveresultatCredentials(currentCompId);
       liveId = '';
       livePwd = '';
+      liveMsg = t('settings.liveresultat.cleared');
     } catch {
       liveErr = t('settings.liveresultat.saveError');
     } finally {
@@ -501,111 +535,34 @@
     <h1 class="title">{t('settings.title')}</h1>
   </header>
 
-  <section class="card" id="eventor">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('settings.integrations.title')}</h2>
-    </header>
-    <p class="desc muted small">{t('settings.integrations.desc')}</p>
-    <EventorStatusLine />
-
-    {#if loading}
-      <p class="muted" data-testid="settings-loading">{t('settings.integrations.loading')}</p>
-    {:else if loadError}
-      <p class="err" data-testid="settings-error">{loadError}</p>
-    {:else if integrations.length === 0}
-      <p class="muted" data-testid="settings-empty">{t('settings.integrations.empty')}</p>
+  <div class="group" data-testid="settings-group-competition">
+    <h2 class="group-title">
+      {activeCompetition.value
+        ? t('settings.group.competition', { name: activeCompetition.value.name })
+        : t('settings.group.competitionPlain')}
+    </h2>
+    {#if !currentCompId && !activeCompetition.initialized}
+      <p class="muted">{t('settings.integrations.loading')}</p>
+    {:else if !currentCompId}
+      <p class="muted no-competition" data-testid="settings-no-competition">
+        {t('settings.group.noCompetition')}
+        <a href="/">{t('settings.group.toCompetitions')}</a>
+      </p>
     {:else}
-      <ul class="row-list">
-        {#each integrations as row (row.key)}
-          {@const state = rows[row.key] ?? { draft: '', visibility: 'password', saving: false, toast: null }}
-          <li class="row" data-testid="settings-row" data-integration-key={row.key}>
-            <div class="row-head">
-              <label class="label" for={`settings-input-${row.key}`}>
-                {keyLabel(row.key)}
-              </label>
-              {#if sourceBadge(row.source)}
-                <span class="badge" data-testid="settings-row-source-badge">
-                  {sourceBadge(row.source)}
-                </span>
-              {/if}
-            </div>
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
+    <!-- ------------------------------------------------------------------ -->
+    <section class="card" id="liveresultat" data-testid="liveresultat-section">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('settings.liveresultat.title')}</h3>
+        <span class="muted small" data-testid="liveresultat-state">
+          {live?.liveresultat_id && live.has_password
+            ? t('settings.liveresultat.active')
+            : t('settings.liveresultat.inactive')}
+        </span>
+      </header>
+      <p class="desc muted small">{t('settings.liveresultat.description')}</p>
 
-            {#if row.source === 'env'}
-              <p class="banner" data-testid="settings-row-env-banner">
-                {t('settings.integrations.sourceEnvBanner')}
-              </p>
-            {/if}
-
-            <div class="input-line">
-              <input
-                id={`settings-input-${row.key}`}
-                class="key-input"
-                type={state.visibility}
-                placeholder={placeholderForRow(row)}
-                bind:value={state.draft}
-                autocomplete="off"
-                spellcheck="false"
-                data-testid="settings-row-input"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onclick={() => toggleVisibility(row.key)}
-                data-testid="settings-row-visa"
-              >
-                {state.visibility === 'password'
-                  ? t('settings.integrations.show')
-                  : t('settings.integrations.hide')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={state.saving}
-                onclick={() => void save(row.key)}
-                data-testid="settings-row-save"
-              >
-                {state.saving
-                  ? t('settings.integrations.saving')
-                  : state.draft.length === 0 && row.set
-                    ? t('settings.integrations.clear')
-                    : t('settings.integrations.save')}
-              </Button>
-            </div>
-
-            {#if toastLabel(state.toast)}
-              <p
-                class="toast"
-                class:toast-err={state.toast === 'error'}
-                role="status"
-                aria-live="polite"
-                data-testid="settings-row-toast"
-              >
-                {toastLabel(state.toast)}
-              </p>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
-  <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="card" id="liveresultat" data-testid="liveresultat-section">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('settings.liveresultat.title')}</h2>
-      <span class="muted small" data-testid="liveresultat-state">
-        {live?.liveresultat_id && live.has_password
-          ? t('settings.liveresultat.active')
-          : t('settings.liveresultat.inactive')}
-      </span>
-    </header>
-    <p class="desc muted small">{t('settings.liveresultat.description')}</p>
-
-    {#if !currentCompId}
-      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
-    {:else}
       <div class="live-form">
         <label>
           <span>{t('settings.liveresultat.id')}</span>
@@ -630,6 +587,9 @@
       {#if liveErr}
         <p class="err" role="alert">{liveErr}</p>
       {/if}
+      {#if liveMsg}
+        <p class="muted" role="status" data-testid="liveresultat-result">{liveMsg}</p>
+      {/if}
       <div class="generate-row">
         <Button
           variant="primary"
@@ -652,86 +612,17 @@
           </Button>
         {/if}
       </div>
-    {/if}
-  </section>
+    </section>
 
-  <section class="card" id="meos" data-testid="meos-settings-section">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('settings.meos.title')}</h2>
-    </header>
-    <p class="desc muted small">{t('settings.meos.desc')}</p>
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Radiokontroller (ROC)                                                -->
+    <!-- ------------------------------------------------------------------ -->
+    <section class="card" id="radio" data-testid="radio-section">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('settings.radio.title')}</h3>
+      </header>
+      <p class="desc muted small">{t('settings.radio.description')}</p>
 
-    {#if meos === null}
-      <p class="muted">{t('settings.integrations.loading')}</p>
-    {:else}
-      <label class="label" for="meos-password-input">{t('settings.meos.password')}</label>
-      <div class="input-line">
-        <input
-          id="meos-password-input"
-          class="key-input"
-          type="password"
-          placeholder={meos.has_meos_password
-            ? t('settings.meos.passwordSet')
-            : t('settings.meos.passwordNotSet')}
-          bind:value={meosDraft}
-          autocomplete="new-password"
-          spellcheck="false"
-          data-testid="meos-password-input"
-        />
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={meosSaving || (meosDraft.length === 0 && !meos.has_meos_password)}
-          onclick={() => void saveMeos({ meos_password: meosDraft })}
-          data-testid="meos-password-save"
-        >
-          {meosSaving
-            ? t('settings.integrations.saving')
-            : meosDraft.length === 0 && meos.has_meos_password
-              ? t('settings.integrations.clear')
-              : t('settings.integrations.save')}
-        </Button>
-      </div>
-
-      <label class="check">
-        <input
-          type="checkbox"
-          checked={meos.meos_allow_without_password}
-          disabled={meosSaving}
-          onchange={(e) =>
-            void saveMeos({ meos_allow_without_password: e.currentTarget.checked })}
-          data-testid="meos-allow-checkbox"
-        />
-        {t('settings.meos.allowWithoutPassword')}
-      </label>
-      <p class="banner" data-testid="meos-allow-warning">{t('settings.meos.allowWarning')}</p>
-
-      {#if toastLabel(meosToast)}
-        <p
-          class="toast"
-          class:toast-err={meosToast === 'error'}
-          role="status"
-          aria-live="polite"
-          data-testid="meos-settings-toast"
-        >
-          {toastLabel(meosToast)}
-        </p>
-      {/if}
-    {/if}
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
-  <!-- Radiokontroller (ROC)                                                -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="card" id="radio" data-testid="radio-section">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('settings.radio.title')}</h2>
-    </header>
-    <p class="desc muted small">{t('settings.radio.description')}</p>
-
-    {#if !currentCompId}
-      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
-    {:else}
       <div class="live-form">
         <label>
           <span>{t('settings.radio.id')}</span>
@@ -797,23 +688,17 @@
           {t('settings.radio.save')}
         </Button>
       </div>
-    {/if}
-  </section>
+    </section>
 
-  <!-- ------------------------------------------------------------------ -->
-  <!-- Hjälpkoder section                                                   -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="card" id="hjalpkoder" data-testid="helper-codes-section">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('settings.helperCodes.title')}</h2>
-    </header>
-    <p class="desc muted small">{t('settings.helperCodes.description')}</p>
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Hjälpkoder section                                                   -->
+    <!-- ------------------------------------------------------------------ -->
+    <section class="card" id="hjalpkoder" data-testid="helper-codes-section">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('settings.helperCodes.title')}</h3>
+      </header>
+      <p class="desc muted small">{t('settings.helperCodes.description')}</p>
 
-    {#if !currentCompId}
-      <p class="muted" data-testid="helper-codes-no-competition">
-        {t('settings.helperCodes.noCompetition')}
-      </p>
-    {:else}
       <div class="generate-row">
         <Button
           variant="primary"
@@ -827,6 +712,9 @@
             : t('settings.helperCodes.generate')}
         </Button>
       </div>
+      {#if codeErr}
+        <p class="err" role="alert">{codeErr}</p>
+      {/if}
 
       {#if helperCodesLoading && helperCodes.length === 0}
         <p class="muted">{t('settings.integrations.loading')}</p>
@@ -846,6 +734,7 @@
                     {t('settings.helperCodes.revealed')}
                     <span class="code-mono">{revealedCodes[code.id]}</span>
                   </span>
+                  <span class="muted small">{t('settings.helperCodes.revealHint')}</span>
                 {:else}
                   <span class="code-masked" data-testid="helper-code-masked">{code.masked_code}</span>
                 {/if}
@@ -872,18 +761,197 @@
           {/each}
         </ul>
       {/if}
+    </section>
     {/if}
-  </section>
+  </div>
 
-  <section class="card" id="utseende" data-testid="appearance-section">
-    <header class="section-head">
-      <h2 tabindex="-1">{t('tw.title')}</h2>
-    </header>
-    <AppearanceSettings />
-  </section>
+  <div class="group">
+    <h2 class="group-title">{t('settings.group.install')}</h2>
+    <section class="card" id="eventor">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('settings.integrations.title')}</h3>
+      </header>
+      <p class="desc muted small">{t('settings.integrations.desc')}</p>
+      <EventorStatusLine />
+
+      {#if loading}
+        <p class="muted" data-testid="settings-loading">{t('settings.integrations.loading')}</p>
+      {:else if loadError}
+        <p class="err" data-testid="settings-error">{loadError}</p>
+      {:else if integrations.length === 0}
+        <p class="muted" data-testid="settings-empty">{t('settings.integrations.empty')}</p>
+      {:else}
+        <ul class="row-list">
+          {#each integrations as row (row.key)}
+            {@const state = rows[row.key] ?? { draft: '', visibility: 'password', saving: false, toast: null }}
+            <li class="row" data-testid="settings-row" data-integration-key={row.key}>
+              <div class="row-head">
+                <label class="label" for={`settings-input-${row.key}`}>
+                  {keyLabel(row.key)}
+                </label>
+                {#if sourceBadge(row.source)}
+                  <span class="badge" data-testid="settings-row-source-badge">
+                    {sourceBadge(row.source)}
+                  </span>
+                {/if}
+              </div>
+
+              {#if row.source === 'env'}
+                <p class="banner" data-testid="settings-row-env-banner">
+                  {t('settings.integrations.sourceEnvBanner')}
+                </p>
+              {/if}
+
+              <div class="input-line">
+                <input
+                  id={`settings-input-${row.key}`}
+                  class="key-input"
+                  type={state.visibility}
+                  placeholder={placeholderForRow(row)}
+                  bind:value={state.draft}
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-testid="settings-row-input"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => toggleVisibility(row.key)}
+                  data-testid="settings-row-visa"
+                >
+                  {state.visibility === 'password'
+                    ? t('settings.integrations.show')
+                    : t('settings.integrations.hide')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={state.saving}
+                  onclick={() => void save(row.key)}
+                  data-testid="settings-row-save"
+                >
+                  {state.saving
+                    ? t('settings.integrations.saving')
+                    : state.draft.length === 0 && row.set
+                      ? t('settings.integrations.clear')
+                      : t('settings.integrations.save')}
+                </Button>
+              </div>
+
+              {#if toastLabel(state.toast)}
+                <p
+                  class="toast"
+                  class:toast-err={state.toast === 'error'}
+                  role="status"
+                  aria-live="polite"
+                  data-testid="settings-row-toast"
+                >
+                  {toastLabel(state.toast)}
+                </p>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+
+    <section class="card" id="meos" data-testid="meos-settings-section">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('settings.meos.title')}</h3>
+      </header>
+      <p class="desc muted small">{t('settings.meos.desc')}</p>
+
+      {#if meos === null}
+        <p class="muted">{t('settings.integrations.loading')}</p>
+      {:else}
+        <label class="label" for="meos-password-input">{t('settings.meos.password')}</label>
+        <div class="input-line">
+          <input
+            id="meos-password-input"
+            class="key-input"
+            type="password"
+            placeholder={meos.has_meos_password
+              ? t('settings.meos.passwordSet')
+              : t('settings.meos.passwordNotSet')}
+            bind:value={meosDraft}
+            oninput={() => (meosToast = null)}
+            autocomplete="new-password"
+            spellcheck="false"
+            data-testid="meos-password-input"
+          />
+        </div>
+
+        <label class="check">
+          <input
+            type="checkbox"
+            bind:checked={meosAllow}
+            disabled={meosSaving}
+            onchange={() => (meosToast = null)}
+            data-testid="meos-allow-checkbox"
+          />
+          {t('settings.meos.allowWithoutPassword')}
+        </label>
+        <p class="banner" data-testid="meos-allow-warning">{t('settings.meos.allowWarning')}</p>
+
+        <div class="input-line">
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={meosSaving || !meosDirty}
+            onclick={saveMeosCard}
+            data-testid="meos-password-save"
+          >
+            {meosSaving ? t('settings.integrations.saving') : t('settings.integrations.save')}
+          </Button>
+          {#if meos.has_meos_password}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={meosSaving}
+              onclick={() => void saveMeos({ meos_password: '' })}
+              data-testid="meos-password-clear"
+            >
+              {t('settings.meos.clearPassword')}
+            </Button>
+          {/if}
+        </div>
+
+        {#if toastLabel(meosToast)}
+          <p
+            class="toast"
+            class:toast-err={meosToast === 'error'}
+            role="status"
+            aria-live="polite"
+            data-testid="meos-settings-toast"
+          >
+            {toastLabel(meosToast)}
+          </p>
+        {/if}
+            {/if}
+    </section>
+
+    <section class="card" id="utseende" data-testid="appearance-section">
+      <header class="section-head">
+        <h3 tabindex="-1">{t('tw.title')}</h3>
+      </header>
+      <AppearanceSettings />
+    </section>
+  </div>
 </section>
 
 <style>
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+  .group-title {
+    margin: 0;
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--border-strong);
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
   .live-form .radio-toggle {
     flex-direction: row;
     align-items: center;
@@ -923,7 +991,7 @@
     color: var(--fg-muted);
   }
   .small {
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .err {
     color: var(--dnf);
@@ -937,7 +1005,7 @@
     flex-direction: column;
     gap: var(--space-md);
   }
-  .section-head h2 {
+  .section-head h3 {
     margin: 0;
     font-size: var(--fs-label);
     font-weight: 600;
@@ -975,7 +1043,7 @@
     font-weight: 600;
   }
   .badge {
-    font-size: 11px;
+    font-size: var(--fs-label);
     background: var(--bg-sunken);
     color: var(--fg-muted);
     padding: 2px 8px;
@@ -988,7 +1056,7 @@
     color: var(--mp-fg);
     border: 1px solid color-mix(in oklch, var(--mp) 35%, transparent);
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
     line-height: 1.4;
   }
   .input-line {
@@ -1008,13 +1076,9 @@
     font-family: var(--font-mono);
     font-size: var(--fs-label);
   }
-  .key-input:focus {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
-  }
   .toast {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--accent-strong, var(--accent));
   }
   .toast-err {
@@ -1024,7 +1088,14 @@
     display: flex;
     align-items: center;
     gap: var(--space-xs);
+    min-height: var(--hit);
     font-size: var(--fs-label);
+  }
+  .check input,
+  .radio-toggle input {
+    width: 24px;
+    height: 24px;
+    accent-color: var(--accent);
   }
   .generate-row {
     display: flex;
@@ -1049,8 +1120,9 @@
   .code-row:first-child {
     border-top: none;
   }
-  .code-row.revoked {
-    opacity: 0.5;
+  .code-row.revoked .code-mono,
+  .code-row.revoked .code-masked {
+    text-decoration: line-through;
   }
   .code-meta {
     display: flex;
@@ -1067,6 +1139,6 @@
     font-weight: 600;
   }
   .code-expiry {
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
 </style>

@@ -14,6 +14,7 @@ import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
+import { prepareSettings } from './helpers/settings.ts';
 import {
   prepareWizardStep1,
   prepareWizardStep2,
@@ -84,7 +85,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       (p) => p.getByTestId('kvariskov-view'),
       prepareKvarError,
     ],
-    ['/installningar', (p) => p.getByTestId('appearance-section')],
+    ['/installningar', (p) => p.getByTestId('appearance-section'), (p) => prepareSettings(p, id)],
     ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
     [`/competition/${imId}/import`, (p) => p.getByTestId('import-runners-view'), prepareImport],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep1],

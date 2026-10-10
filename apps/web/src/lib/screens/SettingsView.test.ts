@@ -41,6 +41,17 @@ const SETTINGS_KEYS = [
   'settings.integrations.key.EVENTOR_API_KEY',
   'settings.integrations.key.LIVELOX_API_KEY',
   'settings.integrations.key.LIVERESULTAT_API_KEY',
+  'settings.group.competition',
+  'settings.group.competitionPlain',
+  'settings.group.install',
+  'settings.group.noCompetition',
+  'settings.group.toCompetitions',
+  'settings.liveresultat.saved',
+  'settings.liveresultat.cleared',
+  'settings.helperCodes.generateError',
+  'settings.helperCodes.revokeError',
+  'settings.helperCodes.revealHint',
+  'settings.meos.clearPassword',
 ] as const;
 
 describe('Plan 02-07 — i18n keys for SettingsView', () => {
