@@ -157,7 +157,9 @@
     background: var(--bg-sunken);
   }
   .reconnect-btn:disabled {
-    opacity: 0.6;
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+    border-color: var(--border);
     cursor: progress;
   }
   .reconnect-error {

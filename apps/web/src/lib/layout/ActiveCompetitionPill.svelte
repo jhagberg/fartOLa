@@ -229,9 +229,13 @@
     font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg);
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     min-width: 0;
   }
   .name.muted {
@@ -294,7 +298,7 @@
     width: 100%;
     display: grid;
     grid-template-columns: 1fr auto auto;
-    align-items: baseline;
+    align-items: center;
     gap: var(--space-xs);
     padding: 8px 10px;
     border: 0;
@@ -314,9 +318,7 @@
     background: var(--bg-sunken);
   }
   .row-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     font-weight: 500;
   }
   .row-date {

@@ -136,7 +136,6 @@
   >
     {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
     {t('nav.export')}
-    {#snippet badge()}IOF 3.0{/snippet}
   </NavItem>
 
   <NavItem
@@ -155,7 +154,6 @@
   >
     {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
     {t('nav.eventor')}
-    {#snippet badge()}Eventor{/snippet}
   </NavItem>
 
   <NavItem
