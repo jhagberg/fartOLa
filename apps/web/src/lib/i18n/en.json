@@ -724,6 +724,8 @@
   "prerace.noStart.title": "Runners without a start time",
   "prerace.noStart.rule": "Applies to drawn classes, classes timed from the start time and age classes at level 1–3 (TR 7.4.2).",
   "prerace.noStart.action": "Go to the draw",
+  "prerace.startPunch.title": "Classes timed from the start punch that must be drawn",
+  "prerace.startPunch.rule": "Start punching is not allowed in this class, draw start times (TR 7.4.2).",
   "prerace.noClub.title": "Runners without a club",
   "prerace.noClub.rule": "The start list shows the club (TR 7.5.4). Club-less runners are listed too.",
   "prerace.noName.title": "Runners without a name",

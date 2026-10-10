@@ -724,6 +724,8 @@
   "prerace.noStart.title": "Löpare utan starttid",
   "prerace.noStart.rule": "Gäller lottade klasser, klasser med starttid och åldersklasser på nivå 1–3 (TR 7.4.2).",
   "prerace.noStart.action": "Till lottningen",
+  "prerace.startPunch.title": "Klasser med startstämpling som ska lottas",
+  "prerace.startPunch.rule": "Startstämpling är inte tillåten i den här klassen, lotta starttider (TR 7.4.2).",
   "prerace.noClub.title": "Löpare utan klubb",
   "prerace.noClub.rule": "Startlistan visar klubben (TR 7.5.4). Klubblösa räknas också.",
   "prerace.noName.title": "Löpare utan namn",

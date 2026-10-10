@@ -123,6 +123,15 @@
         detail: detail(i),
       }));
     const base = `/competition/${encodeURIComponent(competitionId)}`;
+    const classRows = (list: PreRaceCheck['classes_without_course']): Row[] =>
+      list.map((c) => ({
+        key: c.class_id,
+        competitorId: null,
+        name: c.class_name,
+        meta: t('prerace.noCourse.runners', { count: c.runners }),
+        card: null,
+        detail: null,
+      }));
     return [
       {
         key: 'noCard',
@@ -135,6 +144,13 @@
         title: t('prerace.noStart.title'),
         rule: t('prerace.noStart.rule'),
         rows: runnerRows(check.no_start_time),
+        action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
+      },
+      {
+        key: 'startPunch',
+        title: t('prerace.startPunch.title'),
+        rule: t('prerace.startPunch.rule'),
+        rows: classRows(check.start_punch_not_allowed),
         action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
       },
       {
@@ -164,14 +180,7 @@
         key: 'noCourse',
         title: t('prerace.noCourse.title'),
         rule: t('prerace.noCourse.rule'),
-        rows: check.classes_without_course.map((c) => ({
-          key: c.class_id,
-          competitorId: null,
-          name: c.class_name,
-          meta: t('prerace.noCourse.runners', { count: c.runners }),
-          card: null,
-          detail: null,
-        })),
+        rows: classRows(check.classes_without_course),
         action: { label: t('prerace.noCourse.action'), href: `${base}/runners?import=1` },
       },
       {
