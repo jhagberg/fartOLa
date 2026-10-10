@@ -58,6 +58,7 @@ import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { createPushQueue } from '../integrations/liveresultat/queue.ts';
 import { createRocPoller } from '../integrations/roc/poller.ts';
+import { resultsChannel } from '@fartola/shared-types';
 import { liveresultatConfig, liveresultatMopMeta } from '../routes/liveresultat.ts';
 
 /** A single serial reader entry as parsed from --serial or --serial-path. */
@@ -736,6 +737,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     nodeId,
     log: app.log,
     ...(rocUrl ? { url: rocUrl } : {}),
+    // A hint, not the punches: the speaker view refetches its board. On the
+    // results channel so no new channel kind is needed; ResultsView ignores it.
+    onInserted: (id) => app.wsBroadcast(resultsChannel(id), { type: 'radio_punch', payload: {} }),
   });
   app.rocPoller = rocPoller;
   rocPoller.start();
