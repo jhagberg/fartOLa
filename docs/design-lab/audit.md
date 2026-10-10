@@ -316,5 +316,5 @@ todos named in the spec ("Out"), not to plan 2:
 
 ### Decisions needed
 
-- **WA-2** decided 2026-10-10 (Jonas): start unticked, so the secretary actively confirms consent (REQ-PRIV-001).
+- **WA-2** decided 2026-10-10 (Jonas): start unticked, so the secretary actively confirms consent (REQ-PRIV-001). Done on `feat/m2-class-fees` (`WalkupModal.svelte`, test `WalkupModal.fees.test.ts`).
 - **NY-1** decided 2026-10-10 (Jonas): remove the reader step from the new-competition wizard; nobody reads cards while creating a competition, and the reader status is always visible in the frame.
