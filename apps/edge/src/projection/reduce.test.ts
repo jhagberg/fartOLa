@@ -2314,3 +2314,77 @@ describe('reduce — manual finish time (SOFT TR 4.20.6)', () => {
     assert.equal(v.elapsed_time_ms, null);
   });
 });
+
+// SOFT TR 8.1.4 (kommentar): punches entered by hand from the start card or
+// a pin punch (MeOS "<< Lägg till stämpling", TabRunner.cpp:3571).
+describe('reduce — punches entered by hand (SOFT TR 8.1.4)', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+  const START = 10 * 3600;
+  const read = (eventTimeMs = at(11 * 3600)): Event =>
+    cardRead(1, [p(31), p(33)], hd(START), hd(START + 40 * 60), { eventTimeMs });
+  const add = (code: number, eventTimeMs = at(11 * 3600 + 60)): Event =>
+    evt(
+      { event_type: 'manual_punch_added', competitor_id: 'a', control_code: code, reason: 'stift' },
+      { eventTimeMs }
+    );
+  const remove = (code: number): Event =>
+    evt(
+      { event_type: 'manual_punch_removed', competitor_id: 'a', control_code: code },
+      { eventTimeMs: at(12 * 3600) }
+    );
+  const base = {
+    competition_id: 'comp-1',
+    competitors: [comp({ id: 'a', cardNumber: 1, startTimeMs: at(START) })],
+    classes: [cls('cls-H21')],
+    courses: [course('cls-H21', [31, 32, 33])],
+  };
+
+  test('the missing control punched by hand → OK, time unchanged', () => {
+    seqCounter = 0;
+    const v = reduce({ ...base, events: [read(), add(32)] }).competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.deepEqual(v.missing_codes, []);
+    assert.equal(v.elapsed_time_ms, 40 * 60 * 1000);
+    assert.deepEqual(v.manual_punches, [{ control_code: 32, reason: 'stift' }]);
+  });
+
+  test('entered before the read-out, or followed by another read-out → still OK', () => {
+    seqCounter = 0;
+    const before = reduce({ ...base, events: [add(32, at(10 * 3600)), read()] });
+    assert.equal(before.competitors.get('a')!.status, 'OK');
+    seqCounter = 0;
+    const reread = reduce({ ...base, events: [read(), add(32), read(at(11 * 3600 + 120))] });
+    assert.equal(reread.competitors.get('a')!.status, 'OK');
+  });
+
+  test('removed → MP again', () => {
+    seqCounter = 0;
+    const v = reduce({ ...base, events: [read(), add(32), remove(32)] }).competitors.get('a')!;
+    assert.equal(v.status, 'MP');
+    assert.deepEqual(v.missing_codes, [32]);
+    assert.deepEqual(v.manual_punches, []);
+  });
+
+  test('card missing: every control and the finish by hand → OK with a place', () => {
+    seqCounter = 0;
+    const state = reduce({
+      ...base,
+      competitors: [comp({ id: 'a', startTimeMs: at(START) })],
+      events: [
+        add(31),
+        add(32),
+        add(33),
+        evt({
+          event_type: 'manual_finish_set',
+          competitor_id: 'a',
+          finish_ms: at(START + 42 * 60),
+          reason: 'bricka saknas',
+        }),
+      ],
+    });
+    const v = state.competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.equal(v.elapsed_time_ms, 42 * 60 * 1000);
+    assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
+  });
+});

@@ -460,6 +460,10 @@ export type UnvoidLegInput = z.infer<typeof UnvoidLegInput>;
 // POST /api/competitions/:id/competitors/:cid/manual-finish
 //   body: { finish_ms: epoch ms on the competition clock, reason }
 // POST /api/competitions/:id/competitors/:cid/clear-manual-finish
+// POST /api/competitions/:id/competitors/:cid/manual-punch
+//   body: { control_code, reason }  (SOFT TR 8.1.4 kommentar, no time)
+// POST /api/competitions/:id/competitors/:cid/remove-manual-punch
+//   body: { control_code }
 // ---------------------------------------------------------------------------
 
 export const ManualFinishInput = z
@@ -469,6 +473,19 @@ export const ManualFinishInput = z
   })
   .strict();
 export type ManualFinishInput = z.infer<typeof ManualFinishInput>;
+
+export const ManualPunchInput = z
+  .object({
+    control_code: z.number().int().positive(),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
+export type ManualPunchInput = z.infer<typeof ManualPunchInput>;
+
+export const RemoveManualPunchInput = z
+  .object({ control_code: z.number().int().positive() })
+  .strict();
+export type RemoveManualPunchInput = z.infer<typeof RemoveManualPunchInput>;
 
 export const ClearCorrectionInput = z.object({}).strict();
 export type ClearCorrectionInput = z.infer<typeof ClearCorrectionInput>;

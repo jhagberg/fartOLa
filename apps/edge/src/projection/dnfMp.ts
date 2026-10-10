@@ -59,6 +59,9 @@ export interface DetectInput {
   startMethod: StartMethod;
   /** Finish entered by hand (epoch ms, SOFT TR 4.20.6); wins over `finish`. */
   finishMs?: number | null;
+  /** Control codes punched by hand (start card or pin punch, SOFT TR 8.1.4
+   * kommentar): no time, see matchCourse. */
+  manualCodes?: readonly number[];
 }
 
 export interface StatusResult {
@@ -75,6 +78,8 @@ export type ControlAlternatives = ReadonlyMap<number, readonly number[]>;
 export interface CourseMatch {
   /** Per expected position, the index of the punch matched to it, or -1. */
   matched: number[];
+  /** Expected positions taken by a punch entered by hand (matched -1). */
+  manual: number[];
   missing: number[];
   out_of_order: number[];
   extra: number[];
@@ -93,17 +98,25 @@ export interface CourseMatch {
  *   - extra:        punches not used by the match (informational — stray
  *                   controls, double punches, out-of-order punches)
  */
+//
+// A punch entered by hand has no time (start card, pin punch): it takes the
+// first course position of its code that no card punch fits, and does not
+// move the match on — as MeOS adds a manual punch with no time to the first
+// unpunched control with that number (oRunner.cpp:1500-1508).
 export function matchCourse(
   punchedCodes: readonly number[],
   expectedControlCodes: readonly number[],
-  alternatives?: ControlAlternatives
+  alternatives?: ControlAlternatives,
+  manualCodes: readonly number[] = []
 ): CourseMatch {
   const used = new Array<boolean>(punchedCodes.length).fill(false);
   const matched: number[] = [];
+  const manual: number[] = [];
+  const pool = [...manualCodes];
   const missing: number[] = [];
   const outOfOrder: number[] = [];
   let next = 0;
-  for (const code of expectedControlCodes) {
+  for (const [position, code] of expectedControlCodes.entries()) {
     const alts = alternatives?.get(code);
     const fits = (c: number): boolean => c === code || (alts !== undefined && alts.includes(c));
     let idx = -1;
@@ -115,6 +128,12 @@ export function matchCourse(
     }
     matched.push(idx);
     if (idx === -1) {
+      const m = pool.findIndex(fits);
+      if (m !== -1) {
+        pool.splice(m, 1);
+        manual.push(position);
+        continue;
+      }
       missing.push(code);
       if (punchedCodes.some(fits)) outOfOrder.push(code);
       continue;
@@ -123,7 +142,7 @@ export function matchCourse(
     next = idx + 1;
   }
   const extra = punchedCodes.filter((_, i) => !used[i]);
-  return { matched, missing, out_of_order: outOfOrder, extra };
+  return { matched, manual, missing, out_of_order: outOfOrder, extra };
 }
 
 /**
@@ -163,7 +182,8 @@ export function detectStatus(
   const match = matchCourse(
     input.punches.map((p) => p.code),
     expectedControlCodes,
-    alternatives
+    alternatives,
+    input.manualCodes
   );
   return {
     status: match.missing.length === 0 ? 'OK' : 'MP',

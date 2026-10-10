@@ -166,7 +166,7 @@ export function reduce(input: ReduceInput): CompetitionState {
           control_codes: c.control_codes.filter((code) => !voidedControls.has(code)),
         }));
 
-  // Secretariat corrections (manual finish …): the final state applies to
+  // Secretariat corrections (manual finish, punches …): the final state applies to
   // every read, so a later read-out cannot overwrite one.
   const corrections = foldCorrections(sortedEvents, input.competition_id);
 
@@ -226,6 +226,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         clockOffsetMin: input.clock_offset_min,
         startMethod: startMethodOf(view.class_id),
         finishMs: view.manual_finish_ms,
+        manualCodes: view.manual_punches.map((p) => p.control_code),
       },
       filterVoidedLegs(course?.control_codes ?? [], view.voided_legs),
       alternativesOf(course)
@@ -277,6 +278,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       early_start_ms: null,
       manual_finish_ms: corrected?.finish_ms ?? null,
       manual_finish_reason: corrected?.finish_reason ?? null,
+      manual_punches: corrected?.punches ?? [],
     });
   }
   const pendingUnknownCards = new Set<number>();

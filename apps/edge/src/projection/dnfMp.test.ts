@@ -14,7 +14,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { detectStatus, startMs, type StartMethod } from './dnfMp.ts';
+import { detectStatus, matchCourse, startMs, type StartMethod } from './dnfMp.ts';
 import {
   clockToEpochMs,
   competitionClockOffsetMin,
@@ -469,4 +469,30 @@ describe('startMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () 
       assert.equal(at(method, drawn, punch), want);
     });
   }
+});
+
+// SOFT TR 8.1.4 (kommentar): a punch entered by hand has no time. As MeOS
+// (oRunner.cpp:1500-1508) it takes the first course position of its code
+// no card punch fits, without moving the match on.
+describe('matchCourse — punches entered by hand', () => {
+  test('fills the missing position; later card punches still match', () => {
+    const m = matchCourse([31, 33], [31, 32, 33], undefined, [32]);
+    assert.deepEqual(m.missing, []);
+    assert.deepEqual(m.manual, [1]);
+    assert.deepEqual(m.matched, [0, -1, 1]);
+    assert.deepEqual(m.extra, []);
+  });
+
+  test('a butterfly: the punch takes the first unpunched 32 only', () => {
+    const m = matchCourse([31, 32, 33], [31, 32, 33, 32], undefined, [32]);
+    assert.deepEqual(m.manual, [3]);
+    assert.deepEqual(m.missing, []);
+    assert.deepEqual(matchCourse([31, 33], [31, 32, 33, 32], undefined, [32]).missing, [32]);
+  });
+
+  test('a punch of a control not on the course, or already punched, changes nothing', () => {
+    const m = matchCourse([31, 32], [31, 32], undefined, [32, 99]);
+    assert.deepEqual(m.manual, []);
+    assert.deepEqual(m.extra, []);
+  });
 });
