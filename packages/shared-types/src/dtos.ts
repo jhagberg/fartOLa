@@ -464,6 +464,9 @@ export type UnvoidLegInput = z.infer<typeof UnvoidLegInput>;
 //   body: { control_code, reason }  (SOFT TR 8.1.4 kommentar, no time)
 // POST /api/competitions/:id/competitors/:cid/remove-manual-punch
 //   body: { control_code }
+// POST /api/competitions/:id/competitors/:cid/time-addition
+//   body: { minutes: 1–5, reason }  (SOFT TR 10.4.2; TR 4.18.14 false start: 1)
+// POST /api/competitions/:id/competitors/:cid/clear-time-addition
 // ---------------------------------------------------------------------------
 
 export const ManualFinishInput = z
@@ -486,6 +489,14 @@ export const RemoveManualPunchInput = z
   .object({ control_code: z.number().int().positive() })
   .strict();
 export type RemoveManualPunchInput = z.infer<typeof RemoveManualPunchInput>;
+
+export const TimeAdditionInput = z
+  .object({
+    minutes: z.number().int().min(1).max(5),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
+export type TimeAdditionInput = z.infer<typeof TimeAdditionInput>;
 
 export const ClearCorrectionInput = z.object({}).strict();
 export type ClearCorrectionInput = z.infer<typeof ClearCorrectionInput>;

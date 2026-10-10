@@ -19,9 +19,19 @@ export interface Corrections {
    * card or a pin punch when the unit failed. No time; each takes one
    * missing course position (dnfMp.matchCourse). In the order entered. */
   punches: Array<{ control_code: number; reason: string }>;
+  /** Time addition in whole minutes (SOFT TR 10.4.2: 1–5; TR 4.18.14: one
+   * for a false start), 0 for none. Part of the running time. */
+  addition_min: number;
+  addition_reason: string | null;
 }
 
-const none = (): Corrections => ({ finish_ms: null, finish_reason: null, punches: [] });
+const none = (): Corrections => ({
+  finish_ms: null,
+  finish_reason: null,
+  punches: [],
+  addition_min: 0,
+  addition_reason: null,
+});
 
 /** Corrections by competitor id. `events` must be sorted by
  * (event_time_ms, local_seq). Competitors without any are absent. */
@@ -62,6 +72,18 @@ export function foldCorrections(
         const punches = of(payload.competitor_id).punches;
         const i = punches.findIndex((p) => p.control_code === payload.control_code);
         if (i !== -1) punches.splice(i, 1);
+        break;
+      }
+      case 'time_addition_set': {
+        const c = of(payload.competitor_id);
+        c.addition_min = payload.minutes;
+        c.addition_reason = payload.reason;
+        break;
+      }
+      case 'time_addition_cleared': {
+        const c = of(payload.competitor_id);
+        c.addition_min = 0;
+        c.addition_reason = null;
         break;
       }
       default:

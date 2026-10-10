@@ -130,6 +130,8 @@ function makeCompetitorView(
     manual_finish_ms: null,
     manual_finish_reason: null,
     manual_punches: [],
+    time_addition_min: 0,
+    time_addition_reason: null,
   };
 }
 

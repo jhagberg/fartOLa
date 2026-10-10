@@ -56,6 +56,7 @@ export {
   UnvoidLegInput,
   ManualFinishInput,
   ManualPunchInput,
+  TimeAdditionInput,
   RemoveManualPunchInput,
   ClearCorrectionInput,
   ClubDTO,

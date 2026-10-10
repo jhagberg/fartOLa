@@ -2388,3 +2388,88 @@ describe('reduce — punches entered by hand (SOFT TR 8.1.4)', () => {
     assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
   });
 });
+
+// SOFT TR 10.4.2: 1–5 whole minutes in mitigating cases; TR 4.18.14: one
+// minute for a false start without a start punch (MeOS "Tidstillägg:",
+// TabRunner.cpp:3455). Part of the time, the place and the export.
+describe('reduce — time addition (SOFT TR 10.4.2, TR 4.18.14)', () => {
+  const run = (card: number, sec: number): Event =>
+    cardRead(card, [p(31)], hd(36_000), hd(36_000 + sec));
+  const add = (competitor_id: string, minutes: number, eventTimeMs?: number): Event =>
+    evt(
+      { event_type: 'time_addition_set', competitor_id, minutes, reason: 'Tjuvstart' },
+      eventTimeMs === undefined ? {} : { eventTimeMs }
+    );
+  const base = {
+    competition_id: 'comp-1',
+    competitors: [
+      comp({ id: 'a', name: 'Anna', cardNumber: 1 }),
+      comp({ id: 'b', name: 'Bea', cardNumber: 2 }),
+    ],
+    classes: [cls('cls-H21')],
+    courses: [course('cls-H21', [31])],
+  };
+
+  test('one minute on the faster runner: in the time, and the places swap', () => {
+    seqCounter = 0;
+    const state = reduce({ ...base, events: [run(1, 600), run(2, 630), add('a', 1)] });
+    const a = state.competitors.get('a')!;
+    assert.equal(a.elapsed_time_ms, 660_000);
+    assert.equal(a.time_addition_min, 1);
+    assert.equal(a.time_addition_reason, 'Tjuvstart');
+    const rows = state.results_by_class.get('cls-H21')!;
+    assert.deepEqual(
+      rows.map((r) => [r.competitor_id, r.place, r.behind_leader_ms]),
+      [
+        ['b', 1, 0],
+        ['a', 2, 30_000],
+      ]
+    );
+  });
+
+  test('set before the read-out, or followed by another read-out → still added', () => {
+    seqCounter = 0;
+    const before = reduce({ ...base, events: [add('a', 2, 1), run(1, 600)] });
+    assert.equal(before.competitors.get('a')!.elapsed_time_ms, 720_000);
+    seqCounter = 0;
+    const reread = reduce({ ...base, events: [run(1, 600), add('a', 2), run(1, 600)] });
+    assert.equal(reread.competitors.get('a')!.elapsed_time_ms, 720_000);
+  });
+
+  test('a new addition replaces the old; cleared → the card time', () => {
+    seqCounter = 0;
+    const replaced = reduce({ ...base, events: [run(1, 600), add('a', 1), add('a', 3)] });
+    assert.equal(replaced.competitors.get('a')!.elapsed_time_ms, 780_000);
+    seqCounter = 0;
+    const cleared = reduce({
+      ...base,
+      events: [
+        run(1, 600),
+        add('a', 1),
+        evt({ event_type: 'time_addition_cleared', competitor_id: 'a' }),
+      ],
+    });
+    assert.equal(cleared.competitors.get('a')!.elapsed_time_ms, 600_000);
+    assert.equal(cleared.competitors.get('a')!.time_addition_min, 0);
+  });
+
+  test('counts against the max time, as MeOS', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      classes: [clsWithMax('cls-H21', 620)],
+      events: [run(1, 600), add('a', 1)],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'MAX');
+  });
+
+  test('no finish → no time to add to', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      events: [cardRead(1, [p(31)], hd(36_000), null), add('a', 1)],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'DNF');
+    assert.equal(v.elapsed_time_ms, null);
+  });
+});

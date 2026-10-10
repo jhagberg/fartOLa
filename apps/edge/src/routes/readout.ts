@@ -143,6 +143,10 @@ interface HistoryRow {
   /** SOFT TR 8.1.4 (kommentar) — mirrors CompetitorView.manual_punches:
    * controls punched by hand (no time), not in missing_codes. */
   manual_punches: Array<{ control_code: number; reason: string }>;
+  /** SOFT TR 10.4.2 — mirrors CompetitorView.time_addition_min / reason;
+   * already in elapsed_time_ms for the latest read. */
+  time_addition_min: number;
+  time_addition_reason: string | null;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -398,6 +402,8 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           manual_finish_ms: view?.manual_finish_ms ?? null,
           manual_finish_reason: view?.manual_finish_reason ?? null,
           manual_punches: view?.manual_punches ?? [],
+          time_addition_min: view?.time_addition_min ?? 0,
+          time_addition_reason: view?.time_addition_reason ?? null,
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
           class_place: classRow?.place ?? null,
