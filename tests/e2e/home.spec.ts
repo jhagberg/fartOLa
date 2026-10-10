@@ -48,7 +48,8 @@ test('a card is a link to the readout', async ({ page, request }) => {
   const link = page.getByRole('link', { name: new RegExp(name) });
   await expect(link).toHaveAttribute('href', `/competition/${id}/readout`);
   await link.click();
-  await expect(page).toHaveURL(new RegExp(`/competition/${id}/readout`));
+  // First visit: Vite compiles the readout route before the URL changes.
+  await expect(page).toHaveURL(new RegExp(`/competition/${id}/readout`), { timeout: 20_000 });
 });
 
 test('a failed load says so and retry lists the competitions', async ({ page, request }) => {
