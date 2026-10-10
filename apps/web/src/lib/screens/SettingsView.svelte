@@ -907,7 +907,8 @@
             <Button
               variant="secondary"
               size="sm"
-              disabled={meosSaving}
+              disabled={meosSaving || meosDirty}
+              {...meosDirty && !meosSaving ? { disabledHint: t('settings.meos.saveFirst') } : {}}
               onclick={() => void saveMeos({ meos_password: '' })}
               data-testid="meos-password-clear"
             >

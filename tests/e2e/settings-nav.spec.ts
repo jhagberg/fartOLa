@@ -157,6 +157,24 @@ test('MeOS: the checkbox alone saves without sending a password', async ({ page 
   expect(bodies[1]).toEqual({ meos_password: '' });
 });
 
+test('MeOS: Ta bort lösenord waits while the access change is unsaved', async ({ page }) => {
+  const bodies: unknown[] = [];
+  await page.route('**/api/settings/meos', (r) => {
+    if (r.request().method() === 'PUT') bodies.push(r.request().postDataJSON());
+    return r.fulfill({ json: { has_meos_password: true, meos_allow_without_password: true } });
+  });
+  await page.goto('/installningar');
+  const card = page.locator('#meos');
+  const clear = card.getByRole('button', { name: 'Ta bort lösenord' });
+  await expect(clear).toBeEnabled();
+  await card.getByLabel('Tillåt MeOS utan lösenord').uncheck();
+  await expect(clear).toBeDisabled();
+  await expect(card).toContainText('Spara eller ångra ändringen först');
+  await card.getByLabel('Tillåt MeOS utan lösenord').check();
+  await expect(clear).toBeEnabled();
+  expect(bodies).toEqual([]);
+});
+
 test('a deep link waits for the competition to load', async ({ page, request }) => {
   const { competitionId } = await seedCompetition(request, { controls: 3 });
   await page.route('**/api/sessions/active-competition', async (r) => {

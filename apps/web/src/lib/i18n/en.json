@@ -635,6 +635,7 @@
   "settings.helperCodes.revokeError": "Could not revoke the code.",
   "settings.helperCodes.revealHint": "The code is shown for 30 seconds.",
   "settings.meos.clearPassword": "Remove password",
+  "settings.meos.saveFirst": "Save or undo the change first",
   "settings.title": "Settings",
   "settings.integrations.title": "Integration keys",
   "settings.integrations.desc": "Keys for Eventor, Livelox and Liveresultat. A key is not shown again after you save it.",
