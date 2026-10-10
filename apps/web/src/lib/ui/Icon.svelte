@@ -44,7 +44,6 @@
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ICONS = {
     home: House,
     radio: Radio,
@@ -81,6 +80,7 @@
     sun: Sun,
     maximize: Maximize,
     minimize: Minimize,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } satisfies Record<string, Component<any>>;
   export type IconName = keyof typeof ICONS;
 </script>
