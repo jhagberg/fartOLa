@@ -43,7 +43,7 @@ export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<st
         const out: string[] = [];
         let n = 0;
         const sel =
-          'button, a[href], input:not([type=checkbox]):not([type=radio]):not([type=file]), select, [role="button"]';
+          'button, a[href], input:not([type=checkbox]):not([type=radio]):not([type=file]), select, [role="button"], summary';
         for (const e of root.querySelectorAll(sel)) {
           if (!seen(e)) continue;
           n++;

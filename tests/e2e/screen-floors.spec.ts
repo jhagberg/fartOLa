@@ -186,13 +186,15 @@ test.describe('floor helpers', () => {
        <button class="btn" style="font-size:16px;width:36px;height:36px">b</button>
        <p>text with <a href="#" style="display:inline">an inline link</a> inside</p>
        <div inert><span style="font-size:12px">hidden tiny</span></div>
-       ${lone}`
+       ${lone}
+       <details><summary style="font-size:16px;line-height:23px">s</summary></details>`
     );
     expect(await smallText(page)).toEqual(['span.tiny "tiny" 12px']);
     const t = await smallTargets(page);
-    expect(t).toHaveLength(2);
+    expect(t).toHaveLength(3);
     expect(t[0]).toContain('button.btn "b" 36×36');
     expect(t[1]).toContain('a. "x"');
+    expect(t[2]).toMatch(/^summary\. "s" \d+×23$/);
 
     await page.setContent(
       '<div inert><span style="font-size:12px">a</span><button>b</button></div>'

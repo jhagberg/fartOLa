@@ -525,6 +525,20 @@
     color: var(--dnf);
     margin: 0;
   }
+  .err summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--hit);
+    cursor: pointer;
+  }
+  /* display: flex drops the native marker; draw it back. */
+  .err summary::before {
+    content: '\25B8' / '';
+  }
+  .err details[open] > summary::before {
+    content: '\25BE' / '';
+  }
   .loaded-row {
     display: flex;
     gap: 12px;
