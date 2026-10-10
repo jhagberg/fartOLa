@@ -26,6 +26,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     [`/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
     [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
+    ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];
   const known = JSON.parse(
     readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
