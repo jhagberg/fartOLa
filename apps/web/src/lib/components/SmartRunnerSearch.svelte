@@ -106,6 +106,7 @@
               given_name: hit.given_name,
               club_name: hit.club_name,
               si_card: Number(trimmed),
+              birth_year: hit.birth_year ?? null,
             },
           ];
           highlight = 0;
@@ -121,6 +122,7 @@
             given_name: c.given_name,
             club_name: c.club_name,
             si_card: card,
+            birth_year: c.birth_year ?? null,
           }));
           highlight = 0;
           open = true;

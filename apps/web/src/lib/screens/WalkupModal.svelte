@@ -177,9 +177,6 @@
       if (club.trim() === '' && eventorHint.club_name) {
         club = eventorHint.club_name;
       }
-      if (birthYearText.trim() === '' && eventorHint.birth_year != null) {
-        birthYearText = String(eventorHint.birth_year);
-      }
       if (selectedClubId === null && eventorHint.club_id !== null) {
         selectedClubId = eventorHint.club_id;
       }
@@ -225,6 +222,19 @@
   );
   let birthYearText = $state(initialBirthYear);
   const birthYear = $derived(parseBirthYear(birthYearText));
+  // A card hit that arrives after mount fills an empty year once. Only the
+  // hint is tracked, so clearing the year (another runner picked) does not
+  // bring the hint's year back.
+  $effect(() => {
+    const y = eventorHint?.hit === true ? (eventorHint.birth_year ?? null) : null;
+    if (y === null) return;
+    untrack(() => {
+      if (birthYearText.trim() === '') birthYearText = String(y);
+    });
+  });
+  /** The year of the runner just picked; none known clears it, so a
+   * previous runner's year never stays. */
+  const pickedYear = (y: number | null | undefined): string => (y == null ? '' : String(y));
   $effect(() => {
     getFees(competitionId).then(
       (f) => (fees = f),
@@ -319,7 +329,7 @@
     if (s.si_card !== null && cardNumberLocal === '') {
       cardNumberLocal = s.si_card;
     }
-    if (s.birth_year != null) birthYearText = String(s.birth_year);
+    birthYearText = pickedYear(s.birth_year);
     eventorFillNote = t('walk.eventor.fill');
   }
 
@@ -461,7 +471,7 @@
     name = `${candidate.family_name}, ${candidate.given_name}`;
     if (candidate.club_name) club = candidate.club_name;
     selectedClubId = candidate.club_id;
-    if (candidate.birth_year != null) birthYearText = String(candidate.birth_year);
+    birthYearText = pickedYear(candidate.birth_year);
     eventorFillNote = t('walk.eventor.fill');
     showAlternativesPicker = false;
   }
