@@ -152,8 +152,9 @@ test('SOFT TR 7.5.4: bibs are numbered in start order, changed by hand and shown
   await page.getByTestId('lottning-save-time').click();
   await expect(page.getByTestId('lottning-bib')).toHaveText(['150', '102']);
 
+  // Anmälda sorts by name, and which runner got 150 depends on the draw.
   await page.goto(`/competition/${id}/runners`);
-  await expect(page.getByTestId('runners-bib')).toHaveText(['Startnr 150', 'Startnr 102'], {
-    useInnerText: true,
-  });
+  await expect(page.getByTestId('runners-bib')).toHaveCount(2);
+  const bibs = await page.getByTestId('runners-bib').allInnerTexts();
+  expect(bibs.sort()).toEqual(['Startnr 102', 'Startnr 150']);
 });
