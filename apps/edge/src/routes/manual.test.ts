@@ -711,6 +711,7 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       status: 'PEND',
       elapsed_time_ms: null,
       start_time_ms: null,
+      read_at_ms: null,
       missing_codes: [],
       manual_finish_ms: FINISH_MS,
       manual_finish_reason: 'Enheten',

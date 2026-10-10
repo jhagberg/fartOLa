@@ -41,6 +41,7 @@ describe('CorrectionsPanel (mounted)', () => {
       status: 'DNF',
       elapsed_time_ms: null,
       start_time_ms: at('10:00'),
+      read_at_ms: null,
       missing_codes: [],
       manual_finish_ms: null,
       manual_finish_reason: null,
