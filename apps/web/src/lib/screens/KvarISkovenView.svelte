@@ -407,8 +407,13 @@
       </section>
     {/if}
 
-    {#if startedCards.length > 0 && missingCards.length === 0}
-      {#if markedCards.length === 0}
+    {#if startedCards.length > 0 && missingCards.length === 0 && error === null}
+      {#if overflow}
+        <div class="box warn" data-testid="kvariskov-none-missing-overflow">
+          <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
+          {t('kvariskov.noneMissingOverflow')}
+        </div>
+      {:else if markedCards.length === 0}
         <div class="box ok" data-testid="kvariskov-all-returned">
           <strong><Icon name="check" size={18} /> {t('kvariskov.allBack')}</strong>
         </div>
@@ -503,7 +508,7 @@
     gap: 12px;
   }
   .count-badge {
-    font-size: 20px;
+    font-size: var(--fs-heading);
     font-weight: 700;
   }
   .count-badge.urgent {

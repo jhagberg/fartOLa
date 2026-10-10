@@ -840,6 +840,7 @@
   "kvariskov.refetch": "Hämta igen",
   "kvariskov.summary": "{{missing}} löpare saknas, {{back}} är tillbaka.",
   "kvariskov.warnLabel": "Obs:",
+  "kvariskov.noneMissingOverflow": "Ingen saknas bland de lästa brickorna, men minnet har runnit runt. Kontrollera startlistan för tidiga starter.",
   "prerace.title": "Kontroll inför tävlingen",
   "prerace.hint": "Det som fortfarande är fel före första start. Rätta och kör kontrollen igen.",
   "prerace.tab.check": "Kontroll",
