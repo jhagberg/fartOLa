@@ -203,8 +203,18 @@
     color: var(--fg);
   }
   .box summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--hit);
     cursor: pointer;
-    margin-top: 8px;
+  }
+  /* display: flex drops the native marker; draw it back. */
+  .box summary::before {
+    content: '\25B8' / '';
+  }
+  .box details[open] > summary::before {
+    content: '\25BE' / '';
   }
   .box details p {
     overflow-wrap: anywhere;
