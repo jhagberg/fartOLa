@@ -5,8 +5,14 @@
 // live in @fartola/shared-types fees.ts, shared with the edge, so the
 // amount the desk shows is the amount the edge records.
 
-import { surchargeCapPct, type ClassKind } from '@fartola/shared-types';
-import { ApiError, type ClassFeeItem } from '#lib/api/client.ts';
+import {
+  entryFeeFor,
+  isYouthByBirthYear,
+  localToEpochMs,
+  surchargeCapPct,
+  type ClassKind,
+} from '@fartola/shared-types';
+import { ApiError, type ClassFeeItem, type FeesResponse } from '#lib/api/client.ts';
 
 export type { ClassFeeItem };
 
@@ -37,4 +43,49 @@ export function eventorErrorKey(e: unknown): string {
       return `fees.eventor.${b.eventor}`;
   }
   return 'fees.eventor.failed';
+}
+
+export interface FeeLine {
+  entry: number;
+  late: number;
+  card: number;
+  total: number;
+}
+
+/** What a walk-up pays, as the edge records it (routes/competitors.ts):
+ * class fee and capped surcharge, a late entry before the competition day,
+ * plus the card fee for a hired card. The birth year decides youth in an
+ * open class. Null when nothing is charged. */
+export function walkupFee(
+  fees: FeesResponse,
+  classId: string,
+  birthYear: number | null,
+  hiredCard: boolean,
+  nowMs: number
+): FeeLine | null {
+  const c = fees.classes.find((x) => x.class_id === classId);
+  const timing = nowMs < localToEpochMs(fees.date, 0) ? 'late' : 'walkup';
+  const { entry, late } =
+    c === undefined || c.entry_fee === null
+      ? { entry: 0, late: 0 }
+      : entryFeeFor(
+          {
+            classKind: c.class_kind,
+            entryFee: c.entry_fee,
+            youthEntryFee: c.youth_entry_fee,
+            lateFeePct: c.late_fee_pct,
+          },
+          birthYear !== null && isYouthByBirthYear(birthYear, fees.date),
+          timing
+        );
+  const card = hiredCard ? (fees.card_fee ?? 0) : 0;
+  const total = entry + late + card;
+  return total === 0 ? null : { entry, late, card, total };
+}
+
+/** A birth year from the desk's text field: '' → null, invalid →
+ * undefined. */
+export function parseBirthYear(text: string): number | null | undefined {
+  const y = parseWhole(text);
+  return y === null || y === undefined ? y : y >= 1900 && y <= 2100 ? y : undefined;
 }

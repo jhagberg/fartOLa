@@ -947,5 +947,12 @@
   "fees.err.loadFailed": "Could not read the fees: {{error}}",
   "fees.err.saveFailed": "Could not save the fee.",
   "fees.err.kronor": "Enter the amount in whole kronor.",
-  "fees.err.percent": "Enter the surcharge in whole percent, 0–100."
+  "fees.err.percent": "Enter the surcharge in whole percent, 0–100.",
+  "walk.fee.total": "To pay: {{total}} kr",
+  "walk.fee.entry": "fee {{amount}} kr",
+  "walk.fee.late": "surcharge {{amount}} kr",
+  "walk.fee.card": "card rental {{amount}} kr",
+  "walk.birthYear": "Birth year",
+  "walk.birthYear.ph": "e.g. 2012",
+  "walk.err.birthYear": "Enter the birth year with four digits, or leave it empty."
 }

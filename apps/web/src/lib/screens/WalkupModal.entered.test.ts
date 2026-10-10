@@ -51,6 +51,8 @@ function installFetch(): void {
       });
     if (url.includes('/entries'))
       return json({ card_number: 2222222, clock_offset_min: 120, runners: entries });
+    // No fees set up: the form shows no fee line (WalkupModal.fees.test.ts).
+    if (url.endsWith('/fees')) return json({ error: 'not found' }, 404);
     if (url === '/api/competitors' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       posts.push({ url, body });
