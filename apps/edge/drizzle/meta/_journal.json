@@ -162,6 +162,13 @@
       "when": 1792108800000,
       "tag": "0023_competitions_distance",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792195200000,
+      "tag": "0024_bibs_and_start_name",
+      "breakpoints": true
     }
   ]
 }

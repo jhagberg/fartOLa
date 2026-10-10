@@ -456,6 +456,14 @@ export const classes = sqliteTable(
     /** Where class_kind came from: 'eventor' (ClassTypeId), 'name' (SOFT
      * name pattern) or 'operator'. NULL = no kind yet. Migration 0020. */
     classKindSource: text('class_kind_source', { enum: ['eventor', 'name', 'operator'] }),
+    /** SOFT TR 7.5.4 — bib numbering: prefix ('A') and first number (101),
+     * OLA's "Nummerlappsprefix" and "Nummerlappsnummer bas". NULL = none.
+     * Migration 0024. */
+    bibPrefix: text('bib_prefix'),
+    bibBase: integer('bib_base'),
+    /** SOFT TR 7.5.4 — the class's start place ("Start 1"); NULL = unknown.
+     * Migration 0024. */
+    startName: text('start_name'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
@@ -572,6 +580,9 @@ export const competitors = sqliteTable(
     /** The earlier stage's IOF ResultStatus ('OK', 'MissingPunch', …); NULL =
      * no matching result (MeOS inputStatus). Migration 0022. */
     inputStatus: text('input_status'),
+    /** SOFT TR 7.5.4 — bib (startnummer), text since it may carry a prefix;
+     * unique per competition. NULL = none. Migration 0024. */
+    bib: text('bib'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
@@ -580,6 +591,9 @@ export const competitors = sqliteTable(
     uniqueIndex('competitors_card_per_comp')
       .on(t.competitionId, t.cardNumber)
       .where(sql`${t.cardNumber} IS NOT NULL`),
+    uniqueIndex('competitors_bib_per_comp')
+      .on(t.competitionId, t.bib)
+      .where(sql`${t.bib} IS NOT NULL`),
   ]
 );
 

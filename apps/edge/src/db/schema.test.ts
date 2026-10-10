@@ -555,6 +555,33 @@ describe('schema (phase 2.1): course_replacements table + Phase 2.1 columns', ()
   });
 });
 
+describe('schema (0024): bibs and start place', () => {
+  test('a bib is unique per competition; many runners may have none', () => {
+    const handle = openDatabase(':memory:');
+    try {
+      const run = (sql: string) => handle.sqlite.prepare(sql).run();
+      run(
+        "INSERT INTO competitions (id, name, date, receipt_template, auto_print, created_at_ms) VALUES ('c1', 't', '2026-05-14', 'classic', 0, 1)"
+      );
+      run(
+        "INSERT INTO classes (id, competition_id, name, bib_prefix, bib_base, start_name) VALUES ('cl1', 'c1', 'H21', 'A', 101, 'Start 1')"
+      );
+      const add = (id: string, bib: string | null) =>
+        handle.sqlite
+          .prepare(
+            "INSERT INTO competitors (id, competition_id, name, class_id, bib) VALUES (?, 'c1', 'Bo', 'cl1', ?)"
+          )
+          .run(id, bib);
+      add('r1', 'A101');
+      add('r2', null);
+      add('r3', null);
+      assert.throws(() => add('r4', 'A101'), /UNIQUE constraint failed/);
+    } finally {
+      handle.close();
+    }
+  });
+});
+
 describe('schema (phase 2): meos_* tables have no competition_id', () => {
   test('meos_competitors / meos_classes / meos_clubs lack competition_id', () => {
     const handle = openDatabase(':memory:');
