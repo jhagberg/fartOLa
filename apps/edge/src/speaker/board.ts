@@ -53,7 +53,9 @@ export interface BoardInput {
 
 /** Final statuses that fold away: no passings, no events. */
 const OUT: ReadonlySet<SpeakerRunnerStatus> = new Set(['MP', 'DNF', 'DNS', 'DQ', 'CANCEL', 'MAX']);
-const MAX_EVENTS = 50;
+/** Per class, so the classes a speaker picked keep theirs however busy the
+ * others are; the view filters and takes the newest. */
+const MAX_EVENTS_PER_CLASS = 30;
 
 /** Place = 1 + number of strictly better times; behind the best. */
 function split(elapsed: number, all: number[]): SpeakerSplit {
@@ -170,6 +172,7 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
 
     // Events: at each point, in the order they happened, the place counts
     // only the runners already through.
+    const classEvents: SpeakerEvent[] = [];
     const base = (r: BoardRunnerIn) => ({
       class_id: cls.id,
       competitor_id: r.id,
@@ -196,7 +199,7 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
       const before: number[] = [];
       for (const p of point) {
         const s = split(p.t, [...before, p.t]);
-        events.push({
+        classEvents.push({
           ...base(p.r),
           at_ms: p.at,
           kind: p.code === null ? 'finish' : 'radio',
@@ -212,7 +215,7 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
     ins.forEach((r, k) => {
       const t = runners[k]!.radio_finish_ms;
       if (t === null) return;
-      events.push({
+      classEvents.push({
         ...base(r),
         at_ms: r.start_time_ms! + t,
         kind: 'radio_finish',
@@ -223,8 +226,10 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
         new_leader: false,
       });
     });
+    classEvents.sort((a, b) => b.at_ms - a.at_ms);
+    events.push(...classEvents.slice(0, MAX_EVENTS_PER_CLASS));
   }
 
   events.sort((a, b) => b.at_ms - a.at_ms);
-  return { classes, events: events.slice(0, MAX_EVENTS) };
+  return { classes, events };
 }
