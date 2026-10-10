@@ -385,6 +385,11 @@
                 <span class="chip-data class">
                   {klass ? (klass.short_name ?? klass.name) : t('runners.row.class.missing')}
                 </span>
+                {#if c.bib}
+                  <span class="chip-data bib" data-testid="runners-bib">
+                    {t('runners.row.bib', { bib: c.bib })}
+                  </span>
+                {/if}
                 {#if c.start_time_ms !== null}
                   <span class="chip-data start-time mono" data-testid="runners-start-time">
                     {formatStartTime(c.start_time_ms)}
@@ -659,6 +664,12 @@
     color: var(--fg);
     border: 1px solid var(--border);
     font-weight: 500;
+  }
+  .chip-data.bib {
+    background: var(--bg-sunken);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
   }
   .chip-data.card.owned {
     background: var(--ok-soft, rgba(16, 122, 87, 0.12));

@@ -129,3 +129,31 @@ test('class kinds and the competition level are set on the info page', async ({
   await page.reload();
   await expect(page.getByTestId('info-level')).toHaveValue('niva1');
 });
+
+test('SOFT TR 7.5.4: bibs are numbered in start order, changed by hand and shown in Anmälda', async ({
+  page,
+  request,
+}) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  await page.getByTestId('lottning-draw-btn').click();
+  await expect(page.getByTestId('lottning-row')).toHaveCount(2);
+
+  await page.getByTestId('lottning-bib-base').fill('101');
+  await page.getByTestId('lottning-bibs-assign').click();
+  await expect(page.getByTestId('lottning-done')).toHaveText(
+    'Klart: 2 löpare fick startnummer, 101 och uppåt.'
+  );
+  await expect(page.getByTestId('lottning-bib')).toHaveText(['101', '102']);
+
+  await page.getByTestId('lottning-edit-time-btn').first().click();
+  await page.getByTestId('lottning-edit-bib-input').fill('150');
+  await page.getByTestId('lottning-save-time').click();
+  await expect(page.getByTestId('lottning-bib')).toHaveText(['150', '102']);
+
+  await page.goto(`/competition/${id}/runners`);
+  await expect(page.getByTestId('runners-bib')).toHaveText(['Startnr 150', 'Startnr 102'], {
+    useInnerText: true,
+  });
+});
