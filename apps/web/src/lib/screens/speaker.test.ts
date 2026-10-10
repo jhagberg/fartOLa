@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { SpeakerClass, SpeakerRunner } from '@fartola/shared-types';
-import { pointLeaders, speakerGrid, speakerPanel } from './speaker.ts';
+import { passedCounts, speakerGrid, speakerPanel } from './speaker.ts';
 
 const NOW = 1_760_000_000_000;
 const MIN = 60_000;
@@ -113,18 +113,15 @@ describe('speakerPanel', () => {
   });
 });
 
-describe('pointLeaders', () => {
-  it('names the leader and the count at each radio control and the finish', () => {
-    const leaders = pointLeaders(
+describe('passedCounts', () => {
+  it('counts the runners through each radio control and the finish', () => {
+    const counts = passedCounts(
       cls([
         runner({ competitor_id: 'a', passings: [split(10, 2), null] }),
-        runner({ competitor_id: 'b', passings: [split(9, 1), null] }),
+        runner({ competitor_id: 'b', passings: [split(9, 1), split(19, 1)] }),
+        runner({ competitor_id: 'c', status: 'OK', finish: split(30, 1) }),
       ])
     );
-    expect(leaders.map((l) => [l.code, l.passed, l.leader?.competitor_id ?? null, l.ms])).toEqual([
-      [50, 2, 'b', 9 * MIN],
-      [60, 0, null, null],
-      [null, 0, null, null],
-    ]);
+    expect(counts).toEqual([2, 1, 1]);
   });
 });

@@ -40,6 +40,7 @@ import type {
   HiredCardReturnResponse,
   HealthDTO,
   RadioStatus,
+  SpeakerBoard,
 } from '@fartola/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -768,6 +769,11 @@ export function getReadout(competitionId: string): Promise<unknown> {
 
 export function getResults(competitionId: string): Promise<unknown> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/results`);
+}
+
+/** The speaker board: radio places, finish, expected finish, events strip. */
+export function getSpeakerBoard(competitionId: string): Promise<SpeakerBoard> {
+  return apiFetch<SpeakerBoard>(`/api/competitions/${encodeURIComponent(competitionId)}/speaker`);
 }
 
 // ---------------------------------------------------------------------------

@@ -70,19 +70,11 @@ export function speakerPanel(cls: SpeakerClass, nowMs: number): SpeakerPanel {
   return panel;
 }
 
-/** Each radio control, then the finish: how many are through and who leads. */
-export function pointLeaders(
-  cls: SpeakerClass
-): Array<{ code: number | null; passed: number; leader: SpeakerRunner | null; ms: number | null }> {
-  const at = (r: SpeakerRunner, i: number) => (i < cls.controls.length ? r.passings[i] : r.finish);
-  return [...cls.controls, null].map((code, i) => {
-    const through = cls.runners.filter((r) => at(r, i));
-    const leader = through.find((r) => at(r, i)!.place === 1) ?? null;
-    return {
-      code,
-      passed: through.length,
-      leader,
-      ms: leader ? at(leader, i)!.elapsed_ms : null,
-    };
-  });
+/** How many are through each radio control, then the finish. The leader
+ * there is the row with place 1 in that column. */
+export function passedCounts(cls: SpeakerClass): number[] {
+  return [
+    ...cls.controls.map((_, i) => cls.runners.filter((r) => r.passings[i]).length),
+    cls.runners.filter((r) => r.finish).length,
+  ];
 }

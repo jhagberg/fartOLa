@@ -121,6 +121,15 @@
   </NavItem>
 
   <NavItem
+    active={route === 'speaker'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('speaker')}
+  >
+    {#snippet icon()}<Icon name="mic" />{/snippet}
+    {t('nav.speaker')}
+  </NavItem>
+
+  <NavItem
     active={route === 'export'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('export')}
