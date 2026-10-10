@@ -731,7 +731,7 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     assert.deepEqual(res.json(), {
       status: 'PEND',
       elapsed_time_ms: null,
-      start_time_ms: null,
+      start_ms: null,
       read_at_ms: null,
       missing_codes: [],
       manual_finish_ms: FINISH_MS,
@@ -742,6 +742,45 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     });
     const b = await seedCompetitionAndCompetitor(ctx.app);
     assert.equal((await get(a.competitionId, b.competitorId)).statusCode, 404);
+  });
+
+  test('GET …/corrections start_ms is the start the time runs from (start_punch: the punch)', async () => {
+    const { competitionId, classId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // Drawn 10:00, punched 09:50 (CEST, 2026-05-22), read 10:30.
+    ctx.handle.sqlite
+      .prepare('UPDATE competitors SET card_number = 501, start_time_ms = ? WHERE id = ?')
+      .run(Date.UTC(2026, 4, 22, 8, 0), competitorId);
+    ctx.handle.sqlite
+      .prepare('UPDATE classes SET start_method = ? WHERE id = ?')
+      .run('start_punch', classId);
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'test',
+        localSeq: 1,
+        competitionId,
+        eventType: 'card_read',
+        eventTimeMs: Date.UTC(2026, 4, 22, 8, 30),
+        recordedAtMs: Date.UTC(2026, 4, 22, 8, 30),
+        payload: {
+          event_type: 'card_read',
+          card_number: 501,
+          card_type: 'SI10',
+          start: { seconds_in_half_day: 9 * 3600 + 50 * 60, half_day: 0, weekday: null },
+          finish: null,
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
+    });
+    assert.equal((res.json() as { start_ms: number }).start_ms, Date.UTC(2026, 4, 22, 7, 50));
   });
 
   test('a competitor in another competition → 404', async () => {
