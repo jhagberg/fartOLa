@@ -187,3 +187,10 @@ export function startOrderNote(cls: {
     return { key: 'lottning.openClassFreeStart' };
   return null;
 }
+
+/** The bib a 409 bib_taken names (POST …/bibs, PATCH …/profile), else null. */
+export function bibTakenOf(e: unknown): string | null {
+  if (!(e instanceof ApiError) || e.status !== 409) return null;
+  const b = e.body as { error?: string; bib?: string } | null;
+  return b?.error === 'bib_taken' && typeof b.bib === 'string' ? b.bib : null;
+}
