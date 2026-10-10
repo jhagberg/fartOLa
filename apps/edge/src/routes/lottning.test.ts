@@ -530,6 +530,14 @@ describe('lottning route', () => {
     });
     assert.equal(res.statusCode, 201, res.body);
     assert.equal(await get(), 90);
+    // A mass start stores interval 0: the distance's norm again, not 0.
+    const mass = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'Simultaneous', firstStartMs: at(10), intervalSec: 0 },
+    });
+    assert.equal(mass.statusCode, 201, mass.body);
+    assert.equal(await get(), 180);
   });
 
   test('SOFT TR 7.4.2: GET lottning says whether free start time is banned and counts the named runners without a start', async () => {
