@@ -34,6 +34,7 @@ import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { seedCompetition } from './helpers/seed.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COURSEDATA_FIXTURE = path.resolve(
@@ -156,4 +157,30 @@ test('registration-desk: queue + auto-advance + dedupe', async ({ page, request 
 
   await expect(page.getByTestId('walkup-card')).toHaveValue('1234567', { timeout: 5_000 });
   await expect(page.getByTestId('reg-queue-badge')).toBeHidden();
+});
+
+test('a failed class load says so and retries', async ({ page, request }) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 3 });
+  let fail = true;
+  await page.route(`**/api/competitions/${id}`, (r) =>
+    fail ? r.fulfill({ status: 503, json: { error: 'down' } }) : r.continue()
+  );
+  await page.goto(`/competition/${id}/registration`);
+  const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta klasser.' });
+  await expect(alert).toBeVisible();
+  fail = false;
+  await alert.getByRole('button', { name: 'Försök igen' }).click();
+  await expect(alert).toBeHidden();
+});
+
+test('the add button says what is missing', async ({ page, request }) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 3 });
+  await page.goto(`/competition/${id}/registration`);
+  await expect(page.getByText('Skriv ett bricknummer')).toBeVisible();
+  await page.getByTestId('reg-manual-input').fill('7501853');
+  await expect(page.getByText('Skriv ett bricknummer')).toBeHidden();
+  // The button still submits the form: the walk-up modal opens for the card.
+  await page.getByTestId('reg-manual-form').getByRole('button', { name: 'Lägg till' }).click();
+  await expect(page.getByTestId('walkup-modal')).toBeVisible();
+  await expect(page.getByTestId('reg-manual-input')).toHaveValue('');
 });

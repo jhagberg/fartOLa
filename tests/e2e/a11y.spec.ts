@@ -25,6 +25,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     [`/competition/${id}/readout?walkup=7500123`, (p) => p.getByTestId('walkup-modal')],
     [`/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
+    [`/competition/${id}/registration`, (p) => p.getByTestId('registration-view')],
     [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];

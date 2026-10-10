@@ -18,7 +18,11 @@ type Screen = {
   root?: string;
 };
 const SCREENS: Screen[] = [
-  // Task 4 onwards: { name: 'Registrering', url: (id) => `/competition/${id}/registration`, ready: (p) => p.getByTestId('registration-view') },
+  {
+    name: 'Registrering',
+    url: (id) => `/competition/${id}/registration`,
+    ready: (p) => p.getByTestId('registration-view'),
+  },
 ];
 
 test.describe('floor helpers', () => {
