@@ -1150,6 +1150,31 @@ export function applyMissingStarts(
   });
 }
 
+/** One runner in a "Kontroll inför tävlingen" list (GET …/pre-race-check). */
+export interface PreRaceRunner {
+  competitor_id: string;
+  name: string;
+  club: string | null;
+  class_id: string;
+  class_name: string;
+  card_number: number | null;
+}
+
+/** What is still wrong before the first start (edge projection/preRaceCheck.ts). */
+export interface PreRaceCheck {
+  no_card: PreRaceRunner[];
+  no_start_time: PreRaceRunner[];
+  no_club: PreRaceRunner[];
+  no_name: PreRaceRunner[];
+  card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
+  classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
+}
+
+/** GET /api/competitions/:id/pre-race-check. */
+export function getPreRaceCheck(competitionId: string): Promise<PreRaceCheck> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/pre-race-check`);
+}
+
 // ---------------------------------------------------------------------------
 // Start-time history and undo (routes/startTimes.ts; ADR-0016 rule 2)
 // ---------------------------------------------------------------------------
