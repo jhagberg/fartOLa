@@ -23,7 +23,7 @@ Visual and wording:
 
 - 12–13 px text plan 1 did not reach: WalkupModal alternatives chip (m2-fees).
 - WalkupModal scrim: use `var(--scrim)` (m2-fees).
-- Hyrbrickor rows HY-1 … HY-5 in `docs/design-lab/audit.md` (m2-fees).
+- Hyrbrickor rows HY-1 … HY-5 in `docs/design-lab/audit.md` (plan 3).
 - Double edge (border plus `--shadow-md` ring): `LatestReadCard .dnf-pop`
   (sekretariat).
 - `LatestReadCard .blink mono`, `.btn.lg` 13–17 px rules (sekretariat).
