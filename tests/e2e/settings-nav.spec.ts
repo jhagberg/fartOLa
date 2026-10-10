@@ -223,6 +223,9 @@ test('import: missing Eventor key links to the key field', async ({ page, reques
     r.fulfill({ status: 503, json: { error: 'no_key' } })
   );
   await page.goto(`/competition/${id}/import`);
+  // The date fills in after the competition loads; a click before that
+  // only shows a date error.
+  await expect(page.getByTestId('import-date')).not.toHaveValue('');
   await page.getByTestId('import-search').click();
   const err = page.getByTestId('import-search-error');
   await expect(err).toBeVisible();

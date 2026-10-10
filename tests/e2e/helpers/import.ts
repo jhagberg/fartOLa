@@ -48,6 +48,9 @@ export async function mockEventorEvents(page: Page): Promise<void> {
 /** Event list, a bad date, then a finished upload with its Klar button. */
 export async function prepareImport(page: Page): Promise<void> {
   await mockEventorEvents(page);
+  // The date fills in after the competition loads; a click before that
+  // only shows a date error.
+  await expect(page.getByTestId('import-date')).not.toHaveValue('');
   await page.getByTestId('import-search').click();
   await expect(page.getByTestId('import-event-list')).toBeVisible();
   await page.getByTestId('import-date').fill('2026-1');
