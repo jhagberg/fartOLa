@@ -634,6 +634,9 @@ export const HiredCardRow = z.object({
   contact_email: z.string().nullable(),
   /** PII per REQ-PRIV-002 — free-form operator note. */
   note: z.string().nullable(),
+  /** SOFT TR 4.12.4 — rental fee in kronor fixed when the rental opened;
+   * null = none. Optional so older fixtures stay valid. */
+  fee: z.number().int().nonnegative().nullable().optional(),
 });
 export type HiredCardRow = z.infer<typeof HiredCardRow>;
 
