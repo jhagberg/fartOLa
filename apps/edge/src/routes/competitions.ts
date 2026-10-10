@@ -236,6 +236,13 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
         patch.clockOffsetMin !== undefined ? patch.clockOffsetMin : existing.clockOffsetMin
       );
       const shiftMs = (after - before) * 60_000;
+      // Finishes entered by hand (SOFT TR 4.20.6) are on the same clock.
+      const manualFinishes =
+        shiftMs === 0
+          ? []
+          : [...(app.projectionStore.recomputeNow(id)?.competitors.values() ?? [])].filter(
+              (v) => v.manual_finish_ms !== null
+            );
       app.fartolaDb.sqlite.transaction(() => {
         db.update(competitions).set(patch).where(eq(competitions.id, id)).run();
         if (shiftMs !== 0) {
@@ -269,6 +276,21 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
               intervalSec: g.intervalSec,
             })),
           });
+          for (const v of manualFinishes) {
+            insertEvent(
+              app.fartolaDb,
+              app.fartolaNodeId,
+              'manual_finish_set',
+              Date.now(),
+              {
+                event_type: 'manual_finish_set',
+                competitor_id: v.id,
+                finish_ms: v.manual_finish_ms! - shiftMs,
+                reason: v.manual_finish_reason ?? '',
+              },
+              id
+            );
+          }
         }
       })();
       // The date and the override set the competition clock card times are
