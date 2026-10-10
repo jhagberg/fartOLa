@@ -168,17 +168,23 @@
     if (dnfOpen) {
       pickedStatus = 'DNF';
       dnfReason = REASON_BY_STATUS.DNF;
-      popDown = false;
-      void tick().then(() => {
-        const scroller = popEl?.closest('.content');
-        if (!popEl || !scroller) return;
-        const top =
-          popEl.getBoundingClientRect().top -
-          scroller.getBoundingClientRect().top +
-          scroller.scrollTop;
-        if (top < 0) popDown = true;
-      });
+      placePop();
     }
+  }
+
+  /** Open upwards, or down when upwards would start above the scroll
+   * origin. Measured on open and again when the window is resized. */
+  function placePop(): void {
+    popDown = false;
+    void tick().then(() => {
+      const scroller = popEl?.closest('.content');
+      if (!popEl || !scroller) return;
+      const top =
+        popEl.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
+      if (top < 0) popDown = true;
+    });
   }
 
   function pickStatus(s: ManualStatus): void {
@@ -210,6 +216,8 @@
     pickedStatus = 'DNF';
   }
 </script>
+
+<svelte:window onresize={() => dnfOpen && placePop()} />
 
 <section
   class="card latest"

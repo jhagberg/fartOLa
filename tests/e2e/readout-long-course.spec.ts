@@ -147,3 +147,15 @@ test('"fel ordn." keeps a gap to the edge of a medium tile', async ({ page, requ
   // 3 px border plus at least 2 px space on the right.
   expect(l.x + l.width).toBeLessThanOrEqual(t.x + t.width - 5);
 });
+
+test('the open status picker is placed again when the window is resized', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await openLongRead(page, request);
+  await page.getByTestId('manual-dnf-btn').click();
+  await expectPickerVisible(page, false);
+  await page.setViewportSize({ width: 683, height: 384 });
+  await expectPickerVisible(page, true);
+});
