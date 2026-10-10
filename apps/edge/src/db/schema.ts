@@ -404,6 +404,8 @@ export const competitions = sqliteTable('competitions', {
   rocStartCodes: text('roc_start_codes'),
   rocCheckCodes: text('roc_check_codes'),
   rocFinishCodes: text('roc_finish_codes'),
+  /** SOFT TR 4.12.4 — card rental fee in kronor; NULL = none. Migration 0025. */
+  cardFee: integer('card_fee'),
 });
 
 // ---------------------------------------------------------------------------
@@ -467,6 +469,13 @@ export const classes = sqliteTable(
     /** SOFT TR 7.5.4 — the class's start place ("Start 1"); NULL = unknown.
      * Migration 0024. */
     startName: text('start_name'),
+    /** SOFT TR 4.12.6 — the class fee in kronor; NULL = not set. Migration 0025. */
+    entryFee: integer('entry_fee'),
+    /** The youth fee of an open class; NULL = same as entry_fee. Migration 0025. */
+    youthEntryFee: integer('youth_entry_fee'),
+    /** The late / walk-up surcharge in percent, capped per class type when
+     * charged (shared-types fees.ts); NULL = none. Migration 0025. */
+    lateFeePct: integer('late_fee_pct'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
@@ -586,6 +595,11 @@ export const competitors = sqliteTable(
     /** SOFT TR 7.5.4 — bib (startnummer), text since it may carry a prefix;
      * unique per competition. NULL = none. Migration 0024. */
     bib: text('bib'),
+    /** SOFT TR 4.12.6 — class fee and capped surcharge (kronor) a runner
+     * registered in fartOLa was told to pay; NULL for pre-entries (Eventor
+     * decided their fee). Migration 0025. */
+    entryFee: integer('entry_fee'),
+    lateFee: integer('late_fee'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
@@ -814,6 +828,9 @@ export const hiredCards = sqliteTable(
     contactEmail: text('contact_email'),
     /** Free-form operator note; may contain PII (REQ-PRIV-002 scrub list). */
     note: text('note'),
+    /** SOFT TR 4.12.4 — rental fee (kronor) fixed when the rental opens;
+     * NULL = none. Migration 0025. */
+    fee: integer('fee'),
   },
   (t) => [primaryKey({ columns: [t.competitionId, t.cardNumber] })]
 );
