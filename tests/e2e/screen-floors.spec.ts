@@ -7,6 +7,7 @@
 import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { seedCompetition } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
+import { prepareExport, prepareExportError } from './helpers/export.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -36,6 +37,24 @@ const SCREENS: Screen[] = [
       // The walk-up modal belongs to another track: leave it out.
       await page.getByTestId('walkup-modal').evaluate((e) => e.setAttribute('inert', ''));
     },
+  },
+  {
+    name: 'Export',
+    url: (id) => `/competition/${id}/export`,
+    ready: (p) => p.getByTestId('export-view'),
+    prepare: async (page) => prepareExport(page),
+  },
+  {
+    name: 'Export med ogiltig fil',
+    url: (id) => `/competition/${id}/export`,
+    ready: (p) => p.getByTestId('export-view'),
+    prepare: async (page) => prepareExportError(page, 'invalid'),
+  },
+  {
+    name: 'Export med fel',
+    url: (id) => `/competition/${id}/export`,
+    ready: (p) => p.getByTestId('export-view'),
+    prepare: async (page) => prepareExportError(page, 'network'),
   },
 ];
 

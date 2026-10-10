@@ -5,14 +5,13 @@
   reaches via the Export nav. Layout (UI-SPEC §"Export IOF XML 3.0
   ResultList"):
 
-    1. "Exporttyp" — radio toggle Slutgiltig (Final, default) /
-       Provisorisk (Provisional). Flipping the toggle re-triggers the
+    1. "Typ" — radio toggle Slutgiltig (default) /
+       Preliminär. Flipping the toggle re-triggers the
        preview fetch so the validation panel reflects the actual XML
        that will be downloaded.
-    2. "Validering" — green box "✓ Validering OK · N klasser · M
-       personresultat" when valid; red box listing line + message per
-       XSD error when invalid.
-    3. "Nedladdning" — primary CTA "↓ Hämta ResultList.xml". Disabled
+    2. "Kontroll" — green box "Filen är giltig · N klasser · M
+       resultat" when valid; red box with the error lines when invalid.
+    3. "Hämta fil" — primary CTA "Hämta resultatfilen". Disabled
        until preview returns valid=true. Click navigates the window to
        the download URL so the browser handles the file save via the
        server-set Content-Disposition header (no fetch + blob URL
@@ -28,9 +27,9 @@
   - REQ-EVT-CMP-008 + REQ-STD-002 + SC#6
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
+  import Button from '#lib/ui/Button.svelte';
   import {
     exportPreview,
     exportDownloadUrl,
@@ -49,45 +48,55 @@
   let status = $state<ExportStatus>('Final');
   let loading = $state<boolean>(false);
   let preview = $state<ExportPreviewResult | null>(null);
+  // The type the shown preview was made for: a download is only safe when
+  // it matches the chosen type.
+  let previewStatus = $state<ExportStatus | null>(null);
   let lastError = $state<string | null>(null);
+  let downloaded = $state<boolean>(false);
 
   const downloadUrl = $derived(exportDownloadUrl(competitionId, status));
-  const canDownload = $derived(preview !== null && preview.valid);
+  const canDownload = $derived(
+    preview !== null && preview.valid && !loading && previewStatus === status
+  );
+  const pending = $derived(
+    preview !== null && preview.valid ? preview.summary.pending_count : 0
+  );
 
-  onMount(() => {
+  // Only the newest request may set the preview or clear `loading`.
+  let requestGen = 0;
+
+  // The one place the preview is fetched: on load and when the type flips.
+  $effect(() => {
+    void status;
     void refresh();
   });
 
-  // Re-fetch when the user flips the toggle. $effect runs on initial mount
-  // too; the `if` guards against firing during the SSR/hydration cycle.
-  $effect(() => {
-    // Track `status` so the effect re-runs when it changes. The initial
-    // onMount call already fetched for 'Final'; this branch handles the
-    // flip to 'Provisional' and back.
-    void status;
-    if (typeof window !== 'undefined') {
-      void refresh();
-    }
-  });
-
   async function refresh(): Promise<void> {
+    const gen = ++requestGen;
+    const asked = status;
     loading = true;
     lastError = null;
     try {
-      const result = await exportPreview(competitionId, status);
+      const result = await exportPreview(competitionId, asked);
+      if (gen !== requestGen) return;
       preview = result;
+      previewStatus = asked;
     } catch (err) {
+      if (gen !== requestGen) return;
       preview = null;
-      lastError = err instanceof Error ? err.message : 'Okänt fel';
+      previewStatus = null;
+      lastError = err instanceof Error ? err.message : t('common.unknownError');
     } finally {
-      loading = false;
+      if (gen === requestGen) loading = false;
     }
   }
 
   // SOFT TA till TR 7.8.2: unread is not "not started". Runners never read
   // out are left out of the list until the operator sets them to Ej start.
   let unreadMessage = $state<string | null>(null);
+  let busy = $state<boolean>(false);
   async function unreadDns(undo: boolean): Promise<void> {
+    busy = true;
     try {
       const { count } = await setUnreadDns(competitionId, undo);
       unreadMessage = t(undo ? 'export.unreadDns.undone' : 'export.unreadDns.done', {
@@ -95,12 +104,15 @@
       });
       await refresh();
     } catch (err) {
-      unreadMessage = err instanceof Error ? err.message : 'Okänt fel';
+      unreadMessage = err instanceof Error ? err.message : t('common.unknownError');
+    } finally {
+      busy = false;
     }
   }
 
   function onStatusChange(next: ExportStatus): void {
     status = next;
+    downloaded = false;
   }
 
   function errorRows(): ExportPreviewError[] {
@@ -111,14 +123,12 @@
 
 <div class="export" data-testid="export-view">
   <header class="hd">
-    <h1 class="h0">Export — IOF XML 3.0 ResultList</h1>
-    <p class="muted">
-      Validera projektionen mot IOF.xsd och ladda ner resultatlistan som ett standardiserat XML-dokument.
-    </p>
+    <h1 class="h0">{t('export.title')}</h1>
+    <p class="muted">{t('export.intro')}</p>
   </header>
 
   <section class="sec" data-testid="export-section-type">
-    <h2 class="h1">Exporttyp</h2>
+    <h2 class="h1">{t('export.typeHeading')}</h2>
     <label class="radio">
       <input
         type="radio"
@@ -128,7 +138,7 @@
         data-testid="export-status-final"
         onchange={() => onStatusChange('Final')}
       />
-      <span>Slutgiltig (Final)</span>
+      <span>{t('export.type.final')}</span>
     </label>
     <label class="radio">
       <input
@@ -139,42 +149,47 @@
         data-testid="export-status-provisional"
         onchange={() => onStatusChange('Provisional')}
       />
-      <span>Provisorisk (Provisional)</span>
+      <span>{t('export.type.provisional')}</span>
     </label>
   </section>
 
   <section class="sec" data-testid="export-section-validation">
-    <h2 class="h1">Validering</h2>
+    <h2 class="h1">{t('export.check')}</h2>
     {#if loading}
-      <p class="loading" data-testid="export-loading">Validerar …</p>
+      <p class="loading" data-testid="export-loading">{t('export.checking')}</p>
     {:else if lastError !== null}
       <div class="box err" data-testid="export-error-network">
-        <strong>Validering misslyckades</strong>
+        <strong><Icon name="alert-triangle" size={18} /> {t('export.error')}</strong>
         <p>{lastError}</p>
       </div>
     {:else if preview === null}
       <p class="muted">—</p>
     {:else if preview.valid}
       <div class="box ok" data-testid="export-valid">
-        <strong><Icon name="check" size={18} /> Validering OK</strong>
+        <strong><Icon name="check" size={18} /> {t('export.valid')}</strong>
         <p>
-          {preview.summary.class_count} klasser · {preview.summary.person_result_count} personresultat
-          · status {preview.summary.status}
+          {t('export.counts', {
+            classes: preview.summary.class_count,
+            results: preview.summary.person_result_count,
+          })}
         </p>
       </div>
     {:else}
       <div class="box err" data-testid="export-invalid">
-        <strong><Icon name="x" size={18} /> XSD-fel</strong>
-        <ul>
-          {#each errorRows() as e, i (i)}
-            <li>
-              {#if e.line !== null && e.line !== undefined}
-                <span class="mono">rad {e.line}:</span>
-              {/if}
-              {e.message}
-            </li>
-          {/each}
-        </ul>
+        <strong><Icon name="alert-triangle" size={18} /> {t('export.error')} {t('export.invalid')}</strong>
+        <details>
+          <summary>{t('export.details')}</summary>
+          <ul>
+            {#each errorRows() as e, i (i)}
+              <li>
+                {#if e.line !== null && e.line !== undefined}
+                  <span class="mono">{t('export.line', { line: e.line })}</span>
+                {/if}
+                {e.message}
+              </li>
+            {/each}
+          </ul>
+        </details>
       </div>
     {/if}
   </section>
@@ -183,17 +198,27 @@
     <h2 class="h1">{t('export.unreadDns.title')}</h2>
     {#if preview !== null && preview.valid && preview.summary.pending_count > 0}
       <div class="box err" data-testid="export-pending">
-        <strong>{t('export.pending', { n: preview.summary.pending_count })}</strong>
+        <strong><Icon name="alert-triangle" size={18} /> {t('export.pending', { n: preview.summary.pending_count })}</strong>
         <p>{t('export.pendingHint')}</p>
       </div>
     {/if}
     <div class="row">
-      <button class="btn" data-testid="export-unread-dns" onclick={() => unreadDns(false)}>
-        {t('export.unreadDns.set')}
-      </button>
-      <button class="btn" data-testid="export-unread-dns-undo" onclick={() => unreadDns(true)}>
+      <Button
+        variant="primary"
+        disabled={pending === 0 || busy}
+        data-testid="export-unread-dns"
+        onclick={() => unreadDns(false)}
+      >
+        {busy ? t('export.unreadDns.busy') : t('export.unreadDns.set', { n: pending })}
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={busy}
+        data-testid="export-unread-dns-undo"
+        onclick={() => unreadDns(true)}
+      >
         {t('export.unreadDns.undo')}
-      </button>
+      </Button>
     </div>
     {#if unreadMessage !== null}
       <p class="muted" data-testid="export-unread-message">{unreadMessage}</p>
@@ -201,19 +226,27 @@
   </section>
 
   <section class="sec" data-testid="export-section-download">
-    <h2 class="h1">Nedladdning</h2>
+    <h2 class="h1">{t('export.downloadHeading')}</h2>
     <a
-      class="btn primary"
-      class:disabled={!canDownload}
+      class="download"
       href={canDownload ? downloadUrl : undefined}
       data-testid="export-download"
       aria-disabled={!canDownload}
       onclick={(ev) => {
         if (!canDownload) ev.preventDefault();
+        else downloaded = true;
       }}
     >
-      <Icon name="download" size={18} /> Hämta ResultList.xml
+      <Icon name="download" size={18} /> {t('export.download')}
     </a>
+    {#if downloaded}
+      <p class="muted" data-testid="export-next">
+        {t('export.next')}
+        <a href={`/competition/${encodeURIComponent(competitionId)}/eventor-publish`}
+          >{t('export.nextLink')}</a
+        >
+      </p>
+    {/if}
   </section>
 </div>
 
@@ -234,12 +267,12 @@
   }
   .h0 {
     margin: 0;
-    font-size: 28px;
+    font-size: var(--fs-display);
     font-weight: 600;
   }
   .h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-heading);
     font-weight: 600;
   }
   .muted {
@@ -249,13 +282,19 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    min-height: var(--hit);
     cursor: pointer;
+  }
+  .radio input {
+    width: 24px;
+    height: 24px;
+    accent-color: var(--accent);
   }
   .loading {
     color: var(--fg-muted);
   }
   .box {
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 12px 16px;
   }
   .box.ok {
@@ -274,6 +313,10 @@
   .box li {
     margin-bottom: 4px;
   }
+  .box summary {
+    cursor: pointer;
+    margin-top: 8px;
+  }
   .mono {
     font-family: var(--font-mono);
     color: var(--fg-muted);
@@ -284,23 +327,24 @@
     flex-wrap: wrap;
     gap: 8px;
   }
-  .btn {
+  .download {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    padding: 10px 20px;
-    border-radius: 8px;
+    gap: 8px;
+    min-height: var(--hit);
+    padding: 0 var(--space-md);
+    border-radius: var(--radius);
     background: var(--accent);
     color: var(--accent-fg);
+    border: 1px solid var(--accent);
     font-weight: 600;
     text-decoration: none;
-    cursor: pointer;
     width: max-content;
   }
-  .btn.disabled {
-    background: var(--fg-muted);
-    color: var(--bg);
+  .download[aria-disabled='true'] {
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+    border-color: var(--border);
     cursor: not-allowed;
-    pointer-events: none;
   }
 </style>

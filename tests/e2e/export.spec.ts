@@ -112,7 +112,7 @@ test('export preview validation is green and download button enabled', async ({
   await expect(page.getByTestId('export-view')).toBeVisible();
   // Green validation box appears within 5s.
   await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
-  await expect(page.getByTestId('export-valid')).toContainText('Validering OK');
+  await expect(page.getByTestId('export-valid')).toContainText('Filen är giltig');
 
   // Download button is enabled (not disabled-class, not aria-disabled).
   const downloadBtn = page.getByTestId('export-download');
@@ -149,4 +149,93 @@ test('export download streams an IOF XML 3.0 ResultList', async ({ page, request
   expect(body.startsWith('<?xml')).toBe(true);
   expect(body).toContain('<ResultList');
   expect(body).toContain('iofVersion="3.0"');
+});
+
+test('the set button carries the count and is disabled at 0; undo is secondary', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setupCompetition(request);
+  await page.goto(`/competition/${competitionId}/export`);
+  const pending = page.getByTestId('export-pending');
+  await expect(pending).toBeVisible({ timeout: 5_000 });
+  const n = Number((await pending.innerText()).match(/(\d+) löpare/)?.[1]);
+  expect(n).toBeGreaterThan(0);
+  const set = page.getByTestId('export-unread-dns');
+  await expect(set).toHaveText(`Sätt ${n} ej utlästa till Ej start`);
+  await expect(page.getByTestId('export-unread-dns-undo')).toHaveClass(/variant-secondary/);
+  await set.click();
+  await expect(page.getByTestId('export-unread-message')).toBeVisible();
+  await expect(set).toBeDisabled();
+  await expect(set).toHaveText('Sätt 0 ej utlästa till Ej start');
+});
+
+test('no stale download: disabled while a new preview loads, one request on load', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setupCompetition(request);
+  let previews = 0;
+  page.on('request', (r) => {
+    if (r.url().includes('/export/preview')) previews += 1;
+  });
+  await page.goto(`/competition/${competitionId}/export`);
+  await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
+  expect(previews).toBe(1);
+  const link = page.getByTestId('export-download');
+  await expect(link).toHaveAttribute('aria-disabled', 'false');
+
+  await page.route('**/export/preview**', async (route) => {
+    await new Promise((r) => setTimeout(r, 1_000));
+    await route.continue();
+  });
+  await page.getByTestId('export-status-provisional').check();
+  await expect(link).toHaveAttribute('aria-disabled', 'true');
+  await expect(link).not.toHaveAttribute('href', /.*/);
+  await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
+  await expect(link).toHaveAttribute('aria-disabled', 'false');
+  await expect(link).toHaveAttribute('href', /status=Provisional/);
+});
+
+test('an older preview response changes nothing', async ({ page, request }) => {
+  const { competitionId } = await setupCompetition(request);
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  let finals = 0;
+  await page.route('**/export/preview**', async (route) => {
+    if (route.request().url().includes('status=Final')) {
+      finals += 1;
+      // Hold the first Final; the second answers at once.
+      if (finals === 1) await held;
+    }
+    await route.continue();
+  });
+  await page.goto(`/competition/${competitionId}/export`);
+  await page.getByTestId('export-status-provisional').check();
+  await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
+  await page.getByTestId('export-status-final').check();
+  const link = page.getByTestId('export-download');
+  await expect(link).toHaveAttribute('aria-disabled', 'false');
+  await expect(link).toHaveAttribute('href', /status=Final/);
+  release();
+  await page.waitForTimeout(500);
+  await expect(link).toHaveAttribute('aria-disabled', 'false');
+  await expect(link).toHaveAttribute('href', /status=Final/);
+  await expect(page.getByTestId('export-loading')).toHaveCount(0);
+});
+
+test('after a download the next step links to Eventor publishing', async ({ page, request }) => {
+  const { competitionId } = await setupCompetition(request);
+  await simulateRead(request, competitionId, 7_501_853, true);
+  await page.goto(`/competition/${competitionId}/export`);
+  await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
+  const download = page.waitForEvent('download');
+  await page.getByTestId('export-download').click();
+  await download;
+  const next = page.getByTestId('export-next');
+  await expect(next).toContainText('Hämtningen har startat.');
+  await expect(next.getByRole('link', { name: 'publicera till Eventor' })).toHaveAttribute(
+    'href',
+    `/competition/${competitionId}/eventor-publish`
+  );
 });

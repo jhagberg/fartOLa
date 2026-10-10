@@ -10,6 +10,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
+import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -20,8 +21,9 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   // Registration gets its own competition: its prepared state reads cards,
   // which would replace the latest read the readout screen waits for.
   const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
+  const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
   // Each screen is scanned only once its own content is on the page.
-  const screens: Array<[string, (page: Page) => Locator]> = [
+  const screens: Array<[string, (page: Page) => Locator, ((page: Page) => Promise<void>)?]> = [
     [
       `/competition/${id}/readout`,
       (p) => p.getByTestId('latest-read').filter({ hasText: '7501853' }),
@@ -31,6 +33,17 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
     [`/competition/${regId}/registration`, (p) => p.getByTestId('registration-view')],
     [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
+    [`/competition/${exId}/export`, (p) => p.getByTestId('export-view'), prepareExport],
+    [
+      `/competition/${exId}/export`,
+      (p) => p.getByTestId('export-view'),
+      (p) => prepareExportError(p, 'invalid'),
+    ],
+    [
+      `/competition/${exId}/export`,
+      (p) => p.getByTestId('export-view'),
+      (p) => prepareExportError(p, 'network'),
+    ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
   ];
   const known = JSON.parse(
@@ -39,10 +52,11 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   const allowed = new Set(known.map((k) => `${k.rule} ${k.target}`));
   const found: string[] = [];
   for (const high of [false, true]) {
-    for (const [url, ready] of screens) {
+    for (const [url, ready, prepare] of screens) {
       await page.goto(url);
       await expect(ready(page)).toBeVisible();
       if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
+      await prepare?.(page);
       if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
       const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
       // The walk-up modal over registration belongs to another screen pass.
