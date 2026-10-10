@@ -384,6 +384,9 @@ export const competitions = sqliteTable('competitions', {
   /** SOFT TR 3.3.1 competition level, or 'traning'. NULL = not set; rules
    * that depend on it refuse (409). Migration 0020. */
   level: text('level', { enum: ['niva1', 'niva2', 'niva3', 'niva4', 'traning'] }),
+  /** Distance (SOFT TA till TR 7.4.4): gives the normal start interval the
+   * draw suggests. NULL = not set. Migration 0023. */
+  distance: text('distance', { enum: ['sprint', 'medel', 'lang', 'ultralang', 'natt'] }),
   /** ROC (roc.olresultat.se) unitId; NULL = not set. */
   rocCompetitionId: text('roc_competition_id'),
   /** ROC polling on/off. */

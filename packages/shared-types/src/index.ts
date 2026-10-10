@@ -43,6 +43,7 @@ export {
   ClassKind,
   ClassKindSource,
   CompetitionLevel,
+  CompetitionDistance,
   CourseDTO,
   CourseCreateInput,
   CourseControlDTO,

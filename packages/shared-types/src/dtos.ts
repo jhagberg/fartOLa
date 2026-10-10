@@ -108,6 +108,10 @@ export type ClassKindSource = z.infer<typeof ClassKindSource>;
 export const CompetitionLevel = z.enum(['niva1', 'niva2', 'niva3', 'niva4', 'traning']);
 export type CompetitionLevel = z.infer<typeof CompetitionLevel>;
 
+/** Distance (SOFT TA till TR 7.4.4: the normal start interval per distance). */
+export const CompetitionDistance = z.enum(['sprint', 'medel', 'lang', 'ultralang', 'natt']);
+export type CompetitionDistance = z.infer<typeof CompetitionDistance>;
+
 export const CompetitionDTO = z.object({
   id: UUID,
   name: z.string().min(1),
@@ -137,6 +141,8 @@ export const CompetitionDTO = z.object({
   clock_offset_min: z.number().int(),
   /** Competition level; null = not set (rules that need it refuse). */
   level: CompetitionLevel.nullable().optional(),
+  /** Distance; null = not set (no suggested start interval). */
+  distance: CompetitionDistance.nullable().optional(),
 });
 export type CompetitionDTO = z.infer<typeof CompetitionDTO>;
 
@@ -168,6 +174,8 @@ export const CompetitionPatchInput = z.object({
   clock_offset_min: z.number().int().min(-720).max(840).nullable().optional(),
   /** Competition level (SOFT TR 3.3.1); null clears it. */
   level: CompetitionLevel.nullable().optional(),
+  /** Distance (SOFT TA till TR 7.4.4); null clears it. */
+  distance: CompetitionDistance.nullable().optional(),
 });
 export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 
