@@ -36,20 +36,23 @@ export function withEventStartTimes(
  * 'restart' in a pursuit's restart block (TR 7.4.1). */
 export type StartMarker = 'new_time' | 'late_entrant' | 'restart';
 
-/** The marker of each runner whose start an event set, from the event that
- * gave the current start. Undo gives back the marker before the undone
- * event (undo is only allowed while that event gave the current start); an
- * undone undo gives the event's marker back. A clock shift moves every
- * start and keeps the markers. Runners without a marker are left out. */
+/** The marker of each runner, from the event that gave its current start.
+ * A whole-class draw also clears or sets the markers of the class's runners
+ * whose start it kept (writeStartTimes leaves unchanged starts out of the
+ * event). Undo gives back the markers from before the undone event, so an
+ * undo need not be of the latest event; an undone undo gives the event's
+ * markers back. A clock shift moves every start and keeps the markers.
+ * `runners` are the competition's runners now (class and stored start).
+ * Runners without a marker are left out. */
 export function startMarkers(
   events: readonly Event[],
-  competitionId: string
+  competitionId: string,
+  runners: ReadonlyArray<{ id: string; classId: string; startTimeMs: number | null }>
 ): Map<string, StartMarker> {
   type Payload = Extract<EventPayload, { event_type: 'start_times_set' }>;
   const sets = events
     .filter((e) => e.competitionId === competitionId && e.eventType === 'start_times_set')
     .sort((a, b) => a.localSeq - b.localSeq || a.nodeId.localeCompare(b.nodeId));
-  const byKey = new Map(sets.map((e) => [`${e.nodeId}:${e.localSeq}`, e.payload as Payload]));
   const markerOf = (p: Payload, startMs: number | null): StartMarker | null =>
     p.cause === 'manual' || p.cause === 'missing_starts'
       ? 'new_time'
@@ -61,29 +64,36 @@ export function startMarkers(
             startMs >= p.restart_ms
           ? 'restart'
           : null;
-  const stacks = new Map<string, Array<StartMarker | null>>();
+  const stored = new Map(runners.map((r) => [r.id, r.startTimeMs]));
+  const current = new Map<string, StartMarker | null>();
+  const start = new Map<string, number | null>();
+  /** Per event, each touched runner's marker before it. */
+  const before = new Map<string, Map<string, StartMarker | null>>();
   for (const e of sets) {
     const p = e.payload as Payload;
+    for (const c of p.changes) start.set(c.competitor_id, c.start_time_ms);
     if (p.cause === 'clock_shift') continue;
-    // An undo of an undo of … : odd depth takes the marker back, even depth
-    // applies the original event again.
-    let original: Payload | undefined = p;
-    let depth = 0;
-    while (original?.cause === 'undo' && original.undoes !== undefined) {
-      original = byKey.get(`${original.undoes.node_id}:${original.undoes.local_seq}`);
-      depth++;
+    const prior = new Map<string, StartMarker | null>();
+    const set = (id: string, m: StartMarker | null) => {
+      if (!prior.has(id)) prior.set(id, current.get(id) ?? null);
+      current.set(id, m);
+    };
+    if (p.cause === 'undo') {
+      const undone =
+        p.undoes === undefined
+          ? undefined
+          : before.get(`${p.undoes.node_id}:${p.undoes.local_seq}`);
+      for (const [id, m] of undone ?? []) set(id, m);
+    } else {
+      for (const c of p.changes) set(c.competitor_id, markerOf(p, c.start_time_ms));
+      if (p.cause === 'draw' && p.class_id !== null)
+        for (const r of runners)
+          if (r.classId === p.class_id && !prior.has(r.id))
+            set(r.id, markerOf(p, start.has(r.id) ? start.get(r.id)! : (stored.get(r.id) ?? null)));
     }
-    for (const c of p.changes) {
-      const stack = stacks.get(c.competitor_id) ?? [];
-      if (depth % 2 === 1) stack.pop();
-      else stack.push(original === undefined ? null : markerOf(original, c.start_time_ms));
-      stacks.set(c.competitor_id, stack);
-    }
+    before.set(`${e.nodeId}:${e.localSeq}`, prior);
   }
   const out = new Map<string, StartMarker>();
-  for (const [id, stack] of stacks) {
-    const top = stack.at(-1);
-    if (top != null) out.set(id, top);
-  }
+  for (const [id, m] of current) if (m !== null) out.set(id, m);
   return out;
 }
