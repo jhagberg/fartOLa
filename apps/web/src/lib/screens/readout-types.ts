@@ -98,6 +98,10 @@ export interface ReadoutHistoryRow {
   manual_finish_reason: string | null;
   /** Controls punched by hand (SOFT TR 8.1.4 kommentar), no time. */
   manual_punches: Array<{ control_code: number; reason: string }>;
+  /** Time addition in whole minutes (SOFT TR 10.4.2), 0 for none; already
+   * in elapsed_time_ms. */
+  time_addition_min: number;
+  time_addition_reason: string | null;
   /** The runner's current standing in the class (projection results rows):
    * place and ms behind the leader are null for MP/DNF/untimed/unplaced;
    * finished = runners with a place, starters = all in the class. */

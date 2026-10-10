@@ -38,13 +38,25 @@ describe('correctionLines', () => {
   it('a finish by hand shows its time and reason; none shows nothing', () => {
     expect(
       correctionLines(
-        { manual_finish_ms: at('10:42:30'), manual_finish_reason: 'Enheten', manual_punches: [] },
+        {
+          manual_finish_ms: at('10:42:30'),
+          manual_finish_reason: 'Enheten',
+          manual_punches: [],
+          time_addition_min: 0,
+          time_addition_reason: null,
+        },
         120
       )
     ).toEqual([{ key: 'corr.line.finish', vars: { time: '10:42:30', reason: 'Enheten' } }]);
     expect(
       correctionLines(
-        { manual_finish_ms: null, manual_finish_reason: null, manual_punches: [] },
+        {
+          manual_finish_ms: null,
+          manual_finish_reason: null,
+          manual_punches: [],
+          time_addition_min: 0,
+          time_addition_reason: null,
+        },
         120
       )
     ).toEqual([]);
@@ -62,6 +74,8 @@ describe('correctionLines — punches by hand', () => {
             { control_code: 32, reason: 'Stift' },
             { control_code: 35, reason: 'Stift' },
           ],
+          time_addition_min: 0,
+          time_addition_reason: null,
         },
         120
       ).map((l) => l.vars.code)
@@ -74,5 +88,20 @@ describe('parseControlCode', () => {
     expect(parseControlCode(' 32 ')).toBe(32);
     for (const text of ['', '0', '3.5', '-1', 'abc', '32a'])
       expect(parseControlCode(text)).toBeNull();
+  });
+});
+
+describe('correctionLines — time addition', () => {
+  it('shows the minutes and why; 0 shows nothing', () => {
+    const row = {
+      manual_finish_ms: null,
+      manual_finish_reason: null,
+      manual_punches: [],
+      time_addition_reason: 'Tjuvstart',
+    };
+    expect(correctionLines({ ...row, time_addition_min: 1 }, 120)).toEqual([
+      { key: 'corr.line.addition', vars: { minutes: '1', reason: 'Tjuvstart' } },
+    ]);
+    expect(correctionLines({ ...row, time_addition_min: 0 }, 120)).toEqual([]);
   });
 });
