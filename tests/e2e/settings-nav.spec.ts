@@ -37,6 +37,14 @@ test('/installningar#eventor scrolls to and focuses the Eventor heading', async 
   await expect(heading).toBeInViewport();
 });
 
+test('a deep link to a lower section scrolls it into view', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.goto('/installningar#hjalpkoder');
+  const heading = page.locator('#hjalpkoder h2');
+  await expect(heading).toBeFocused();
+  await expect(heading).toBeInViewport();
+});
+
 test('settings sections come in the agreed order', async ({ page }) => {
   await page.goto('/installningar');
   await expect(page.getByTestId('settings-view')).toBeVisible();
