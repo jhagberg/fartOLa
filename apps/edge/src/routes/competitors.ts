@@ -109,6 +109,8 @@ const PatchProfileSchema = z
     class_id: z.string().uuid().optional(),
     card_number: z.number().int().positive().nullable().optional(),
     bib: z.string().trim().max(16).nullable().optional(),
+    paid_amount: z.number().int().min(0).max(100000).optional(),
+    paid_method: z.enum(['cash', 'swish']).nullable().optional(),
   })
   .strict();
 
@@ -139,6 +141,15 @@ function isCardCollisionError(err: unknown): boolean {
   return err.message.includes('competitors.card_number');
 }
 
+function paidEcho(app: FastifyInstance, id: string) {
+  const r = app.fartolaDb.db
+    .select({ a: competitors.paidAmount, m: competitors.paidMethod })
+    .from(competitors)
+    .where(eq(competitors.id, id))
+    .get();
+  return { paid_amount: r?.a ?? 0, paid_method: (r?.m ?? null) as 'cash' | 'swish' | null };
+}
+
 function competitorRowToDTO(row: Competitor): CompetitorDTO {
   return {
     id: row.id,
@@ -152,6 +163,8 @@ function competitorRowToDTO(row: Competitor): CompetitorDTO {
     scrubbed_at_ms: row.scrubbedAtMs,
     start_time_ms: row.startTimeMs ?? null,
     bib: row.bib,
+    paid_amount: row.paidAmount,
+    paid_method: row.paidMethod as 'cash' | 'swish' | null,
   };
 }
 
@@ -562,6 +575,28 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         if (input.hired_card === true && input.card_number !== null) {
           upsertHiredCard(app, input, competitorId, input.card_number, now);
         }
+
+        // Paid at the desk: the whole charge (fee, surcharge, card rental)
+        // is recorded as paid, so Eventor does not bill the club for it.
+        if (input.paid_method !== undefined) {
+          const charged = app.fartolaDb.db
+            .select({
+              e: competitors.entryFee,
+              l: competitors.lateFee,
+              c: competitors.cardFee,
+            })
+            .from(competitors)
+            .where(eq(competitors.id, competitorId))
+            .get();
+          app.fartolaDb.db
+            .update(competitors)
+            .set({
+              paidAmount: (charged?.e ?? 0) + (charged?.l ?? 0) + (charged?.c ?? 0),
+              paidMethod: input.paid_method,
+            })
+            .where(eq(competitors.id, competitorId))
+            .run();
+        }
       })();
     } catch (err) {
       // Race-safety net (PR #3 review — Gemini medium). See the
@@ -623,6 +658,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       scrubbed_at_ms: null,
       start_time_ms: null,
       bib: null,
+      ...paidEcho(app, competitorId),
     };
     return reply.code(201).send(dto);
   });
@@ -752,6 +788,13 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       }
       update.bib = bib;
     }
+    if (parsed.data.paid_amount !== undefined) {
+      update.paidAmount = parsed.data.paid_amount;
+      // 0 = nothing paid, so no method either.
+      if (parsed.data.paid_amount === 0) update.paidMethod = null;
+    }
+    if (parsed.data.paid_method !== undefined && parsed.data.paid_amount !== 0)
+      update.paidMethod = parsed.data.paid_method;
 
     if (Object.keys(update).length === 0) {
       return reply.code(200).send({ ok: true, competitor: competitorRowToDTO(row) });

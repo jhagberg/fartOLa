@@ -283,6 +283,9 @@ export const CompetitorDTO = z.object({
   start_time_ms: z.number().int().nonnegative().nullable(),
   /** SOFT TR 7.5.4 — the runner's bib (startnummer); NULL = none. */
   bib: z.string().nullable().optional(),
+  /** Whole kronor paid at the desk (fee, surcharge and card rental); 0 = none. */
+  paid_amount: z.number().int().nonnegative().optional(),
+  paid_method: z.enum(['cash', 'swish']).nullable().optional(),
 });
 export type CompetitorDTO = z.infer<typeof CompetitorDTO>;
 
@@ -363,6 +366,9 @@ export const CompetitorCreateInput = z
      * it decides the youth fee and that no surcharge is charged (SOFT TR
      * 4.12.1, 4.12.6). */
     birth_year: z.number().int().min(1900).max(2100).nullable().optional(),
+    /** Paid at the desk: the server records the whole amount charged
+     * (fee, surcharge, card rental) as paid with this method. */
+    paid_method: z.enum(['cash', 'swish']).optional(),
   })
   .superRefine((val, ctx) => {
     if (val.replace_card_for_competitor_id !== undefined) {
@@ -647,6 +653,15 @@ export type HiredCardRow = z.infer<typeof HiredCardRow>;
 export const HiredCardsListResponse = z.object({
   open: z.array(HiredCardRow),
   returned: z.array(HiredCardRow),
+  /** Kronor paid at the desk, per method; other = amount without method. */
+  paid_on_site: z
+    .object({
+      cash: z.number().int(),
+      swish: z.number().int(),
+      other: z.number().int(),
+      total: z.number().int(),
+    })
+    .optional(),
 });
 export type HiredCardsListResponse = z.infer<typeof HiredCardsListResponse>;
 

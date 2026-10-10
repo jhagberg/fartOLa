@@ -96,6 +96,9 @@ export interface RunnerFees {
    * Fee/Id so Eventor can invoice them; null = not from Eventor. */
   entryFeeId?: number | null;
   lateFeeId?: number | null;
+  /** Whole kronor paid at the desk for fee, surcharge and card rental
+   * together; absent or 0 = nothing paid (PaidAmount 0). */
+  paid?: number;
 }
 
 export interface ExportSummary {
@@ -242,17 +245,22 @@ interface FeeNode {
   Amount: { '@_currency': 'SEK'; '#text': number };
 }
 
+interface AmountNode {
+  '@_currency': 'SEK';
+  '#text': number;
+}
+
 interface ResultNode {
   StartTime?: string;
   FinishTime?: string;
   Time?: number;
   Position?: number;
   Status: IofResultStatus;
-  AssignedFee?: { Fee: FeeNode }[];
+  AssignedFee?: { Fee: FeeNode; PaidAmount?: AmountNode }[];
   ServiceRequest?: {
     Service: { '@_type': 'RentalCard'; Name: string };
     RequestedQuantity: 1;
-    AssignedFee: { Fee: FeeNode };
+    AssignedFee: { Fee: FeeNode; PaidAmount?: AmountNode };
   };
 }
 
@@ -383,18 +391,30 @@ function buildPersonResult(
   // them (iof30interface.cpp:2838-2915, writeAssignedFee and
   // writeRentalCardService); SOFT TR 4.12.9 wants the late fee apart from
   // the base fee. Fee/Id is Eventor's EntryFeeId when the class fees came
-  // from Eventor. No PaidAmount: fartOLa takes no payments.
+  // from Eventor. PaidAmount follows MeOS writeAssignedFee: one paid amount
+  // per runner covers fee, surcharge and card rental; the rental's share is
+  // taken off first and written in the rental's own AssignedFee when it was
+  // paid in full (iof30interface.cpp:2846-2848, 2927-2929), the rest goes
+  // to the class fee first and the remainder to the late fee (2884-2896).
   const amount = (n: number) => ({ '@_currency': 'SEK' as const, '#text': n });
   const id = (n: number | null | undefined) => (n == null ? {} : { Id: n });
-  const assigned: { Fee: FeeNode }[] = [];
-  if (fees?.entry != null)
+  const assigned: { Fee: FeeNode; PaidAmount?: AmountNode }[] = [];
+  const card = fees?.card ?? 0;
+  const cardPaid = card > 0 && (fees?.paid ?? 0) >= card;
+  const paidForFees = Math.max(0, (fees?.paid ?? 0) - (cardPaid ? card : 0));
+  const normalFee = fees?.entry ?? 0;
+  const paidNormal = Math.min(paidForFees, normalFee);
+  // A payment with no recorded fee (a pre-entry paid at the desk) still
+  // goes out, against a 0 kr fee, as MeOS does.
+  if (fees?.entry != null || paidForFees > 0)
     assigned.push({
       Fee: {
         '@_type': 'Normal',
-        ...id(fees.entryFeeId),
+        ...id(fees?.entryFeeId),
         Name: 'Anmälningsavgift',
-        Amount: amount(fees.entry),
+        Amount: amount(normalFee),
       },
+      PaidAmount: amount(fees?.late ? paidNormal : paidForFees),
     });
   if (fees?.late != null && fees.late > 0)
     assigned.push({
@@ -404,13 +424,17 @@ function buildPersonResult(
         Name: 'Efteranmälningsavgift',
         Amount: amount(fees.late),
       },
+      PaidAmount: amount(paidForFees - paidNormal),
     });
   if (assigned.length > 0) result.AssignedFee = assigned;
   if (fees?.card != null && fees.card > 0)
     result.ServiceRequest = {
       Service: { '@_type': 'RentalCard', Name: 'Hyrbricka' },
       RequestedQuantity: 1,
-      AssignedFee: { Fee: { Name: 'Brickhyra', Amount: amount(fees.card) } },
+      AssignedFee: {
+        Fee: { Name: 'Brickhyra', Amount: amount(fees.card) },
+        ...(cardPaid ? { PaidAmount: amount(fees.card) } : {}),
+      },
     };
 
   // PersonResult sequence order per IOF.xsd lines 2360-2404:

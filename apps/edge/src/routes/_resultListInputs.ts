@@ -5,7 +5,7 @@
 // 7.8.2), each runner's Eventor person id (SOFT TA till TR 7.8.3) and the
 // fees fartOLa charged (SOFT TR 4.12.4, 4.12.6).
 
-import { and, eq, isNotNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 
 import type { DbHandle } from '../db/index.ts';
 import { competitors } from '../db/schema.ts';
@@ -32,6 +32,7 @@ export function resultListInputs(
       entry: competitors.entryFee,
       late: competitors.lateFee,
       card: competitors.cardFee,
+      paid: competitors.paidAmount,
       entryFeeId: competitors.eventorEntryFeeId,
       lateFeeId: competitors.eventorLateFeeId,
     })
@@ -39,7 +40,11 @@ export function resultListInputs(
     .where(
       and(
         eq(competitors.competitionId, competitionId),
-        or(isNotNull(competitors.entryFee), isNotNull(competitors.cardFee))
+        or(
+          isNotNull(competitors.entryFee),
+          isNotNull(competitors.cardFee),
+          gt(competitors.paidAmount, 0)
+        )
       )
     )
     .all();
