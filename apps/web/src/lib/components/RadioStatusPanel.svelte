@@ -96,13 +96,13 @@
             </span>
             {#if v.dateWarnings > 0}
               <span class="state" data-testid="radio-date-warning">
-                <span aria-hidden="true">!</span>
+                <Icon name="alert-triangle" size={16} />
                 {t('radio.dateWarning', { n: v.dateWarnings })}
               </span>
             {/if}
             {#if v.siacProblem}
               <span class="state" data-testid="radio-siac-problem">
-                <span aria-hidden="true">!</span>
+                <Icon name="alert-triangle" size={16} />
                 {t('radio.siacProblem', { what: t(v.nameKey, { code: v.code }), other: v.otherPct, siac: v.siacPct })}
               </span>
             {/if}
