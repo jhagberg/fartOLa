@@ -193,6 +193,18 @@
   }
   function onEditSaved(updated: CompetitorDTO): void {
     competitors = competitors.map((c) => (c.id === updated.id ? updated : c));
+    void refreshStatuses();
+  }
+
+  /** Re-read the projected statuses after a local write (add, edit,
+   * Återbud), so the status filters, counts and pills follow it. */
+  async function refreshStatuses(): Promise<void> {
+    try {
+      const res = await getRunnerStatus(competitionId);
+      statusById = new Map(res.runners.map((r) => [r.competitor_id, r]));
+    } catch {
+      // Keep the last statuses; the next load corrects them.
+    }
   }
 
   /** Format epoch ms as HH:MM:SS on the competition clock for start-time display. */
@@ -209,6 +221,7 @@
   function onAddSaved(created: CompetitorDTO): void {
     competitors = [...competitors, created];
     addOpen = false;
+    void refreshStatuses();
   }
 </script>
 
