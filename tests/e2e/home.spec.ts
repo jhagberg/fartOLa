@@ -7,13 +7,7 @@
 // from other specs, so every assertion is scoped to the cards made here.
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { BASE } from './helpers/seed.ts';
-
-function dayOffset(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const p = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+import { dayOffset } from './helpers/home.ts';
 
 async function create(
   request: APIRequestContext,
@@ -33,7 +27,7 @@ async function create(
 
 test('status pills follow the date and the race start', async ({ page, request }) => {
   const tag = Date.now();
-  const running = await create(request, `Hemma pågår ${tag}`, dayOffset(0), true);
+  await create(request, `Hemma pågår ${tag}`, dayOffset(0), true);
   await create(request, `Hemma idag ${tag}`, dayOffset(0));
   await create(request, `Hemma igår ${tag}`, dayOffset(-1));
   await create(request, `Hemma imorgon ${tag}`, dayOffset(1));
@@ -45,7 +39,6 @@ test('status pills follow the date and the race start', async ({ page, request }
   await expect(card('imorgon')).toContainText('Kommande');
   await expect(card('idag')).not.toContainText('Pågår');
   await expect(page.getByTestId('comp-grid')).not.toContainText(/startande|i mål/i);
-  expect(running).toBeTruthy();
 });
 
 test('a card is a link to the readout', async ({ page, request }) => {
