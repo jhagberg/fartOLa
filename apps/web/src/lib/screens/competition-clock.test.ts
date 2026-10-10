@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { clockToEpochMs, formatClockTime } from '@fartola/shared-types';
-import { fetchCompetitionClock } from './competition-clock.ts';
+import { clockHmLabel, fetchCompetitionClock } from './competition-clock.ts';
 
 const competitionWith = (offset: number): Response =>
   new Response(
@@ -42,5 +42,14 @@ describe('fetchCompetitionClock', () => {
     const start = clockToEpochMs(after.date, 3600 + 50 * 60, after.offsetMin);
     expect(formatClockTime(start, 60)).toBe('01:50:00');
     expect(start).toBe(Date.parse('2026-03-29T00:50:00Z'));
+  });
+});
+
+describe('clockHmLabel', () => {
+  it('a night race closing after midnight says it is the next day', () => {
+    const clock = { date: '2026-10-08', offsetMin: 120 };
+    // 23:30 and 02:00 on the clock (UTC+2).
+    expect(clockHmLabel(Date.UTC(2026, 9, 8, 21, 30), clock)).toBe('23:30');
+    expect(clockHmLabel(Date.UTC(2026, 9, 9, 0, 0), clock)).toBe('02:00 (dagen efter)');
   });
 });
