@@ -45,6 +45,9 @@ export interface StartTimeWrite {
   undoes?: { node_id: string; local_seq: number };
   /** A pursuit draw's restart block start (payload restart_ms). */
   restartMs?: number;
+  /** A draw that overrode a start clash: the operator's reason (payload
+   * start_clash_reason). */
+  startClashReason?: string;
 }
 
 /** A competitor id that is not in the competition. Nothing was written. */
@@ -144,6 +147,9 @@ export function writeStartTimes(
         ...(classGrids.length > 0 ? { class_grids: classGrids } : {}),
         ...(write.undoes !== undefined ? { undoes: write.undoes } : {}),
         ...(write.restartMs !== undefined ? { restart_ms: write.restartMs } : {}),
+        ...(write.startClashReason !== undefined
+          ? { start_clash_reason: write.startClashReason }
+          : {}),
       },
       competitionId
     );
