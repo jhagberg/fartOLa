@@ -1,7 +1,7 @@
 // Authored for fartola. Not ported from upstream.
 //
-// TDD tests for the three draw algorithms (SOFT, Random, Simultaneous).
-// Phase 2.1 D-03 (drawRandom, drawSimultaneous) and D-04 (drawSOFT).
+// TDD tests for the draw algorithms (SOFT, Simultaneous).
+// Phase 2.1 D-03 (drawSimultaneous) and D-04 (drawSOFT).
 //
 // Seeded RNG: all tests inject a deterministic rngFn to avoid flaky
 // randomized assertions (GPT MEDIUM: seeded RNG pattern).
@@ -10,7 +10,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { drawSOFT, fewestPatterns } from './soft.ts';
-import { drawRandom } from './random.ts';
 import { placeVacancies } from './vacancies.ts';
 import { drawSimultaneous } from './simultaneous.ts';
 import type { DrawRunner } from './types.ts';
@@ -588,8 +587,8 @@ describe('draw algorithms', () => {
       assert.deepEqual(last.slice(0, 10), ten);
     });
 
-    test('drawRandom with vacancies → all runners plus the vacancies (SOFT TR 7.3.2)', () => {
-      const result = drawRandom(ten, {
+    test('drawSOFT with vacancies → all runners plus the vacancies (SOFT TR 7.3.2)', () => {
+      const result = drawSOFT(ten, {
         vacantSlots: 2,
         vacantPosition: 'Last',
         rngFn: makeMulberryRng(9),
@@ -603,32 +602,6 @@ describe('draw algorithms', () => {
           .sort(),
         ten.map((r) => r.id).sort()
       );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // drawRandom tests
-  // ---------------------------------------------------------------------------
-
-  describe('drawRandom', () => {
-    test('test 5: 10 runners → permutation (run 10 times, at least one differs)', () => {
-      const input = mixedRunners([
-        ['A', 5],
-        ['B', 5],
-      ]);
-      let anyDiffers = false;
-      const inputOrder = input.map((r) => r.id);
-      for (let seed = 200; seed < 210; seed++) {
-        const result = drawRandom(input, { rngFn: makeLcgRng(seed) });
-        const real = result.order.filter((s): s is DrawRunner => s !== null);
-        // Must be same length and same IDs
-        assert.equal(real.length, input.length);
-        assert.deepEqual(real.map((r) => r.id).sort(), inputOrder.slice().sort());
-        if (real.map((r) => r.id).join() !== inputOrder.join()) {
-          anyDiffers = true;
-        }
-      }
-      assert.ok(anyDiffers, 'All 10 runs produced the same order as input');
     });
   });
 

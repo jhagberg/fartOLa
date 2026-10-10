@@ -115,7 +115,7 @@ type Cells = Map<number, { first: string | null; last: string | null }>;
  *   overflow drawn with its seam. Weaker: no minimum is guaranteed.
  * The choice depends only on the input: counting, which uses no random
  * numbers, decides it, and drawing afterwards does no budgeted work.
- * Otherwise (Random) each takes a random free place, preferring one where
+ * Without `separateClubs` each takes a random free place, preferring one where
  * neither nearest starter is from the same club, and the rest follow in
  * order. */
 export function fillVacancies(

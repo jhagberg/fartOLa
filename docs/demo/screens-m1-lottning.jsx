@@ -6,10 +6,9 @@
 // uploaded result list is answered with the stored previous-stage results of the mock runners.
 const { useState: useStateLo } = React;
 
-const DRAW_MODES = ['SOFT', 'Random', 'Simultaneous', 'Seeded', 'Pursuit', 'ReversePursuit'];
+const DRAW_MODES = ['SOFT', 'Simultaneous', 'Seeded', 'Pursuit', 'ReversePursuit'];
 const MODE_KEYS = {
   SOFT: 'lottning.soft',
-  Random: 'lottning.random',
   Simultaneous: 'lottning.simultaneous',
   Seeded: 'lottning.seeded',
   Pursuit: 'lottning.pursuit',
@@ -21,13 +20,13 @@ const START_METHODS = ['auto', 'start_time', 'start_punch'];
 
 // ── lottning.ts ─────────────────────────────────────────────────────────────
 const isPursuit = (m) => m === 'Pursuit' || m === 'ReversePursuit';
-const lateEntrantsAllowed = (m) => m === 'SOFT' || m === 'Random';
+const lateEntrantsAllowed = (m) => m === 'SOFT';
 function visibleFields(mode, drawType) {
   const whole = drawType === 'All' || !lateEntrantsAllowed(mode);
   return {
     firstStart: whole,
     interval: mode !== 'Simultaneous',
-    vacancies: whole && (mode === 'SOFT' || mode === 'Random' || mode === 'Seeded'),
+    vacancies: whole && (mode === 'SOFT' || mode === 'Seeded'),
     seeding: mode === 'Seeded',
     pursuit: isPursuit(mode),
   };

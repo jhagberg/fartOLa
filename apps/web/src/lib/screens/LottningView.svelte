@@ -440,7 +440,6 @@
   );
   const MODE_KEYS: Record<DrawMode, string> = {
     SOFT: 'lottning.soft',
-    Random: 'lottning.random',
     Simultaneous: 'lottning.simultaneous',
     Seeded: 'lottning.seeded',
     Pursuit: 'lottning.pursuit',

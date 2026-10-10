@@ -1,7 +1,7 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Shared type definitions for the draw algorithms (SOFT, Random, Simultaneous).
-// Phase 2.1 D-03/D-04: three draw modes for start list generation.
+// Shared type definitions for the draw algorithms (SOFT, Simultaneous, Seeded).
+// Phase 2.1 D-03/D-04: draw modes for start list generation.
 
 /** A competitor entry that can be assigned a start slot. */
 export interface DrawRunner {

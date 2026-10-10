@@ -17,7 +17,7 @@
 //      { error, rule }; a class without a confirmed kind → 409
 //      class_kind_unknown / class_kind_unconfirmed.
 //   4. Load the class's named competitors (SOFT TR 7.5.1: no draw without a name).
-//   5. drawType 'All' (default): draw the whole class (SOFT, Random,
+//   5. drawType 'All' (default): draw the whole class (SOFT,
 //      Simultaneous, Seeded, Pursuit, ReversePursuit); every runner gets the drawn time or none (D-07), the
 //      class gets its start grid. drawType 'Remaining*': place only runners
 //      without a start time (late entrants, SOFT TR 7.5.7/7.5.8); nobody
@@ -36,7 +36,6 @@ import { z } from 'zod';
 
 import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
 import { classes, competitions, competitors } from '../db/schema.ts';
-import { drawRandom } from '../draw/random.ts';
 import { kindProblem, pursuitBanned } from '../draw/classKind.ts';
 import { drawPursuit } from '../draw/pursuit.ts';
 import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../draw/remaining.ts';
@@ -58,7 +57,7 @@ const isPursuit = (mode: string) => (PURSUIT as readonly string[]).includes(mode
 
 const LottningInput = z
   .object({
-    mode: z.enum(['SOFT', 'Random', 'Simultaneous', 'Seeded', 'Pursuit', 'ReversePursuit']),
+    mode: z.enum(['SOFT', 'Simultaneous', 'Seeded', 'Pursuit', 'ReversePursuit']),
     // Epoch ms, like every other start-time write (not ms since midnight).
     firstStartMs: StartTimeMs.unwrap().optional(),
     intervalSec: z.number().int().min(0).optional(),
@@ -82,11 +81,7 @@ const LottningInput = z
       if (!ok) ctx.addIssue({ code: 'custom', path: [path], message });
     };
     if ((d.drawType ?? 'All') !== 'All') {
-      need(
-        d.mode === 'SOFT' || d.mode === 'Random',
-        'drawType',
-        'late entrants are drawn with SOFT or Random'
-      );
+      need(d.mode === 'SOFT', 'drawType', 'late entrants are drawn with SOFT');
       need(!d.vacantSlots, 'vacantSlots', 'vacancies are drawn with the whole class');
       return;
     }
@@ -372,7 +367,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
   );
 }
 
-/** SOFT, Random, Simultaneous, Seeded: the whole class, slot k at first + k·interval. */
+/** SOFT, Simultaneous, Seeded: the whole class, slot k at first + k·interval. */
 function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
   const runners: DrawRunner[] = named.map((r) => ({ id: r.id, club: r.club }));
   const firstStartMs = body.firstStartMs!;
@@ -383,7 +378,6 @@ function drawWholeClass(body: LottningBody, named: Row[]): DrawPlan {
   } as const;
   let result: DrawResult;
   if (body.mode === 'SOFT') result = drawSOFT(runners, vacancies);
-  else if (body.mode === 'Random') result = drawRandom(runners, vacancies);
   else if (body.mode === 'Seeded')
     result = drawSeeded(
       named.map((r) => ({ id: r.id, club: r.club, seedGroup: r.seedGroup })),
@@ -429,12 +423,9 @@ function drawLateEntrants(
     throw new DrawError('interval_unknown', 'The class has no start interval; give intervalSec.');
   // Before/After: the SOFT block counts the seam to the existing list
   // (TR 7.5.1); Vacant: fillVacancies handles the seam of its overflow.
-  // Random ignores clubs at the seams, as in a whole-class draw.
   const placement = body.drawType === 'RemainingBefore' ? 'Before' : 'After';
   const boundary = body.drawType === 'RemainingVacant' ? {} : seamClubs(existing, placement);
-  const order = (
-    body.mode === 'SOFT' ? drawSOFT(late, { boundary }) : drawRandom(late)
-  ).order.filter((s): s is DrawRunner => s !== null);
+  const order = drawSOFT(late, { boundary }).order.filter((s): s is DrawRunner => s !== null);
   if (body.drawType === 'RemainingVacant') {
     const firstStartMs = classRow.firstStartMs ?? Math.min(...existing.map((r) => r.startTimeMs));
     const assignments = fillVacancies(
@@ -442,7 +433,7 @@ function drawLateEntrants(
       order,
       { firstStartMs, intervalMs },
       (min, max) => crypto.randomInt(min, max),
-      body.mode === 'SOFT'
+      true
     );
     return { assignments, wholeClass: false };
   }
