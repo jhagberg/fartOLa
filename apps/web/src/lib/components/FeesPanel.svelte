@@ -153,7 +153,7 @@
           {#each data.classes as item (item.class_id)}
             <tr data-testid="fees-row" data-class-id={item.class_id}>
               <th scope="row" class="name">{item.name}</th>
-              <td>
+              <td data-label={t('fees.entryFee')}>
                 <input
                   class="ctl num"
                   type="text"
@@ -164,7 +164,7 @@
                   onchange={(e) => onClassField(item, 'entry_fee', e.currentTarget.value)}
                 />
               </td>
-              <td>
+              <td data-label={hasYouthFee(item.class_kind) ? t('fees.youthFee') : ''}>
                 {#if hasYouthFee(item.class_kind)}
                   <input
                     class="ctl num"
@@ -177,7 +177,7 @@
                   />
                 {/if}
               </td>
-              <td>
+              <td data-label={t('fees.latePct')}>
                 <div class="pct">
                   <input
                     class="ctl num"
@@ -279,5 +279,38 @@
     align-items: center;
     gap: var(--space-sm);
     flex-wrap: wrap;
+  }
+  /* Phone width: one block per class, each field with its own label. */
+  @media (max-width: 600px) {
+    .fees-table thead {
+      display: none;
+    }
+    .fees-table tr {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs) var(--space-md);
+      padding: var(--space-sm) var(--space-md);
+      border-bottom: 1px solid var(--border);
+    }
+    .fees-table tr:last-child {
+      border-bottom: none;
+    }
+    .fees-table th,
+    .fees-table td {
+      padding: 0;
+      border-bottom: none;
+    }
+    .fees-table .name {
+      flex-basis: 100%;
+    }
+    .fees-table td[data-label=''] {
+      display: none;
+    }
+    .fees-table td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: var(--fs-label);
+      color: var(--fg-muted);
+    }
   }
 </style>
