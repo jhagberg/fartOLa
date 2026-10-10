@@ -199,6 +199,64 @@ describe('missing starts (02.1-14 Task 15)', () => {
     assert.deepEqual((await list()).items, []);
   });
 
+  // SOFT TR 4.20.6: a finish by hand for a read without a finish punch (w)
+  // or without any read-out (z, card missing): with no start either, both
+  // are listed with that finish, and a start makes them timed.
+  test('finishes by hand without a start are listed and can be completed', async () => {
+    addRunner(ctx, 'w', 'Wilma', 3);
+    seq++;
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: ctx.nodeId,
+        localSeq: seq,
+        competitionId: COMP,
+        eventType: 'card_read',
+        eventTimeMs: at(11 * 3600 + seq),
+        recordedAtMs: at(11 * 3600 + seq),
+        payload: {
+          event_type: 'card_read',
+          card_number: 3,
+          card_type: 'SI10',
+          start: null,
+          finish: null,
+          check: null,
+          clear: null,
+          punch_count: 1,
+          punches: [{ code: 31, ...hd(10 * 3600 + 20 * 60) }],
+          card_holder: null,
+        },
+      })
+      .run();
+    addRunner(ctx, 'z', 'Zara', 4);
+    for (const id of ['w', 'z']) {
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${COMP}/competitors/${id}/manual-finish`,
+        payload: { finish_ms: at(10 * 3600 + 45 * 60), reason: 'Målenheten' },
+      });
+      assert.equal(res.statusCode, 201);
+    }
+    const listed = (await list()).items.filter(
+      (i) => i.competitor_id === 'w' || i.competitor_id === 'z'
+    );
+    assert.deepEqual(
+      listed.map((i) => [i.competitor_id, i.finish_ms]),
+      [
+        ['w', at(10 * 3600 + 45 * 60)],
+        ['z', at(10 * 3600 + 45 * 60)],
+      ]
+    );
+    const res = await apply([
+      { competitor_id: 'w', start_time_ms: at(10 * 3600) },
+      { competitor_id: 'z', start_time_ms: at(10 * 3600 + 5 * 60) },
+    ]);
+    assert.equal(res.statusCode, 200);
+    const state = ctx.app.projectionStore.recomputeNow(COMP)!;
+    assert.equal(state.competitors.get('w')!.elapsed_time_ms, 45 * 60 * 1000);
+    assert.equal(state.competitors.get('z')!.elapsed_time_ms, 40 * 60 * 1000);
+  });
+
   test('a validation error rolls back the whole batch (400)', async () => {
     const res = await apply([
       { competitor_id: 'x', start_time_ms: at(10 * 3600 + 6 * 60) },

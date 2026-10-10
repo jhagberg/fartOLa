@@ -555,6 +555,8 @@ export function reduce(input: ReduceInput): CompetitionState {
 
   // SOFT TR 4.20.6, card missing: a runner with a finish entered by hand and
   // no read-out in the race is scored from that finish alone (no punches).
+  // Without a start time there is no start punch either: the start is
+  // missing, and the runner is listed for "Fastställ saknade starttider".
   for (const v of competitorViews.values()) {
     if (
       v.manual_finish_ms === null ||
@@ -572,6 +574,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       start: null,
       finish: null,
     });
+    v.missing_start = v.start_time_ms === null;
   }
 
   // 02.1-14 Task 13: flag a finished read with no start (per the class's

@@ -65,7 +65,7 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
       const items = [...state.competitors.values()]
         .filter((v) => v.missing_start)
         .map((v) => {
-          const read = v.card_read_history[v.card_read_history.length - 1]!;
+          const read = v.card_read_history[v.card_read_history.length - 1];
           const { suggested_start_ms: suggested, suggested_start_offset_ms: offset } = v;
           return {
             competitor_id: v.id,
@@ -77,13 +77,16 @@ export default async function registerMissingStarts(app: FastifyInstance): Promi
             status: v.status,
             check_ms: suggested !== null && offset !== null ? suggested - offset : null,
             suggested_start_ms: suggested,
-            // missing_start implies a finish on the latest read.
-            finish_ms: cardClockToEpochMs(
-              read.finish!,
-              read.card_type,
-              read.event_time_ms,
-              clockOffsetMin
-            ),
+            // missing_start implies a finish: by hand (SOFT TR 4.20.6, also
+            // without a card), else on the latest read.
+            finish_ms:
+              v.manual_finish_ms ??
+              cardClockToEpochMs(
+                read!.finish!,
+                read!.card_type,
+                read!.event_time_ms,
+                clockOffsetMin
+              ),
           };
         })
         .sort((a, b) => a.class_name.localeCompare(b.class_name) || a.name.localeCompare(b.name));
