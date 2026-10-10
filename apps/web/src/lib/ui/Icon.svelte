@@ -45,7 +45,7 @@
   import X from '@lucide/svelte/icons/x';
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ICONS: Record<string, Component<any>> = {
+  const ICONS = {
     home: House,
     radio: Radio,
     list: List,
@@ -81,14 +81,8 @@
     sun: Sun,
     maximize: Maximize,
     minimize: Minimize,
-  };
-  export type IconName =
-    | 'home' | 'radio' | 'list' | 'arrow-up-right' | 'download' | 'key' | 'settings'
-    | 'check' | 'menu' | 'x' | 'users' | 'user-plus' | 'search' | 'plus' | 'edit'
-    | 'info' | 'chevron-right' | 'chevron-down' | 'shuffle' | 'alert-triangle'
-    | 'printer' | 'arrow-right' | 'arrow-left' | 'arrow-left-right' | 'minus'
-    | 'play' | 'folder-open' | 'corner-down-right' | 'credit-card' | 'circle'
-    | 'mic' | 'trophy' | 'sun' | 'maximize' | 'minimize';
+  } satisfies Record<string, Component<any>>;
+  export type IconName = keyof typeof ICONS;
 </script>
 
 <script lang="ts">
