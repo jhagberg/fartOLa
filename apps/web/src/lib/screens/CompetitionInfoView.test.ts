@@ -263,6 +263,25 @@ describe('closing time and distance (SOFT TR 4.16.3, TA till TR 7.4.4)', () => {
     expect(sv['info.closing.hint']).toContain('PM');
   });
 
+  it('saving the fields fetches the closing time again (a new date can move the clock, ADR-0017)', async () => {
+    const closing = {
+      last_start_ms: Date.UTC(2026, 9, 8, 9, 30),
+      closing_time_ms: Date.UTC(2026, 9, 8, 12, 0),
+    };
+    await mountWith(closing);
+    // The server shifted the starts; the next GET has the new closing time.
+    closing.closing_time_ms = Date.UTC(2026, 9, 8, 12, 30);
+    const name = document.querySelector('[data-testid="info-name"]') as HTMLInputElement;
+    name.value = 'Ny';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    (document.querySelector('[data-testid="info-save"]') as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector('[data-testid="info-closing-time"]')!.textContent!.trim()).toBe(
+      '14:30'
+    );
+  });
+
   it('shows "Inte känt" when there is no closing time yet', async () => {
     await mountWith({ last_start_ms: null, closing_time_ms: null });
     expect(document.querySelector('[data-testid="info-closing-time"]')!.textContent!.trim()).toBe(
