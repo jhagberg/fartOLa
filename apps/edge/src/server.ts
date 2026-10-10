@@ -66,6 +66,7 @@ import registerAdminRoutes from './routes/admin.ts';
 import registerEventorRoutes from './routes/eventor.ts';
 import registerEventorImportRoutes from './routes/eventorImport.ts';
 import registerHiredCardsRoutes from './routes/hiredCards.ts';
+import registerFees from './routes/fees.ts';
 import registerSettingsRoutes from './routes/settings.ts';
 import registerMipRoute from './integrations/meos/mip.ts';
 import registerMopRoute from './integrations/meos/mop.ts';
@@ -355,6 +356,8 @@ export async function buildServer(opts: BuildServerOpts = {}): Promise<FastifyIn
     // return). Mounted under /api/competitions/:id/hired-cards/* — same
     // namespace as the rest of the competition-scoped routes.
     await app.register(registerHiredCardsRoutes);
+    // M2 4b — class fees and card rental fee (SOFT TR 4.12.4, TR 4.12.6).
+    await app.register(registerFees);
     // Phase 2.0 Plan 02-07 — Settings REST surface (GET + PUT
     // /api/settings/integrations). Operator-facing API-key management
     // so Windows operators can paste keys via UI without touching
