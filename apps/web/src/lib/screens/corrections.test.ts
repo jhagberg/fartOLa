@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { clockToEpochMs, parseTimeOfDay } from '@fartola/shared-types';
-import { correctionLines, resolveFinishInput } from './corrections.ts';
+import { correctionLines, parseControlCode, resolveFinishInput } from './corrections.ts';
 
 const clock = { date: '2026-10-03', offsetMin: 120 };
 const at = (text: string, day = '2026-10-03'): number =>
@@ -37,10 +37,42 @@ describe('resolveFinishInput', () => {
 describe('correctionLines', () => {
   it('a finish by hand shows its time and reason; none shows nothing', () => {
     expect(
-      correctionLines({ manual_finish_ms: at('10:42:30'), manual_finish_reason: 'Enheten' }, 120)
+      correctionLines(
+        { manual_finish_ms: at('10:42:30'), manual_finish_reason: 'Enheten', manual_punches: [] },
+        120
+      )
     ).toEqual([{ key: 'corr.line.finish', vars: { time: '10:42:30', reason: 'Enheten' } }]);
-    expect(correctionLines({ manual_finish_ms: null, manual_finish_reason: null }, 120)).toEqual(
-      []
-    );
+    expect(
+      correctionLines(
+        { manual_finish_ms: null, manual_finish_reason: null, manual_punches: [] },
+        120
+      )
+    ).toEqual([]);
+  });
+});
+
+describe('correctionLines — punches by hand', () => {
+  it('one line per punch, in the order entered', () => {
+    expect(
+      correctionLines(
+        {
+          manual_finish_ms: null,
+          manual_finish_reason: null,
+          manual_punches: [
+            { control_code: 32, reason: 'Stift' },
+            { control_code: 35, reason: 'Stift' },
+          ],
+        },
+        120
+      ).map((l) => l.vars.code)
+    ).toEqual(['32', '35']);
+  });
+});
+
+describe('parseControlCode', () => {
+  it('a positive whole number is a code; anything else is not', () => {
+    expect(parseControlCode(' 32 ')).toBe(32);
+    for (const text of ['', '0', '3.5', '-1', 'abc', '32a'])
+      expect(parseControlCode(text)).toBeNull();
   });
 });

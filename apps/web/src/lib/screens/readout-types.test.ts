@@ -23,6 +23,9 @@ import {
 const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
   ({
     card_type: 'SIAC',
+    manual_finish_ms: null,
+    manual_finish_reason: null,
+    manual_punches: [],
     punches: [{ code: 31, seconds_in_half_day: 10 * 3600 + 120, half_day: 0 }],
     start_seconds_in_half_day: 10 * 3600 + 60,
     start_half_day: 0,
@@ -282,9 +285,19 @@ describe('classifyPunches', () => {
     seconds_in_half_day: 36_000 + sec,
     half_day: 0,
   });
-  const classify = (punched: number[], expected: number[], voided: number[] = []) => {
+  const classify = (
+    punched: number[],
+    expected: number[],
+    voided: number[] = [],
+    manual: number[] = []
+  ) => {
     const raw = punched.map((c, i) => at(c, 60 * (i + 1)));
-    return classifyPunches(rawPunchesToReceipt(raw, 36_000, 36_900, expected), expected, voided);
+    return classifyPunches(
+      rawPunchesToReceipt(raw, 36_000, 36_900, expected),
+      expected,
+      voided,
+      manual
+    );
   };
   const kinds = (p: { kind?: string }[]) => p.map((x) => x.kind ?? 'ok');
 
@@ -326,6 +339,15 @@ describe('classifyPunches', () => {
     const out = classify([31, 33], [31, 32, 33]);
     expect(out[1]).toMatchObject({ code: 32, ok: false });
     expect(out[1]?.kind).toBeUndefined();
+  });
+
+  it('a missed control punched by hand is OK and manual; numbering is unchanged', () => {
+    const out = classify([31, 33], [31, 32, 33, 32], [], [32]);
+    expect(out[1]).toMatchObject({ code: 32, ok: true, manual: true });
+    expect(out[1]?.kind).toBeUndefined();
+    // Only the first missed 32 is taken; the second stays missing.
+    expect(out[3]).toMatchObject({ code: 32, ok: false });
+    expect(out[3]?.manual).toBeUndefined();
   });
 
   it('without a course the tiles are returned unchanged', () => {

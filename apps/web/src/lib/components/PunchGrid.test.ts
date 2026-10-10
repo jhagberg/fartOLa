@@ -100,3 +100,17 @@ describe('PunchGrid without a course', () => {
     expect(t.some((x) => x.querySelector('svg'))).toBe(false);
   });
 });
+
+describe('PunchGrid punch by hand (SOFT TR 8.1.4 kommentar)', () => {
+  it('reads "manuell", keeps its course number and is not the miss state', () => {
+    const el = render([
+      ok(31),
+      { code: 32, split: '—', time: '—', ok: true, manual: true },
+      finish,
+    ]);
+    const tile = tiles(el)[1]!;
+    expect(tile.dataset.state).toBe('manual');
+    expect(bottom(tile)).toBe('manuell');
+    expect(tile.querySelector('.idx')?.textContent).toBe('2');
+  });
+});

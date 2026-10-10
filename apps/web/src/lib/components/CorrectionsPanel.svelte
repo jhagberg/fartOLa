@@ -5,6 +5,9 @@
   as an event with a reason and undone by removing it (ADR-0016 rule 2):
     - Måltid: a finish time by hand when the finish unit failed or the card
       is missing (SOFT TR 4.20.6; MeOS "Måltid:", TabRunner.cpp:3446).
+    - Stämplar: a control punched by hand from the start card or a pin punch,
+      no time (SOFT TR 8.1.4 kommentar; MeOS "<< Lägg till stämpling",
+      TabRunner.cpp:3571). The missing controls are offered.
   A later read-out does not overwrite a correction. Shows the result the
   corrections give, so the operator sees the effect. Logic lives in
   screens/corrections.ts.
@@ -13,13 +16,15 @@
   import { t } from '#lib/i18n/index.ts';
   import { formatClockTime } from '@fartola/shared-types';
   import {
+    addManualPunch,
     clearManualFinish,
     getCorrections,
+    removeManualPunch,
     setManualFinish,
     type CorrectionsDTO,
   } from '#lib/api/client.ts';
   import { fetchCompetitionClock, type CompetitionClock } from '#lib/screens/competition-clock.ts';
-  import { resolveFinishInput } from '#lib/screens/corrections.ts';
+  import { parseControlCode, resolveFinishInput } from '#lib/screens/corrections.ts';
   import { formatElapsed } from '#lib/screens/readout-types.ts';
   import Button from '#lib/ui/Button.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
@@ -42,6 +47,10 @@
   let finishText = $state('');
   let finishReason = $state('');
   let finishError = $state<string | null>(null);
+
+  let punchText = $state('');
+  let punchReason = $state('');
+  let punchError = $state<string | null>(null);
 
   /** Only the latest load may set the data (a reload can overlap). */
   let generation = 0;
@@ -68,6 +77,9 @@
     finishText = '';
     finishReason = t('corr.finish.reasonDefault');
     finishError = null;
+    punchText = '';
+    punchReason = t('corr.punch.reasonDefault');
+    punchError = null;
     saveError = null;
     void load();
   });
@@ -102,6 +114,20 @@
     ).then((ok) => {
       if (ok) finishText = '';
     });
+  }
+
+  function addPunch(): void {
+    const code = parseControlCode(punchText);
+    if (code === null) {
+      punchError = t('corr.err.code');
+      return;
+    }
+    punchError = null;
+    void run(() => addManualPunch(competitionId, competitorId, code, punchReason.trim())).then(
+      (ok) => {
+        if (ok) punchText = '';
+      }
+    );
   }
 
   const clockTime = (ms: number): string => (clock === null ? '' : formatClockTime(ms, clock.offsetMin));
@@ -174,6 +200,70 @@
       {/if}
     </div>
 
+    <div class="part" data-testid="corr-punches">
+      <h4>{t('corr.punch')}</h4>
+      {#each data.manual_punches as p, i (i)}
+        <div class="current" data-testid="corr-punch">
+          <span class="mono">{p.control_code}</span>
+          <span class="reason">{p.reason}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            data-testid="corr-punch-remove"
+            onclick={() => void run(() => removeManualPunch(competitionId, competitorId, p.control_code))}
+          >
+            {t('corr.remove')}
+          </Button>
+        </div>
+      {/each}
+      {#if data.missing_codes.length > 0}
+        <div class="missing">
+          <span>{t('corr.punch.missing')}</span>
+          {#each data.missing_codes as code, i (i)}
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="corr-punch-pick"
+              onclick={() => (punchText = String(code))}
+            >
+              {code}
+            </Button>
+          {/each}
+        </div>
+      {/if}
+      <div class="entry">
+        <label class="field">
+          <span>{t('corr.punch.code')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            class="mono"
+            bind:value={punchText}
+            aria-invalid={punchError !== null}
+            aria-describedby={punchError !== null ? 'corr-punch-err' : undefined}
+            data-testid="corr-punch-input"
+          />
+        </label>
+        <label class="field grow">
+          <span>{t('corr.reason')}</span>
+          <input type="text" maxlength="500" bind:value={punchReason} data-testid="corr-punch-reason" />
+        </label>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy || punchText.trim() === '' || punchReason.trim() === ''}
+          data-testid="corr-punch-add"
+          onclick={addPunch}
+        >
+          {t('corr.punch.add')}
+        </Button>
+      </div>
+      {#if punchError !== null}
+        <p id="corr-punch-err" class="err" role="alert">{punchError}</p>
+      {/if}
+    </div>
+
     {#if saveError !== null}
       <p class="err" role="alert" data-testid="corr-error">{saveError}</p>
     {/if}
@@ -231,6 +321,14 @@
   }
   .reason {
     flex: 1;
+    color: var(--fg-muted);
+  }
+  .missing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--fs-body);
     color: var(--fg-muted);
   }
   .field {

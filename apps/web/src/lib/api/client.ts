@@ -614,6 +614,30 @@ export function setManualFinish(
   });
 }
 
+/** SOFT TR 8.1.4 (kommentar): a control punched by hand (no time). */
+export function addManualPunch(
+  competitionId: string,
+  competitorId: string,
+  controlCode: number,
+  reason: string
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/manual-punch`, {
+    method: 'POST',
+    body: { control_code: controlCode, reason },
+  });
+}
+
+export function removeManualPunch(
+  competitionId: string,
+  competitorId: string,
+  controlCode: number
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/remove-manual-punch`, {
+    method: 'POST',
+    body: { control_code: controlCode },
+  });
+}
+
 export function clearManualFinish(
   competitionId: string,
   competitorId: string

@@ -96,6 +96,8 @@ export interface ReadoutHistoryRow {
    * the finish time by hand and why; null when none. */
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;
+  /** Controls punched by hand (SOFT TR 8.1.4 kommentar), no time. */
+  manual_punches: Array<{ control_code: number; reason: string }>;
   /** The runner's current standing in the class (projection results rows):
    * place and ms behind the leader are null for MP/DNF/untimed/unplaced;
    * finished = runners with a place, starters = all in the class. */
@@ -339,6 +341,9 @@ export function rawPunchesToReceipt(
  * one tile per expected control, then leftover punches, then the finish) so
  * the UI can name them in text:
  *   - a voided control's tile → 'struck' (counts as neither OK nor missing);
+ *   - a missed control punched by hand → OK and `manual` (SOFT TR 8.1.4
+ *     kommentar): each code in `manualCodes` takes the first missed tile of
+ *     that code, as the edge projection does (dnfMp.matchCourse);
  *   - a leftover punch of a control that is on the course but missing from
  *     its place → 'order' ("fel ordn."); any other leftover → 'extra';
  *   - a leftover punch of a voided control is dropped (the struck tile
@@ -348,18 +353,25 @@ export function rawPunchesToReceipt(
 export function classifyPunches(
   tiles: ReceiptPunch[],
   expectedCodes: number[] = [],
-  voidedCodes: number[] = []
+  voidedCodes: number[] = [],
+  manualCodes: number[] = []
 ): ReceiptPunch[] {
   if (expectedCodes.length === 0) return tiles;
   const voided = new Set(voidedCodes);
-  const missed = new Set(
-    tiles.slice(0, expectedCodes.length).flatMap((p) => (p.ok === false ? [p.code] : []))
-  );
+  const pool = [...manualCodes];
+  const course = tiles.slice(0, expectedCodes.length).map((p, i): ReceiptPunch => {
+    if (voided.has(expectedCodes[i]!)) return { ...p, ok: true, kind: 'struck' };
+    const m = p.ok === false ? pool.indexOf(p.code as number) : -1;
+    if (m === -1) return p;
+    pool.splice(m, 1);
+    return { ...p, ok: true, manual: true };
+  });
+  const missed = new Set(course.flatMap((p) => (p.ok === false ? [p.code] : [])));
   const out: ReceiptPunch[] = [];
   tiles.forEach((p, i) => {
     if (p.finish) out.push(p);
     else if (i < expectedCodes.length) {
-      out.push(voided.has(expectedCodes[i]!) ? { ...p, ok: true, kind: 'struck' } : p);
+      out.push(course[i]!);
     } else if (!voided.has(p.code as number)) {
       out.push({ ...p, kind: missed.has(p.code) ? 'order' : 'extra' });
     }
@@ -427,7 +439,8 @@ export function toReceiptRead(input: {
         input.row.expected_codes
       ),
       input.row.expected_codes,
-      input.voidedCodes
+      input.voidedCodes,
+      input.row.manual_punches.map((p) => p.control_code)
     );
   const place = input.place ?? input.row.class_place ?? null;
   const punches = input.noTiming
