@@ -18,6 +18,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { resultsChannel } from '@fartola/shared-types';
 
 import { competitions } from '../db/schema.ts';
 import type { RocPollerHandle } from '../integrations/roc/poller.ts';
@@ -101,6 +102,8 @@ export default async function registerRadioRoutes(app: FastifyInstance): Promise
       if (finishCodes !== undefined) set.rocFinishCodes = list(finishCodes);
       if (Object.keys(set).length > 0) {
         app.fartolaDb.db.update(competitions).set(set).where(eq(competitions.id, id)).run();
+        // The speaker board reads the radio and finish codes: refresh it.
+        app.wsBroadcast(resultsChannel(id), { type: 'radio_settings', payload: {} });
       }
       return reply.code(200).send(status(id));
     }
