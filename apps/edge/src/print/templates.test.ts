@@ -49,6 +49,7 @@ function receiptData(over: Partial<CompetitorView> = {}): ReceiptData {
     manual_status: null,
     voided_legs: [],
     start_time_ms: null,
+    bib: null,
     no_timing: true,
     missing_start: false,
     suggested_start_ms: null,
@@ -226,5 +227,12 @@ test('"Plats x av y i mål" counts runners with a place, not the whole class', a
   };
   for (const name of ['classic', 'detailed', 'standing', 'minimal', 'kids'] as const) {
     assert.match(await printed(name, data), /[Pp][Ll][Aa][Tt][Ss] 1 av 2\b/i, name);
+  }
+});
+
+test('SOFT TR 7.5.4: classic and detailed print the bib when there is one', async () => {
+  for (const name of ['classic', 'detailed'] as const) {
+    assert.match(await printed(name, receiptData({ bib: 'A101' })), /Startnr A101/, name);
+    assert.doesNotMatch(await printed(name, receiptData()), /Startnr/, name);
   }
 });

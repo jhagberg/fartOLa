@@ -87,6 +87,9 @@ export interface CompetitorView {
   /** Phase 2.1 (D-05): assigned start time for the competitor (epoch ms),
    * NULL when no start time has been drawn. Folded from start_times_set events (projection/startTimes.ts); else competitors.start_time_ms. */
   start_time_ms: number | null;
+  /** SOFT TR 7.5.4: the runner's bib (competitors.bib); NULL = none. Printed
+   * on the receipt. */
+  bib: string | null;
   /** 02.1-14 Task 9: the competitor's class has no timing (MeOS NoTiming).
    * elapsed_time_ms is still computed, but public surfaces (results, MOP,
    * export, receipts) must not show it. */

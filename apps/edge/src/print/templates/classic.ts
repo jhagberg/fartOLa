@@ -37,6 +37,8 @@ export default async function classic(
     printer.println(data.competitor.club);
   }
   printer.leftRight(data.classObj.name, `Bricka ${data.competitor.card_number ?? '—'}`);
+  // SOFT TR 7.5.4: the bib, when the runner has one.
+  if (data.competitor.bib !== null) printer.println(`Startnr ${data.competitor.bib}`);
   printer.drawLine();
 
   // Splits table — code + cum-time-from-start. Cum derives from the

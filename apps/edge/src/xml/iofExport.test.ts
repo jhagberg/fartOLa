@@ -121,6 +121,7 @@ function makeCompetitorView(
     manual_status: null,
     voided_legs: [],
     start_time_ms: null,
+    bib: null,
     no_timing: false,
     missing_start: false,
     suggested_start_ms: null,

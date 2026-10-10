@@ -523,6 +523,7 @@
 
   "rcpt.title": "TÄVLINGSKVITTO",
   "rcpt.controls": "Kontroller",
+  "rcpt.bib": "Startnr {{bib}}",
   "rcpt.total": "Sluttid",
   "rcpt.thanks": "Tack för loppet!",
   "rcpt.tpl": "Mall",

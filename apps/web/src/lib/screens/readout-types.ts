@@ -423,6 +423,8 @@ export function toReceiptRead(input: {
   className: string;
   classId: string;
   club: string | null;
+  /** SOFT TR 7.5.4: the runner's bib, printed on Klassisk and Detaljerad. */
+  bib?: string | null;
   competitionName: string;
   competitionDate: string;
   punches?: ReceiptPunch[];
@@ -456,6 +458,7 @@ export function toReceiptRead(input: {
     cls: input.className,
     classId: input.classId,
     club: input.club,
+    bib: input.bib ?? null,
     startTime: '—',
     readTime: formatTimeOfDay(input.row.event_time_ms),
     elapsed: formatElapsed(input.noTiming ? null : (input.elapsedMs ?? null)),

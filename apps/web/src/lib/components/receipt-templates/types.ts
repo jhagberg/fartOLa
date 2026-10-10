@@ -54,6 +54,8 @@ export interface ReceiptRead {
   cls: string;
   classId: string;
   club: string | null;
+  /** SOFT TR 7.5.4: the runner's bib; null/absent = none. */
+  bib?: string | null;
   startTime: string;
   readTime: string;
   /** Cumulative time at finish, e.g. "23:14". */

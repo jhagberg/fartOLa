@@ -523,6 +523,7 @@
 
   "rcpt.title": "COMPETITION RECEIPT",
   "rcpt.controls": "Controls",
+  "rcpt.bib": "Bib {{bib}}",
   "rcpt.total": "Total time",
   "rcpt.thanks": "Thanks for the run!",
   "rcpt.tpl": "Template",
