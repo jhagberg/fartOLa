@@ -115,6 +115,11 @@
                 <span class="muted small"
                   >{t('hyrbrickor.markedAt', { time: formatTime(row.marked_at_ms) })}</span
                 >
+                {#if row.fee != null}
+                  <span class="muted small" data-testid="hyrbrickor-row-fee"
+                    >{t('hyrbrickor.fee', { fee: row.fee })}</span
+                  >
+                {/if}
               </div>
               <div class="contact-line">
                 {#if row.contact_name}

@@ -3,8 +3,8 @@
 
   CompetitionInfoView — single surface for inspecting and editing a
   competition's static config: name, date, receipt template, auto-print,
-  classes (count and class kind, ClassKindsPanel), and courses with their ordered control
-  codes. Phase 2.1 (2026-05-18) addition closing the "no way to see
+  classes (count and class kind, ClassKindsPanel), fees (FeesPanel), and
+  courses with their ordered control codes. Phase 2.1 (2026-05-18) addition closing the "no way to see
   imported courses / edit competition" gap surfaced during 4-klubbs
   dress rehearsal.
 
@@ -36,6 +36,7 @@
   } from '#lib/api/client.ts';
   import { goto } from '$app/navigation';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
+  import FeesPanel from '#lib/components/FeesPanel.svelte';
   import type {
     CompetitionDTO,
     ClassDTO,
@@ -403,6 +404,14 @@
       {:else}
         <ClassKindsPanel {competitionId} details={classDetails} />
       {/if}
+    </section>
+
+    <!-- Fees for walk-ups and hired cards (SOFT TR 4.12.4, TR 4.12.6) -->
+    <section class="card" id="avgifter">
+      <header class="card-head">
+        <h2>{t('fees.heading')}</h2>
+      </header>
+      <FeesPanel {competitionId} eventorLinked={competition?.eventor_event_id != null} />
     </section>
 
     <!-- Courses with ordered control codes -->
