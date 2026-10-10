@@ -20,6 +20,8 @@ import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
 import type { PrinterSink, PrintEnvelope } from '../print/sink.ts';
 import { eq } from 'drizzle-orm';
+import { placeTimeOfDay } from '../integrations/roc/place.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 interface Ctx {
   app: FastifyInstance;
@@ -252,5 +254,61 @@ describe('/api/__dev/simulate-read — re-register without env (T-DEV-ENDPOINT)'
     assert.equal(res2.statusCode, 404);
     await ctx2.app.close();
     ctx2.handle.close();
+  });
+});
+
+describe('/api/__dev/simulate-radio', () => {
+  const SAVED = process.env['FARTOLA_DEV'];
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    process.env['FARTOLA_DEV'] = '1';
+    ctx = await bootWithDev([]);
+    ctx.handle.sqlite
+      .prepare(`INSERT INTO competitions (id, name, date, created_at_ms) VALUES ('c1', 'C1', ?, 0)`)
+      .run(new Date().toISOString().slice(0, 10));
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+    if (SAVED === undefined) delete process.env['FARTOLA_DEV'];
+    else process.env['FARTOLA_DEV'] = SAVED;
+  });
+
+  test('stores a radio punch that places back on its time', async () => {
+    const t = Math.floor((Date.now() - 10 * 60_000) / 1000) * 1000;
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__dev/simulate-radio',
+      payload: { competition_id: 'c1', card_number: 9000001, control_code: 50, time_ms: t },
+    });
+    assert.equal(res.statusCode, 201);
+    const row = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.eventType, 'radio_punch'))
+      .get();
+    const p = row!.payload;
+    assert.equal(p.event_type, 'radio_punch');
+    if (p.event_type !== 'radio_punch') return;
+    const comp = ctx.handle.sqlite
+      .prepare(`SELECT date, clock_offset_min AS o FROM competitions WHERE id = 'c1'`)
+      .get() as { date: string; o: number | null };
+    const placed = placeTimeOfDay(
+      p.time_of_day,
+      p.received_at_ms,
+      competitionClockOffsetMin(comp.date, comp.o)
+    );
+    assert.equal(placed, t);
+  });
+
+  test('400 on a bad body', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/__dev/simulate-radio',
+      payload: { competition_id: 'c1', card_number: -1, control_code: 50, time_ms: 1 },
+    });
+    assert.equal(res.statusCode, 400);
   });
 });
