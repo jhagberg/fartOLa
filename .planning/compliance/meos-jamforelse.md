@@ -33,7 +33,7 @@
 | ID | fartOLa-status | MeOS | MeOS-belägg | Anmärkning |
 |---|---|---|---|---|
 | TR 3.2.1 | DELVIS | UPPFYLLER | Klasstyper individuell, patrull och stafett: `oClass.h:136-141` (`ClassType`), `oClass.cpp:1718-1725` (`getClassType`). Etapper: `NumStages` "Antal etapper" (`oEvent.cpp:192`), `PreEvent`/`PostEvent` (`oEvent.cpp:168-169`), "Totalresultat" (`swedish.lng:1999`), listan `EStdIndMultiResultListAll` (`oListInfo.cpp:4427`). | Etapper är separata tävlingar som länkas, och tidigare resultat förs över (`InputResult` "Tidigare resultat", `oEvent.cpp:279`). |
-| TR 3.4.2 | DELVIS | DELVIS | Fält `ClassType` "Klasstyp" (`oEvent.cpp:325`), `ClassMetaType {ctElite, ctNormal, ctYouth, ctTraining, ctExercise, ctOpen}` (`oClass.h:144`), `interpretClassType` (`oClass.cpp:2867`). Fördefinierade typer: Elit, Vuxen, Ungdom, Motion, Öppen, Träning (`oClass.cpp:2965-2971`). | Fritext som gissas från klassnamnet (`oClass.cpp:2925-2950`). Typen styr bara standardavgift (`oClass.cpp:3263-3277`), inga regler. Inskolning saknas som typ. |
+| TR 3.4.2 | UPPFYLLD | DELVIS | Fält `ClassType` "Klasstyp" (`oEvent.cpp:325`), `ClassMetaType {ctElite, ctNormal, ctYouth, ctTraining, ctExercise, ctOpen}` (`oClass.h:144`), `interpretClassType` (`oClass.cpp:2867`). Fördefinierade typer: Elit, Vuxen, Ungdom, Motion, Öppen, Träning (`oClass.cpp:2965-2971`). | Fritext som gissas från klassnamnet (`oClass.cpp:2925-2950`). Typen styr bara standardavgift (`oClass.cpp:3263-3277`), inga regler. Inskolning saknas som typ. |
 | TR 3.4.4, TR 3.7.10, TR 3.7.12 | SAKNAS | DELVIS | `BirthYear` per löpare (`oEvent.cpp:248`), `LowAge` "Undre ålder" och `HighAge` "Övre ålder" per klass (`oEvent.cpp:320-321`). `findBestClass` hoppar över klasser där ålder eller kön inte passar (`oClass.cpp:676-681`). | Åldern används för att föreslå klass och för reducerad avgift (`YouthAge`, `SeniorAge`, `oEvent.cpp:140-141`). Ingen spärr eller varning vid anmälan i fel åldersklass, och ingen lägsta ålder för SM. |
 | TR 3.4.8, TR 4.14.1 (utan tidtagning) | DELVIS | UPPFYLLER | Per löpare: flaggan `FlagNoTiming` och status `StatusNoTiming` "Utan tidtagning" (`oRunner.cpp:3117-3120`, `oRunner.cpp:1668-1674`), som importeras från IOF EntryList (`iof30interface.cpp:2290`). Per klass: `NoTiming` "Ej tidtagning" (`oEvent.cpp:336`). IOF-exporten utelämnar tid och placering (`iof30interface.cpp:3573-3574`, `iof30interface.cpp:3598`). | Valet per deltagare finns, vilket fartOLa saknar (bara per klass). Texten "Deltagit" saknas däremot: skärmen visar "Utan tidtagning" och utskriften "Godkänd" (`oEvent.cpp:5693-5697`). Det räknas under benämningarna, TR 4.21.3 och TA till TR 7.8.2 (statusrader). |
 | TR 3.4.11, TR 4.20.7 (patrull), TR 4.20.9 (patrull) | SAKNAS | UPPFYLLER | Patrull som lag med parallell sträcka (`oTeamEvent.cpp:826-835`). Lagtiden är den längsta av medlemmarnas tider (`oTeam.cpp:528-535`, `LTParallel`). Listtyper "Patrull, 1 SI-pinne" och "Patrull, 2 SI-pinnar" (`swedish.lng:1287-1288`). | Använd varianten med två brickor. "1 SI-pinne" låter patrullen dela bricka, vilket strider mot att alla ska bära bricka. |
@@ -90,10 +90,10 @@
 | TR 7.3.8 | SAKNAS | DELVIS | "Dela klubbvis" (`oClass.cpp:2233`) och "Jämna klasser" (`oClass.cpp:2238`). | Jämn storlek och samma förening i samma klass är två olika metoder och går inte att kombinera. |
 | TR 7.3.9 | EJ TILLÄMPLIG | EJ TILLÄMPLIG | – | Klasserna läggs upp i Eventor. |
 | TR 7.4.1 (intervallstart, gemensam start) | UPPFYLLD | UPPFYLLER | Lottningsmetoderna i `TabClass.cpp:5087-5091`, bland annat "Gemensam start" (`DrawMethod::Simultaneous`). "Startintervall (min):" (`TabClass.cpp:4956`). |  |
-| TR 7.4.1 (fri intervallstart, jaktstart, omvänd jaktstart) | SAKNAS | DELVIS | "Jaktstart" och "Omvänd jaktstart" (`TabClass.cpp:5093-5094`, visas för etapptävlingar). Bokning av starttid: klassfältet `RequestStart` "Boka starttid" (`oEvent.cpp:338`) och SI-läget "Boka starttid" (`TabSI.cpp:86`). | Metoderna finns, men förbudet mot jaktstart i inskolning och D/H10–12 upprätthålls inte. Sökt: "inskolning", "10-12". |
+| TR 7.4.1 (fri intervallstart, jaktstart, omvänd jaktstart) | DELVIS | DELVIS | "Jaktstart" och "Omvänd jaktstart" (`TabClass.cpp:5093-5094`, visas för etapptävlingar). Bokning av starttid: klassfältet `RequestStart` "Boka starttid" (`oEvent.cpp:338`) och SI-läget "Boka starttid" (`TabSI.cpp:86`). | Metoderna finns, men förbudet mot jaktstart i inskolning och D/H10–12 upprätthålls inte. Sökt: "inskolning", "10-12". |
 | TR 7.4.2, TR 7.4.3 | DELVIS | DELVIS | Starttyp per sträcka (`oClass.h:40-47`, `StartTypes`), `FreeStart` "Fri starttid" per klass (`oEvent.cpp:337`). | Fri starttid är av som standard men går att slå på i vilken klass som helst. Inget förbud kopplat till klasstyp eller nivå. |
 | TR 7.4.4 med TA, TR 7.5.3 (tredje meningen) | UPPFYLLD | UPPFYLLER | `StartInterval` "Intervall" per klass (`oEvent.cpp:344`), "Startintervall:" (`TabClass.cpp:5137`). | Ingen varning för intervall under 1 eller över 3 minuter. |
-| TR 7.4.5 | SAKNAS | UPPFYLLER | "Seedningsgrupper:" (`TabClass.cpp:575`), "Seedad lottning" (`TabClass.cpp:5075`), `drawSeeded` (`oClass.cpp:4737`). | Fungerar för alla klasser och är inte begränsat till elitklasser. |
+| TR 7.4.5 | UPPFYLLD | UPPFYLLER | "Seedningsgrupper:" (`TabClass.cpp:575`), "Seedad lottning" (`TabClass.cpp:5075`), `drawSeeded` (`oClass.cpp:4737`). | Fungerar för alla klasser och är inte begränsat till elitklasser. |
 | TR 7.5.1 (förening) | UPPFYLLD | UPPFYLLER | `drawSOFTMethod` grupperar per förening och varvar dem (`oEventDraw.cpp:130-200`). Även `drawMeOSMethod` (`oEventDraw.cpp:202`). Metodval på `TabClass.cpp:502-504`. | Metoden "Lottning" (Random) har ingen föreningsseparation; fartOLa har inget motsvarande läge. Standard är "Lottning (MeOS)". |
 | TR 7.5.1 (utan namn) | UPPFYLLD | DELVIS | Vakanser är egna löpare med klubben "Vakant" (`oEventDraw.cpp:2412`, `oEventDraw.cpp:2477`). | Ingen kontroll av att en löpare utan namn hålls utanför lottningen hittades. |
 | TR 7.5.2 | DELVIS | DELVIS | `DrawMethod::SOFT` (`oEvent.h:551`, `oEventDraw.cpp:2585`). Slumpkällan är en fast tabell på 16381 bitar (`random.cpp`, `InitRanom`) som seedas en gång från `GetTickCount` vid start (`meos.cpp:245-246`), och nollställs i testläge (`oEventDraw.cpp:2567-2568`). `permute` bygger på bitar och delning (`random.cpp:91-112`). | Regeln föreskriver ingen viss blandningsalgoritm. Slumpkällans tillstånd går vidare mellan lottningar (`random.cpp:49`, `random.cpp:91`, seedad på `meos.cpp:245`), och nollställs bara i testläge (`oEventDraw.cpp:2567`). Att MeOS är godkänt och att upprepade lottningar inte ger snarlika utfall är inte belagt i koden. |
@@ -143,14 +143,16 @@
 | EJ TILLÄMPLIG | 6 |
 | **Totalt** | **75** |
 
-Som jämförelse har fartOLa 34 UPPFYLLD, 19 DELVIS, 17 SAKNAS och 5 EJ TILLÄMPLIG.
+Som jämförelse har fartOLa 36 UPPFYLLD, 18 DELVIS, 16 SAKNAS och 5 EJ TILLÄMPLIG.
 
 MeOS-betygen är rättade efter en oberoende källkodsgranskning (Codex, MeOS 5.0 U3 build 1851, utan att programmet byggts eller körts): TR 3.4.8/4.14.1 (utan tidtagning), TR 4.14.4, TA till TR 4.18.9 och TR 4.23.3 blev UPPFYLLER, och TA till TR 7.8.3 (koppling) och TR 10.2.2/10.2.3 EJ TILLÄMPLIG. Anmärkningarna för TR 4.14.1 (direktanmälan), 4.18.9, 4.20.6, 4.20.7, 4.20.8, 4.20.9, 4.20.10, 4.21.1, 4.21.3, 7.5.2 och 10.4.10 är preciserade. TR 7.6.1 är DELVIS för båda av samma skäl (godkännande och angivelse i Eventor ligger utanför programmet).
 
 Raderna jämförs i ordningen UPPFYLLD/UPPFYLLER > DELVIS > SAKNAS/UPPFYLLER INTE.
 
-**fartOLa ligger före MeOS (10 rader):**
+**fartOLa ligger före MeOS (12 rader):**
 
+- TR 3.4.2: fartOLa har SOFT:s klasstyper (elit, åldersklass, ungdom, öppen, inskolning) från Eventor eller bekräftade av arrangören, och reglerna för direktanmälan, seedning, jaktstart och avgiftstak följer typen. MeOS gissar typen ur klassnamnet och använder den bara för standardavgiften.
+- TR 4.12.4, TR 4.12.6: fartOLa tar brickhyra bara för hyrbricka och ger tillägget för efter- och direktanmälan ett tak per klasstyp, utan tillägg i öppna ungdomsklasser och inskolning. MeOS har en procentsats för hela tävlingen, utan tak och utan undantag.
 - TR 4.16.3, TR 4.22.1: fartOLa räknar fram och visar när målet stänger (sista start plus maxtid) och varnar när en lottning flyttar det. MeOS räknar inte ut det.
 - TR 4.18.9 med TA (sen start): fartOLa räknar tiden från starttiden som standard och varnar för sen start. MeOS gör det bara med "Ej startstämpling" påslaget i varje klass.
 - TR 4.20.10: fartOLa räknar alltid tiden för hela banan och drar aldrig av sträcktid. MeOS kan göra det med kontrollstatus "Utan tidtagning" eller "Försvunnen".
@@ -163,16 +165,15 @@ Raderna jämförs i ordningen UPPFYLLD/UPPFYLLER > DELVIS > SAKNAS/UPPFYLLER INT
 
 Med samma status har fartOLa dessutom några kvalitativa fördelar. SOFT-lottningen ger så få grannar från samma förening som möjligt (TR 7.5.1–7.5.2). Flera tidsavvikelser flaggas för juryn som varningar. Kvar-i-skogen bygger på backupminnet i check-enheten.
 
-**MeOS ligger före fartOLa (21 rader, plus TR 7.1.2):**
+**MeOS ligger före fartOLa (18 rader, plus TR 7.1.2):**
 
 - Modellering: TR 3.2.1, TR 3.4.4 m.fl., TR 3.4.8/4.14.1 (utan tidtagning per deltagare), TR 3.4.11 (patrull), TR 3.6.3 m.fl. (distrikt), TR 4.14.3 m.fl. (stafett), TR 4.23.1 (ogiltig klass), TR 4.23.3 (avkortad bana).
-- Avgifter: TR 4.12.4, TR 4.12.6.
 - Rättning: TA till TR 4.18.9 (kommentar om ny starttid).
 - Listor och publicering: TR 4.22.1, TR 7.5.4.
-- Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.4.1 (jaktstart och bokning), TR 7.4.5 (seedning), TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
+- Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
 - TR 7.1.2: MeOS används som godkänt huvudsystem, vilket fartOLa inte är. Det går inte att belägga i koden.
 
-**Lika (43 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
+**Lika (44 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.18.14, TR 4.20.6 och TR 8.1.4 (rättning i sekretariatet), TR 4.16.1 (startlista med startnummer, startplats och banlängd), TR 7.4.1 (fartOLa spärrar jaktstart i inskolning och D/H10–12 men saknar bokning av fri intervallstart, MeOS tvärtom), TR 7.4.5 (seedning), TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
 
 ## 4. MeOS-funktioner som fartOLa saknar utöver regelraderna
 
