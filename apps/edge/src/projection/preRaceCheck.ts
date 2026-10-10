@@ -17,11 +17,6 @@
 //     card but has more controls than the card stores with time (an SI5
 //     over 30), so the course is checked but splits after 30 are missing.
 //   - classes_without_course: a class with runners but no course.
-//   - start_punch_not_allowed: an undrawn class timed from the start punch
-//     that turns out to be a confirmed age class at nivå 1-3: that is free
-//     start time, which is not allowed there (TR 7.4.2); its start times
-//     must be drawn. A drawn class may still time from the start punch
-//     (TR 4.18.16).
 //
 // MeOS's "Löpare utan klass" and "SI-dubbletter" cannot happen here:
 // competitors.class_id is NOT NULL and a card is unique per competition
@@ -55,28 +50,29 @@ export interface PreRaceCheck {
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
   splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
-  start_punch_not_allowed: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
 /**
  * Whether every runner in the class must have a start time before the race.
- *   - start_method 'start_punch': no, the time runs from the start punch.
- *   - 'start_time': yes.
+ *   - A confirmed age class at nivå 1-3: yes, whatever the start method.
+ *     Free start time is not allowed there (TR 7.4.2), so the start order
+ *     is drawn even when the time runs from the start punch, which is
+ *     itself allowed (TR 4.18.16).
+ *   - Otherwise start_method 'start_time': yes; 'start_punch': no.
  *   - 'auto': yes when the class is drawn (a first start, or any runner
- *     already has a start time); otherwise only in an age class at nivå 1-3,
- *     where free start time is not allowed (TR 7.4.2). Open classes and
- *     inskolning may use free start time (TR 7.4.3). A class whose kind is
- *     not confirmed yet is not flagged.
+ *     already has a start time). Open classes and inskolning may use free
+ *     start time (TR 7.4.3). A class whose kind is not confirmed yet is
+ *     not flagged as an age class.
  */
 export function classNeedsStartTimes(
   cls: Pick<ClassRow, 'startMethod' | 'firstStartMs' | 'classKind' | 'classKindSource'>,
   level: Level,
   anyRunnerHasStartTime: boolean
 ): boolean {
+  if (freeStartForbidden(cls, level)) return true;
   if (cls.startMethod === 'start_punch') return false;
   if (cls.startMethod === 'start_time') return true;
-  if (cls.firstStartMs !== null || anyRunnerHasStartTime) return true;
-  return freeStartForbidden(cls, level);
+  return cls.firstStartMs !== null || anyRunnerHasStartTime;
 }
 
 /** A confirmed age class (from Eventor or the operator, kindConfirmed) at
@@ -133,7 +129,6 @@ export function preRaceCheck(
     card_too_small: [],
     splits_missing: [],
     classes_without_course: [],
-    start_punch_not_allowed: [],
   };
   const runnersPerClass = new Map<string, number>();
   for (const v of active) {
@@ -161,15 +156,6 @@ export function preRaceCheck(
     const runners = runnersPerClass.get(cls.id) ?? 0;
     if (runners > 0 && !controlsByClass.has(cls.id)) {
       out.classes_without_course.push({ class_id: cls.id, class_name: cls.name, runners });
-    }
-    if (
-      runners > 0 &&
-      cls.startMethod === 'start_punch' &&
-      cls.firstStartMs === null &&
-      !drawn.has(cls.id) &&
-      freeStartForbidden(cls, level)
-    ) {
-      out.start_punch_not_allowed.push({ class_id: cls.id, class_name: cls.name, runners });
     }
   }
   return out;

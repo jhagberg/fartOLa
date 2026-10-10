@@ -147,13 +147,6 @@
         action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
       },
       {
-        key: 'startPunch',
-        title: t('prerace.startPunch.title'),
-        rule: t('prerace.startPunch.rule'),
-        rows: classRows(check.start_punch_not_allowed),
-        action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
-      },
-      {
         key: 'cardTooSmall',
         title: t('prerace.cardTooSmall.title'),
         rule: t('prerace.cardTooSmall.rule'),
