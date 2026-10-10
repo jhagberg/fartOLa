@@ -35,6 +35,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { t } from '#lib/i18n/index.ts';
   import {
     listIntegrations,
@@ -78,6 +79,35 @@
   let loading = $state(true);
   let loadError: string | null = $state(null);
   let rows: Record<string, RowState> = $state({});
+
+  // A link like /installningar#eventor lands on that section: scroll to it
+  // and focus its heading so keyboard and screen-reader users start there.
+  // The sections above load their data after the first paint and push the
+  // target down, so keep it in place until the page settles or the user
+  // scrolls.
+  let root: HTMLElement | undefined = $state();
+  $effect(() => {
+    const id = page.url.hash.slice(1);
+    const heading = id
+      ? root?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"] h2`)
+      : null;
+    if (!root || !heading) return;
+    heading.focus();
+    const settle = (): void => heading.scrollIntoView({ block: 'start' });
+    settle();
+    const observer = new ResizeObserver(settle);
+    observer.observe(root);
+    const stop = (): void => observer.disconnect();
+    const timer = setTimeout(stop, 2000);
+    window.addEventListener('wheel', stop, { once: true });
+    window.addEventListener('touchstart', stop, { once: true });
+    return () => {
+      stop();
+      clearTimeout(timer);
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+    };
+  });
 
   onMount(() => {
     void fetchAll();
@@ -462,14 +492,14 @@
   });
 </script>
 
-<section class="settings-view" data-testid="settings-view">
+<section class="settings-view" data-testid="settings-view" bind:this={root}>
   <header class="head">
     <h1 class="title">{t('settings.title')}</h1>
   </header>
 
-  <section class="card">
+  <section class="card" id="eventor">
     <header class="section-head">
-      <h2>{t('settings.integrations.title')}</h2>
+      <h2 tabindex="-1">{t('settings.integrations.title')}</h2>
     </header>
     <p class="desc muted small">{t('settings.integrations.desc')}</p>
 
@@ -554,9 +584,75 @@
     {/if}
   </section>
 
-  <section class="card" data-testid="meos-settings-section">
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="liveresultat" data-testid="liveresultat-section">
     <header class="section-head">
-      <h2>{t('settings.meos.title')}</h2>
+      <h2 tabindex="-1">{t('settings.liveresultat.title')}</h2>
+      <span class="muted small" data-testid="liveresultat-state">
+        {live?.liveresultat_id && live.has_password
+          ? t('settings.liveresultat.active')
+          : t('settings.liveresultat.inactive')}
+      </span>
+    </header>
+    <p class="desc muted small">{t('settings.liveresultat.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
+    {:else}
+      <div class="live-form">
+        <label>
+          <span>{t('settings.liveresultat.id')}</span>
+          <input
+            type="text"
+            inputmode="numeric"
+            bind:value={liveId}
+            data-testid="liveresultat-id"
+          />
+        </label>
+        <label>
+          <span>{t('settings.liveresultat.password')}</span>
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={live?.has_password ? t('settings.liveresultat.passwordSet') : ''}
+            bind:value={livePwd}
+            data-testid="liveresultat-password"
+          />
+        </label>
+      </div>
+      {#if liveErr}
+        <p class="err" role="alert">{liveErr}</p>
+      {/if}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={liveBusy}
+          onclick={() => void saveLive()}
+          data-testid="liveresultat-save"
+        >
+          {t('settings.liveresultat.save')}
+        </Button>
+        {#if live?.liveresultat_id || live?.has_password}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={liveBusy}
+            onclick={() => void clearLive()}
+            data-testid="liveresultat-clear"
+          >
+            {t('settings.liveresultat.clear')}
+          </Button>
+        {/if}
+      </div>
+    {/if}
+  </section>
+
+  <section class="card" id="meos" data-testid="meos-settings-section">
+    <header class="section-head">
+      <h2 tabindex="-1">{t('settings.meos.title')}</h2>
     </header>
     <p class="desc muted small">{t('settings.meos.desc')}</p>
 
@@ -620,152 +716,11 @@
   </section>
 
   <!-- ------------------------------------------------------------------ -->
-  <!-- Hjälpkoder section                                                   -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="card" data-testid="helper-codes-section">
-    <header class="section-head">
-      <h2>{t('settings.helperCodes.title')}</h2>
-    </header>
-    <p class="desc muted small">{t('settings.helperCodes.description')}</p>
-
-    {#if !currentCompId}
-      <p class="muted" data-testid="helper-codes-no-competition">
-        {t('settings.helperCodes.noCompetition')}
-      </p>
-    {:else}
-      <div class="generate-row">
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={generatingCode}
-          onclick={() => void handleGenerate()}
-          data-testid="helper-codes-generate"
-        >
-          {generatingCode
-            ? t('settings.helperCodes.generating')
-            : t('settings.helperCodes.generate')}
-        </Button>
-      </div>
-
-      {#if helperCodesLoading && helperCodes.length === 0}
-        <p class="muted">{t('settings.integrations.loading')}</p>
-      {:else if helperCodes.length === 0}
-        <p class="muted" data-testid="helper-codes-empty">{t('settings.helperCodes.empty')}</p>
-      {:else}
-        <ul class="code-list">
-          {#each helperCodes as code (code.id)}
-            <li
-              class="code-row"
-              class:revoked={code.revoked_at_ms !== null}
-              data-testid="helper-code-row"
-            >
-              <div class="code-meta">
-                {#if revealedCodes[code.id]}
-                  <span class="code-reveal" data-testid="helper-code-revealed">
-                    {t('settings.helperCodes.revealed')}
-                    <span class="code-mono">{revealedCodes[code.id]}</span>
-                  </span>
-                {:else}
-                  <span class="code-masked" data-testid="helper-code-masked">{code.masked_code}</span>
-                {/if}
-                <span class="code-expiry muted small">
-                  {code.revoked_at_ms !== null
-                    ? t('settings.helperCodes.revoked')
-                    : `${t('settings.helperCodes.expires')} ${formatExpiry(code.expires_at_ms)}`}
-                </span>
-              </div>
-              {#if code.revoked_at_ms === null}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={revokingId === code.id}
-                  onclick={() => void handleRevoke(code.id)}
-                  data-testid="helper-code-revoke"
-                >
-                  {revokingId === code.id
-                    ? t('settings.helperCodes.revoking')
-                    : t('settings.helperCodes.revoke')}
-                </Button>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    {/if}
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
-  <!-- Liveresultat (SOFT TR 7.7.1)                                         -->
-  <!-- ------------------------------------------------------------------ -->
-  <section class="card" data-testid="liveresultat-section">
-    <header class="section-head">
-      <h2>{t('settings.liveresultat.title')}</h2>
-      <span class="muted small" data-testid="liveresultat-state">
-        {live?.liveresultat_id && live.has_password
-          ? t('settings.liveresultat.active')
-          : t('settings.liveresultat.inactive')}
-      </span>
-    </header>
-    <p class="desc muted small">{t('settings.liveresultat.description')}</p>
-
-    {#if !currentCompId}
-      <p class="muted">{t('settings.helperCodes.noCompetition')}</p>
-    {:else}
-      <div class="live-form">
-        <label>
-          <span>{t('settings.liveresultat.id')}</span>
-          <input
-            type="text"
-            inputmode="numeric"
-            bind:value={liveId}
-            data-testid="liveresultat-id"
-          />
-        </label>
-        <label>
-          <span>{t('settings.liveresultat.password')}</span>
-          <input
-            type="password"
-            autocomplete="off"
-            placeholder={live?.has_password ? t('settings.liveresultat.passwordSet') : ''}
-            bind:value={livePwd}
-            data-testid="liveresultat-password"
-          />
-        </label>
-      </div>
-      {#if liveErr}
-        <p class="err" role="alert">{liveErr}</p>
-      {/if}
-      <div class="generate-row">
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={liveBusy}
-          onclick={() => void saveLive()}
-          data-testid="liveresultat-save"
-        >
-          {t('settings.liveresultat.save')}
-        </Button>
-        {#if live?.liveresultat_id || live?.has_password}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={liveBusy}
-            onclick={() => void clearLive()}
-            data-testid="liveresultat-clear"
-          >
-            {t('settings.liveresultat.clear')}
-          </Button>
-        {/if}
-      </div>
-    {/if}
-  </section>
-
-  <!-- ------------------------------------------------------------------ -->
   <!-- Radiokontroller (ROC)                                                -->
   <!-- ------------------------------------------------------------------ -->
-  <section class="card" data-testid="radio-section">
+  <section class="card" id="radio" data-testid="radio-section">
     <header class="section-head">
-      <h2>{t('settings.radio.title')}</h2>
+      <h2 tabindex="-1">{t('settings.radio.title')}</h2>
     </header>
     <p class="desc muted small">{t('settings.radio.description')}</p>
 
@@ -837,6 +792,81 @@
           {t('settings.radio.save')}
         </Button>
       </div>
+    {/if}
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Hjälpkoder section                                                   -->
+  <!-- ------------------------------------------------------------------ -->
+  <section class="card" id="hjalpkoder" data-testid="helper-codes-section">
+    <header class="section-head">
+      <h2 tabindex="-1">{t('settings.helperCodes.title')}</h2>
+    </header>
+    <p class="desc muted small">{t('settings.helperCodes.description')}</p>
+
+    {#if !currentCompId}
+      <p class="muted" data-testid="helper-codes-no-competition">
+        {t('settings.helperCodes.noCompetition')}
+      </p>
+    {:else}
+      <div class="generate-row">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={generatingCode}
+          onclick={() => void handleGenerate()}
+          data-testid="helper-codes-generate"
+        >
+          {generatingCode
+            ? t('settings.helperCodes.generating')
+            : t('settings.helperCodes.generate')}
+        </Button>
+      </div>
+
+      {#if helperCodesLoading && helperCodes.length === 0}
+        <p class="muted">{t('settings.integrations.loading')}</p>
+      {:else if helperCodes.length === 0}
+        <p class="muted" data-testid="helper-codes-empty">{t('settings.helperCodes.empty')}</p>
+      {:else}
+        <ul class="code-list">
+          {#each helperCodes as code (code.id)}
+            <li
+              class="code-row"
+              class:revoked={code.revoked_at_ms !== null}
+              data-testid="helper-code-row"
+            >
+              <div class="code-meta">
+                {#if revealedCodes[code.id]}
+                  <span class="code-reveal" data-testid="helper-code-revealed">
+                    {t('settings.helperCodes.revealed')}
+                    <span class="code-mono">{revealedCodes[code.id]}</span>
+                  </span>
+                {:else}
+                  <span class="code-masked" data-testid="helper-code-masked">{code.masked_code}</span>
+                {/if}
+                <span class="code-expiry muted small">
+                  {code.revoked_at_ms !== null
+                    ? t('settings.helperCodes.revoked')
+                    : `${t('settings.helperCodes.expires')} ${formatExpiry(code.expires_at_ms)}`}
+                </span>
+              </div>
+              {#if code.revoked_at_ms === null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={revokingId === code.id}
+                  onclick={() => void handleRevoke(code.id)}
+                  data-testid="helper-code-revoke"
+                >
+                  {revokingId === code.id
+                    ? t('settings.helperCodes.revoking')
+                    : t('settings.helperCodes.revoke')}
+                </Button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </section>
 </section>
