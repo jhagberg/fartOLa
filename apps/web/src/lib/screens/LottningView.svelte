@@ -259,6 +259,7 @@
     done = null;
     closingMove = null;
     firstControl = null;
+    clashReason = '';
     error = null;
     redrawConfirmOpen = false;
     drawType = 'All';
