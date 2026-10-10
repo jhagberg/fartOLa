@@ -92,6 +92,10 @@ export interface RunnerFees {
   entry: number | null;
   late: number | null;
   card: number | null;
+  /** Eventor's EntryFeeId for the class fee and the late fee, written as
+   * Fee/Id so Eventor can invoice them; null = not from Eventor. */
+  entryFeeId?: number | null;
+  lateFeeId?: number | null;
 }
 
 export interface ExportSummary {
@@ -233,6 +237,7 @@ export function resultListStatusFor(input: ExportStatus): 'Complete' | 'Snapshot
 
 interface FeeNode {
   '@_type'?: 'Normal' | 'Late';
+  Id?: number;
   Name: string;
   Amount: { '@_currency': 'SEK'; '#text': number };
 }
@@ -377,16 +382,28 @@ function buildPersonResult(
   // a rental card is a ServiceRequest of type "RentalCard", as MeOS writes
   // them (iof30interface.cpp:2838-2915, writeAssignedFee and
   // writeRentalCardService); SOFT TR 4.12.9 wants the late fee apart from
-  // the base fee. No PaidAmount: fartOLa takes no payments.
+  // the base fee. Fee/Id is Eventor's EntryFeeId when the class fees came
+  // from Eventor. No PaidAmount: fartOLa takes no payments.
   const amount = (n: number) => ({ '@_currency': 'SEK' as const, '#text': n });
+  const id = (n: number | null | undefined) => (n == null ? {} : { Id: n });
   const assigned: { Fee: FeeNode }[] = [];
   if (fees?.entry != null)
     assigned.push({
-      Fee: { '@_type': 'Normal', Name: 'Anmälningsavgift', Amount: amount(fees.entry) },
+      Fee: {
+        '@_type': 'Normal',
+        ...id(fees.entryFeeId),
+        Name: 'Anmälningsavgift',
+        Amount: amount(fees.entry),
+      },
     });
   if (fees?.late != null && fees.late > 0)
     assigned.push({
-      Fee: { '@_type': 'Late', Name: 'Efteranmälningsavgift', Amount: amount(fees.late) },
+      Fee: {
+        '@_type': 'Late',
+        ...id(fees.lateFeeId),
+        Name: 'Efteranmälningsavgift',
+        Amount: amount(fees.late),
+      },
     });
   if (assigned.length > 0) result.AssignedFee = assigned;
   if (fees?.card != null && fees.card > 0)

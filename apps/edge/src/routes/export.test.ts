@@ -321,9 +321,21 @@ describe('GET /api/competitions/:id/export[/preview]', () => {
 
   test('SOFT TR 4.12.4, 4.12.6: the exported ResultList carries the walk-up fee and the rental of the card the runner holds', async () => {
     seedCompetitionWithThreeReads(ctx.handle, ctx.nodeId, 'comp-fee');
+    // H21 is an open class here with Eventor fee ids; Anna was born 2010,
+    // so she was charged the youth fee and its id goes out.
+    ctx.handle.db
+      .update(classes)
+      .set({
+        classKind: 'oppen',
+        eventorEntryFeeId: 11,
+        eventorYouthFeeId: 13,
+        eventorLateFeeId: 12,
+      })
+      .where(eq(classes.id, 'cls-comp-fee-h21'))
+      .run();
     ctx.handle.db
       .update(competitors)
-      .set({ entryFee: 180, lateFee: 90 })
+      .set({ entryFee: 90, lateFee: 0, birthYear: 2010 })
       .where(eq(competitors.id, 'cmp-comp-fee-anna'))
       .run();
     ctx.handle.db
@@ -339,7 +351,8 @@ describe('GET /api/competitions/:id/export[/preview]', () => {
     assert.equal(valid.valid, true, JSON.stringify(valid));
     const person = (family: string) =>
       new RegExp(`<Family>${family}</Family>[\\s\\S]*?</PersonResult>`).exec(res.body)![0];
-    assert.equal(person('Andersson').match(/<AssignedFee>/g)?.length, 2);
+    assert.equal(person('Andersson').match(/<AssignedFee>/g)?.length, 1);
+    assert.match(person('Andersson'), /<Fee type="Normal">\s*<Id>13<\/Id>/);
     assert.doesNotMatch(person('Andersson'), /ServiceRequest/);
     assert.match(person('Berg'), /<Service type="RentalCard">/);
     assert.doesNotMatch(person('Carlsson'), /AssignedFee|ServiceRequest/);
