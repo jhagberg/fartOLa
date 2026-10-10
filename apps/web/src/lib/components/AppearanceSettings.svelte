@@ -58,6 +58,12 @@
   const DENSITIES: TweaksDensity[] = ['low', 'med', 'high'];
   const ACCENTS: TweaksAccent[] = ['forest', 'blue', 'magenta', 'charcoal'];
   const FONT_PAIRS: TweaksFontPair[] = ['plex', 'geist', 'source', 'atkinson'];
+  const FONT_NAMES: Record<TweaksFontPair, string> = {
+    plex: 'IBM Plex',
+    geist: 'Geist',
+    source: 'Source Sans',
+    atkinson: 'Atkinson Hyperlegible',
+  };
 </script>
 
 <div class="grid">
@@ -137,7 +143,7 @@
   <Field label={t('tw.font')}>
     <Select value={tweaks.font_pair} onchange={onFontChange}>
       {#each FONT_PAIRS as fp (fp)}
-        <option value={fp}>{fp}</option>
+        <option value={fp}>{FONT_NAMES[fp]}</option>
       {/each}
     </Select>
   </Field>
@@ -182,6 +188,11 @@
     color: var(--accent-strong);
   }
   .swatches {
+    /* Previews of each theme; must not follow the active theme. */
+    --swatch-forest: oklch(0.5 0.08 145);
+    --swatch-blue: oklch(0.5 0.1 245);
+    --swatch-magenta: oklch(0.5 0.13 330);
+    --swatch-charcoal: oklch(0.3 0.01 240);
     display: flex;
     gap: var(--space-sm);
     flex-wrap: wrap;
@@ -198,16 +209,16 @@
     outline-offset: 2px;
   }
   .sw-forest {
-    background: oklch(0.5 0.08 145);
+    background: var(--swatch-forest);
   }
   .sw-blue {
-    background: oklch(0.5 0.1 245);
+    background: var(--swatch-blue);
   }
   .sw-magenta {
-    background: oklch(0.5 0.13 330);
+    background: var(--swatch-magenta);
   }
   .sw-charcoal {
-    background: oklch(0.3 0.01 240);
+    background: var(--swatch-charcoal);
   }
   .toggle {
     display: inline-flex;
@@ -218,8 +229,8 @@
     cursor: pointer;
   }
   .toggle input {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     accent-color: var(--accent);
   }
 </style>
