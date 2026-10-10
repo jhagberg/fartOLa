@@ -422,12 +422,14 @@
     padding: 12px 16px;
   }
   .box.err {
-    background: color-mix(in srgb, var(--err) 12%, transparent);
-    border: 1px solid var(--err);
+    border: 1px solid var(--dnf);
+    background: var(--dnf-soft);
+    color: var(--fg);
   }
   .box.warn {
-    background: color-mix(in srgb, var(--warn, orange) 12%, transparent);
-    border: 1px solid var(--warn, orange);
+    border: 1px solid var(--mp);
+    background: var(--mp-soft);
+    color: var(--mp-fg);
   }
   .box.info {
     background: var(--bg-elev);
@@ -454,7 +456,7 @@
     font-weight: 700;
   }
   .count-badge.urgent {
-    color: var(--err);
+    color: var(--dnf);
   }
   .summary-text {
     font-family: var(--font-mono);

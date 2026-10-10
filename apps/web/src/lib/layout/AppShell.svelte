@@ -210,7 +210,7 @@
     .drawer-scrim {
       position: fixed;
       inset: 0;
-      background: rgba(20, 20, 30, 0.32);
+      background: var(--scrim);
       z-index: 55;
       backdrop-filter: blur(2px);
     }
