@@ -24,7 +24,6 @@ import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { kindNeedsAge, suggestClassKind } from '../draw/classKind.ts';
-import { freeStartBanned } from '../draw/startRules.ts';
 import { fetchEventorClassTypes } from '../eventor/eventClasses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { maxTimeLocked } from './_maxTime.ts';
@@ -135,14 +134,8 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
 
       // Cross-competition pre-flight.
       const classRow = app.fartolaDb.db
-        .select({
-          id: classes.id,
-          classKind: classes.classKind,
-          classKindSource: classes.classKindSource,
-          level: competitions.level,
-        })
+        .select({ id: classes.id })
         .from(classes)
-        .innerJoin(competitions, eq(competitions.id, classes.competitionId))
         .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
         .get();
       if (!classRow) {
@@ -150,11 +143,6 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       }
 
       const { maxTimeSec, no_timing, start_method } = parsed.data;
-      // SOFT TR 7.4.2: timing from the start punch is free start time, not
-      // in an age class at nivå 1–3.
-      if (start_method === 'start_punch' && freeStartBanned(classRow, classRow.level) === true) {
-        return reply.code(422).send({ error: 'free_start_not_allowed', rule: 'SOFT TR 7.4.2' });
-      }
       // SOFT TR 4.21.2: no max time change after the first start.
       if (maxTimeSec !== undefined && maxTimeLocked(app.fartolaDb, competitionId, Date.now())) {
         const current = app.fartolaDb.db

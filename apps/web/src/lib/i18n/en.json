@@ -704,11 +704,9 @@
   "lottning.intervalNorm.natt": "Night: normally 2 minutes (120 s), TA to TR 7.4.4.",
   "lottning.intervalNorm.ultralang": "Ultralong distance: normally a mass start, TA to TR 7.4.4.",
   "lottning.freeStartBanned": "{{count}} runners have no start time. Free start time is not allowed in an age class at level 1–3 (TR 7.4.2). Draw the class or draw the late entrants.",
-  "lottning.startPunchBanned": "Time runs from the start punch, which is free start time, not allowed in an age class at level 1–3 (TR 7.4.2). Choose Start time or Automatic.",
   "clock.nextDay": "{{time}} (next day)",
   "lottning.openClassFreeStart": "Open class: free start time (TR 7.4.3). Runners are timed from the start punch, so the class needs no draw.",
   "lottning.closingMoved": "The finish now closes at {{to}} (was {{from}}). Update the PM (TR 4.16.3).",
-  "lottning.err.freeStartNotAllowed": "Timing from the start punch is free start time, which is not allowed in an age class at level 1–3 (TR 7.4.2). Choose Start time or Automatic for {{class}}.",
 
   "settings.timing.label": "Time display",
   "settings.timing.seconds": "Seconds",

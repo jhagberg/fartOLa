@@ -6,7 +6,7 @@
 // typed per runner, and a refused draw as plain Swedish (ADR-0016 rule 6).
 // The server is the judge of the SOFT rules; the view shows its answer.
 
-import type { ClassKind, StartMethod } from '@fartola/shared-types';
+import type { ClassKind } from '@fartola/shared-types';
 import {
   ApiError,
   type DrawMode,
@@ -146,7 +146,6 @@ const BY_CODE: Record<string, Refusal> = {
   restart_overlaps_pursuit: { key: 'lottning.err.restartOverlaps' },
   one_seeding_group: { key: 'lottning.err.oneSeedingGroup' },
   class_not_found: { key: 'lottning.err.classNotFound' },
-  free_start_not_allowed: { key: 'lottning.err.freeStartNotAllowed' },
 };
 
 /** A refused draw (or seeding save) as an i18n key, with the class name. */
@@ -172,19 +171,16 @@ export function closingMoved(res: LottningResult): { from: number; to: number } 
   return from !== null && to !== null && from !== to ? { from, to } : null;
 }
 
-/** The start-order note for a class (SOFT TR 7.4.2, TR 7.4.3): timing
- * from the start punch, or runners without a start time, where free start
- * time is banned (the punch timing may predate the kind or level), or the
- * reminder that an open class uses free start time. */
+/** The start-order note for a class (SOFT TR 7.4.2, TR 7.4.3): runners
+ * without a start time where free start time is banned, or the reminder
+ * that an open class uses free start time. Start punching itself is
+ * allowed (TR 4.18.16). */
 export function startOrderNote(cls: {
   class_kind?: ClassKind | null;
   free_start_banned?: boolean | null;
   without_start_time?: number;
-  start_method?: StartMethod;
 }): { key: string; vars?: Record<string, unknown> } | null {
   const without = cls.without_start_time ?? 0;
-  if (cls.free_start_banned === true && cls.start_method === 'start_punch')
-    return { key: 'lottning.startPunchBanned' };
   if (cls.free_start_banned === true && without > 0)
     return { key: 'lottning.freeStartBanned', vars: { count: without } };
   if (cls.class_kind === 'oppen' || cls.class_kind === 'inskolning')

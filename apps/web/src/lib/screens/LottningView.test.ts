@@ -161,14 +161,6 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     expect(startOrderNote({ free_start_banned: true, without_start_time: 0 })).toBeNull();
     expect(startOrderNote({ free_start_banned: null, without_start_time: 3 })).toBeNull();
     expect(startOrderNote({ class_kind: 'inskolning' })?.key).toBe('lottning.openClassFreeStart');
-    // Start-punch timing set before the kind or level made it banned.
-    expect(
-      startOrderNote({
-        free_start_banned: true,
-        without_start_time: 0,
-        start_method: 'start_punch',
-      })?.key
-    ).toBe('lottning.startPunchBanned');
   });
 
   it('every refusal and mode label exists in sv and en, and names the SOFT rule', async () => {
@@ -205,7 +197,6 @@ describe('LottningView (mounted)', () => {
   /** Extra fields on GET lottning's class for H12, and the distance. */
   let h12Class: Record<string, unknown>;
   let distance: string | null;
-  let patchAnswer: { status: number; body: unknown };
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -228,7 +219,6 @@ describe('LottningView (mounted)', () => {
     classKindSource = 'name';
     h12Class = {};
     distance = null;
-    patchAnswer = { status: 200, body: { ok: true } };
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -246,7 +236,7 @@ describe('LottningView (mounted)', () => {
         posts.push({ url, body });
         return json(drawAnswer.body, drawAnswer.status);
       }
-      if (init?.method === 'PATCH') return json(patchAnswer.body, patchAnswer.status);
+      if (init?.method === 'PATCH') return json({ ok: true });
       if (init?.method === 'PUT') {
         puts.push({ url, body });
         if (url.endsWith('/classes/kinds')) classKindSource = 'operator';
@@ -409,15 +399,6 @@ describe('LottningView (mounted)', () => {
     expect($('lottning-closing-moved')!.textContent).toContain(
       'Målet stänger nu 13:06 (var 13:04)'
     );
-  });
-
-  it('SOFT TR 7.4.2: start-punch timing refused (422) is explained and the select goes back', async () => {
-    patchAnswer = { status: 422, body: { error: 'free_start_not_allowed', rule: 'SOFT TR 7.4.2' } };
-    await mountView();
-    await choose('lottning-start-method', 'start_punch');
-    await settle();
-    expect($('lottning-refusal')!.textContent).toContain('TR 7.4.2');
-    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('auto');
   });
 
   it('shows the class kind, its status and the level; previews what the draw will do', async () => {

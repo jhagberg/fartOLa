@@ -31,7 +31,6 @@
     patchClass,
     patchCompetitorStartTime,
     putSeeding,
-    ApiError,
     type DrawMode,
     type DrawType,
     type LottningResponse,
@@ -398,23 +397,19 @@
   const START_METHODS: StartMethod[] = ['auto', 'start_time', 'start_punch'];
   const startNote = $derived.by(() => {
     const c = lottClass;
-    return c === null ? null : startOrderNote({ ...c, start_method: selectedStartMethod });
+    return c === null ? null : startOrderNote(c);
   });
 
   async function saveClassFlag(
     flag: { no_timing: boolean } | { start_method: StartMethod }
-  ): Promise<boolean> {
-    if (!selectedClassId) return false;
+  ): Promise<void> {
+    if (!selectedClassId) return;
     const id = selectedClassId;
     try {
       await patchClass(competitionId, id, flag);
       classes = classes.map((c) => (c.id === id ? { ...c, ...flag } : c));
-      return true;
     } catch (e) {
-      // SOFT TR 7.4.2 refuses start-punch timing (422) with a reason.
-      if (e instanceof ApiError && e.status === 422) refusal = refusalOf(e, selectedClassName);
-      else error = (e as Error).message;
-      return false;
+      error = (e as Error).message;
     }
   }
 
@@ -759,12 +754,8 @@
         id="lottning-start-method"
         value={selectedStartMethod}
         disabled={!selectedClassId}
-        onchange={(e) => {
-          const el = e.currentTarget;
-          void saveClassFlag({ start_method: el.value as StartMethod }).then((ok) => {
-            if (!ok) el.value = selectedStartMethod;
-          });
-        }}
+        onchange={(e) =>
+          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
         data-testid="lottning-start-method"
       >
         {#each START_METHODS as m (m)}
