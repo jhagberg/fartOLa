@@ -1,8 +1,8 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Three-click new-competition wizard e2e (plan 12).
+// Two-step new-competition wizard e2e (plan 12, reader step removed).
 //
-// Two tests:
+// Tests:
 //
 //   1. **happy path** — visit /, click + Ny tävling, fill name+date,
 //      drop the IOF30 CourseData sample, click Skapa tävling (step 2;
@@ -199,7 +199,11 @@ test('the typed draft survives the detour to the Eventor key', async ({ page }) 
   await expect(page.getByTestId('wiz-evqs-input')).toHaveValue('12345');
 
   await page.getByTestId('wiz-cancel').click();
-  await openWizard(page);
+  await expect(page).toHaveURL(/\/$/);
+  expect(await page.evaluate(() => sessionStorage.getItem('fartola-wizard-draft'))).toBeNull();
+  // Open it again directly (openWizard would clear the draft itself).
+  await page.getByTestId('open-wizard').first().click();
+  await expect(page.getByTestId('wiz-name')).toBeVisible();
   await expect(page.getByTestId('wiz-name')).toHaveValue('');
   await expect(page.getByTestId('wiz-date')).toHaveValue('');
 });

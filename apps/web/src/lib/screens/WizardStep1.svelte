@@ -5,8 +5,7 @@
 
   Two paths into this step:
    - Manual: operator types Name + Date.
-   - Quickstart (NEW 2026-05-17): operator drops the IOF XML 3.0
-     CourseData file here. We parse the first ~4 KB to extract
+   - Quickstart (NEW 2026-05-17): operator drops the course file here. We parse the first ~4 KB to extract
      <Event><Name> and the root @createTime, pre-fill the form, AND
      hand the parsed File up to the wizard so Step 2's DropZone shows
      the same file as already-loaded (no double-upload).
@@ -92,8 +91,8 @@
   let eventorFetching = $state(false);
   let eventorError = $state<string | null>(null);
   let eventorNoKey = $state(false);
-
-
+  /** Raw error text, shown only under "Visa detaljer". */
+  let eventorDetail = $state<string | null>(null);
   /** Same 4 KB head sample Step 2 uses — enough to land the root
    * element + the small <Event> block at the top of an IOF document. */
   const HEAD_BYTES = 4096;
@@ -195,10 +194,11 @@
 
   async function fetchEventorQuickstart(): Promise<void> {
     eventorError = null;
+    eventorDetail = null;
     eventorNoKey = false;
     const id = Number.parseInt(eventorIdInput.trim(), 10);
     if (!Number.isFinite(id) || id <= 0) {
-      eventorError = t('wizard.eventor.error', { message: 'Ogiltigt ID' });
+      eventorError = t('wiz.err.eventorBadId');
       return;
     }
     eventorFetching = true;
@@ -212,22 +212,21 @@
       }
       oneventorquickstart?.(meta.eventId, meta.name, meta.startDate);
     } catch (e) {
-      let msg: string;
+      let msg = t('wiz.err.eventorFailed');
       if (e instanceof ApiError) {
         const body = e.body as { error?: string } | undefined;
         const code = body?.error ?? '';
-        if (code === 'not_found') msg = 'Tävlingen hittades inte i Eventor';
+        if (code === 'not_found') msg = t('wiz.err.eventorNotFound');
         else if (code === 'no_key') {
-          msg = 'Eventor API-nyckel saknas';
+          msg = t('wiz.err.eventorNoKey');
           eventorNoKey = true;
-        }
-        else if (code === 'forbidden') msg = 'Åtkomst nekad av Eventor';
+        } else if (code === 'forbidden') msg = t('wiz.err.eventorForbidden');
         else if (code === 'eventor_down') msg = t('wiz.err.eventorDown');
-        else msg = code || e.message;
+        else eventorDetail = code || e.message;
       } else {
-        msg = (e as Error).message || 'okänt fel';
+        eventorDetail = (e as Error).message || null;
       }
-      eventorError = t('wizard.eventor.error', { message: msg });
+      eventorError = msg;
     } finally {
       eventorFetching = false;
     }
@@ -236,6 +235,7 @@
   function clearEventorQuickstart(): void {
     eventorIdInput = '';
     eventorError = null;
+    eventorDetail = null;
     eventorNoKey = false;
     oneventorquickstartclear?.();
   }
@@ -333,10 +333,16 @@
         </Button>
       </form>
       {#if eventorError}
-        <p class="err small" role="alert" data-testid="wiz-evqs-error">
+        <div class="err small" role="alert" data-testid="wiz-evqs-error">
           {eventorError}
           {#if eventorNoKey}<EventorKeyLink />{/if}
-        </p>
+          {#if eventorDetail}
+            <details>
+              <summary>{t('wiz.err.details')}</summary>
+              {eventorDetail}
+            </details>
+          {/if}
+        </div>
       {/if}
     {:else}
       <div class="loaded-row" data-testid="wiz-evqs-loaded">

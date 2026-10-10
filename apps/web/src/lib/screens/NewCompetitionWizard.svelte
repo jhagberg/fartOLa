@@ -36,6 +36,7 @@
   import { createCompetitionFromWizard, setActiveCompetition } from '#lib/api/client.ts';
   import WizardStep1 from './WizardStep1.svelte';
   import WizardStep2 from './WizardStep2.svelte';
+  import { validDate } from './wizardDate.ts';
 
   interface Props {
     /** Where Avbryt routes to. Defaults to `/` so Home → wizard →
@@ -92,7 +93,7 @@
   let eventorEventId: number | null = $state(null);
 
   /** Dirty-check (UI/UX audit #2, 2026-05-17). Accidental scrim tap on
-   * a 3-step wizard would drop the operator's name + date + file work —
+   * a 2-step wizard would drop the operator's name + date + file work —
    * confirm first if any of those have been touched. Esc + the explicit
    * Avbryt button still close without prompt (explicit intent). */
   const dirty = $derived(
@@ -100,13 +101,6 @@
   );
   let confirmingClose = $state(false);
 
-  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
-  /** ISO shape AND a real calendar day (2026-13-99 is not one). */
-  function validDate(v: string): boolean {
-    if (!isoDate.test(v)) return false;
-    const d = new Date(`${v}T00:00:00Z`);
-    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
-  }
   const dateInvalid = $derived(date !== '' && !validDate(date));
   const canAdvanceFromStep1 = $derived(name.trim().length > 0 && validDate(date));
   $effect(() => {
@@ -167,6 +161,7 @@
   function rejectFile(msg: string): void {
     pendingFile = null;
     preview = null;
+    importError = null;
     dropError = msg;
   }
   function clearDrop(): void {

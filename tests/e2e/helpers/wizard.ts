@@ -54,3 +54,10 @@ export async function prepareWizardImportError(page: Page): Promise<void> {
   await page.getByTestId('wiz-start').click();
   await expect(page.getByTestId('wizard-error')).toBeVisible();
 }
+
+/** A dirty wizard with the scrim tapped: the discard confirmation shows. */
+export async function prepareWizardDiscard(page: Page): Promise<void> {
+  await page.getByTestId('wiz-name').fill('Designlabb');
+  await page.getByTestId('wizard-scrim').click({ position: { x: 4, y: 4 } });
+  await expect(page.getByTestId('wizard-discard-confirm')).toBeVisible();
+}
