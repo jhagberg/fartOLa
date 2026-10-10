@@ -66,7 +66,8 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
          VALUES (?, 'Prov', '2026-10-10', 'classic', 0, 0, 'niva2')`
       )
       .run(COMP);
-    // H21: senior, drawn, 31 controls on its course (too many for an SI5).
+    // H21: senior, drawn, 37 controls on its course (too many for an SI5).
+    // H35: drawn, 31 controls (fits an SI5, splits after 30 missing).
     // Open: oppen, free start, course via the legacy courses.class_id.
     // D10: no course.
     handle.db
@@ -75,6 +76,7 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
         { id: 'h21', competitionId: COMP, name: 'H21', classKind: 'senior', firstStartMs: 1 },
         { id: 'open', competitionId: COMP, name: 'Öppen 1', classKind: 'oppen' },
         { id: 'd10', competitionId: COMP, name: 'D10', classKind: 'ungdom', ageClass: 10 },
+        { id: 'h35', competitionId: COMP, name: 'H35', classKind: 'veteran', firstStartMs: 1 },
       ])
       .run();
     handle.db
@@ -82,10 +84,11 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
       .values([
         { id: 'long', competitionId: COMP, name: 'Lång' },
         { id: 'short', competitionId: COMP, name: 'Kort', classId: 'open' },
+        { id: 'mid', competitionId: COMP, name: 'Mellan', classId: 'h35' },
       ])
       .run();
     handle.sqlite.prepare(`UPDATE classes SET course_id = 'long' WHERE id = 'h21'`).run();
-    for (let i = 0; i < 31; i++) {
+    for (let i = 0; i < 37; i++) {
       handle.db
         .insert(controls)
         .values({ id: `c${i}`, competitionId: COMP, code: 31 + i })
@@ -94,6 +97,12 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
         .insert(courseControls)
         .values({ id: `l${i}`, courseId: 'long', controlId: `c${i}`, orderIdx: i })
         .run();
+      if (i < 31) {
+        handle.db
+          .insert(courseControls)
+          .values({ id: `m${i}`, courseId: 'mid', controlId: `c${i}`, orderIdx: i })
+          .run();
+      }
     }
     handle.db
       .insert(courseControls)
@@ -107,6 +116,7 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     runner('noclub', 'Eva Klubblös', 'open', 12_346, null);
     runner('x', 'X', 'open', 8_000_003, 'OK Ek');
     runner('d10', 'Gun Liten', 'd10', 8_000_004, 'OK Ek');
+    runner('si5mid', 'Ivar Femma', 'h35', 12_347, 'OK Ek', 3_000);
     runner('gone', 'Hans Återbud', 'h21', null, null);
     handle.db
       .insert(events)
@@ -146,7 +156,11 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     assert.deepEqual(ids(body.no_name), ['x']);
     assert.deepEqual(
       body.card_too_small.map((r) => [r.competitor_id, r.class_name, r.capacity, r.controls]),
-      [['si5', 'H21', 30, 31]]
+      [['si5', 'H21', 36, 37]]
+    );
+    assert.deepEqual(
+      body.splits_missing.map((r) => [r.competitor_id, r.class_name, r.timed, r.controls]),
+      [['si5mid', 'H35', 30, 31]]
     );
     assert.deepEqual(body.classes_without_course, [
       { class_id: 'd10', class_name: 'D10', runners: 1 },
