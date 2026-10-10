@@ -523,6 +523,8 @@ export interface CompetitorProfilePatch {
   card_number?: number | null;
   /** SOFT TR 7.5.4: '' or null clears it. */
   bib?: string | null;
+  /** Whole kronor paid at the desk; 0 = nothing. */
+  paid_amount?: number;
 }
 
 export function editCompetitorProfile(

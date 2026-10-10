@@ -23,7 +23,7 @@
   import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import { listHiredCards, returnHiredCard } from '#lib/api/client.ts';
-  import type { HiredCardRow } from '@fartola/shared-types';
+  import type { HiredCardRow, HiredCardsListResponse } from '@fartola/shared-types';
   import Button from '#lib/ui/Button.svelte';
 
   interface Props {
@@ -34,6 +34,7 @@
 
   let open: HiredCardRow[] = $state([]);
   let returned: HiredCardRow[] = $state([]);
+  let paid: HiredCardsListResponse['paid_on_site'] = $state(undefined);
   let loading = $state(true);
   let error: string | null = $state(null);
   /** Set of card_numbers currently being PATCHed — disables the row's
@@ -52,6 +53,7 @@
       const r = await listHiredCards(competitionId);
       open = r.open;
       returned = r.returned;
+      paid = r.paid_on_site;
     } catch (e) {
       error = (e as Error).message || t('hyrbrickor.loadError');
     } finally {
@@ -91,6 +93,12 @@
   <header class="head">
     <h1 class="title">{t('hyrbrickor.title')}</h1>
   </header>
+
+  {#if paid && paid.total > 0}
+    <p data-testid="hyrbrickor-paid">
+      {t('hyrbrickor.paid', { total: paid.total, cash: paid.cash, swish: paid.swish })}
+    </p>
+  {/if}
 
   {#if loading}
     <p class="muted" data-testid="hyrbrickor-loading">{t('hyrbrickor.loading')}</p>
