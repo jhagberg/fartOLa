@@ -24,6 +24,8 @@
   import { listCompetitions, postAccess } from '#lib/api/client.ts';
   import type { CompetitionDTO } from '@fartola/shared-types';
   import Button from '#lib/ui/Button.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
 
   let competitions: CompetitionDTO[] = $state([]);
   let selectedCompId: string = $state('');
@@ -37,6 +39,7 @@
   });
 
   async function loadCompetitions(): Promise<void> {
+    loadError = false;
     try {
       const r = await listCompetitions();
       competitions = r.competitions;
@@ -77,7 +80,7 @@
 
   <div class="card">
     {#if loadError}
-      <p class="err">{t('access.error.unknown')}</p>
+      <LoadError message={t('access.loadError')} onretry={() => void loadCompetitions()} />
     {:else}
       <div class="field">
         <!-- svelte-ignore a11y_label_has_associated_control -->
@@ -99,10 +102,13 @@
             {/each}
           {/if}
         </select>
+        {#if competitions.length === 0}
+          <p class="hint">{t('access.empty')}</p>
+        {/if}
       </div>
 
       <div class="field">
-        <label class="label" for="access-code">{t('access.codePlaceholder')}</label>
+        <label class="label" for="access-code">{t('access.codeLabel')}</label>
         <input
           id="access-code"
           class="code-input"
@@ -116,20 +122,23 @@
           bind:value={code}
           disabled={submitting}
           onkeydown={handleKeydown}
-          aria-describedby={errorKey ? 'access-error' : undefined}
+          aria-describedby={errorKey ? 'access-code-hint access-error' : 'access-code-hint'}
           aria-invalid={errorKey ? 'true' : undefined}
         />
+        <p id="access-code-hint" class="hint">{t('access.codeHint')}</p>
       </div>
 
       {#if errorKey}
         <p id="access-error" class="err" role="alert" aria-live="assertive" data-testid="access-error">
-          {t(errorKey)}
+          <Icon name="alert-triangle" />
+          <span>{t(errorKey)}</span>
         </p>
       {/if}
 
       <Button
         variant="primary"
         disabled={!selectedCompId || !code.trim() || submitting}
+        disabledHint={t('access.missing')}
         onclick={() => void handleSubmit()}
         data-testid="access-submit"
       >
@@ -182,22 +191,25 @@
     border-radius: var(--radius);
     background: var(--bg);
     color: var(--fg);
-    font-size: var(--fs-label);
+    font-size: var(--fs-body);
     width: 100%;
     box-sizing: border-box;
-  }
-  .select:focus,
-  .code-input:focus {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
   }
   .code-input {
     font-family: var(--font-mono);
     letter-spacing: 0.03em;
   }
+  .hint {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
+  }
   .err {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
 </style>

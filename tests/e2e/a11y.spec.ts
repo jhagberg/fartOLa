@@ -16,6 +16,12 @@ import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
 import { prepareSettings } from './helpers/settings.ts';
 import {
+  prepareAccess,
+  prepareAccessWrongCode,
+  prepareAccessLoadError,
+  prepareAccessEmpty,
+} from './helpers/access.ts';
+import {
   prepareWizardStep1,
   prepareWizardStep2,
   prepareWizardImportError,
@@ -92,6 +98,10 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep2],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardImportError],
     ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardDiscard],
+    ['/access', (p) => p.getByTestId('access-view'), prepareAccess],
+    ['/access', (p) => p.getByTestId('access-view'), prepareAccessWrongCode],
+    ['/access', (p) => p.getByTestId('access-view'), prepareAccessLoadError],
+    ['/access', (p) => p.getByTestId('access-view'), prepareAccessEmpty],
   ];
   const known = JSON.parse(
     readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
