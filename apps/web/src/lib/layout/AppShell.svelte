@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
+  import { afterNavigate } from '$app/navigation';
   import Sidebar from './Sidebar.svelte';
   import TopBar from './TopBar.svelte';
   import Icon from '../ui/Icon.svelte';
@@ -67,6 +68,11 @@
     };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
+  });
+  // A page change closes the drawer without closeDrawer(): focus belongs
+  // to the new page, not to the menu button.
+  afterNavigate(() => {
+    if (drawerOpen) drawerOpen = false;
   });
   /** Element refs for focus management. When the drawer opens we move
    * focus to the close button so screen readers + keyboard users land

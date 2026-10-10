@@ -59,6 +59,7 @@
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
   import EventorStatusLine from '#lib/components/EventorStatusLine.svelte';
+  import { refreshEventorStatus } from '#lib/stores/eventorStatus.svelte.ts';
   import AppearanceSettings from '#lib/components/AppearanceSettings.svelte';
   import { baselineKey, latestOnly } from '#lib/screens/radio-status.ts';
   import type { RadioStatus } from '@fartola/shared-types';
@@ -199,6 +200,7 @@
       // Clear the draft so the masked placeholder shows the new value.
       row.draft = '';
       row.visibility = 'password';
+      if (key === 'EVENTOR_API_KEY') void refreshEventorStatus();
     } catch {
       row.toast = 'error';
     } finally {

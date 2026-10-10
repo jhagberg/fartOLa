@@ -137,3 +137,32 @@ test('Eventor section shows the cache age and a refresh button in dev', async ({
   );
   await expect(page.getByTestId('eventor-refresh-btn')).toBeVisible();
 });
+
+test('saving the Eventor key updates the status line at once', async ({ page }) => {
+  let saved = false;
+  await page.route('**/api/eventor/status', (r) =>
+    r.fulfill({
+      json: saved
+        ? { state: 'ready', ageDays: 0, competitorCount: 10, fartola_dev: false }
+        : { state: 'no_key', ageDays: null, competitorCount: 0, fartola_dev: false },
+    })
+  );
+  await page.route('**/api/settings/integrations', (r) => {
+    if (r.request().method() === 'PUT') {
+      saved = true;
+      return r.fulfill({ json: { ok: true, key: 'EVENTOR_API_KEY', set: true, source: 'config' } });
+    }
+    return r.fulfill({
+      json: {
+        integrations: [{ key: 'EVENTOR_API_KEY', set: saved, source: saved ? 'config' : 'none' }],
+      },
+    });
+  });
+  await page.goto('/installningar#eventor');
+  const label = page.locator('#eventor').getByTestId('eventor-status-label');
+  await expect(label).toHaveText('Eventor: nyckel saknas');
+  const row = page.locator('#eventor [data-integration-key="EVENTOR_API_KEY"]');
+  await row.getByTestId('settings-row-input').fill('test-key-123');
+  await row.getByTestId('settings-row-save').click();
+  await expect(label).toHaveText('Eventor: cache OK (0 dagar gammal)');
+});
