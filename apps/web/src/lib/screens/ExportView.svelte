@@ -263,8 +263,9 @@
     border: 1px solid var(--ok);
   }
   .box.err {
-    background: color-mix(in srgb, var(--err) 12%, transparent);
-    border: 1px solid var(--err);
+    border: 1px solid var(--dnf);
+    background: var(--dnf-soft);
+    color: var(--fg);
   }
   .box ul {
     margin: 8px 0 0;

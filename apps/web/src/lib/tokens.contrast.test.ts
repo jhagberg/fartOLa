@@ -58,7 +58,7 @@ const lum = (c: string) => {
   const [r, g, b] = linear(c);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
-export const ratio = (a: string, b: string) => {
+const ratio = (a: string, b: string) => {
   const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
   return (hi + 0.05) / (lo + 0.05);
 };
@@ -70,6 +70,12 @@ const PAIRS: Array<[string, string, number]> = [
   ['--fg-muted', '--bg-sunken', 7],
   ['--fg-muted', '--pend-soft', 7],
   ['--fg-faint', '--bg', 4.5],
+  ['--fg-faint', '--bg-sunken', 4.5],
+  ['--fg-faint', '--pend-soft', 4.5],
+  ['--fg-muted', '--bg-elev', 7],
+  ['--ok', '--bg', 4.5],
+  ['--mp-fg', '--bg', 4.5],
+  ['--dnf', '--bg', 4.5],
   ['--accent-fg', '--accent', 4.5],
   ['--ok', '--ok-soft', 4.5],
   ['--mp-fg', '--mp-soft', 4.5],
@@ -122,4 +128,11 @@ describe('accent variants keep button text readable', () => {
       ratio(resolve(tokens, '--accent-fg'), resolve(tokens, '--accent'))
     ).toBeGreaterThanOrEqual(4.5);
   });
+});
+
+it('bright-sun amber text is at least as strong as the default', () => {
+  const sun = MODES['bright-sun']!;
+  expect(ratio(resolve(sun, '--mp-fg'), resolve(sun, '--bg'))).toBeGreaterThanOrEqual(
+    ratio(resolve(root, '--mp-fg'), resolve(root, '--bg'))
+  );
 });

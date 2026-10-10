@@ -154,7 +154,7 @@
     width: 100%;
   }
   .reconnect-btn:hover:not(:disabled) {
-    background: var(--bg-hover, var(--bg-elev));
+    background: var(--bg-sunken);
   }
   .reconnect-btn:focus-visible {
     outline: 2px solid var(--fg);

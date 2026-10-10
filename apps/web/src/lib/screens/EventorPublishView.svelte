@@ -164,8 +164,9 @@
     word-break: break-all;
   }
   .box.err {
-    background: color-mix(in srgb, var(--err) 12%, transparent);
-    border: 1px solid var(--err);
+    border: 1px solid var(--dnf);
+    background: var(--dnf-soft);
+    color: var(--fg);
   }
   .btn {
     display: inline-flex;

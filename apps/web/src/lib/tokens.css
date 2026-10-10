@@ -100,16 +100,15 @@
   --punch-order-fill: oklch(0.93 0.08 85);
   --punch-order-line: oklch(0.45 0.11 65);
 
-  --icon-sm: 16px;
-  --icon-md: 20px;
-  --icon-lg: 24px;
-
   /* ───── Typography ────────────────────────────────────────────────── */
-  --fs-caption: 12px;
+  --fs-caption: 14px; /* was 12px; ADR-0016 r7 (audit LO-8) */
   --fs-label: 14px;
   --fs-body: 16px;
   --fs-heading: 22px;
   --fs-display: 28px;
+
+  --scrim: rgba(20, 20, 30, 0.32);
+  --focus-ring: 2px solid var(--fg);
 
   /* Receipt typography (consumed by plan 15 print path) */
   --fs-rcpt-title: 13px;
@@ -174,7 +173,7 @@
   --ok: #005f1a;
   --mp: #8a4a00;
   --dnf: #8a0010;
-  --mp-fg: #8a4a00;
+  --mp-fg: #7a4100;
   --punch-ok-fill: #d8eedd;
   --punch-ok-line: #005f1a;
   --punch-miss-fill: #8a0010;
@@ -221,7 +220,7 @@ button {
    2px ink ring with an offset, so it sits on the page (>=7:1), not on the
    control's own fill. */
 :focus-visible {
-  outline: 2px solid var(--fg);
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 input,

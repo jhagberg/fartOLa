@@ -292,7 +292,7 @@
   .modal-scrim {
     position: fixed;
     inset: 0;
-    background: rgba(20, 20, 30, 0.32);
+    background: var(--scrim);
     display: flex;
     align-items: center;
     justify-content: center;

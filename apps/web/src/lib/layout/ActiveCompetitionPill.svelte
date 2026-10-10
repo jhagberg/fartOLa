@@ -203,7 +203,7 @@
     min-height: 44px;
   }
   .pill:hover {
-    background: var(--bg-hover, var(--bg-elev));
+    background: var(--bg-sunken);
   }
   .pill:focus-visible {
     outline: 2px solid var(--fg);
@@ -312,7 +312,7 @@
   }
   .row:hover,
   .row:focus-visible {
-    background: var(--bg-hover, rgba(120, 120, 140, 0.08));
+    background: var(--bg-sunken);
   }
   .row.current {
     background: rgba(120, 120, 200, 0.08);
