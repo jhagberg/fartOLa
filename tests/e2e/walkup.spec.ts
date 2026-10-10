@@ -200,6 +200,8 @@ test('walk-up creates competitor (overlay on readout — C-M3 LOCKED)', async ({
   // Klubb is optional; leave blank to also cover the null path.
   await page.getByTestId('walkup-class').selectOption(h21Id);
   // Bricka pre-filled from ?walkup=9999999; no edit needed.
+  // Consent starts unticked (audit WA-2, 2026-10-10).
+  await page.getByTestId('walkup-consent').check();
 
   await page.getByTestId('walkup-save').click();
 

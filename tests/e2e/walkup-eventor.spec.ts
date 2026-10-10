@@ -151,6 +151,8 @@ test('Hyrbricka happy path: contact fieldset → save → hired_cards row exists
   // Fill phone (email left blank — D-HB-3 says either satisfies).
   await page.getByTestId('walkup-hc-phone').fill('0701234567');
 
+  // Consent starts unticked (audit WA-2, 2026-10-10).
+  await page.getByTestId('walkup-consent').check();
   // Save; modal closes.
   await page.getByTestId('walkup-save').click();
   await page.waitForURL(new RegExp(`/competition/[^/]+/readout$`), { timeout: 5_000 });
@@ -184,6 +186,7 @@ test('Hyrbricka validation: empty phone+email shows error, modal stays open', as
   await page.getByTestId('walkup-hired').check();
   await expect(page.getByTestId('walkup-hired-fields')).toBeVisible();
 
+  await page.getByTestId('walkup-consent').check();
   // Leave both phone AND email empty; click Save.
   await page.getByTestId('walkup-save').click();
 

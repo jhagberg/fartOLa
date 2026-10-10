@@ -129,6 +129,8 @@ test('registration-desk: queue + auto-advance + dedupe', async ({ page, request 
   // a valid id so the POST validates).
   const classSelect = page.getByTestId('walkup-class');
   await classSelect.selectOption({ index: 1 });
+  // Consent starts unticked (audit WA-2, 2026-10-10).
+  await page.getByTestId('walkup-consent').check();
   await page.getByTestId('walkup-save').click();
   // Wait for the modal to re-render with the next card.
   await expect(page.getByTestId('walkup-card')).toHaveValue('9999992', { timeout: 5_000 });
@@ -149,6 +151,7 @@ test('registration-desk: queue + auto-advance + dedupe', async ({ page, request 
 
   await page.getByTestId('walkup-name').fill('Test Runner Two');
   await classSelect.selectOption({ index: 1 });
+  await page.getByTestId('walkup-consent').check();
   await page.getByTestId('walkup-save').click();
 
   await expect(page.getByTestId('walkup-card')).toHaveValue('1234567', { timeout: 5_000 });
