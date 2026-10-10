@@ -205,6 +205,7 @@
   "importRunners.errImportFailed": "Import failed — please retry.",
   "importRunners.errEventorDown": "Eventor is not responding — retry later or upload an EntryList file.",
   "importRunners.errWrongKind": "The file is not an EntryList — choose an IOF EntryList XML.",
+  "importRunners.courseSuccess": "Course file imported: {{count}} courses.",
 
   "home.title": "Competitions",
   "home.empty.title": "No active competitions",
