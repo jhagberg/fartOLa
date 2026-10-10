@@ -5,7 +5,7 @@
 // entries) and to card rentals; pre-entries pay what Eventor decided.
 //
 // Routes:
-//   GET  /api/competitions/:id/fees              — card fee + every class's fees
+//   GET  /api/competitions/:id/fees              — date, card fee, every class's fees
 //   PUT  /api/competitions/:id/fees              — set them (all or nothing)
 //   POST /api/competitions/:id/fees/from-eventor — copy the linked event's
 //        class fees from Eventor (eventor/entryFees.ts), matched by name
@@ -42,7 +42,11 @@ const FeesInput = z
 export default async function registerFees(app: FastifyInstance): Promise<void> {
   const competition = (id: string) =>
     app.fartolaDb.db
-      .select({ cardFee: competitions.cardFee, eventorEventId: competitions.eventorEventId })
+      .select({
+        date: competitions.date,
+        cardFee: competitions.cardFee,
+        eventorEventId: competitions.eventorEventId,
+      })
       .from(competitions)
       .where(eq(competitions.id, id))
       .get();
@@ -57,6 +61,8 @@ export default async function registerFees(app: FastifyInstance): Promise<void> 
       .orderBy(asc(classes.name))
       .all();
     return {
+      // The date tells a late entry from a walk-up (fees.ts EntryTiming).
+      date: comp.date,
       card_fee: comp.cardFee,
       classes: rows.map((r) => ({
         class_id: r.id,
@@ -142,6 +148,9 @@ export default async function registerFees(app: FastifyInstance): Promise<void> 
               entryFee: f.entryFee,
               youthEntryFee: f.youthEntryFee,
               lateFeePct: f.lateFeePct,
+              eventorEntryFeeId: f.entryFeeId,
+              eventorYouthFeeId: f.youthFeeId,
+              eventorLateFeeId: f.lateFeeId,
             })
             .where(eq(classes.id, r.id))
             .run();

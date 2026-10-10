@@ -19,6 +19,7 @@
 import { eventorGet, first, unescapeXml, type FetchEventorClassTypesOpts } from './eventClasses.ts';
 
 export interface EventorFee {
+  id: number;
   amount: number;
   percent: boolean;
   youth: boolean;
@@ -30,6 +31,11 @@ export interface EventorClassFees {
   entryFee: number | null;
   youthEntryFee: number | null;
   lateFeePct: number | null;
+  /** The EntryFeeId behind each amount, for Fee/Id in the ResultList;
+   * null when the amount sums several Eventor fees. */
+  entryFeeId: number | null;
+  youthFeeId: number | null;
+  lateFeeId: number | null;
 }
 
 const attr = (open: string, name: string) =>
@@ -46,6 +52,7 @@ export function parseEntryFees(xml: string): Map<number, EventorFee> {
     const type = attr(open, 'entryFeeType') ?? attr(open, 'type');
     const from = first(body, 'ValidFromDate');
     out.set(id, {
+      id,
       amount,
       percent: attr(open, 'valueOperator') === 'percent',
       youth: type === 'youth' || (type !== 'adult' && /<FromDateOfBirth\b/.test(body)),
@@ -70,6 +77,7 @@ export function parseClassFeeIds(xml: string): Map<string, number[]> {
 }
 
 const sum = (fees: EventorFee[]) => fees.reduce((a, f) => a + f.amount, 0);
+const onlyId = (fees: EventorFee[]) => (fees.length === 1 ? fees[0]!.id : null);
 
 /** A class's fees from the Eventor fees it references. */
 export function classFees(fees: EventorFee[]): EventorClassFees {
@@ -79,10 +87,14 @@ export function classFees(fees: EventorFee[]): EventorClassFees {
   const adult = ordinary.filter((f) => !f.youth);
   const youth = ordinary.filter((f) => f.youth);
   const pct = fees.filter((f) => f.percent);
+  const both = adult.length > 0 && youth.length > 0;
   return {
     entryFee: ordinary.length === 0 ? null : sum(adult.length > 0 ? adult : youth),
-    youthEntryFee: adult.length > 0 && youth.length > 0 ? sum(youth) : null,
+    youthEntryFee: both ? sum(youth) : null,
     lateFeePct: pct.length === 0 ? null : Math.round(sum(pct)),
+    entryFeeId: onlyId(adult.length > 0 ? adult : youth),
+    youthFeeId: both ? onlyId(youth) : null,
+    lateFeeId: onlyId(pct),
   };
 }
 
