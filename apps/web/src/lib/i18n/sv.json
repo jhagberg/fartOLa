@@ -542,7 +542,7 @@
 
   "lottning.title": "Startlottning",
   "lottning.mode": "Lottningsmetod",
-  "lottning.soft": "SOFT (klubbspridning)",
+  "lottning.soft": "Enligt SOFT:s regler (klubbspridning)",
   "lottning.random": "Slumpmässig",
   "lottning.simultaneous": "Masstart",
   "lottning.firstStart": "Första start",
