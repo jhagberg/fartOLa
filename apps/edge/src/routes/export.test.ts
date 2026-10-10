@@ -319,28 +319,31 @@ describe('GET /api/competitions/:id/export[/preview]', () => {
     assert.deepEqual(ids, [{ '#text': 4711, '@_type': 'Sweden' }, null]);
   });
 
-  test('SOFT TR 4.12.4, 4.12.6: the exported ResultList carries the walk-up fee and the rental of the card the runner holds', async () => {
+  test('SOFT TR 4.12.4, 4.12.6: the exported ResultList carries the charges recorded on each runner, not the current class or card', async () => {
     seedCompetitionWithThreeReads(ctx.handle, ctx.nodeId, 'comp-fee');
-    // H21 is an open class here with Eventor fee ids; Anna was born 2010,
-    // so she was charged the youth fee and its id goes out.
-    ctx.handle.db
-      .update(classes)
-      .set({
-        classKind: 'oppen',
-        eventorEntryFeeId: 11,
-        eventorYouthFeeId: 13,
-        eventorLateFeeId: 12,
-      })
-      .where(eq(classes.id, 'cls-comp-fee-h21'))
-      .run();
+    // Anna was charged the youth fee (Eventor id 13); her birth year has
+    // since been scrubbed and the class has new fee ids: the export keeps
+    // what was recorded.
     ctx.handle.db
       .update(competitors)
-      .set({ entryFee: 90, lateFee: 0, birthYear: 2010 })
+      .set({ entryFee: 90, lateFee: 0, eventorEntryFeeId: 13, birthYear: null })
       .where(eq(competitors.id, 'cmp-comp-fee-anna'))
       .run();
     ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'senior', eventorEntryFeeId: 99 })
+      .where(eq(classes.id, 'cls-comp-fee-h21'))
+      .run();
+    // Bo rented card 1428824 and was charged 30 kr. Another runner's rental
+    // row for Cia's card carries no charge to Cia.
+    ctx.handle.db
+      .update(competitors)
+      .set({ cardFee: 30 })
+      .where(eq(competitors.id, 'cmp-comp-fee-bo'))
+      .run();
+    ctx.handle.db
       .insert(hiredCards)
-      .values({ competitionId: 'comp-fee', cardNumber: 1428824, markedAtMs: 1_000, fee: 30 })
+      .values({ competitionId: 'comp-fee', cardNumber: 248215, markedAtMs: 1_000, fee: 30 })
       .run();
     const res = await ctx.app.inject({
       method: 'GET',

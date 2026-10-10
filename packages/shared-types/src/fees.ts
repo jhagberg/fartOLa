@@ -64,10 +64,15 @@ export interface EntryFee {
   capped: boolean;
 }
 
+/** Youth pay the youth fee: everyone in inskolning, youth in an open
+ * class. */
+export const paysYouthFee = (kind: ClassKind | null, youthRunner: boolean): boolean =>
+  kind === 'inskolning' || (kind === 'oppen' && youthRunner);
+
 /** The fee for a late or walk-up entry. `youthRunner` matters only in open
  * classes. */
 export function entryFeeFor(c: ClassFees, youthRunner: boolean, timing: EntryTiming): EntryFee {
-  const youth = c.classKind === 'inskolning' || (c.classKind === 'oppen' && youthRunner);
+  const youth = paysYouthFee(c.classKind, youthRunner);
   const entry = (youth ? (c.youthEntryFee ?? c.entryFee) : c.entryFee) ?? 0;
   const wanted = c.lateFeePct ?? 0;
   const pct = Math.min(wanted, surchargeCapPct(c.classKind, youth, timing));

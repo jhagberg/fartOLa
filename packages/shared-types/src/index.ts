@@ -134,7 +134,7 @@ export { softStatus, SOFT_STATUS_SV } from './resultStatus.ts';
 export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
 
 // --- Entry fees for late and walk-up entries (SOFT TR 4.12.6) -------------
-export { entryFeeFor, isYouthByBirthYear, surchargeCapPct } from './fees.ts';
+export { entryFeeFor, isYouthByBirthYear, paysYouthFee, surchargeCapPct } from './fees.ts';
 export type { ClassFees, EntryFee, EntryTiming } from './fees.ts';
 
 // --- Competition clock (epoch ms ↔ one fixed offset per competition) -----

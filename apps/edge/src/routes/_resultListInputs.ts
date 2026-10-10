@@ -7,10 +7,8 @@
 
 import { and, eq, isNotNull, or } from 'drizzle-orm';
 
-import { isYouthByBirthYear } from '@fartola/shared-types';
-
 import type { DbHandle } from '../db/index.ts';
-import { classes, competitions, competitors, hiredCards } from '../db/schema.ts';
+import { competitors } from '../db/schema.ts';
 import type { ExportInput, RunnerFees } from '../xml/iofExport.ts';
 import { loadCourseDTOs } from './_courses.ts';
 
@@ -25,62 +23,29 @@ export function resultListInputs(
       and(eq(competitors.competitionId, competitionId), isNotNull(competitors.eventorPersonId))
     )
     .all();
-  // A rental belongs to the runner who holds the card now. The Eventor fee
-  // id follows the fee charged: the youth fee for youth in an open class
-  // and in inskolning (shared-types fees.ts), else the class fee.
-  const date =
-    handle.db
-      .select({ date: competitions.date })
-      .from(competitions)
-      .where(eq(competitions.id, competitionId))
-      .get()?.date ?? '';
+  // The charges as recorded at registration and when the rental opened
+  // (routes/competitors.ts), Eventor fee ids included; nothing is derived
+  // from the current class, card or birth year.
   const charged = handle.db
     .select({
       id: competitors.id,
       entry: competitors.entryFee,
       late: competitors.lateFee,
-      card: hiredCards.fee,
-      birthYear: competitors.birthYear,
-      kind: classes.classKind,
-      entryFeeId: classes.eventorEntryFeeId,
-      youthFeeId: classes.eventorYouthFeeId,
-      lateFeeId: classes.eventorLateFeeId,
+      card: competitors.cardFee,
+      entryFeeId: competitors.eventorEntryFeeId,
+      lateFeeId: competitors.eventorLateFeeId,
     })
     .from(competitors)
-    .innerJoin(classes, eq(classes.id, competitors.classId))
-    .leftJoin(
-      hiredCards,
-      and(
-        eq(hiredCards.competitionId, competitors.competitionId),
-        eq(hiredCards.cardNumber, competitors.cardNumber)
-      )
-    )
     .where(
       and(
         eq(competitors.competitionId, competitionId),
-        or(isNotNull(competitors.entryFee), isNotNull(hiredCards.fee))
+        or(isNotNull(competitors.entryFee), isNotNull(competitors.cardFee))
       )
     )
     .all();
   return {
     courses: loadCourseDTOs(handle, competitionId),
     eventorPersonIds: new Map(ids.map((r) => [r.id, r.eventorPersonId!])),
-    fees: new Map(
-      charged.map((r): [string, RunnerFees] => {
-        const youth =
-          r.kind === 'inskolning' ||
-          (r.kind === 'oppen' && r.birthYear !== null && isYouthByBirthYear(r.birthYear, date));
-        return [
-          r.id,
-          {
-            entry: r.entry,
-            late: r.late,
-            card: r.card,
-            entryFeeId: youth && r.youthFeeId !== null ? r.youthFeeId : r.entryFeeId,
-            lateFeeId: r.lateFeeId,
-          },
-        ];
-      })
-    ),
+    fees: new Map(charged.map((r): [string, RunnerFees] => [r.id, r])),
   };
 }
