@@ -47,6 +47,8 @@ test('design-lab screens', async ({ browser, request }) => {
     ['import', `/competition/${id}/import`],
     ['installningar', '/installningar'],
     ['access', '/access'],
+    ['speaker', `/competition/${id}/speaker`],
+    ['kontroll', `/competition/${id}/kontroll`],
   ];
   for (const [mode, high] of [
     ['default', false],
@@ -63,8 +65,7 @@ test('design-lab screens', async ({ browser, request }) => {
         await page.waitForTimeout(300);
         await page.screenshot({ path: `${OUT}/${name}-${tag}-${mode}.png`, fullPage: true });
       }
-      await page.goto('/');
-      await page.getByTestId('open-wizard').first().click();
+      await page.goto('/competition/_new?wizard=1');
       await page.getByTestId('wiz-name').waitFor();
       if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
       await page.screenshot({ path: `${OUT}/wizard-${tag}-${mode}.png` });
