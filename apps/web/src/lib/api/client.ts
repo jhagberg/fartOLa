@@ -821,8 +821,8 @@ export function searchEventorClubs(
   });
 }
 
-/** GET /api/eventor/status — current cache health for the TweaksPanel
- * indicator. fartola_dev is server-side-derived from process.env at
+/** GET /api/eventor/status — current cache health for the settings-page
+ * Eventor status line. fartola_dev is server-side-derived from process.env at
  * request time so the UI's admin-button gate is correct in production
  * builds (import.meta.env.DEV would be bundler-time and always false). */
 export function getEventorStatus(): Promise<EventorStatusDTO> {

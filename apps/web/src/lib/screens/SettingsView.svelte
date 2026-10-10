@@ -58,6 +58,7 @@
   } from '#lib/api/client.ts';
   import { activeCompetition } from '#lib/stores/activeCompetition.svelte.ts';
   import Button from '#lib/ui/Button.svelte';
+  import EventorStatusLine from '#lib/components/EventorStatusLine.svelte';
   import AppearanceSettings from '#lib/components/AppearanceSettings.svelte';
   import { baselineKey, latestOnly } from '#lib/screens/radio-status.ts';
   import type { RadioStatus } from '@fartola/shared-types';
@@ -503,6 +504,7 @@
       <h2 tabindex="-1">{t('settings.integrations.title')}</h2>
     </header>
     <p class="desc muted small">{t('settings.integrations.desc')}</p>
+    <EventorStatusLine />
 
     {#if loading}
       <p class="muted" data-testid="settings-loading">{t('settings.integrations.loading')}</p>

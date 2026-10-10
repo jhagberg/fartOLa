@@ -112,3 +112,26 @@ test('publish: missing Eventor key links to the key field', async ({ page, reque
     KEY_LINK
   );
 });
+
+test('Eventor section shows that the key is missing', async ({ page }) => {
+  await page.route('**/api/eventor/status', (r) =>
+    r.fulfill({
+      json: { state: 'no_key', ageDays: null, competitorCount: 0, fartola_dev: false },
+    })
+  );
+  await page.goto('/installningar');
+  await expect(page.locator('#eventor').getByTestId('eventor-status-label')).toHaveText(
+    'Eventor: nyckel saknas'
+  );
+});
+
+test('Eventor section shows the cache age and a refresh button in dev', async ({ page }) => {
+  await page.route('**/api/eventor/status', (r) =>
+    r.fulfill({ json: { state: 'ready', ageDays: 3, competitorCount: 10, fartola_dev: true } })
+  );
+  await page.goto('/installningar');
+  await expect(page.locator('#eventor').getByTestId('eventor-status-label')).toHaveText(
+    'Eventor: cache OK (3 dagar gammal)'
+  );
+  await expect(page.getByTestId('eventor-refresh-btn')).toBeVisible();
+});

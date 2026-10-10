@@ -1,12 +1,12 @@
 // Authored for fartola. Not ported from upstream.
 //
 // Svelte 5 runes store mirroring bridgeStatus.svelte.ts. Backs the
-// TweaksPanel Eventor row (Plan 02-02 task 4).
+// settings-page Eventor status line (Plan 02-02 task 4).
 //
 //   getEventorStatus() returns the current snapshot (state, ageDays,
-//   competitorCount, fartola_dev, refreshing flag). On TweaksPanel
-//   mount the panel calls refreshEventorStatus() once to prime the
-//   row; clicking the FARTOLA_DEV-gated "Uppdatera" button calls
+//   competitorCount, fartola_dev, refreshing flag). On mount
+//   the status line calls refreshEventorStatus() once to prime the
+//   line; clicking the FARTOLA_DEV-gated "Uppdatera" button calls
 //   triggerEventorRefresh() which optimistically flips state to
 //   'refreshing' then re-fetches the status to land the truth.
 //
@@ -31,7 +31,7 @@ export interface EventorStatusState {
   state: EventorStatusVisible;
   ageDays: number | null;
   competitorCount: number;
-  /** Mirrors the server's fartola_dev — TweaksPanel gates the
+  /** Mirrors the server's fartola_dev — the status line gates the
    * "Uppdatera" button on this so production builds don't show it. */
   fartola_dev: boolean;
 }
@@ -76,7 +76,7 @@ export async function refreshEventorStatus(): Promise<void> {
 }
 
 /** POST /api/__admin/eventor/refresh (FARTOLA_DEV-gated server-side).
- * Optimistically flips state to 'refreshing' so the panel shows feedback
+ * Optimistically flips state to 'refreshing' so the line shows feedback
  * immediately, then re-fetches the status after the admin endpoint
  * returns. */
 export async function triggerEventorRefresh(): Promise<void> {

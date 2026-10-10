@@ -498,6 +498,14 @@
   "tw.off": "Off",
   "tw.font": "Type pair",
 
+  "settings.eventor.ready": "Eventor: cache OK ({{days}} days old)",
+  "settings.eventor.stale": "Eventor: cache is stale — refresh when online",
+  "settings.eventor.offline": "Eventor: no internet connection",
+  "settings.eventor.no_key": "Eventor: API key missing",
+  "settings.eventor.refreshing": "Eventor: refreshing...",
+  "settings.eventor.unknown": "Eventor: checking...",
+  "settings.eventor.refreshButton": "Refresh",
+
   "settings.title": "Settings",
   "settings.integrations.title": "Integration keys",
   "settings.integrations.desc": "API keys for external systems. Values are stored locally and never shown again after you click Save — you must re-enter to view.",
