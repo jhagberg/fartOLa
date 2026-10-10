@@ -218,7 +218,7 @@
     border-top: 1px solid var(--border);
   }
   .version {
-    font-size: 11px;
+    font-size: var(--fs-label);
     color: var(--fg-faint);
     font-family: var(--font-mono);
     padding-top: var(--space-xs);

@@ -613,6 +613,7 @@
   "settings.meos.allowWarning": "Warning: without a password, everyone on the network can read all entries and add runners through the MeOS connection.",
 
   "common.class": "Class",
+  "common.retry": "Try again",
   "common.startTime": "Start time",
 
   "lottning.title": "Start draw",

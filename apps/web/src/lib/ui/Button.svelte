@@ -26,25 +26,35 @@
     variant?: Variant;
     size?: Size;
     children?: Snippet;
+    /** Shown next to the button, and linked to it, while it is disabled. */
+    disabledHint?: string;
   }
 
   let {
     variant = 'primary',
     size = 'md',
     type = 'button',
+    disabled,
+    disabledHint,
     children,
     class: className = '',
     ...rest
   }: Props = $props();
+
+  const uid = $props.id();
+  const hintId = `${uid}-hint`;
 </script>
 
 <button
   {type}
+  {disabled}
+  aria-describedby={disabled && disabledHint ? hintId : undefined}
   class="btn variant-{variant} size-{size} {className}"
   {...rest}
 >
   {@render children?.()}
 </button>
+{#if disabled && disabledHint}<span class="btn-hint" id={hintId}>{disabledHint}</span>{/if}
 
 <style>
   .btn {
@@ -72,10 +82,6 @@
   }
   .btn:active {
     transform: translateY(1px);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
   }
   .variant-primary {
     background: var(--accent);
@@ -107,6 +113,17 @@
     color: var(--dnf);
     border-color: var(--dnf);
     background: var(--bg-elev);
+  }
+  .btn:disabled {
+    background: var(--bg-sunken);
+    color: var(--fg-muted);
+    border-color: var(--border);
+    cursor: not-allowed;
+  }
+  .btn-hint {
+    font-size: var(--fs-label);
+    color: var(--fg-muted);
+    align-self: center;
   }
   .size-sm {
     height: var(--hit);

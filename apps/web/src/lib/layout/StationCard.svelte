@@ -118,20 +118,20 @@
     justify-content: space-between;
   }
   .row.small {
-    font-size: 11px;
+    font-size: var(--fs-label);
   }
   .row.title {
-    font-size: 11px;
+    font-size: var(--fs-label);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);
     font-weight: 600;
   }
   .name {
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .status-label {
-    font-size: 11px;
+    font-size: var(--fs-label);
   }
   .faint {
     color: var(--fg-faint);
@@ -156,16 +156,12 @@
   .reconnect-btn:hover:not(:disabled) {
     background: var(--bg-sunken);
   }
-  .reconnect-btn:focus-visible {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
-  }
   .reconnect-btn:disabled {
     opacity: 0.6;
     cursor: progress;
   }
   .reconnect-error {
-    font-size: 11px;
+    font-size: var(--fs-label);
     color: var(--dnf);
     margin-top: var(--space-2xs);
     word-break: break-word;

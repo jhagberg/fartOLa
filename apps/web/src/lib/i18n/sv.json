@@ -613,6 +613,7 @@
   "settings.meos.allowWarning": "Varning: utan lösenord kan alla på nätverket läsa alla anmälda och lägga till löpare via MeOS-kopplingen.",
 
   "common.class": "Klass",
+  "common.retry": "Försök igen",
   "common.startTime": "Starttid",
 
   "lottning.title": "Startlottning",
