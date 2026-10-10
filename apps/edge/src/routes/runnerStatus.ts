@@ -10,8 +10,9 @@ import type { FastifyInstance } from 'fastify';
 
 export default async function registerRunnerStatus(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>('/api/competitions/:id/runner-status', async (req, reply) => {
-    const state =
-      app.projectionStore.get(req.params.id) ?? app.projectionStore.recomputeNow(req.params.id);
+    // Fresh projection: the list reads this right after an add, an import
+    // or a withdrawal, and must not miss the runner just written.
+    const state = app.projectionStore.recomputeNow(req.params.id);
     if (state === null) return reply.code(404).send({ error: 'competition not found' });
     return {
       runners: [...state.competitors.values()].map((v) => ({
