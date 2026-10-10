@@ -31,6 +31,7 @@
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
+  import Button from '#lib/ui/Button.svelte';
   import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
   import { getEventorEvent } from '#lib/api/client.ts';
   import { ApiError } from '#lib/api/client.ts';
@@ -43,6 +44,8 @@
   interface Props {
     name: string;
     date: string;
+    /** The date field is not empty and not a real YYYY-MM-DD day. */
+    dateInvalid: boolean;
     /** Set when a file was imported via the quickstart pane. Used to
      * render a "Banfil importerad" badge here AND to short-circuit
      * Step 2's drop zone (the wizard owns the File). */
@@ -62,11 +65,15 @@
     oneventorquickstartclear?: () => void;
     /** Current Eventor event ID (null = not linked). */
     eventorEventId?: number | null;
+    /** The raw text in the Eventor ID field; owned by the wizard so the
+     * draft survives a detour to the Eventor key settings. */
+    eventorIdInput?: string;
   }
 
   let {
     name,
     date,
+    dateInvalid,
     preimportedFile,
     onnamechange,
     ondatechange,
@@ -75,17 +82,17 @@
     oneventorquickstart,
     oneventorquickstartclear,
     eventorEventId = null,
+    eventorIdInput = $bindable(''),
   }: Props = $props();
 
   let quickstartError = $state<string | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
 
   // --- Eventor quickstart state ------------------------------------------
-  /** The raw text the operator types in the Eventor event ID field. */
-  let eventorIdInput = $state('');
   let eventorFetching = $state(false);
   let eventorError = $state<string | null>(null);
   let eventorNoKey = $state(false);
+
 
   /** Same 4 KB head sample Step 2 uses — enough to land the root
    * element + the small <Event> block at the top of an IOF document. */
@@ -215,7 +222,7 @@
           eventorNoKey = true;
         }
         else if (code === 'forbidden') msg = 'Åtkomst nekad av Eventor';
-        else if (code === 'eventor_down') msg = 'Eventor svarar inte';
+        else if (code === 'eventor_down') msg = t('wiz.err.eventorDown');
         else msg = code || e.message;
       } else {
         msg = (e as Error).message || 'okänt fel';
@@ -269,14 +276,9 @@
           aria-hidden="true"
           data-testid="wiz-step1-file"
         />
-        <button
-          type="button"
-          class="btn primary"
-          onclick={openPicker}
-          data-testid="wiz-step1-quickstart-btn"
-        >
+        <Button variant="secondary" onclick={openPicker} data-testid="wiz-step1-quickstart-btn">
           <Icon name="folder-open" size={20} /> {t('wiz.step1.quickstart.button')}
-        </button>
+        </Button>
       </div>
       {#if quickstartError}
         <p class="err small" role="alert" data-testid="wiz-step1-quickstart-error">{quickstartError}</p>
@@ -288,14 +290,14 @@
           <div class="loaded-msg">{t('wiz.step1.quickstart.loaded')}</div>
           <div class="mono small">{preimportedFile.name}</div>
         </div>
-        <button
-          type="button"
-          class="btn ghost small-btn"
+        <Button
+          variant="ghost"
+          size="sm"
           onclick={clearImport}
           data-testid="wiz-step1-quickstart-clear"
         >
           {t('wiz.step1.quickstart.clear')}
-        </button>
+        </Button>
       </div>
     {/if}
   </section>
@@ -321,14 +323,14 @@
           disabled={eventorFetching}
           data-testid="wiz-evqs-input"
         />
-        <button
+        <Button
           type="submit"
-          class="btn primary"
+          variant="secondary"
           disabled={eventorFetching || eventorIdInput.trim() === ''}
           data-testid="wiz-evqs-fetch"
         >
           {eventorFetching ? t('wizard.eventor.fetching') : t('wizard.eventor.fetch')}
-        </button>
+        </Button>
       </form>
       {#if eventorError}
         <p class="err small" role="alert" data-testid="wiz-evqs-error">
@@ -342,14 +344,14 @@
         <div class="grow">
           <div class="loaded-msg">{t('wizard.eventor.loaded', { name: name || String(eventorEventId), id: eventorEventId })}</div>
         </div>
-        <button
-          type="button"
-          class="btn ghost small-btn"
+        <Button
+          variant="ghost"
+          size="sm"
           onclick={clearEventorQuickstart}
           data-testid="wiz-evqs-clear"
         >
           {t('wiz.step1.quickstart.clear')}
-        </button>
+        </Button>
       </div>
     {/if}
   </section>
@@ -385,6 +387,8 @@
         placeholder={t('wiz.date.placeholder')}
         pattern={'\\d{4}-\\d{2}-\\d{2}'}
         maxlength={10}
+        aria-invalid={dateInvalid}
+        aria-describedby={dateInvalid ? 'wiz-date-error wiz-date-helper' : 'wiz-date-helper'}
         autocomplete="off"
         spellcheck="false"
         oninput={(e) => ondatechange((e.currentTarget as HTMLInputElement).value)}
@@ -399,7 +403,12 @@
         {t('wiz.date.today')}
       </button>
     </div>
-    <small class="muted small">{t('wiz.date.helper')}</small>
+    {#if dateInvalid}
+      <p class="err small" id="wiz-date-error" data-testid="wiz-date-error">
+        {t('wiz.date.invalid')}
+      </p>
+    {/if}
+    <small class="muted small" id="wiz-date-helper">{t('wiz.date.helper')}</small>
   </div>
 </div>
 
@@ -413,14 +422,14 @@
     color: var(--fg-muted);
   }
   .small {
-    font-size: 12.5px;
+    font-size: var(--fs-label);
   }
   .field {
     display: grid;
     gap: 6px;
   }
   label {
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     font-weight: 500;
   }
@@ -486,7 +495,7 @@
   }
   .quickstart h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg);
   }
@@ -506,42 +515,6 @@
     white-space: nowrap;
     border: 0;
   }
-  .btn {
-    height: var(--hit);
-    min-height: var(--hit);
-    padding: 0 var(--space-md);
-    border-radius: var(--radius);
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev);
-    color: var(--fg);
-    font-size: var(--fs-label);
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .btn:hover {
-    background: var(--bg-sunken);
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-  }
-  .btn.primary:hover {
-    background: var(--accent-strong);
-  }
-  .btn.ghost {
-    background: transparent;
-    border-color: transparent;
-  }
-  .btn.ghost:hover {
-    background: var(--bg-sunken);
-  }
-  .small-btn {
-    height: auto;
-    min-height: 0;
-    padding: 4px 10px;
-    font-size: 12.5px;
-  }
   .err {
     color: var(--dnf);
     margin: 0;
@@ -559,7 +532,7 @@
   .loaded-row .loaded-msg {
     color: var(--ok);
     font-weight: 600;
-    font-size: 13.5px;
+    font-size: var(--fs-label);
   }
   .ok-icon {
     width: 24px;
@@ -578,10 +551,8 @@
   }
   .divider-or {
     text-align: center;
-    color: var(--fg-faint);
-    font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
     font-weight: 500;
     margin: 4px 0 -4px;
   }

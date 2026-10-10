@@ -1,29 +1,27 @@
 <!--
   Authored for fartola. Not ported from upstream.
 
-  Three-step new-competition wizard. Codex C-H3 LOCKED: step 3 fires
-  ONE atomic POST to /api/competitions/from-wizard — the previous
-  revision fired TWO sequential POSTs (createCompetition then
-  importCompetitionFile), but HTTP requests cannot share a SQL
-  transaction so a mid-flight failure left an orphan competition row.
-  This revision routes both operations through the single atomic
-  endpoint; on failure the server's SQLite transaction rolls back and
-  no orphan row persists. wizard.spec.ts test 2 is the e2e regression
-  gate.
+  Two-step new-competition wizard. Codex C-H3 LOCKED: "Skapa tävling" on
+  step 2 fires ONE atomic POST to /api/competitions/from-wizard; HTTP
+  requests cannot share a SQL transaction, so the server wraps the
+  competition INSERT and the XML ingest in one SQLite transaction. On
+  failure it rolls back and no orphan competition row persists.
+  wizard.spec.ts test 2 is the e2e regression gate. Nothing waits for a
+  reader: the competition is created and the readout opens.
 
   Wizard shell:
    - Modal scrim with click-out-to-cancel (Avbryt is non-destructive at
      all steps — deferred-POST contract).
-   - Top step indicator (1/2/3) with active + done states matching
-     screens-home.jsx.
-   - Body delegates to WizardStep1/2/3.
-   - Footer: Tillbaka (step > 1), Avbryt, Nästa (steps 1+2), and the
-     Start-button lives INSIDE step 3 so it can manage submit state.
-   - Inline error banner appears below step 3 on POST failure.
+   - Top step indicator (1/2) with active + done states.
+   - Body delegates to WizardStep1/2.
+   - Footer: Tillbaka (step 2), Avbryt, Nästa (step 1), Skapa tävling
+     (step 2). The import error banner sits under step 2.
+   - The typed name, date and Eventor ID are kept in sessionStorage while
+     the wizard is open, so a detour to the Eventor key settings does not
+     lose them. The chosen file is not kept.
 
-  State shape uses Svelte 5 runes ($state) per the plan interface block.
-  pendingFile (File) stays in memory until step 3 commits — see the
-  C-H3 deferred-POST contract.
+  pendingFile (File) stays in memory until Skapa tävling — see the C-H3
+  deferred-POST contract.
 
   Locked by:
   - 01-UI-SPEC.md §"Click 1, Click 2, Click 3" + §Wizard styling
@@ -34,9 +32,10 @@
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import { createCompetitionFromWizard, setActiveCompetition } from '#lib/api/client.ts';
   import WizardStep1 from './WizardStep1.svelte';
   import WizardStep2 from './WizardStep2.svelte';
-  import WizardStep3 from './WizardStep3.svelte';
 
   interface Props {
     /** Where Avbryt routes to. Defaults to `/` so Home → wizard →
@@ -46,16 +45,44 @@
 
   let { cancelHref = '/' }: Props = $props();
 
-  type Step = 1 | 2 | 3;
+  type Step = 1 | 2;
   type Kind = 'CourseData' | 'EntryList';
   interface PreviewMeta {
     filename: string;
     kind: Kind;
   }
 
+  const DRAFT_KEY = 'fartola-wizard-draft';
+  function loadDraft(): { name: string; date: string; eventorId: string } {
+    const empty = { name: '', date: '', eventorId: '' };
+    try {
+      const raw = sessionStorage.getItem(DRAFT_KEY);
+      if (!raw) return empty;
+      const d = JSON.parse(raw) as Partial<typeof empty>;
+      return {
+        name: typeof d.name === 'string' ? d.name : '',
+        date: typeof d.date === 'string' ? d.date : '',
+        eventorId: typeof d.eventorId === 'string' ? d.eventorId : '',
+      };
+    } catch {
+      return empty;
+    }
+  }
+  function clearDraft(): void {
+    try {
+      sessionStorage.removeItem(DRAFT_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const draft = loadDraft();
+
   let step: Step = $state(1);
-  let name = $state('');
-  let date = $state('');
+  let name = $state(draft.name);
+  let date = $state(draft.date);
+  /** The raw text typed in the Eventor ID field (lives here for the draft). */
+  let eventorIdInput = $state(draft.eventorId);
+  let submitting = $state(false);
   let pendingFile: File | null = $state(null);
   let preview: PreviewMeta | null = $state(null);
   let dropError: string | null = $state(null);
@@ -74,7 +101,22 @@
   let confirmingClose = $state(false);
 
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
-  const canAdvanceFromStep1 = $derived(name.trim().length > 0 && isoDate.test(date));
+  /** ISO shape AND a real calendar day (2026-13-99 is not one). */
+  function validDate(v: string): boolean {
+    if (!isoDate.test(v)) return false;
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }
+  const dateInvalid = $derived(date !== '' && !validDate(date));
+  const canAdvanceFromStep1 = $derived(name.trim().length > 0 && validDate(date));
+  $effect(() => {
+    const d = { name, date, eventorId: eventorIdInput };
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch {
+      /* storage unavailable */
+    }
+  });
   const canAdvanceFromStep2 = $derived(pendingFile !== null && preview !== null && !dropError);
 
   function setName(v: string): void {
@@ -96,6 +138,7 @@
     pendingFile = f;
     preview = p;
     dropError = null;
+    importError = null;
     if (parsedName) name = parsedName;
     if (parsedDate) date = parsedDate;
   }
@@ -119,6 +162,7 @@
     pendingFile = f;
     preview = p;
     dropError = null;
+    importError = null;
   }
   function rejectFile(msg: string): void {
     pendingFile = null;
@@ -128,20 +172,77 @@
   function clearDrop(): void {
     dropError = null;
   }
-  function handleImportError(msg: string): void {
-    importError = msg;
+
+  async function fileToBase64(file: File): Promise<string> {
+    const buf = await file.arrayBuffer();
+    const u8 = new Uint8Array(buf);
+    // Chunk to avoid arg-spread blowing the call stack on large files
+    // (e.g. a 5 MB XML would be ~5e6 args otherwise).
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < u8.length; i += CHUNK) {
+      const slice = u8.subarray(i, i + CHUNK);
+      bin += String.fromCharCode.apply(null, Array.from(slice));
+    }
+    return btoa(bin);
+  }
+
+  function mapServerError(status: number, body: { error: string }): string {
+    const code = body.error;
+    if (code === 'entrylist_without_courses') return t('wiz.err.needCourse');
+    if (code === 'parse_failed' || code === 'xsd_invalid') return t('wiz.err.notCourse');
+    if (code === 'ingest_failed') return t('wiz.err.import');
+    if (code === 'bad_filename' || code === 'bad_base64') return t('wiz.err.file');
+    if (code === 'file_too_large' || status === 413) return t('wiz.err.tooLarge');
+    return t('wiz.err.generic');
+  }
+
+  async function create(): Promise<void> {
+    if (!pendingFile || !canAdvanceFromStep2 || submitting) return;
+    importError = null;
+    submitting = true;
+    try {
+      const content_base64 = await fileToBase64(pendingFile);
+      const result = await createCompetitionFromWizard({
+        name,
+        date,
+        xml_file: { name: pendingFile.name, content_base64 },
+        // Plan 11 — pass Eventor linkage through to the atomic POST so
+        // the row is linked from creation without a separate PATCH.
+        ...(eventorEventId !== null ? { eventor_event_id: eventorEventId } : {}),
+      });
+      if (result.ok) {
+        clearDraft();
+        // Set the active competition so reload + bridge reconnect both
+        // point at the freshly-created row. Failure here is non-fatal —
+        // the readout view will fall back to the URL parameter.
+        try {
+          await setActiveCompetition(result.data.competition_id);
+        } catch {
+          /* non-fatal */
+        }
+        await goto(`/competition/${result.data.competition_id}/readout`);
+        return;
+      }
+      // Codex C-H3: the server's atomic transaction rolled back; no
+      // competition row exists. Show the error and stay in the wizard.
+      importError = mapServerError(result.status, result.data);
+    } catch {
+      importError = t('wiz.err.network');
+    } finally {
+      submitting = false;
+    }
   }
 
   function next(): void {
     if (step === 1 && canAdvanceFromStep1) step = 2;
-    else if (step === 2 && canAdvanceFromStep2) step = 3;
   }
   function back(): void {
     importError = null;
-    if (step === 3) step = 2;
-    else if (step === 2) step = 1;
+    if (step === 2) step = 1;
   }
   function cancel(): void {
+    clearDraft();
     void goto(cancelHref);
   }
 
@@ -180,11 +281,11 @@
   >
     <header class="modal-head">
       <h2 id="wiz-title">{t('wiz.title')}</h2>
-      <span class="muted mono small">{step}/3</span>
+      <span class="muted mono small">{step}/2</span>
     </header>
 
-    <div class="wiz-steps" aria-label="wizard progress">
-      {#each [1, 2, 3] as n (n)}
+    <div class="wiz-steps" aria-label={t('wiz.progress')}>
+      {#each [1, 2] as n (n)}
         <div class="wiz-step {step === n ? 'active' : step > n ? 'done' : ''}">
           <span class="num">
             {#if step > n}
@@ -195,7 +296,6 @@
           </span>
           <span class="lbl">
             <b>{t(`wiz.step${n}.title`)}</b>
-            <span class="small">{n === 1 ? 'Skapa' : n === 2 ? 'Importera' : 'Klar'}</span>
           </span>
         </div>
       {/each}
@@ -206,6 +306,8 @@
         <WizardStep1
           {name}
           {date}
+          {dateInvalid}
+          bind:eventorIdInput
           preimportedFile={pendingFile}
           onnamechange={setName}
           ondatechange={setDate}
@@ -224,14 +326,6 @@
           onerror={rejectFile}
           onclear={clearDrop}
         />
-      {:else}
-        <WizardStep3
-          {name}
-          {date}
-          {pendingFile}
-          {eventorEventId}
-          onerror={handleImportError}
-        />
         {#if importError}
           <div class="err-banner" role="alert" data-testid="wizard-error">
             {importError}
@@ -244,45 +338,44 @@
       <div class="discard-confirm" role="alert" data-testid="wizard-discard-confirm">
         <p class="discard-msg">{t('wiz.discard.msg')}</p>
         <div class="discard-actions">
-          <button
-            type="button"
-            class="btn ghost"
-            onclick={cancelClose}
-            data-testid="wizard-discard-cancel"
-          >
+          <Button variant="ghost" onclick={cancelClose} data-testid="wizard-discard-cancel">
             {t('wiz.discard.keep')}
-          </button>
-          <button
-            type="button"
-            class="btn danger"
-            onclick={cancel}
-            data-testid="wizard-discard-confirm-btn"
-          >
+          </Button>
+          <Button variant="danger" onclick={cancel} data-testid="wizard-discard-confirm-btn">
             {t('wiz.discard.discard')}
-          </button>
+          </Button>
         </div>
       </div>
     {/if}
     <footer class="modal-foot">
       {#if step > 1}
-        <button type="button" class="btn ghost" onclick={back} data-testid="wiz-back">
+        <Button variant="ghost" onclick={back} data-testid="wiz-back">
           <Icon name="arrow-left" size={18} /> {t('wiz.back')}
-        </button>
+        </Button>
       {/if}
-      <button type="button" class="btn ghost" onclick={cancel} data-testid="wiz-cancel">
+      <Button variant="ghost" onclick={cancel} data-testid="wiz-cancel">
         {t('wiz.cancel')}
-      </button>
+      </Button>
       <div class="spacer"></div>
-      {#if step < 3}
-        <button
-          type="button"
-          class="btn primary"
-          disabled={(step === 1 && !canAdvanceFromStep1) || (step === 2 && !canAdvanceFromStep2)}
+      {#if step === 1}
+        <Button
+          variant="primary"
+          disabled={!canAdvanceFromStep1}
+          disabledHint={t('wiz.next.missing')}
           onclick={next}
           data-testid="wiz-next"
         >
           {t('wiz.next')} <Icon name="arrow-right" size={18} />
-        </button>
+        </Button>
+      {:else}
+        <Button
+          variant="primary"
+          disabled={!canAdvanceFromStep2 || submitting}
+          onclick={create}
+          data-testid="wiz-start"
+        >
+          {submitting ? t('wiz.creating') : t('wiz.create')}
+        </Button>
       {/if}
     </footer>
   </div>
@@ -326,7 +419,7 @@
     margin-left: auto;
   }
   .small {
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .mono {
     font-family: var(--font-mono);
@@ -379,7 +472,7 @@
     display: flex;
     gap: 12px;
     align-items: center;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     border: 1px solid transparent;
   }
@@ -417,44 +510,6 @@
     font-weight: 600;
     color: inherit;
   }
-  .lbl .small {
-    font-size: 11px;
-    color: var(--fg-muted);
-  }
-  .btn {
-    height: var(--hit);
-    min-height: var(--hit);
-    padding: 0 var(--space-md);
-    border-radius: var(--radius);
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev);
-    color: var(--fg);
-    font-size: var(--fs-label);
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .btn:hover {
-    background: var(--bg-sunken);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-  }
-  .btn.primary:hover:not(:disabled) {
-    background: var(--accent-strong);
-  }
-  .btn.ghost {
-    background: transparent;
-    border-color: transparent;
-  }
-  .btn.ghost:hover {
-    background: var(--bg-sunken);
-  }
   .err-banner {
     margin-top: 16px;
     padding: 12px 16px;
@@ -462,7 +517,7 @@
     border: 1px solid var(--dnf);
     border-radius: var(--radius);
     color: var(--dnf);
-    font-size: 14px;
+    font-size: var(--fs-label);
   }
   /* Discard-confirm bar — shown only when the scrim is tapped with
      unsaved input. Lives outside .modal-body so it sits between body and
@@ -480,17 +535,12 @@
   .discard-msg {
     margin: 0;
     color: var(--fg);
-    font-size: 13.5px;
+    font-size: var(--fs-body);
     font-weight: 500;
   }
   .discard-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-  }
-  .btn.danger {
-    background: var(--dnf);
-    color: #fff;
-    border-color: var(--dnf);
   }
 </style>

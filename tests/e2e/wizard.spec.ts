@@ -5,8 +5,8 @@
 // Two tests:
 //
 //   1. **happy path** — visit /, click + Ny tävling, fill name+date,
-//      drop the IOF30 CourseData sample, wait for the simulated reader
-//      handshake, click ▶ Starta avläsning. Assert:
+//      drop the IOF30 CourseData sample, click Skapa tävling (step 2;
+//      nothing waits for a reader). Assert:
 //      - URL ends with /competition/<uuid>/readout (real UUID, no
 //        `_new` literal sentinel survived the round-trip).
 //      - Exactly ONE POST to /api/competitions/from-wizard fired.
@@ -16,8 +16,8 @@
 //   2. **C-H3 rollback regression** — same flow with the corrupt
 //      CourseData fixture (well-formed XML, XSD-invalid: Course missing
 //      required Name child). Assert:
-//      - The inline error banner appears at step 3 (xsd_invalid
-//        message contains "IOF XML 3.0").
+//      - The inline error banner appears at step 2 (xsd_invalid
+//        message says the file is no course file).
 //      - URL is STILL /competition/_new?wizard=1 — no navigation.
 //      - GET /api/competitions returns the SAME row count as before
 //        the click. This is the explicit C-H3 e2e regression gate:
@@ -31,8 +31,9 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openWizard, ENTRYLIST_FIXTURE } from './helpers/wizard.ts';
 
-// Both tests share the bridge's SQLite DB; the rollback test
+// These tests share the bridge's SQLite DB; the rollback test
 // asserts on competitions table row count, which would race with
 // the happy-path test's successful create. Force serial mode so
 // the count snapshot stays sound.
@@ -65,12 +66,10 @@ test('three-click wizard happy path (C-H3: ONE atomic POST)', async ({ page, req
   // Step 2 — setInputFiles on the hidden file input inside the DropZone.
   await page.getByTestId('drop-zone-input').setInputFiles(COURSEDATA_FIXTURE);
   await expect(page.getByTestId('wiz-preview')).toBeVisible();
-  await page.getByTestId('wiz-next').click();
 
-  // Step 3 — wait for the simulated reader handshake (1600ms) then
-  // click Starta avläsning. The button is disabled until then.
+  // Create at once: no reader step, nothing to wait for.
   const startBtn = page.getByTestId('wiz-start');
-  await expect(startBtn).toBeEnabled({ timeout: 5_000 });
+  await expect(startBtn).toBeEnabled();
   await startBtn.click();
 
   // Wait for the URL to be the readout view with a real UUID.
@@ -125,18 +124,14 @@ test('three-click wizard rollback on corrupt XML — C-H3 regression gate', asyn
   // passes (root IS <CourseData>); the import-preview banner appears.
   await page.getByTestId('drop-zone-input').setInputFiles(CORRUPT_FIXTURE);
   await expect(page.getByTestId('wiz-preview')).toBeVisible();
-  await page.getByTestId('wiz-next').click();
+  await page.getByTestId('wiz-start').click();
 
-  // Step 3 — wait for the simulated reader handshake, click Starta.
-  const startBtn = page.getByTestId('wiz-start');
-  await expect(startBtn).toBeEnabled({ timeout: 5_000 });
-  await startBtn.click();
-
-  // The inline error banner appears with the xsd_invalid mapping
-  // (contains "IOF XML 3.0"); the wizard stays open at /_new?wizard=1.
+  // The inline error banner appears with the xsd_invalid mapping; the
+  // wizard stays open at /_new?wizard=1.
   const err = page.getByTestId('wizard-error');
   await expect(err).toBeVisible({ timeout: 10_000 });
-  await expect(err).toContainText('IOF XML 3.0');
+  await expect(err).toContainText('Filen är ingen banfil');
+  await expect(err).not.toContainText('IOF XML');
   expect(page.url()).toContain('/competition/_new?wizard=1');
 
   // Codex C-H3 e2e regression gate: no orphan row persists. The strict
@@ -152,4 +147,59 @@ test('three-click wizard rollback on corrupt XML — C-H3 regression gate', asyn
   expect(after.status()).toBe(200);
   const afterBody = (await after.json()) as { competitions: { name: string }[] };
   expect(afterBody.competitions.some((c) => c.name === uniqueName)).toBe(false);
+});
+
+test('the wizard has two steps', async ({ page }) => {
+  await openWizard(page);
+  await expect(page.locator('.wiz-steps .wiz-step')).toHaveCount(2);
+  await expect(page.locator('.modal-head .muted')).toHaveText('1/2');
+  await page.getByTestId('wiz-name').fill('Två steg');
+  await page.getByTestId('wiz-date').fill('2026-05-19');
+  await page.getByTestId('wiz-next').click();
+  await expect(page.locator('.modal-head .muted')).toHaveText('2/2');
+});
+
+test('an entry list in place of a course file gives an actionable error that clears', async ({
+  page,
+}) => {
+  await openWizard(page);
+  await page.getByTestId('wiz-name').fill(`Anmälningsfil ${Date.now()}`);
+  await page.getByTestId('wiz-date').fill('2026-05-19');
+  await page.getByTestId('wiz-next').click();
+  await page.getByTestId('drop-zone-input').setInputFiles(ENTRYLIST_FIXTURE);
+  await page.getByTestId('wiz-start').click();
+  const err = page.getByTestId('wizard-error');
+  await expect(err).toHaveText('Välj en banfil (XML) först. Anmälningsfilen läser du in efteråt.');
+  await page.getByTestId('drop-zone-input').setInputFiles(COURSEDATA_FIXTURE);
+  await expect(err).toHaveCount(0);
+});
+
+test('a bad date says so and blocks Nästa', async ({ page }) => {
+  await openWizard(page);
+  await page.getByTestId('wiz-name').fill('Fel datum');
+  await page.getByTestId('wiz-date').fill('2026-13-99x');
+  await expect(page.getByText('Skriv datum som ÅÅÅÅ-MM-DD')).toBeVisible();
+  await expect(page.getByTestId('wiz-next')).toBeDisabled();
+});
+
+test('the typed draft survives the detour to the Eventor key', async ({ page }) => {
+  await page.route('**/api/eventor/events/**', (r) =>
+    r.fulfill({ status: 400, json: { error: 'no_key' } })
+  );
+  await openWizard(page);
+  await page.getByTestId('wiz-name').fill('Kvar efter nyckeln');
+  await page.getByTestId('wiz-date').fill('2026-05-19');
+  await page.getByTestId('wiz-evqs-input').fill('12345');
+  await page.getByTestId('wiz-evqs-fetch').click();
+  await page.getByRole('link', { name: 'Lägg in Eventor-nyckeln' }).click();
+  await expect(page).toHaveURL(/\/installningar/);
+  await page.goBack();
+  await expect(page.getByTestId('wiz-name')).toHaveValue('Kvar efter nyckeln');
+  await expect(page.getByTestId('wiz-date')).toHaveValue('2026-05-19');
+  await expect(page.getByTestId('wiz-evqs-input')).toHaveValue('12345');
+
+  await page.getByTestId('wiz-cancel').click();
+  await openWizard(page);
+  await expect(page.getByTestId('wiz-name')).toHaveValue('');
+  await expect(page.getByTestId('wiz-date')).toHaveValue('');
 });

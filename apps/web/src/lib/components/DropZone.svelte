@@ -180,7 +180,7 @@
     color: inherit;
   }
   .drop-zone .sub {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     margin-top: 4px;
   }
