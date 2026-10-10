@@ -1398,7 +1398,9 @@ Look up the exact endpoints in `api/client.ts` (`setLiveresultatCredentials`,
       `~/src/fartOLa-workdirs/fartOLa-docs/design-lab-2026-10/after-plan-2/`.
       Open no other file in `fartOLa-docs`. If the harness lacks a screen
       this plan changed (the wizard at `/competition/_new?wizard=1`, `/access`), add it
-      to the harness in this step.
+      to the harness in this step. Also add the new screens from the M2
+      tracks if they are on `main` by then: `/competition/<id>/speaker`
+      (speaker) and `/competition/<id>/kontroll` (m2-prerace).
 - [ ] **Step 3:** In `README.md`, add a "Plan 2" section with:
   - one line per screen saying what changed, tied to an ADR-0016 rule;
   - the new contrast rows (`PRINT_CONTRAST=1`);
@@ -1449,6 +1451,9 @@ another track owns. The controller sends this list to
   lines are now redundant with the global ring. Delete them when that
   code is next touched.
 - **sekretariat:** the readout lines of the leftovers todo, as agreed.
+- **speaker:** the speaker view's own light/sun switch should toggle the
+  same `.contrast-high` class and `stores/tweaks.svelte.ts` as
+  Inställningar > Utseende, not a second theme (sent 2026-10-10).
 
 ## Not in this plan
 
