@@ -150,6 +150,22 @@ function paidEcho(app: FastifyInstance, id: string) {
   return { paid_amount: r?.a ?? 0, paid_method: (r?.m ?? null) as 'cash' | 'swish' | null };
 }
 
+/** Record the whole charge (fee, surcharge, card rental) as paid at the
+ * desk, from the competitor's own fee figures; run after the rental is
+ * upserted so the card fee is in. */
+function recordPaid(app: FastifyInstance, id: string, method: 'cash' | 'swish'): void {
+  const c = app.fartolaDb.db
+    .select({ e: competitors.entryFee, l: competitors.lateFee, c: competitors.cardFee })
+    .from(competitors)
+    .where(eq(competitors.id, id))
+    .get();
+  app.fartolaDb.db
+    .update(competitors)
+    .set({ paidAmount: (c?.e ?? 0) + (c?.l ?? 0) + (c?.c ?? 0), paidMethod: method })
+    .where(eq(competitors.id, id))
+    .run();
+}
+
 function competitorRowToDTO(row: Competitor): CompetitorDTO {
   return {
     id: row.id,
@@ -340,6 +356,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             })
             .run();
           if (input.hired_card === true) upsertHiredCard(app, input, target.id, newCardNumber, now);
+          if (input.paid_method !== undefined) recordPaid(app, target.id, input.paid_method);
         })();
       } catch (err) {
         // The pre-flight SELECT above is non-transactional, so a concurrent
@@ -395,6 +412,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         scrubbed_at_ms: target.scrubbedAtMs,
         start_time_ms: target.startTimeMs ?? null,
         bib: target.bib,
+        ...paidEcho(app, target.id),
       };
       // card_event: the logged change, for POST .../card-binds/undo.
       return reply.code(200).send({
@@ -576,27 +594,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
           upsertHiredCard(app, input, competitorId, input.card_number, now);
         }
 
-        // Paid at the desk: the whole charge (fee, surcharge, card rental)
-        // is recorded as paid, so Eventor does not bill the club for it.
-        if (input.paid_method !== undefined) {
-          const charged = app.fartolaDb.db
-            .select({
-              e: competitors.entryFee,
-              l: competitors.lateFee,
-              c: competitors.cardFee,
-            })
-            .from(competitors)
-            .where(eq(competitors.id, competitorId))
-            .get();
-          app.fartolaDb.db
-            .update(competitors)
-            .set({
-              paidAmount: (charged?.e ?? 0) + (charged?.l ?? 0) + (charged?.c ?? 0),
-              paidMethod: input.paid_method,
-            })
-            .where(eq(competitors.id, competitorId))
-            .run();
-        }
+        // Paid at the desk: the whole charge is recorded as paid.
+        if (input.paid_method !== undefined) recordPaid(app, competitorId, input.paid_method);
       })();
     } catch (err) {
       // Race-safety net (PR #3 review — Gemini medium). See the
