@@ -13,6 +13,7 @@ import {
   type DrawType,
   type LottningBody,
   type LottningResult,
+  type StartClashWith,
   type VacantPosition,
 } from '#lib/api/client.ts';
 
@@ -119,7 +120,7 @@ export function seedGroupsFromInput(
 export interface Refusal {
   key: string;
   vars?: Record<string, unknown>;
-  fix?: 'class_kind' | 'level';
+  fix?: 'class_kind' | 'level' | 'start_clash';
   /** For a 400 on a field: the i18n key of that field's label. */
   fieldKey?: string;
 }
@@ -151,7 +152,19 @@ const BY_CODE: Record<string, Refusal> = {
 /** A refused draw (or seeding save) as an i18n key, with the class name. */
 export function refusalOf(e: unknown, className: string): Refusal {
   if (e instanceof ApiError && e.body !== null && typeof e.body === 'object') {
-    const b = e.body as { error?: string; errors?: Array<{ path: string }> };
+    const b = e.body as {
+      error?: string;
+      errors?: Array<{ path: string }>;
+      clashes?: StartClashWith[];
+    };
+    // SOFT TA till TR 6.5.1: name the classes and minutes; the operator
+    // may draw anyway with a reason.
+    if (b.error === 'start_clash')
+      return {
+        key: 'lottning.err.startClash',
+        fix: 'start_clash',
+        vars: { class: className, clashes: clashText(b.clashes ?? []) },
+      };
     const known = b.error !== undefined ? BY_CODE[b.error] : undefined;
     if (known !== undefined) return { ...known, vars: { class: className } };
     if (Array.isArray(b.errors) && b.errors.length > 0)
@@ -161,6 +174,18 @@ export function refusalOf(e: unknown, className: string): Refusal {
       };
   }
   return { key: 'lottning.err.failed', vars: { error: (e as Error).message } };
+}
+
+/** Classes with their shared start minutes: 'D21 (10:02, 10:04), H50 (10:06)'. */
+export function clashText(list: StartClashWith[]): string {
+  return list.map((c) => `${c.class_name} (${c.minutes.join(', ')})`).join(', ');
+}
+
+/** SOFT TA till TR 6.5.1: the classes a draw shares its first control
+ * with in the same minute, as text; null when none. */
+export function firstControlWarning(res: LottningResult): string | null {
+  const list = (res.warnings ?? []).filter((w) => w.kind === 'same_first_control');
+  return list.length > 0 ? clashText(list) : null;
 }
 
 /** SOFT TR 4.16.3: the closing time is in the PM, so a draw that moved it
