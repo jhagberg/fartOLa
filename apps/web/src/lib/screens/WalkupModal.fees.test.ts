@@ -137,6 +137,22 @@ describe('WalkupModal — fee and consent', () => {
     expect(q('walkup-fee')?.textContent).toMatch(/brickhyra 30 kr/);
   });
 
+  it('SOFT TR 4.12.4: paid on site: the choice is sent as paid_method, and only when picked', async () => {
+    await open();
+    expect(q('walkup-paid')).toBeNull();
+    (q('walkup-name') as HTMLInputElement).value = 'Eva Ek';
+    q('walkup-name')!.dispatchEvent(new Event('input', { bubbles: true }));
+    choose(q<HTMLSelectElement>('walkup-class')!, H21);
+    q<HTMLInputElement>('walkup-consent')!.click();
+    await settle();
+    choose(q<HTMLSelectElement>('walkup-paid')!, 'swish');
+    await settle();
+    q('walkup-save')!.click();
+    await settle();
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ paid_method: 'swish' });
+  });
+
   it('open class: the birth year decides the youth fee and is sent', async () => {
     await open();
     choose(q<HTMLSelectElement>('walkup-class')!, GUL);

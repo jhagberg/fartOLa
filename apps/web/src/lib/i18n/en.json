@@ -368,6 +368,7 @@
   "readout.hyrbricka.dismiss": "Dismiss",
   "readout.hyrbricka.returnedConfirmed": "Card marked as returned",
 
+  "hyrbrickor.paid": "Paid on site: {{total}} kr (cash {{cash}}, Swish {{swish}})",
   "hyrbrickor.title": "Active hired cards",
   "hyrbrickor.empty": "No open hired cards",
   "hyrbrickor.openSection": "Open",
@@ -952,6 +953,11 @@
   "walk.fee.entry": "fee {{amount}} kr",
   "walk.fee.late": "surcharge {{amount}} kr",
   "walk.fee.card": "card rental {{amount}} kr",
+  "walk.paid": "Paid on site",
+  "walk.paid.none": "No, not paid",
+  "walk.paid.cash": "Yes, cash",
+  "walk.paid.swish": "Yes, Swish",
+  "edit.paid": "Paid on site (SEK)",
   "walk.birthYear": "Birth year",
   "walk.birthYear.ph": "e.g. 2012",
   "walk.err.birthYear": "Enter the birth year with four digits, or leave it empty."

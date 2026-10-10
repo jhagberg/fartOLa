@@ -368,6 +368,7 @@
   "readout.hyrbricka.dismiss": "Ignorera",
   "readout.hyrbricka.returnedConfirmed": "Brickan markerad som återlämnad",
 
+  "hyrbrickor.paid": "Betalt på plats: {{total}} kr (kontant {{cash}}, Swish {{swish}})",
   "hyrbrickor.title": "Aktiva hyrbrickor",
   "hyrbrickor.empty": "Inga öppna hyrbrickor",
   "hyrbrickor.openSection": "Öppna",
@@ -952,6 +953,11 @@
   "walk.fee.entry": "avgift {{amount}} kr",
   "walk.fee.late": "tillägg {{amount}} kr",
   "walk.fee.card": "brickhyra {{amount}} kr",
+  "walk.paid": "Betald på plats",
+  "walk.paid.none": "Nej, inte betald",
+  "walk.paid.cash": "Ja, kontant",
+  "walk.paid.swish": "Ja, Swish",
+  "edit.paid": "Betalt på plats (kr)",
   "walk.birthYear": "Födelseår",
   "walk.birthYear.ph": "t.ex. 2012",
   "walk.err.birthYear": "Ange födelseåret med fyra siffror, eller lämna tomt."
