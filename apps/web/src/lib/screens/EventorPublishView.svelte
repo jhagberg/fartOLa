@@ -6,9 +6,14 @@
   Follows ExportView trigger-button → async call → result/error pattern.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { formatClockTime } from '@fartola/shared-types';
   import { postEventorPushResults, postEventorPushStartlist, ApiError } from '#lib/api/client.ts';
   import { t } from '#lib/i18n/index.ts';
   import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
+  import { fetchCompetitionClock } from '#lib/screens/competition-clock.ts';
+  import Button from '#lib/ui/Button.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
 
   interface Props {
     competitionId: string;
@@ -16,111 +21,132 @@
 
   let { competitionId }: Props = $props();
 
-  let resultsPushing = $state(false);
-  let resultsUrl = $state<string | null>(null);
-  let resultsError = $state<string | null>(null);
-  let resultsNoKey = $state(false);
+  type Kind = 'results' | 'startlist';
+  interface Last {
+    at: number;
+    url: string;
+  }
+  interface Push {
+    pushing: boolean;
+    url: string | null;
+    error: string | null;
+    detail: string | null;
+    noKey: boolean;
+    last: Last | null;
+  }
 
-  let startlistPushing = $state(false);
-  let startlistUrl = $state<string | null>(null);
-  let startlistError = $state<string | null>(null);
-  let startlistNoKey = $state(false);
+  const blank = (): Push => ({
+    pushing: false,
+    url: null,
+    error: null,
+    detail: null,
+    noKey: false,
+    last: null,
+  });
+  let pushes = $state<Record<Kind, Push>>({ results: blank(), startlist: blank() });
+  let offsetMin = $state<number | null>(null);
 
-  async function pushResults(): Promise<void> {
-    resultsPushing = true;
-    resultsUrl = null;
-    resultsError = null;
-    resultsNoKey = false;
+  const storageKey = (kind: Kind): string => `fartola-eventor-${competitionId}-${kind}`;
+
+  function readLast(kind: Kind): Last | null {
     try {
-      const res = await postEventorPushResults(competitionId);
-      resultsUrl = res.url;
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 400) {
-        resultsError = t('eventor.publish.noKey');
-        resultsNoKey = true;
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        resultsError = t('eventor.publish.error', { message: msg });
-      }
-    } finally {
-      resultsPushing = false;
+      const raw = localStorage.getItem(storageKey(kind));
+      if (raw === null) return null;
+      const v = JSON.parse(raw) as Partial<Last>;
+      return typeof v.at === 'number' && typeof v.url === 'string' ? { at: v.at, url: v.url } : null;
+    } catch {
+      return null;
     }
   }
 
-  async function pushStartlist(): Promise<void> {
-    startlistPushing = true;
-    startlistUrl = null;
-    startlistError = null;
-    startlistNoKey = false;
+  onMount(() => {
+    pushes.results.last = readLast('results');
+    pushes.startlist.last = readLast('startlist');
+    // The competition clock; until it arrives the local time is shown.
+    void fetchCompetitionClock(competitionId)
+      .then((c) => (offsetMin = c.offsetMin))
+      .catch(() => {});
+  });
+
+  function lastTime(at: number): string {
+    if (offsetMin !== null) return formatClockTime(at, offsetMin).slice(0, 5);
+    return new Date(at).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function push(kind: Kind): Promise<void> {
+    const s = pushes[kind];
+    s.pushing = true;
+    s.url = null;
+    s.error = null;
+    s.detail = null;
+    s.noKey = false;
     try {
-      const res = await postEventorPushStartlist(competitionId);
-      startlistUrl = res.url;
+      const res = await (kind === 'results'
+        ? postEventorPushResults(competitionId)
+        : postEventorPushStartlist(competitionId));
+      s.url = res.url;
+      s.last = { at: Date.now(), url: res.url };
+      try {
+        localStorage.setItem(storageKey(kind), JSON.stringify(s.last));
+      } catch {
+        // Storage can be blocked; the page still works without it.
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
-        startlistError = t('eventor.publish.noKey');
-        startlistNoKey = true;
+        s.error = t('eventor.publish.noKey');
+        s.noKey = true;
       } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        startlistError = t('eventor.publish.error', { message: msg });
+        s.error = t('eventor.publish.error');
+        s.detail = err instanceof Error ? err.message : String(err);
       }
     } finally {
-      startlistPushing = false;
+      s.pushing = false;
     }
   }
 </script>
+
+{#snippet section(kind: Kind, variant: 'primary' | 'secondary')}
+  {@const s = pushes[kind]}
+  <section class="sec" data-testid="eventor-publish-{kind}">
+    <h2 class="h1">{t(`eventor.publish.${kind}.heading`)}</h2>
+    <p class="muted">{t(`eventor.publish.${kind}.desc`)}</p>
+    <Button {variant} disabled={s.pushing} onclick={() => push(kind)}>
+      {s.pushing ? t('eventor.publish.pushing') : t(`eventor.publish.${kind}`)}
+    </Button>
+    {#if s.last}
+      <p class="muted" data-testid="eventor-{kind}-last">
+        {t('eventor.publish.last', { time: lastTime(s.last.at) })}
+      </p>
+    {/if}
+    {#if s.url}
+      <div class="box ok" data-testid="eventor-{kind}-ok">
+        <strong>{t('eventor.publish.success')}</strong>
+        <a href={s.url} target="_blank" rel="noopener">{s.url}</a>
+      </div>
+    {/if}
+    {#if s.error}
+      <div class="box err" data-testid="eventor-{kind}-err">
+        <strong><Icon name="alert-triangle" size={18} /> {t('eventor.publish.errorLabel')}</strong>
+        {s.error}
+        {#if s.noKey}<EventorKeyLink />{/if}
+        {#if s.detail}
+          <details>
+            <summary>{t('export.details')}</summary>
+            <p>{s.detail}</p>
+          </details>
+        {/if}
+      </div>
+    {/if}
+  </section>
+{/snippet}
 
 <div class="publish" data-testid="eventor-publish-view">
   <header class="hd">
     <h1 class="h0">{t('eventor.publish.title')}</h1>
   </header>
 
-  <section class="sec" data-testid="eventor-publish-results">
-    <h2 class="h1">{t('eventor.publish.results')}</h2>
-    <p class="muted">{t('eventor.publish.results.desc')}</p>
-    <button class="btn primary" disabled={resultsPushing} onclick={pushResults}>
-      {#if resultsPushing}
-        {t('eventor.publish.pushing')}
-      {:else}
-        {t('eventor.publish.results')}
-      {/if}
-    </button>
-    {#if resultsUrl}
-      <div class="box ok" data-testid="eventor-results-ok">
-        <strong>{t('eventor.publish.success')}</strong>
-        <a href={resultsUrl} target="_blank" rel="noopener">{resultsUrl}</a>
-      </div>
-    {/if}
-    {#if resultsError}
-      <div class="box err" data-testid="eventor-results-err">
-        {resultsError}
-        {#if resultsNoKey}<EventorKeyLink />{/if}
-      </div>
-    {/if}
-  </section>
-
-  <section class="sec" data-testid="eventor-publish-startlist">
-    <h2 class="h1">{t('eventor.publish.startlist')}</h2>
-    <p class="muted">{t('eventor.publish.startlist.desc')}</p>
-    <button class="btn primary" disabled={startlistPushing} onclick={pushStartlist}>
-      {#if startlistPushing}
-        {t('eventor.publish.pushing')}
-      {:else}
-        {t('eventor.publish.startlist')}
-      {/if}
-    </button>
-    {#if startlistUrl}
-      <div class="box ok" data-testid="eventor-startlist-ok">
-        <strong>{t('eventor.publish.success')}</strong>
-        <a href={startlistUrl} target="_blank" rel="noopener">{startlistUrl}</a>
-      </div>
-    {/if}
-    {#if startlistError}
-      <div class="box err" data-testid="eventor-startlist-err">
-        {startlistError}
-        {#if startlistNoKey}<EventorKeyLink />{/if}
-      </div>
-    {/if}
-  </section>
+  {@render section('results', 'primary')}
+  {@render section('startlist', 'secondary')}
 </div>
 
 <style>
@@ -133,23 +159,28 @@
   .sec {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
+  }
+  .sec > :global(.box) {
+    align-self: stretch;
   }
   .h0 {
     margin: 0;
-    font-size: 28px;
+    font-size: var(--fs-display);
     font-weight: 600;
   }
   .h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-heading);
     font-weight: 600;
   }
   .muted {
+    margin: 0;
     color: var(--fg-muted);
   }
   .box {
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 12px 16px;
   }
   .box.ok {
@@ -161,28 +192,21 @@
   }
   .box.ok a {
     color: var(--ok);
-    word-break: break-all;
+    display: flex;
+    align-items: center;
+    min-height: var(--hit);
+    overflow-wrap: anywhere;
   }
   .box.err {
     border: 1px solid var(--dnf);
     background: var(--dnf-soft);
     color: var(--fg);
   }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 20px;
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--accent-fg);
-    font-weight: 600;
-    border: none;
+  .box summary {
     cursor: pointer;
-    width: max-content;
+    margin-top: 8px;
   }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+  .box details p {
+    overflow-wrap: anywhere;
   }
 </style>
