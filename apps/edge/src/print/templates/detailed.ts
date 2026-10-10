@@ -36,6 +36,8 @@ export default async function detailed(
   printer.println(data.competitor.name);
   printer.bold(false);
   printer.leftRight(data.classObj.name, `Bricka ${data.competitor.card_number ?? '—'}`);
+  // SOFT TR 7.5.4: the bib, when the runner has one.
+  if (data.competitor.bib !== null) printer.println(`Startnr ${data.competitor.bib}`);
   printer.drawLine();
 
   printer.println('Str  Kod    Split   Rank Lost');

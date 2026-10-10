@@ -320,6 +320,7 @@
       className: cls?.name ?? '—',
       classId: competitor?.class_id ?? '',
       club: competitor?.club ?? null,
+      bib: competitor?.bib ?? null,
       competitionName: competition?.name ?? '',
       competitionDate: competition?.date ?? '',
       elapsedMs,

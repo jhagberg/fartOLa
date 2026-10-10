@@ -30,7 +30,7 @@
   <b>{read.name}</b><span>{read.cardNumber}</span>
 </div>
 <div class="rcpt-row">
-  <span>{read.cls}{read.club ? ` · ${read.club}` : ''}</span>
+  <span>{read.cls}{read.club ? ` · ${read.club}` : ''}{read.bib ? ` · ${t('rcpt.bib', { bib: read.bib })}` : ''}</span>
   <span>{read.startTime}</span>
 </div>
 <div class="rcpt-sep"></div>

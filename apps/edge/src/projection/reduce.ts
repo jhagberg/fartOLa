@@ -277,6 +277,7 @@ export function reduce(input: ReduceInput): CompetitionState {
       manual_status: null,
       voided_legs: [],
       start_time_ms: c.startTimeMs,
+      bib: c.bib ?? null,
       no_timing: noTimingClasses.has(c.classId),
       missing_start: false,
       suggested_start_ms: null,
