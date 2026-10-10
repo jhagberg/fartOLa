@@ -8,6 +8,7 @@
 // IMPORTANT — what is scrubbed:
 //   - competitors.name (PII per REQ-PRIV-002) → 'Anonymiserad'
 //   - competitors.club (PII per REQ-PRIV-002) → NULL
+//   - competitors.birth_year (PII per REQ-PRIV-002, migration 0023) → NULL
 //   - competitors.scrubbed_at_ms (audit trail) → now()
 //   - hired_cards.contact_name (PII per REQ-PRIV-002, D-HB-1) → NULL
 //   - hired_cards.contact_phone (PII per REQ-PRIV-002, D-HB-1) → NULL
@@ -119,7 +120,7 @@ export function scheduleDailyRetention(
     // competitions only — same-day competitions aren't touched.
     const result = handle.db
       .update(competitors)
-      .set({ name: 'Anonymiserad', club: null, scrubbedAtMs: now() })
+      .set({ name: 'Anonymiserad', club: null, birthYear: null, scrubbedAtMs: now() })
       .where(
         and(
           isNull(competitors.scrubbedAtMs),

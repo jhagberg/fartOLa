@@ -11,6 +11,13 @@
 -- registration; NULL for pre-entries, whose fee Eventor decided.
 -- hired_cards.fee: the rental fee charged for the card, fixed when the
 -- rental opens; NULL = none.
+-- classes.eventor_entry_fee_id / eventor_youth_fee_id / eventor_late_fee_id:
+-- Eventor's EntryFeeId for the class fee, the youth fee and the late fee,
+-- written back as Fee/Id in the ResultList so Eventor can invoice; NULL =
+-- not from Eventor, or the class has several fees of that kind.
+-- competitors.birth_year: from the Eventor entry or cache, or given at the
+-- desk; in an open class it decides youth (SOFT TR 4.12.1, 4.12.6), as
+-- MeOS's BirthYear (oEvent.cpp:248). NULL = unknown. PII (REQ-PRIV-002).
 --
 -- Hand-written like 0011–0024, no snapshot.
 ALTER TABLE `classes` ADD `entry_fee` integer;
@@ -26,3 +33,11 @@ ALTER TABLE `competitors` ADD `entry_fee` integer;
 ALTER TABLE `competitors` ADD `late_fee` integer;
 --> statement-breakpoint
 ALTER TABLE `hired_cards` ADD `fee` integer;
+--> statement-breakpoint
+ALTER TABLE `classes` ADD `eventor_entry_fee_id` integer;
+--> statement-breakpoint
+ALTER TABLE `classes` ADD `eventor_youth_fee_id` integer;
+--> statement-breakpoint
+ALTER TABLE `classes` ADD `eventor_late_fee_id` integer;
+--> statement-breakpoint
+ALTER TABLE `competitors` ADD `birth_year` integer;
