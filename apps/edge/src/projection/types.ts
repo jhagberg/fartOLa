@@ -113,6 +113,10 @@ export interface CompetitorView {
    * the two can be compared). Null when none (projection/corrections.ts). */
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;
+  /** SOFT TR 8.1.4 (kommentar): controls punched by hand, in the order
+   * entered (no time). Each takes one missing course position, so it is
+   * not in missing_codes (projection/corrections.ts). */
+  manual_punches: Array<{ control_code: number; reason: string }>;
 }
 
 /** One row in the per-class results table. ResultView is the projection

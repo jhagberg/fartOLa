@@ -118,11 +118,11 @@ export interface ControlRow {
   code: number;
   /** The punch, or null for a struck or missing control. */
   punch: NdjsonPunch | null;
-  label: 'struken' | 'extra' | 'fel ordn.' | null;
+  label: 'struken' | 'extra' | 'fel ordn.' | 'manuell' | null;
 }
 
 /** The controls table of a receipt: course controls in course order (a voided
- * one as "struken", not missing), then punches not on the course as "extra",
+ * one as "struken", not missing; one punched by hand as "manuell"), then punches not on the course as "extra",
  * or "fel ordn." when the control is on the course but was punched out of
  * order (the reducer's out_of_order_codes). */
 export function controlRows(data: ReceiptData): ControlRow[] {
@@ -131,8 +131,12 @@ export function controlRows(data: ReceiptData): ControlRow[] {
   const live = data.course.control_codes.filter((c) => !voided.has(c));
   const match = matchCourse(
     punches.map((p) => p.code),
-    live
+    live,
+    undefined,
+    // A print job queued before manual punches existed has none.
+    (data.competitor.manual_punches ?? []).map((p) => p.control_code)
   );
+  const manual = new Set(match.manual);
   const used = new Set(match.matched);
   const rows: ControlRow[] = [];
   let n = 0;
@@ -142,12 +146,13 @@ export function controlRows(data: ReceiptData): ControlRow[] {
       rows.push({ no: '–', code, punch: null, label: 'struken' });
       continue;
     }
-    const idx = match.matched[li++] as number;
+    const position = li++;
+    const idx = match.matched[position] as number;
     rows.push({
       no: String(++n),
       code,
       punch: idx >= 0 ? (punches[idx] as NdjsonPunch) : null,
-      label: null,
+      label: manual.has(position) ? 'manuell' : null,
     });
   }
   punches.forEach((p, i) => {

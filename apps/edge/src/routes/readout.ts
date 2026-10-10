@@ -140,6 +140,9 @@ interface HistoryRow {
    * finish_ms above; finish_seconds_in_half_day stays the card's. */
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;
+  /** SOFT TR 8.1.4 (kommentar) — mirrors CompetitorView.manual_punches:
+   * controls punched by hand (no time), not in missing_codes. */
+  manual_punches: Array<{ control_code: number; reason: string }>;
   /** 02.1-14 Task 14 — mirrors CompetitorView.late_start_ms /
    * early_start_ms: start punch late (> 60 s) or early against the start
    * time in a class timed from it. Warnings for the jury only. */
@@ -394,6 +397,7 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
                   ),
           manual_finish_ms: view?.manual_finish_ms ?? null,
           manual_finish_reason: view?.manual_finish_reason ?? null,
+          manual_punches: view?.manual_punches ?? [],
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
           class_place: classRow?.place ?? null,

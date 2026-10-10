@@ -57,6 +57,7 @@ function receiptData(over: Partial<CompetitorView> = {}): ReceiptData {
     early_start_ms: null,
     manual_finish_ms: null,
     manual_finish_reason: null,
+    manual_punches: [],
     ...over,
   };
   return {
@@ -175,6 +176,24 @@ test('controls table prints "struken", "extra" and "fel ordn." (classic, detaile
     // The struck control keeps its place in the course (between 31 and 33)
     // and is not numbered.
     assert.match(row(32), /^–/, `${name} struck row unnumbered`);
+  }
+});
+
+// SOFT TR 8.1.4 (kommentar): a control punched by hand has no time; the
+// receipt says so instead of leaving the row looking missing.
+test('a control punched by hand prints as "manuell" (classic, detailed)', async () => {
+  const data = receiptData({
+    no_timing: false,
+    latest_punches: [{ code: 31, ...clock(36_100) }],
+    manual_punches: [{ control_code: 32, reason: 'stiftklämma' }],
+  });
+  data.course = { ...data.course, control_codes: [31, 32] };
+  for (const name of ['classic', 'detailed'] as const) {
+    const lines = (await printed(name, data)).split('\n');
+    const row = (code: number): string =>
+      lines.find((l) => new RegExp(`^\\S+\\s+${code}\\s`).test(l)) ?? '';
+    assert.match(row(32), /manuell/, `${name} manual 32`);
+    assert.doesNotMatch(row(31), /manuell/, `${name} card 31`);
   }
 });
 

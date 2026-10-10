@@ -15,9 +15,13 @@ export interface Corrections {
    * card is missing. Wins over the card's finish punch. */
   finish_ms: number | null;
   finish_reason: string | null;
+  /** Controls punched by hand, SOFT TR 8.1.4 (kommentar): from the start
+   * card or a pin punch when the unit failed. No time; each takes one
+   * missing course position (dnfMp.matchCourse). In the order entered. */
+  punches: Array<{ control_code: number; reason: string }>;
 }
 
-const none = (): Corrections => ({ finish_ms: null, finish_reason: null });
+const none = (): Corrections => ({ finish_ms: null, finish_reason: null, punches: [] });
 
 /** Corrections by competitor id. `events` must be sorted by
  * (event_time_ms, local_seq). Competitors without any are absent. */
@@ -45,6 +49,19 @@ export function foldCorrections(
         const c = of(payload.competitor_id);
         c.finish_ms = null;
         c.finish_reason = null;
+        break;
+      }
+      case 'manual_punch_added':
+        of(payload.competitor_id).punches.push({
+          control_code: payload.control_code,
+          reason: payload.reason,
+        });
+        break;
+      case 'manual_punch_removed': {
+        // One punch of the code: the first entered.
+        const punches = of(payload.competitor_id).punches;
+        const i = punches.findIndex((p) => p.control_code === payload.control_code);
+        if (i !== -1) punches.splice(i, 1);
         break;
       }
       default:

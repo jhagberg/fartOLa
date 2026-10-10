@@ -704,3 +704,55 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     assert.equal(res.statusCode, 404);
   });
 });
+
+describe('POST …/competitors/:competitorId/manual-punch (SOFT TR 8.1.4)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+  const post = (competitionId: string, competitorId: string, path: string, payload: unknown) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/${path}`,
+      payload: payload as object,
+    });
+
+  test('add → 201 and the projection lists it; remove takes it away', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await post(competitionId, competitorId, 'manual-punch', {
+      control_code: 32,
+      reason: 'Stiftklämma på startkortet',
+    });
+    assert.equal(res.statusCode, 201);
+    const view = () =>
+      ctx.app.projectionStore.recomputeNow(competitionId)!.competitors.get(competitorId)!;
+    assert.deepEqual(view().manual_punches, [
+      { control_code: 32, reason: 'Stiftklämma på startkortet' },
+    ]);
+    const removed = await post(competitionId, competitorId, 'remove-manual-punch', {
+      control_code: 32,
+    });
+    assert.equal(removed.statusCode, 201);
+    assert.deepEqual(view().manual_punches, []);
+  });
+
+  test('no reason or a bad code → 400; another competition → 404', async () => {
+    const a = await seedCompetitionAndCompetitor(ctx.app);
+    for (const body of [{ control_code: 32 }, { control_code: 0, reason: 'x' }]) {
+      assert.equal(
+        (await post(a.competitionId, a.competitorId, 'manual-punch', body)).statusCode,
+        400
+      );
+    }
+    const b = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await post(a.competitionId, b.competitorId, 'manual-punch', {
+      control_code: 32,
+      reason: 'x',
+    });
+    assert.equal(res.statusCode, 404);
+  });
+});

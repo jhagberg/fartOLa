@@ -56,6 +56,8 @@ import {
   VoidLegInput,
   UnvoidLegInput,
   ManualFinishInput,
+  ManualPunchInput,
+  RemoveManualPunchInput,
   ClearCorrectionInput,
   readoutChannel,
 } from '@fartola/shared-types';
@@ -71,7 +73,10 @@ export const UNREAD_DNS_REASON = 'Ej utläst: satt till Ej start';
 
 type CorrectionPayload = Extract<
   EventPayload,
-  { event_type: 'manual_finish_set' | 'manual_finish_cleared' }
+  {
+    event_type:
+      'manual_finish_set' | 'manual_finish_cleared' | 'manual_punch_added' | 'manual_punch_removed';
+  }
 >;
 
 type ManualStatusPayload = Extract<
@@ -463,6 +468,8 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   //
   //   POST …/competitors/:cid/manual-finish        SOFT TR 4.20.6 — MeOS
   //   POST …/competitors/:cid/clear-manual-finish  "Måltid:" (TabRunner.cpp:3446)
+  //   POST …/competitors/:cid/manual-punch         SOFT TR 8.1.4 (kommentar) — MeOS
+  //   POST …/competitors/:cid/remove-manual-punch  "<< Lägg till stämpling" (:3571)
   // ---------------------------------------------------------------------------
   const correction = <T>(
     path: string,
@@ -515,5 +522,16 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   correction('clear-manual-finish', ClearCorrectionInput, (competitor_id) => ({
     event_type: 'manual_finish_cleared',
     competitor_id,
+  }));
+  correction('manual-punch', ManualPunchInput, (competitor_id, body) => ({
+    event_type: 'manual_punch_added',
+    competitor_id,
+    control_code: body.control_code,
+    reason: body.reason,
+  }));
+  correction('remove-manual-punch', RemoveManualPunchInput, (competitor_id, body) => ({
+    event_type: 'manual_punch_removed',
+    competitor_id,
+    control_code: body.control_code,
   }));
 }

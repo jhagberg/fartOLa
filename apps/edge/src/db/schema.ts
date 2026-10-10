@@ -191,6 +191,21 @@ export type EventPayload =
       competitor_id: string;
     }
   | {
+      // SOFT TR 8.1.4 (kommentar): a control punched by hand (start card,
+      // pin punch). No time; it takes one missing course position of its
+      // code. Stays through later read-outs until removed.
+      event_type: 'manual_punch_added';
+      competitor_id: string;
+      control_code: number;
+      reason: string;
+    }
+  | {
+      // Undo of manual_punch_added: removes one punch of the code.
+      event_type: 'manual_punch_removed';
+      competitor_id: string;
+      control_code: number;
+    }
+  | {
       // Phase 2.0 generalization of un_dnf — clears whatever manual override
       // is in force and re-derives status from the latest card_read (or PEND
       // when no card_read has landed).

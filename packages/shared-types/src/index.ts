@@ -55,6 +55,8 @@ export {
   VoidLegInput,
   UnvoidLegInput,
   ManualFinishInput,
+  ManualPunchInput,
+  RemoveManualPunchInput,
   ClearCorrectionInput,
   ClubDTO,
   EventorLookupCandidate,
