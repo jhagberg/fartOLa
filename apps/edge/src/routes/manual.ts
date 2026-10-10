@@ -533,6 +533,7 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         status: view.status,
         elapsed_time_ms: view.elapsed_time_ms,
         start_time_ms: view.start_time_ms,
+        read_at_ms: view.card_read_history.at(-1)?.event_time_ms ?? null,
         missing_codes: view.missing_codes,
         manual_finish_ms: view.manual_finish_ms,
         manual_finish_reason: view.manual_finish_reason,

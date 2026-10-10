@@ -10,6 +10,7 @@ import {
   finishAfterStartMs,
   formatClockTime,
   parseTimeOfDay,
+  startBeforeFinishMs,
 } from '@fartola/shared-types';
 import type { CompetitionClock } from './competition-clock.ts';
 
@@ -17,19 +18,28 @@ import type { CompetitionClock } from './competition-clock.ts';
 export type FinishEntry = { finishMs: number } | { error: 'invalid' | 'before_start' };
 
 /** 'HH:MM' or 'HH:MM:SS' on the competition clock → the finish (SOFT TR
- * 4.20.6): the first such time after the runner's start time, so 00:10
- * after a 23:50 start is the next day; more than 12 h after it means the
- * time is before the start. Without a start time, the competition day. */
+ * 4.20.6), placed like the card clocks:
+ *   - with a start time, the first such time after it (00:10 after a 23:50
+ *     start is the next day; more than 12 h after it is before the start);
+ *   - else with a read-out, the last such time before it (the runner
+ *     finished, then read out), as the card's own times are placed;
+ *   - else (card missing, open start) on the competition day. */
 export function resolveFinishInput(
   text: string,
-  startMs: number | null,
+  at: { startMs: number | null; readAtMs: number | null },
   clock: CompetitionClock
 ): FinishEntry {
   const seconds = parseTimeOfDay(text);
   if (seconds === null) return { error: 'invalid' };
-  if (startMs === null) return { finishMs: clockToEpochMs(clock.date, seconds, clock.offsetMin) };
-  const finishMs = finishAfterStartMs(seconds, startMs, clock.offsetMin);
-  return finishMs === null ? { error: 'before_start' } : { finishMs };
+  if (at.startMs !== null) {
+    const finishMs = finishAfterStartMs(seconds, at.startMs, clock.offsetMin);
+    return finishMs === null ? { error: 'before_start' } : { finishMs };
+  }
+  if (at.readAtMs !== null) {
+    const finishMs = startBeforeFinishMs(seconds, at.readAtMs, clock.offsetMin);
+    if (finishMs !== null) return { finishMs };
+  }
+  return { finishMs: clockToEpochMs(clock.date, seconds, clock.offsetMin) };
 }
 
 /** The corrections a runner has, as lines for the readout card. */

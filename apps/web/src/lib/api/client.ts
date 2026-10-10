@@ -583,6 +583,8 @@ export interface CorrectionsDTO {
   status: 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
   elapsed_time_ms: number | null;
   start_time_ms: number | null;
+  /** The latest read-out (epoch ms); null without one. */
+  read_at_ms: number | null;
   missing_codes: number[];
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;

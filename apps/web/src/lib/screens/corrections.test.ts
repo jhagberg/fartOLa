@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { clockToEpochMs, parseTimeOfDay } from '@fartola/shared-types';
+
 import { correctionLines, parseControlCode, resolveFinishInput } from './corrections.ts';
 
 const clock = { date: '2026-10-03', offsetMin: 120 };
@@ -13,24 +14,43 @@ const at = (text: string, day = '2026-10-03'): number =>
 
 describe('resolveFinishInput', () => {
   it('a time after the start time is that time', () => {
-    expect(resolveFinishInput('10:42:30', at('10:00'), clock)).toEqual({
-      finishMs: at('10:42:30'),
-    });
+    expect(resolveFinishInput('10:42:30', { startMs: at('10:00'), readAtMs: null }, clock)).toEqual(
+      {
+        finishMs: at('10:42:30'),
+      }
+    );
   });
 
   it('after midnight against a late start is the next day', () => {
-    expect(resolveFinishInput('00:10', at('23:50'), clock)).toEqual({
+    expect(resolveFinishInput('00:10', { startMs: at('23:50'), readAtMs: null }, clock)).toEqual({
       finishMs: at('00:10', '2026-10-04'),
     });
   });
 
   it('before the start is refused; not a time is refused', () => {
-    expect(resolveFinishInput('09:59', at('10:00'), clock)).toEqual({ error: 'before_start' });
-    expect(resolveFinishInput('tio', at('10:00'), clock)).toEqual({ error: 'invalid' });
+    expect(resolveFinishInput('09:59', { startMs: at('10:00'), readAtMs: null }, clock)).toEqual({
+      error: 'before_start',
+    });
+    expect(resolveFinishInput('tio', { startMs: at('10:00'), readAtMs: null }, clock)).toEqual({
+      error: 'invalid',
+    });
   });
 
-  it('without a start time the competition day is used', () => {
-    expect(resolveFinishInput('10:42', null, clock)).toEqual({ finishMs: at('10:42') });
+  it('without a start time, the last such time before the read-out', () => {
+    // Read 00:20 on the 4th: a finish typed 23:58 is the evening before.
+    expect(
+      resolveFinishInput('23:58', { startMs: null, readAtMs: at('00:20', '2026-10-04') }, clock)
+    ).toEqual({ finishMs: at('23:58') });
+    // The competition is dated the 3rd, but the read-out was on the 4th.
+    expect(
+      resolveFinishInput('10:07:30', { startMs: null, readAtMs: at('10:20', '2026-10-04') }, clock)
+    ).toEqual({ finishMs: at('10:07:30', '2026-10-04') });
+  });
+
+  it('without a start time or a read-out the competition day is used', () => {
+    expect(resolveFinishInput('10:42', { startMs: null, readAtMs: null }, clock)).toEqual({
+      finishMs: at('10:42'),
+    });
   });
 });
 

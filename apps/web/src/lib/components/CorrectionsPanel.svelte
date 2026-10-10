@@ -114,7 +114,11 @@
 
   function setFinish(): void {
     if (data === null || clock === null) return;
-    const entry = resolveFinishInput(finishText, data.start_time_ms, clock);
+    const entry = resolveFinishInput(
+      finishText,
+      { startMs: data.start_time_ms, readAtMs: data.read_at_ms },
+      clock
+    );
     if ('error' in entry) {
       finishError = t(entry.error === 'invalid' ? 'corr.err.time' : 'corr.err.beforeStart');
       return;
