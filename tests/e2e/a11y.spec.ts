@@ -12,6 +12,7 @@ import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
+import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -27,6 +28,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
   // Each screen is scanned only once its own content is on the page.
   const screens: Array<[string, (page: Page) => Locator, ((page: Page) => Promise<void>)?]> = [
+    ['/', (p) => p.getByTestId('comp-grid'), (p) => prepareHome(p, request)],
     [
       `/competition/${id}/readout`,
       (p) => p.getByTestId('latest-read').filter({ hasText: '7501853' }),
@@ -69,6 +71,8 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       prepareKvarError,
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
+    // Last: its mocked 503 stays on the page, so the next pass unroutes it.
+    ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
   ];
   const known = JSON.parse(
     readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
@@ -76,6 +80,7 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   const allowed = new Set(known.map((k) => `${k.rule} ${k.target}`));
   const found: string[] = [];
   for (const high of [false, true]) {
+    await page.unrouteAll();
     for (const [url, ready, prepare] of screens) {
       await page.goto(url);
       await expect(ready(page)).toBeVisible();

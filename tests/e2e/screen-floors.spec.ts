@@ -10,6 +10,7 @@ import { prepareRegistration } from './helpers/registration.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
+import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -24,6 +25,18 @@ type Screen = {
   prepare?: (page: Page, id: string, request: APIRequestContext) => Promise<void>;
 };
 const SCREENS: Screen[] = [
+  {
+    name: 'Tävlingar',
+    url: () => '/',
+    ready: (p) => p.getByTestId('comp-grid'),
+    prepare: async (page, _id, request) => prepareHome(page, request),
+  },
+  {
+    name: 'Tävlingar med laddningsfel',
+    url: () => '/',
+    ready: (p) => p.getByTestId('comp-grid'),
+    prepare: async (page) => prepareHomeError(page),
+  },
   {
     name: 'Registrering',
     url: (id) => `/competition/${id}/registration`,
