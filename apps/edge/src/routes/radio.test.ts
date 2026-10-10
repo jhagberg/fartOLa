@@ -42,6 +42,14 @@ describe('radio routes', () => {
       payload: payload as object,
     });
 
+  it('settings: a change tells open speaker views to refresh', async () => {
+    const sent: string[] = [];
+    app.wsBroadcast = (channel, env) => sent.push(`${channel} ${env.type}`);
+    const res = await patch({ radio_controls: [50, 60] });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(sent, [`results:${COMP} radio_settings`]);
+  });
+
   it('status: 404 for an unknown competition', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/competitions/nope/radio/status' });
     assert.equal(res.statusCode, 404);
