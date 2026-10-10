@@ -254,3 +254,16 @@ test('after a download the next step links to Eventor publishing', async ({ page
     `/competition/${competitionId}/eventor-publish`
   );
 });
+
+test('a failed check offers a retry that runs it again', async ({ page, request }) => {
+  const { competitionId } = await setupCompetition(request);
+  await page.route('**/export/preview**', (route) =>
+    route.fulfill({ status: 500, json: { error: 'Serverfel' } })
+  );
+  await page.goto(`/competition/${competitionId}/export`);
+  const box = page.getByTestId('export-error-network');
+  await expect(box).toBeVisible({ timeout: 5_000 });
+  await page.unroute('**/export/preview**');
+  await box.getByRole('button', { name: 'Försök igen' }).click();
+  await expect(page.getByTestId('export-valid')).toBeVisible({ timeout: 5_000 });
+});

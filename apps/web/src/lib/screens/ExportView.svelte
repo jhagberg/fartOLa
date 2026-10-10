@@ -162,6 +162,9 @@
       <div class="box err" data-testid="export-error-network">
         <strong><Icon name="alert-triangle" size={18} /> {t('export.error')}</strong>
         <p>{t('export.loadError')}</p>
+        <Button variant="secondary" size="sm" onclick={() => void refresh()}>
+          {t('common.retry')}
+        </Button>
         <details>
           <summary>{t('export.details')}</summary>
           <p>{lastError}</p>
