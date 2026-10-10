@@ -4,11 +4,13 @@
 // SI5 on a long course, no club), a fix in the edit modal clears the row,
 // the Brickregister finds a card by number and name and keeps the search
 // in the URL, and the screen passes the contrast and target-size scan.
+// The Anmälda list filters on projected status (todo
+// 2026-10-05-runners-list-with-status).
 // Synthetic data only (seed.ts plus one walk-up).
 
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { BASE, seedCompetition } from './helpers/seed.ts';
+import { BASE, seedCompetition, simulateRead } from './helpers/seed.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -35,7 +37,9 @@ test('the pre-race check lists problems, a fix clears them, and the card registe
 
   await page.goto(`/competition/${id}/kontroll`);
   const noCard = page.getByTestId('prerace-section-noCard');
-  await expect(noCard.getByTestId('prerace-count')).toHaveText('1');
+  // The first visit compiles the route and runs four requests; under a
+  // parallel run that can take longer than the default 5 s.
+  await expect(noCard.getByTestId('prerace-count')).toHaveText('1', { timeout: 20_000 });
   await expect(noCard).toContainText('Bo Berg');
   const small = page.getByTestId('prerace-section-cardTooSmall');
   await expect(small).toContainText('Eva Femma');
@@ -67,4 +71,25 @@ test('the pre-race check lists problems, a fix clears them, and the card registe
   await page.getByTestId('prerace-cards-search').fill('cia');
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('1428824');
+});
+
+test('the runners list filters on projected status and keeps the filter in the URL', async ({
+  page,
+  request,
+}) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+  // Anna (H21) skips control 33: Felstämplad. Bo and Cia are not read out.
+  await simulateRead(request, id, 7_501_853, [31, 32, 34]);
+
+  await page.goto(`/competition/${id}/runners`);
+  await expect(page.getByTestId('runners-row')).toHaveCount(3, { timeout: 20_000 });
+  await expect(page.getByTestId('runners-status-mp')).toContainText('1');
+  await expect(page.getByTestId('runners-status-notRead')).toContainText('2');
+  await page.getByTestId('runners-status-mp').click();
+  await expect(page).toHaveURL(/status=mp/);
+  await expect(page.getByTestId('runners-row')).toHaveCount(1);
+  await expect(page.getByTestId('runners-row')).toContainText('Anna Andersson');
+  await expect(page.getByTestId('runners-row')).toContainText('Felstämplad');
+  await page.reload();
+  await expect(page.getByTestId('runners-row')).toHaveCount(1);
 });
