@@ -107,7 +107,9 @@
       competitors = compRes.competitors;
       classes = classRes.classes;
       hiredCardSet = new Set(hiredRes.open.map((c) => c.card_number));
-      // Paint the first rows, then add the rest a chunk per frame.
+      // Paint the first rows, then add the rest a chunk per frame; again
+      // after an import (the sheet covered the list, so no scroll is lost).
+      rowLimit = ROWS_PER_FRAME;
       requestAnimationFrame(growRows);
     } catch (e) {
       loadError = (e as Error).message || t('runners.loadError');
