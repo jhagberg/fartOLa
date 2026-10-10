@@ -118,6 +118,7 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
         radio,
         radioControls: parseRocControls(comp.controlsText),
         finishCodes: parseRocControls(comp.finishText),
+        clockOffsetMin: offsetMin,
       })
     );
   });

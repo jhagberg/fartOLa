@@ -61,6 +61,9 @@ export interface SpeakerEvent {
 }
 
 export interface SpeakerBoard {
+  /** The competition clock with this snapshot (ADR-0017): clock = epoch +
+   * offset. Carried here so an offset change reaches an open view. */
+  clock_offset_min: number;
   classes: SpeakerClass[];
   /** Newest first. */
   events: SpeakerEvent[];

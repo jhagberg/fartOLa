@@ -51,6 +51,7 @@ export interface BoardInput {
   radioControls: number[];
   /** Codes of finish radio units. */
   finishCodes: number[];
+  clockOffsetMin: number;
 }
 
 /** Final statuses that fold away: no passings, no events. */
@@ -258,5 +259,5 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
   }
 
   events.sort((a, b) => b.at_ms - a.at_ms);
-  return { classes, events };
+  return { clock_offset_min: input.clockOffsetMin, classes, events };
 }

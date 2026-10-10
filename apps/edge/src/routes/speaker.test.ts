@@ -124,6 +124,7 @@ describe('speaker route', () => {
     assert.equal(res.statusCode, 200);
     const board = res.json() as SpeakerBoard;
     assert.deepEqual(board.classes[0]!.controls, [50]);
+    assert.equal(board.clock_offset_min, 120); // CEST on 2026-10-04
     const r = board.classes[0]!.runners[0]!;
     assert.equal(r.name, 'Anna Test');
     assert.deepEqual(r.passings, [{ elapsed_ms: 12 * MIN, place: 1, behind_ms: 0 }]);
