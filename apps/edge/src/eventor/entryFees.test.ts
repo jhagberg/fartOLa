@@ -26,8 +26,15 @@ describe('Eventor class fees (SOFT TR 4.12.6)', () => {
   test('parseEntryFees: amount, percent, youth (type or FromDateOfBirth), valid from', () => {
     const f = parseEntryFees(FEES);
     assert.equal(f.size, 5);
-    assert.deepEqual(f.get(11), { amount: 180, percent: false, youth: false, validFrom: null });
+    assert.deepEqual(f.get(11), {
+      id: 11,
+      amount: 180,
+      percent: false,
+      youth: false,
+      validFrom: null,
+    });
     assert.deepEqual(f.get(12), {
+      id: 12,
       amount: 50,
       percent: true,
       youth: false,
@@ -52,6 +59,7 @@ describe('Eventor class fees (SOFT TR 4.12.6)', () => {
 
   test('classFees: a later fixed fee is a late price, not part of the class fee', () => {
     const fee = (amount: number, validFrom: string | null) => ({
+      id: amount,
       amount,
       percent: false,
       youth: false,
@@ -61,6 +69,9 @@ describe('Eventor class fees (SOFT TR 4.12.6)', () => {
       entryFee: 120,
       youthEntryFee: null,
       lateFeePct: null,
+      entryFeeId: 120,
+      youthFeeId: null,
+      lateFeeId: null,
     });
   });
 
@@ -75,13 +86,34 @@ describe('Eventor class fees (SOFT TR 4.12.6)', () => {
       'https://eventor.orientering.se/api/entryfees/events/4711',
       'https://eventor.orientering.se/api/eventclasses?eventId=4711&includeEntryFees=true',
     ]);
-    assert.deepEqual(fees.get('H21'), { entryFee: 180, youthEntryFee: null, lateFeePct: 50 });
-    assert.deepEqual(fees.get('D12'), { entryFee: 90, youthEntryFee: null, lateFeePct: 50 });
-    assert.deepEqual(fees.get('Gul 2,5'), { entryFee: 180, youthEntryFee: 90, lateFeePct: null });
+    const ids = (e: number | null, y: number | null, l: number | null) => ({
+      entryFeeId: e,
+      youthFeeId: y,
+      lateFeeId: l,
+    });
+    assert.deepEqual(fees.get('H21'), {
+      entryFee: 180,
+      youthEntryFee: null,
+      lateFeePct: 50,
+      ...ids(11, null, 12),
+    });
+    assert.deepEqual(fees.get('D12'), {
+      entryFee: 90,
+      youthEntryFee: null,
+      lateFeePct: 50,
+      ...ids(13, null, 12),
+    });
+    assert.deepEqual(fees.get('Gul 2,5'), {
+      entryFee: 180,
+      youthEntryFee: 90,
+      lateFeePct: null,
+      ...ids(14, 15, null),
+    });
     assert.deepEqual(fees.get('Utan avgift'), {
       entryFee: null,
       youthEntryFee: null,
       lateFeePct: null,
+      ...ids(null, null, null),
     });
   });
 });

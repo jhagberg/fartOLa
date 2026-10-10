@@ -66,6 +66,7 @@ describe('fees routes (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.equal(put.statusCode, 200, put.body);
     const get = await ctx.app.inject({ method: 'GET', url: url() });
     assert.deepEqual(get.json(), {
+      date: '2026-10-10',
       card_fee: 30,
       classes: [
         {
@@ -148,6 +149,7 @@ describe('fees routes (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.deepEqual(res.json(), { updated: 1 });
     const row = ctx.handle.db.select().from(classes).where(eq(classes.id, ctx.h21)).get()!;
     assert.deepEqual([row.entryFee, row.youthEntryFee, row.lateFeePct], [180, null, 50]);
+    assert.deepEqual([row.eventorEntryFeeId, row.eventorLateFeeId], [1, 2]);
   });
 
   test('from-eventor without a linked event → 409 not_linked', async () => {
