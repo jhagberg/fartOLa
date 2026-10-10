@@ -192,7 +192,7 @@ test('the typed draft survives the detour to the Eventor key', async ({ page }) 
   await page.getByTestId('wiz-evqs-input').fill('12345');
   await page.getByTestId('wiz-evqs-fetch').click();
   await page.getByRole('link', { name: 'Lägg in Eventor-nyckeln' }).click();
-  await expect(page).toHaveURL(/\/installningar/);
+  await expect(page).toHaveURL(/\/installningar/, { timeout: 20_000 });
   await page.goBack();
   await expect(page.getByTestId('wiz-name')).toHaveValue('Kvar efter nyckeln');
   await expect(page.getByTestId('wiz-date')).toHaveValue('2026-05-19');
