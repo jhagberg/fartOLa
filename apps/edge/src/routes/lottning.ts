@@ -27,11 +27,16 @@
 //      class gets its start grid. drawType 'Remaining*': place only runners
 //      without a start time (late entrants, SOFT TR 7.5.7/7.5.8); nobody
 //      else moves.
+//   5b. SOFT TA till TR 6.5.1 / TR 7.5.3: the class's new starts against the
+//      starts of the other classes (draw/startClash.ts). The same course in
+//      the same minute → 409 { error: 'start_clash', clashes } and nothing
+//      written, unless allowStartClash with a startClashReason (kept on the
+//      start_times_set event). The same first control → warnings in the 201.
 //   6. Write through writeStartTimes: one start_times_set event plus the
 //      start_time_ms cache (ADR-0003 update 2026-10). Undo: POST
 //      …/start-times/undo. A DrawError → 409 { error, message }; nothing written.
 //   7. markDirty; 201 { drawn: N, …, previous_closing_time_ms,
-//      closing_time_ms } (SOFT TR 4.16.3: the UI warns when it moved).
+//      closing_time_ms, warnings } (SOFT TR 4.16.3: the UI warns when it moved).
 //
 // T-02.1-04: mode and drawType are Zod enums.
 
@@ -48,16 +53,18 @@ import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../
 import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
+import { controlsByClass, startClashes } from '../draw/startClash.ts';
 import { normalIntervalSec } from '../draw/startRules.ts';
 import { freeStartForbidden } from '../projection/preRaceCheck.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
-import { classCourseLength } from './_courses.ts';
+import { classCourseLength, loadCourseDTOs } from './_courses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 import { startMarkers } from '../projection/startTimes.ts';
 import { StartTimeMs } from './competitors.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 // ---------------------------------------------------------------------------
 // Input validation schema
@@ -86,11 +93,17 @@ const LottningInput = z
     maxBehindSec: z.number().int().positive().optional(),
     /** Pursuit: time factor (MeOS "scale"). Default 1. */
     scale: z.number().positive().max(10).optional(),
+    /** SOFT TA till TR 6.5.1: draw although another class on the same
+     * course starts the same minute; needs the operator's reason. */
+    allowStartClash: z.boolean().optional(),
+    startClashReason: z.string().trim().min(1).max(500).optional(),
   })
   .superRefine((d, ctx) => {
     const need = (ok: boolean, path: string, message: string) => {
       if (!ok) ctx.addIssue({ code: 'custom', path: [path], message });
     };
+    if (d.allowStartClash === true)
+      need(d.startClashReason !== undefined, 'startClashReason', 'a reason is required');
     if ((d.drawType ?? 'All') !== 'All') {
       need(d.mode === 'SOFT', 'drawType', 'late entrants are drawn with SOFT');
       need(!d.vacantSlots, 'vacantSlots', 'vacancies are drawn with the whole class');
@@ -205,11 +218,75 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         startName: classes.startName,
         level: competitions.level,
         distance: competitions.distance,
+        date: competitions.date,
+        clockOffsetMin: competitions.clockOffsetMin,
       })
       .from(classes)
       .innerJoin(competitions, eq(competitions.id, classes.competitionId))
       .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
       .get();
+
+  /** The other classes whose starts clash with the class's new starts
+   * (startsMs), each with the shared minutes (draw/startClash.ts). The
+   * class's current starts are replaced by the new ones. */
+  const clashesWith = (
+    competitionId: string,
+    cls: { id: string; name: string; date: string; clockOffsetMin: number | null },
+    intervalSec: number | null,
+    startsMs: number[]
+  ) => {
+    const db = app.fartolaDb.db;
+    const all = db
+      .select({
+        id: classes.id,
+        name: classes.name,
+        courseId: classes.courseId,
+        intervalSec: classes.startIntervalSec,
+      })
+      .from(classes)
+      .where(eq(classes.competitionId, competitionId))
+      .all();
+    const controls = controlsByClass(
+      all,
+      loadCourseDTOs(app.fartolaDb, competitionId).map((c) => ({
+        id: c.id,
+        classId: c.class_id,
+        controls: c.controls.map((k) => k.control_code),
+      }))
+    );
+    const starts = new Map<string, number[]>();
+    for (const r of db
+      .select({ classId: competitors.classId, startTimeMs: competitors.startTimeMs })
+      .from(competitors)
+      .where(and(eq(competitors.competitionId, competitionId), isNotNull(competitors.startTimeMs)))
+      .all())
+      if (r.classId !== cls.id)
+        starts.set(r.classId, [...(starts.get(r.classId) ?? []), r.startTimeMs!]);
+    const found = startClashes(
+      all.map((c) => ({
+        id: c.id,
+        name: c.name,
+        controls: controls.get(c.id) ?? null,
+        intervalSec: c.id === cls.id ? intervalSec : c.intervalSec,
+        startsMs: c.id === cls.id ? startsMs : (starts.get(c.id) ?? []),
+      })),
+      competitionClockOffsetMin(cls.date, cls.clockOffsetMin)
+    );
+    const other = (kind: 'same_course' | 'same_first_control') =>
+      found[kind].flatMap((c) => {
+        if (c.class_id !== cls.id && c.other_class_id !== cls.id) return [];
+        const mine = c.class_id === cls.id;
+        return [
+          {
+            kind,
+            class_id: mine ? c.other_class_id : c.class_id,
+            class_name: mine ? c.other_class_name : c.class_name,
+            minutes: c.minutes,
+          },
+        ];
+      });
+    return [...other('same_course'), ...other('same_first_control')];
+  };
 
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/lottning/:classId — draw and write start times
@@ -263,6 +340,27 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         throw e;
       }
 
+      // SOFT TA till TR 6.5.1 / TR 7.5.3: the new starts against the other
+      // classes' starts. A mass start is not an interval start.
+      const clashes = clashesWith(
+        competitionId,
+        classRow,
+        body.mode === 'Simultaneous' ? 0 : null,
+        plan.assignments.map((a) => a.startTimeMs)
+      );
+      const sameCourse = clashes.filter((c) => c.kind === 'same_course');
+      if (sameCourse.length > 0 && body.allowStartClash !== true) {
+        return reply.code(409).send({
+          error: 'start_clash',
+          rule: 'SOFT TA till TR 6.5.1',
+          clashes: sameCourse.map(({ class_id, class_name, minutes }) => ({
+            class_id,
+            class_name,
+            minutes,
+          })),
+        });
+      }
+
       // SOFT TR 4.16.3: the closing time is in the PM; the response carries
       // it before and after so the UI can warn when a draw moves it.
       const before = closingTime(app.fartolaDb, competitionId).closing_time_ms;
@@ -275,6 +373,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           : plan.assignments.map((a) => ({ competitorId: a.id, startTimeMs: a.startTimeMs })),
         ...(plan.classGrid !== undefined ? { classGrid: plan.classGrid } : {}),
         ...(plan.restartMs !== undefined ? { restartMs: plan.restartMs } : {}),
+        ...(sameCourse.length > 0 ? { startClashReason: body.startClashReason! } : {}),
       });
 
       app.projectionStore.markDirty(competitionId);
@@ -284,6 +383,8 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         ...plan.extra,
         previous_closing_time_ms: before,
         closing_time_ms: closingTime(app.fartolaDb, competitionId).closing_time_ms,
+        // The same first control, and a same-course clash drawn anyway.
+        ...(clashes.length > 0 ? { warnings: clashes } : {}),
       });
     }
   );
