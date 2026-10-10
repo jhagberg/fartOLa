@@ -274,6 +274,7 @@ function buildStartListXmlBuffer(
       startTimeIso: string | null;
       siCard?: number;
       club?: string;
+      bib?: string;
     }>;
   }>
 ): Buffer {
@@ -281,11 +282,12 @@ function buildStartListXmlBuffer(
     .map(({ className, persons }) => {
       const personParts = persons
         .map(
-          ({ given, family, startTimeIso, siCard, club }) => `
+          ({ given, family, startTimeIso, siCard, club, bib }) => `
       <PersonStart>
         <Person><Name><Family>${family}</Family><Given>${given}</Given></Name></Person>
         ${club != null ? `<Organisation><Name>${club}</Name></Organisation>` : ''}
         <Start>
+          ${bib != null ? `<BibNumber>${bib}</BibNumber>` : ''}
           ${startTimeIso != null ? `<StartTime>${startTimeIso}</StartTime>` : ''}
           ${siCard != null ? `<ControlCard punchingSystem="SI">${siCard}</ControlCard>` : ''}
         </Start>
@@ -365,6 +367,61 @@ describe('POST /api/competitions/:id/import/startlist', () => {
       .where(eq(competitors.id, row.id))
       .get();
     assert.equal(updated?.startTimeMs, new Date(startTimeIso).getTime());
+  });
+
+  test('SOFT TR 7.5.4: an imported start list sets the bibs of the runners it matched', async () => {
+    const compId = await newCompetition(ctx.app);
+    const cls = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/classes`,
+      payload: { name: 'H21', class_kind: 'senior', age_class: 21 },
+    });
+    const classId = (cls.json() as { id: string }).id;
+    const add = (id: string, cardNumber: number, bib: string | null) =>
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id,
+          competitionId: compId,
+          name: `${id} Ek`,
+          club: 'K',
+          classId,
+          cardNumber,
+          bib,
+        })
+        .run();
+    add('a', 8001, '2'); // swaps bibs with b
+    add('b', 8002, '1');
+    add('c', 8003, '9'); // its bib is held by d, who is not in the file
+    add('d', 8004, '3');
+    add('e', 8005, '5'); // no BibNumber in the file: keeps its bib
+    const at = '2026-05-19T10:00:00Z';
+    const res = await uploadFile(
+      ctx.app,
+      `/api/competitions/${compId}/import/startlist`,
+      'startlist.xml',
+      buildStartListXmlBuffer([
+        {
+          className: 'H21',
+          persons: [
+            { given: 'a', family: 'Ek', startTimeIso: at, siCard: 8001, bib: '1' },
+            { given: 'b', family: 'Ek', startTimeIso: at, siCard: 8002, bib: '2' },
+            { given: 'c', family: 'Ek', startTimeIso: at, siCard: 8003, bib: '3' },
+            { given: 'e', family: 'Ek', startTimeIso: at, siCard: 8005 },
+          ],
+        },
+      ])
+    );
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    const bibs = Object.fromEntries(
+      ctx.handle.db
+        .select({ id: competitors.id, bib: competitors.bib })
+        .from(competitors)
+        .where(eq(competitors.competitionId, compId))
+        .all()
+        .map((r) => [r.id, r.bib])
+    );
+    assert.deepEqual(bibs, { a: '1', b: '2', c: '9', d: '3', e: '5' });
   });
 
   test('SOFT TR 7.5.8: an imported start list replaces the class grid, so late entrants follow the imported starts', async () => {
