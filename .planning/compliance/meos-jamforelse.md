@@ -249,7 +249,7 @@ Storlek är en grov uppskattning av arbetet i fartOLa: S är några dagar, M är
 
 | Funktion | Vad det är | Var i MeOS | fartOLa | Storlek |
 |---|---|---|---|---|
-| Speakermodul | Bevakning av kontroller, tidslinje med prognos, rapportläge och rullande tider. | Speaker-fliken (`TabSpeaker.cpp:1060-1084`): "Tidsinmatning", "Rapportläge", "Direkt tidtagning". `oEventSpeaker.cpp`, `speakermonitor.cpp`. | Nej. Planerat i REQ-UI-009 (Fas 3). | L |
+| Speakermodul | Bevakning av kontroller, tidslinje med prognos, rapportläge och rullande tider. | Speaker-fliken (`TabSpeaker.cpp:1060-1084`): "Tidsinmatning", "Rapportläge", "Direkt tidtagning". `oEventSpeaker.cpp`, `speakermonitor.cpp`. | Delvis. Speakervyn (`/competition/:id/speaker`, `SpeakerView.svelte`): valda klasser delar skärmen, plats och efter vid varje radiokontroll och mål, "på väg in" med väntad måltid (härmar `oEventSpeaker.cpp:1960-2030`), händelseremsa. Radio från ROC; MeOS som källa via MOP saknas (todo `2026-10-10-speaker-view-meos-mop-source.md`). Ingen rapportläge eller direkt tidtagning. | L |
 | Förvarningsröst | Uppläsning av inkommande löpare vid förvarningskontroll. | Automaten "Förvarningsröst" (`TabAuto.cpp:772`). | Nej. | M |
 | Resultatkiosk | Helskärm som visar resultatet för den senast avlästa löparen. | "Resultatkiosk" (`TabRunner.cpp:1889`). | Nej. Kids' finish är planerad i Fas 3. | S |
 
