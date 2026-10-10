@@ -29,6 +29,8 @@ export interface BoardRunnerIn {
   club: string | null;
   class_id: string;
   card_number: number | null;
+  /** The start the running time is measured from (by the class's start
+   * method), epoch ms; null when not known yet. */
   start_time_ms: number | null;
   status: SpeakerRunnerStatus;
   elapsed_time_ms: number | null;
@@ -89,12 +91,39 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
       : input.radio.map((p) => p.code).filter((c) => !finishCodes.has(c))
   );
 
-  /** Elapsed at the first punch at one of `codes` from the runner's start on. */
-  const firstAt = (r: BoardRunnerIn, codes: (c: number) => boolean): number | null => {
-    if (r.start_time_ms === null || r.card_number === null) return null;
+  /** The runner's punches from its start on. */
+  const punchesOf = (r: BoardRunnerIn): Array<{ code: number; timeMs: number }> => {
+    if (r.start_time_ms === null || r.card_number === null) return [];
     const start = r.start_time_ms;
-    const p = byCard.get(r.card_number)?.find((x) => codes(x.code) && x.timeMs >= start);
-    return p ? p.timeMs - start : null;
+    return (byCard.get(r.card_number) ?? []).filter((x) => x.timeMs >= start);
+  };
+  /** Elapsed at each radio occurrence in course order. The punches are
+   * aligned to the occurrences in order, as many as possible (longest
+   * common subsequence), so a control visited twice (butterfly, laps) gets
+   * each visit and a missed passing does not shift the later ones. */
+  const passingsOf = (r: BoardRunnerIn, controls: number[]): Array<number | null> => {
+    const punches = punchesOf(r);
+    const n = controls.length;
+    const m = punches.length;
+    const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i]![j] =
+          controls[i] === punches[j]!.code
+            ? 1 + dp[i + 1]![j + 1]!
+            : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+      }
+    }
+    const out: Array<number | null> = controls.map(() => null);
+    for (let i = 0, j = 0; i < n && j < m;) {
+      if (controls[i] === punches[j]!.code && dp[i]![j] === 1 + dp[i + 1]![j + 1]!) {
+        out[i] = punches[j]!.timeMs - r.start_time_ms!;
+        i++;
+        j++;
+      } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+      else j++;
+    }
+    return out;
   };
 
   const classes: SpeakerClass[] = [];
@@ -108,16 +137,11 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
     const ordered = cls.no_timing
       ? []
       : [...(course?.controls ?? [])].sort((a, b) => a.order_idx - b.order_idx);
-    const controls: number[] = [];
-    for (const cc of ordered) {
-      if (radioCodes.has(cc.control_code) && !controls.includes(cc.control_code)) {
-        controls.push(cc.control_code);
-      }
-    }
+    const controls = ordered.map((cc) => cc.control_code).filter((c) => radioCodes.has(c));
 
     const ins = input.runners.filter((r) => r.class_id === cls.id);
     const elapsed = ins.map((r) =>
-      controls.map((code) => (OUT.has(r.status) ? null : firstAt(r, (c) => c === code)))
+      OUT.has(r.status) ? controls.map(() => null) : passingsOf(r, controls)
     );
     const timesAt = controls.map((_, i) =>
       elapsed.map((row) => row[i]).filter((t): t is number => t !== null)
@@ -143,8 +167,11 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
     const runners: SpeakerRunner[] = ins.map((r, k) => {
       const row = elapsed[k]!;
       const finish = finishOf(r);
-      const radioFinish =
-        r.status === 'PEND' && finish === null ? firstAt(r, (c) => finishCodes.has(c)) : null;
+      const finishPunch =
+        r.status === 'PEND' && finish === null && !cls.no_timing
+          ? punchesOf(r).find((p) => finishCodes.has(p.code))
+          : undefined;
+      const radioFinish = finishPunch ? finishPunch.timeMs - r.start_time_ms! : null;
       let expected: number | null = null;
       const j = row.findLastIndex((t) => t !== null);
       const leg = j >= 0 ? bestLeg[j] : null;

@@ -83,7 +83,7 @@
       <thead>
         <tr>
           <th scope="col">{t('spk.name')}</th>
-          {#each [...cls.controls, null] as code, i (code ?? 'finish')}
+          {#each [...cls.controls, null] as code, i (i)}
             <th scope="col" class="num">
               {pointLabel(code)}
               <span class="bh">{t('spk.passed', { n: passed[i] })}</span>
