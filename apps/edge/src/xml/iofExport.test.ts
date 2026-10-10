@@ -525,11 +525,11 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     }
   });
 
-  test('SOFT TR 4.12.4, 4.12.6, 4.12.9: fees fartOLa charged go out as AssignedFee (Normal, Late) and a RentalCard ServiceRequest, XSD-valid', async () => {
+  test('SOFT TR 4.12.4, 4.12.6, 4.12.9: fees fartOLa charged go out as AssignedFee (Normal, Late, with the Eventor fee id) and a RentalCard ServiceRequest, XSD-valid', async () => {
     const res = await validateAndBuild(
       makeInput({
         fees: new Map([
-          ['cmp-anna', { entry: 180, late: 180, card: 30 }],
+          ['cmp-anna', { entry: 180, late: 180, card: 30, entryFeeId: 234128, lateFeeId: 234132 }],
           ['cmp-bo', { entry: null, late: null, card: 30 }],
           ['cmp-cia', { entry: 90, late: 0, card: null }],
         ]),
@@ -542,7 +542,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     const anna = person('Andersson');
     assert.match(
       anna,
-      /<Status>OK<\/Status>\s*<AssignedFee>\s*<Fee type="Normal">\s*<Name>Anmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>\s*<\/Fee>\s*<\/AssignedFee>\s*<AssignedFee>\s*<Fee type="Late">\s*<Name>Efteranmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>/
+      /<Status>OK<\/Status>\s*<AssignedFee>\s*<Fee type="Normal">\s*<Id>234128<\/Id>\s*<Name>Anmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>\s*<\/Fee>\s*<\/AssignedFee>\s*<AssignedFee>\s*<Fee type="Late">\s*<Id>234132<\/Id>\s*<Name>Efteranmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>/
     );
     assert.match(
       anna,
@@ -555,6 +555,8 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     // No surcharge, no Late fee; own card, no ServiceRequest.
     const cia = person('Carlsson');
     assert.equal(cia.match(/<AssignedFee>/g)?.length, 1);
+    // No Eventor fee id: no Fee/Id.
+    assert.doesNotMatch(cia, /<Fee type="Normal">\s*<Id>/);
     assert.doesNotMatch(cia, /ServiceRequest/);
   });
 
