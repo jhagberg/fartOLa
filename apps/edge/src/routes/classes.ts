@@ -200,6 +200,9 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       courseId: null,
       noTiming: false,
       startMethod: 'auto',
+      bibPrefix: null,
+      bibBase: null,
+      startName: null,
       ...kind,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
