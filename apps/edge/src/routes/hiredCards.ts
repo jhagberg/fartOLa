@@ -43,10 +43,10 @@
 // - .planning/phases/02-4-klubbs-mvp/02-PATTERNS.md §S-5 (pre-flight before tx)
 
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, sum } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { hiredCards } from '../db/schema.ts';
+import { competitors, hiredCards } from '../db/schema.ts';
 import { readoutChannel } from '@fartola/shared-types';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -123,9 +123,23 @@ export default async function registerHiredCardsRoutes(app: FastifyInstance): Pr
       .orderBy(desc(hiredCards.markedAtMs))
       .all();
 
+    // What was paid at the desk today, per method (cash-up; the same
+    // amounts the ResultList carries as PaidAmount).
+    const paidRows = app.fartolaDb.db
+      .select({ method: competitors.paidMethod, total: sum(competitors.paidAmount) })
+      .from(competitors)
+      .where(and(eq(competitors.competitionId, id), gt(competitors.paidAmount, 0)))
+      .groupBy(competitors.paidMethod)
+      .all();
+    const paidBy = (m: string | null) => Number(paidRows.find((r) => r.method === m)?.total ?? 0);
+    const cash = paidBy('cash');
+    const swish = paidBy('swish');
+    const other = paidBy(null);
+
     return {
       open: openRows.map(rowToDTO),
       returned: returnedRows.map(rowToDTO),
+      paid_on_site: { cash, swish, other, total: cash + swish + other },
     };
   });
 
