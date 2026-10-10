@@ -1159,7 +1159,8 @@ export interface LottningResponse {
     class_kind?: ClassKind | null;
     /** SOFT TA till TR 7.4.4: the class's interval, else the distance's norm. */
     suggested_interval_sec?: number | null;
-    /** SOFT TR 7.4.2: free start time banned; null = kind or level unknown. */
+    /** SOFT TR 7.4.2: free start time banned (false while the kind is
+     * unconfirmed or the level unset). */
     free_start_banned?: boolean | null;
     /** Named runners of the class without a start time. */
     without_start_time?: number;

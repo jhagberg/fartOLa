@@ -1,16 +1,10 @@
 // Authored for fartola. Not ported from upstream.
 //
-// SOFT start rules that read the competition's distance and level and the
-// class kind (TR 7.4.2–7.4.4).
+// SOFT start rule that reads the competition's distance (TA till TR
+// 7.4.4). The start-order rule (TR 7.4.2) is freeStartForbidden in
+// projection/preRaceCheck.ts.
 
-import type {
-  ClassKind,
-  ClassKindSource,
-  CompetitionDistance,
-  CompetitionLevel,
-} from '@fartola/shared-types';
-
-import { kindConfirmed, kindNeedsAge } from './classKind.ts';
+import type { CompetitionDistance } from '@fartola/shared-types';
 
 /** SOFT TA till TR 7.4.4: the normal start interval per distance (sprint
  * one minute, medel and natt two, lång three). Ultralång distance is
@@ -27,17 +21,4 @@ export function normalIntervalSec(distance: CompetitionDistance | null): number 
     default:
       return null;
   }
-}
-
-/** SOFT TR 7.4.2: "Fri starttid får inte tillämpas i åldersklasser vid
- * tävling inom nivåerna 1–3." True for a confirmed age class at nivå 1–3,
- * false when the rule does not apply, null while the kind is unconfirmed
- * or the level unset. */
-export function freeStartBanned(
-  cls: { classKind: ClassKind | null; classKindSource: ClassKindSource | null },
-  level: CompetitionLevel | null
-): boolean | null {
-  if (level === null || !kindConfirmed(cls)) return null;
-  const nationalLevel = level === 'niva1' || level === 'niva2' || level === 'niva3';
-  return nationalLevel && kindNeedsAge(cls.classKind!);
 }

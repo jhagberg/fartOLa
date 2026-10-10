@@ -570,8 +570,9 @@ describe('lottning route', () => {
     assert.equal((await get()).free_start_banned, false);
     setUp('niva1', 'oppen');
     assert.equal((await get()).free_start_banned, false);
+    // No level: the rule cannot apply yet (prerace's freeStartForbidden).
     setUp(null, 'senior');
-    assert.equal((await get()).free_start_banned, null);
+    assert.equal((await get()).free_start_banned, false);
 
     // After a draw only the unnamed entry (TR 7.5.1) is left, and it is not counted.
     setUp('niva2', 'senior');
