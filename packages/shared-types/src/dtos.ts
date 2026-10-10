@@ -359,6 +359,9 @@ export const CompetitorCreateInput = z
       })
       .nullable()
       .optional(),
+    /** SOFT TR 4.12.6 — the runner is 16 or younger. Only an open class
+     * uses it: youth pay the youth fee and no surcharge. */
+    youth: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.replace_card_for_competitor_id !== undefined) {

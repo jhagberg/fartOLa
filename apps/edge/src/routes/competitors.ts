@@ -74,7 +74,13 @@ import crypto from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { CompetitorCreateInput, type CompetitorDTO, readoutChannel } from '@fartola/shared-types';
+import {
+  CompetitorCreateInput,
+  type CompetitorDTO,
+  entryFeeFor,
+  localToEpochMs,
+  readoutChannel,
+} from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
 import { UnknownCompetitor, writeStartTimes } from '../db/startTimes.ts';
 import type { Competitor } from '../db/types.ts';
@@ -157,7 +163,9 @@ function hiredContactMissing(input: CompetitorCreateInput): boolean {
 /** Open (or reopen) the rental of `cardNumber`. Run inside the write's
  * transaction so a failure leaves no orphan rental. The compound PK
  * [competitionId, cardNumber] upserts (Pitfall 10): re-renting a card resets
- * marked_at_ms and clears returned_at_ms. */
+ * marked_at_ms and clears returned_at_ms. The rental fee is the
+ * competition's card fee at that moment (SOFT TR 4.12.4: only a hired card
+ * is charged). */
 function upsertHiredCard(
   app: FastifyInstance,
   input: CompetitorCreateInput,
@@ -173,6 +181,12 @@ function upsertHiredCard(
     contactEmail: orNull(hc?.email),
     note: orNull(hc?.note),
   };
+  const fee =
+    app.fartolaDb.db
+      .select({ cardFee: competitions.cardFee })
+      .from(competitions)
+      .where(eq(competitions.id, input.competition_id))
+      .get()?.cardFee ?? null;
   app.fartolaDb.db
     .insert(hiredCards)
     .values({
@@ -181,10 +195,11 @@ function upsertHiredCard(
       markedAtMs: now,
       returnedAtMs: null,
       ...contact,
+      fee,
     })
     .onConflictDoUpdate({
       target: [hiredCards.competitionId, hiredCards.cardNumber],
-      set: { markedAtMs: now, returnedAtMs: null, ...contact },
+      set: { markedAtMs: now, returnedAtMs: null, ...contact, fee },
     })
     .run();
 }
@@ -201,7 +216,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
 
     // (2) Competition must exist (both modes).
     const compRow = app.fartolaDb.db
-      .select({ id: competitions.id })
+      .select({ id: competitions.id, date: competitions.date })
       .from(competitions)
       .where(eq(competitions.id, input.competition_id))
       .get();
@@ -395,7 +410,14 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
 
     // (3) Class must exist AND belong to the competition.
     const classRow = app.fartolaDb.db
-      .select({ id: classes.id, competitionId: classes.competitionId })
+      .select({
+        id: classes.id,
+        competitionId: classes.competitionId,
+        classKind: classes.classKind,
+        entryFee: classes.entryFee,
+        youthEntryFee: classes.youthEntryFee,
+        lateFeePct: classes.lateFeePct,
+      })
       .from(classes)
       .where(eq(classes.id, createClassId))
       .get();
@@ -433,8 +455,21 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       }
     }
 
-    // (5) Atomic insert: competitor + (clubs upsert) + (card_bound event).
+    // (4.5) SOFT TR 4.12.6 — the fee this runner is told to pay: the class
+    // fee and the surcharge, capped per class type. Before the competition
+    // day it is a late entry, on the day a walk-up. No class fee set → no
+    // fee recorded.
     const now = Date.now();
+    const fee =
+      classRow.entryFee === null
+        ? null
+        : entryFeeFor(
+            classRow,
+            input.youth === true,
+            now < localToEpochMs(compRow.date, 0) ? 'late' : 'walkup'
+          );
+
+    // (5) Atomic insert: competitor + (clubs upsert) + (card_bound event).
     const competitorId = crypto.randomUUID();
     let seq: number | null = null;
 
@@ -452,6 +487,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             consentAtMs: now,
             consentStatus: 'explicit',
             scrubbedAtMs: null,
+            entryFee: fee?.entry ?? null,
+            lateFee: fee?.late ?? null,
           })
           .run();
 

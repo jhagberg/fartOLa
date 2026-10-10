@@ -1301,3 +1301,121 @@ describe('PATCH /api/competitors/:id/profile — bib (SOFT TR 7.5.4)', () => {
     assert.equal((await patch(bo, '101')).statusCode, 200);
   });
 });
+
+describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  /** A competition on `date` with H21 (senior) and Gul (open), fees set. */
+  async function seed(date: string) {
+    const comp = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Avgifter', date },
+    });
+    const competitionId = (comp.json() as { id: string }).id;
+    const mk = async (name: string) =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: `/api/competitions/${competitionId}/classes`,
+            payload: { name },
+          })
+        ).json() as { id: string }
+      ).id;
+    const h21 = await mk('H21');
+    const gul = await mk('Gul 2,5');
+    const put = await ctx.app.inject({
+      method: 'PUT',
+      url: `/api/competitions/${competitionId}/fees`,
+      payload: {
+        card_fee: 30,
+        classes: [
+          { class_id: h21, entry_fee: 180, youth_entry_fee: null, late_fee_pct: 100 },
+          { class_id: gul, entry_fee: 180, youth_entry_fee: 90, late_fee_pct: 50 },
+        ],
+      },
+    });
+    assert.equal(put.statusCode, 200, put.body);
+    return { competitionId, h21, gul };
+  }
+
+  const register = async (
+    competitionId: string,
+    classId: string,
+    card: number,
+    extra: Record<string, unknown> = {}
+  ) => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Eva Ek',
+        class_id: classId,
+        card_number: card,
+        consent: true,
+        ...extra,
+      },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const id = (res.json() as { id: string }).id;
+    return ctx.handle.db.select().from(competitors).where(eq(competitors.id, id)).get()!;
+  };
+
+  test('walk-up on the day in an adult age class: fee + surcharge up to 100 %', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    const row = await register(competitionId, h21, 1001);
+    assert.deepEqual([row.entryFee, row.lateFee], [180, 180]);
+  });
+
+  test('a late entry before the competition day: the surcharge is capped at 50 %', async () => {
+    const { competitionId, h21 } = await seed('2099-01-01');
+    const row = await register(competitionId, h21, 1002);
+    assert.deepEqual([row.entryFee, row.lateFee], [180, 90]);
+  });
+
+  test('open class: youth pay the youth fee and no surcharge', async () => {
+    const { competitionId, gul } = await seed('2026-05-22');
+    const youth = await register(competitionId, gul, 1003, { youth: true });
+    assert.deepEqual([youth.entryFee, youth.lateFee], [90, 0]);
+    const adult = await register(competitionId, gul, 1004);
+    assert.deepEqual([adult.entryFee, adult.lateFee], [180, 90]);
+  });
+
+  test('a class without a fee records none', async () => {
+    const { competitionId } = await seed('2026-05-22');
+    const other = (
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: `/api/competitions/${competitionId}/classes`,
+          payload: { name: 'D21' },
+        })
+      ).json() as { id: string }
+    ).id;
+    const row = await register(competitionId, other, 1005);
+    assert.deepEqual([row.entryFee, row.lateFee], [null, null]);
+  });
+
+  test('the card fee is charged only with a hired card', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    await register(competitionId, h21, 1006);
+    await register(competitionId, h21, 1007, {
+      hired_card: true,
+      hired_contact: { name: null, phone: '0701234567', email: null, note: null },
+    });
+    const rows = ctx.handle.db.select().from(hiredCards).all();
+    assert.deepEqual(
+      rows.map((r) => [r.cardNumber, r.fee]),
+      [[1007, 30]]
+    );
+  });
+});
