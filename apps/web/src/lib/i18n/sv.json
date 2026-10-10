@@ -153,6 +153,7 @@
   "runners.row.card.missing": "Ingen bricka",
   "runners.row.card.hire": "Hyrbricka",
   "runners.row.edit": "Redigera",
+  "runners.row.bib": "Startnr {{bib}}",
   "runners.loading": "Hämtar anmälda…",
   "runners.loadError": "Kunde inte hämta anmälda löpare",
   "runners.importSheet.title": "Importera löpare",

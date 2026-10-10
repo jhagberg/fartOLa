@@ -153,6 +153,7 @@
   "runners.row.card.missing": "No card",
   "runners.row.card.hire": "Hired card",
   "runners.row.edit": "Edit",
+  "runners.row.bib": "Bib {{bib}}",
   "runners.loading": "Loading registered runners…",
   "runners.loadError": "Failed to load registered runners",
   "runners.importSheet.title": "Import runners",
