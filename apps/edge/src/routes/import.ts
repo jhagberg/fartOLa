@@ -88,6 +88,7 @@ interface CompetitorRow {
   classId: string;
   cardNumber: number | null;
   startTimeMs: number | null;
+  bib: string | null;
 }
 
 /** A local class row. */
@@ -289,6 +290,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           classId: competitorsTable.classId,
           cardNumber: competitorsTable.cardNumber,
           startTimeMs: competitorsTable.startTimeMs,
+          bib: competitorsTable.bib,
         })
         .from(competitorsTable)
         .where(eq(competitorsTable.competitionId, competitionId))
@@ -499,6 +501,32 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       skipped.sort((a, b) => a.row - b.row);
       const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
 
+      // SOFT TR 7.5.4: the file's bibs (BibNumber) for the runners it
+      // matched. A bib given twice, or held by a runner who keeps it, is
+      // left out (one runner per bib); a row without one keeps the old bib.
+      const bibRows = new Map<string, number>();
+      for (const w of exactWrites)
+        if (w.entry.bibNumber !== null)
+          bibRows.set(w.entry.bibNumber, (bibRows.get(w.entry.bibNumber) ?? 0) + 1);
+      const bibOf = new Map(
+        exactWrites
+          .filter((w) => w.entry.bibNumber !== null && bibRows.get(w.entry.bibNumber) === 1)
+          .map((w) => [w.id, w.entry.bibNumber!])
+      );
+      const bibHolder = new Map(
+        localCompetitors.flatMap((c) => (c.bib === null ? [] : [[c.bib, c.id] as const]))
+      );
+      for (let dropped = true; dropped;) {
+        dropped = false;
+        for (const [id, bib] of bibOf) {
+          const holder = bibHolder.get(bib);
+          if (holder !== undefined && holder !== id && !bibOf.has(holder)) {
+            bibOf.delete(id);
+            dropped = true;
+          }
+        }
+      }
+
       // Write exact matches in a single transaction: cards on the row, start
       // times as one start_times_set event (ADR-0003 update 2026-10).
       if (exactWrites.length > 0) {
@@ -516,6 +544,19 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
               )
               .run();
           }
+          // Clear first, so a bib moving between two runners never collides.
+          for (const id of bibOf.keys())
+            app.fartolaDb.db
+              .update(competitorsTable)
+              .set({ bib: null })
+              .where(eq(competitorsTable.id, id))
+              .run();
+          for (const [id, bib] of bibOf)
+            app.fartolaDb.db
+              .update(competitorsTable)
+              .set({ bib })
+              .where(eq(competitorsTable.id, id))
+              .run();
           const changes = exactWrites.map((w) => ({
             competitorId: w.id,
             startTimeMs: w.startTimeMs,
