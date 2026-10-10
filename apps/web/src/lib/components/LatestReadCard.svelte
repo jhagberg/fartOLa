@@ -39,6 +39,7 @@
   import Icon from '#lib/ui/Icon.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
   import PulseDot from '#lib/ui/PulseDot.svelte';
+  import type { CorrectionLine } from '#lib/screens/corrections.ts';
 
   interface Read {
     cardNumber: number;
@@ -68,6 +69,9 @@
     missingStartHint: { check: string; offset: string; suggested: string } | null;
     /** 02.1-14 Task 14: late / early start punch against the start time. */
     startWarning: { key: 'ro.lateStart' | 'ro.earlyStart'; diff: string } | null;
+    /** Secretariat corrections in force (screens/corrections.ts), shown so
+     * a read-out never hides them. */
+    corrections: CorrectionLine[];
   }
 
   type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
@@ -289,6 +293,14 @@
         <div class="start-warning mono" role="status" data-testid="start-warning">
           <Icon name="alert-triangle" size={16} /> {t(read.startWarning.key, { diff: read.startWarning.diff })}
         </div>
+      {/if}
+
+      {#if read.corrections.length > 0}
+        <ul class="corrections" data-testid="corrections-line">
+          {#each read.corrections as line (line.key)}
+            <li><Icon name="edit" size={16} /> {t(line.key, line.vars)}</li>
+          {/each}
+        </ul>
       {/if}
 
       {#if read.missingStart && read.competitorId}
@@ -677,6 +689,14 @@
   }
   .start-input {
     width: 9ch;
+  }
+  .corrections {
+    margin: 12px 0 0;
+    padding: 8px 12px;
+    list-style: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
   }
   .dnf-actions {
     display: flex;

@@ -19,6 +19,7 @@
 -->
 <script lang="ts">
   import Modal from '#lib/ui/Modal.svelte';
+  import CorrectionsPanel from '#lib/components/CorrectionsPanel.svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
     editCompetitorProfile,
@@ -227,6 +228,10 @@
         {/if}
       </div>
     </form>
+    {#if competitor}
+      <hr class="divider" />
+      <CorrectionsPanel {competitionId} competitorId={competitor.id} />
+    {/if}
   {/snippet}
   {#snippet foot()}
     <button type="button" class="btn ghost" onclick={close} disabled={saving || withdrawing}>

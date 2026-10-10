@@ -154,3 +154,18 @@ export function startBeforeFinishMs(
   if (start > finishClock) start -= DAY_MS;
   return finishClock - start > MAX_RUN_MS ? null : start - offsetMin * MIN_MS;
 }
+
+/** A finish entered as a time of day (SOFT TR 4.20.6) as epoch ms: the
+ * earliest such time not before `startMs`, so 00:10 against a start at 23:50
+ * is the day after. Null when that is more than 12 h after the start. */
+export function finishAfterStartMs(
+  secondsOfDay: number,
+  startMs: number,
+  offsetMin: number
+): number | null {
+  const startClock = startMs + offsetMin * MIN_MS;
+  const midnight = startClock - (((startClock % DAY_MS) + DAY_MS) % DAY_MS);
+  let finish = midnight + secondsOfDay * 1000;
+  if (finish < startClock) finish += DAY_MS;
+  return finish - startClock > MAX_RUN_MS ? null : finish - offsetMin * MIN_MS;
+}

@@ -573,6 +573,58 @@ export function clearManualStatus(
 }
 
 // ---------------------------------------------------------------------------
+// Secretariat corrections (apps/edge/src/routes/manual.ts): each is one event
+// with a reason and is removed by a compensating one.
+// ---------------------------------------------------------------------------
+
+/** GET …/competitors/:cid/corrections: the corrections in force and the
+ * result they give (CompetitorView fields). */
+export interface CorrectionsDTO {
+  status: 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
+  elapsed_time_ms: number | null;
+  start_time_ms: number | null;
+  missing_codes: number[];
+  manual_finish_ms: number | null;
+  manual_finish_reason: string | null;
+  manual_punches: Array<{ control_code: number; reason: string }>;
+  time_addition_min: number;
+  time_addition_reason: string | null;
+}
+
+const competitorPath = (competitionId: string, competitorId: string): string =>
+  `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}`;
+
+export function getCorrections(
+  competitionId: string,
+  competitorId: string
+): Promise<CorrectionsDTO> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/corrections`);
+}
+
+/** SOFT TR 4.20.6: finish time by hand (epoch ms on the competition clock). */
+export function setManualFinish(
+  competitionId: string,
+  competitorId: string,
+  finishMs: number,
+  reason: string
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/manual-finish`, {
+    method: 'POST',
+    body: { finish_ms: finishMs, reason },
+  });
+}
+
+export function clearManualFinish(
+  competitionId: string,
+  competitorId: string
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/clear-manual-finish`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Import (multipart) — Course XML + IOF XML 3.0 entries
 // ---------------------------------------------------------------------------
 

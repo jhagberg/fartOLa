@@ -17,6 +17,7 @@ import {
   localToEpochMs,
   parseTimeOfDay,
   startBeforeFinishMs,
+  finishAfterStartMs,
 } from './time.ts';
 
 const utc = (iso: string): number => Date.parse(iso);
@@ -128,5 +129,25 @@ describe('startBeforeFinishMs', () => {
   test('a start at the finish is a zero run', () => {
     const finish = clockToEpochMs('2026-10-03', hms('10:00'), 120);
     assert.equal(startBeforeFinishMs(hms('10:00'), finish, 120), finish);
+  });
+});
+
+// SOFT TR 4.20.6: a finish entered by hand is placed after the start.
+describe('finishAfterStartMs', () => {
+  test('10:00 → 10:42:30 is 42:30', () => {
+    const start = clockToEpochMs('2026-10-03', hms('10:00'), 120);
+    assert.equal(finishAfterStartMs(hms('10:42:30'), start, 120)! - start, (42 * 60 + 30) * 1000);
+  });
+
+  test('00:10 against a start at 23:50 is the day after: 20 minutes', () => {
+    const start = clockToEpochMs('2026-10-03', hms('23:50'), 120);
+    const finish = finishAfterStartMs(hms('00:10'), start, 120)!;
+    assert.equal(finish, clockToEpochMs('2026-10-04', hms('00:10'), 120));
+  });
+
+  test('more than 12 h after the start is null; at the start is a zero run', () => {
+    const start = clockToEpochMs('2026-10-03', hms('10:00'), 120);
+    assert.equal(finishAfterStartMs(hms('09:59'), start, 120), null);
+    assert.equal(finishAfterStartMs(hms('10:00'), start, 120), start);
   });
 });

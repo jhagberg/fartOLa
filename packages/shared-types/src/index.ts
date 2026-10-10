@@ -136,4 +136,5 @@ export {
   formatClockDateTime,
   parseTimeOfDay,
   startBeforeFinishMs,
+  finishAfterStartMs,
 } from './time.ts';

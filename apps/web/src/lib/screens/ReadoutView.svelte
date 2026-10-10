@@ -104,6 +104,7 @@
     startWarning,
     setStartFromInput,
   } from './readout-types.ts';
+  import { correctionLines } from './corrections.ts';
 
   interface Props {
     competitionId: string;
@@ -300,6 +301,7 @@
       missingStartHint: clockOffsetMin === null ? null : missingStartHint(row, clockOffsetMin),
       // 02.1-14 Task 14: late / early start punch (jury warning).
       startWarning: startWarning(row),
+      corrections: correctionLines(row, clockOffsetMin),
     };
   });
 
