@@ -33,6 +33,8 @@ is not repeated as rows.
 
 ## Avläsning (`screens/ReadoutView.svelte`, `components/LatestReadCard.svelte`, `components/HistoryRow.svelte`, `components/HistoryList.svelte`, `components/MissingStartsPanel.svelte`, `components/ReceiptMirror.svelte`, `components/ConsentConfirmationToast.svelte`, `components/HyrbrickaToast.svelte`, frame: `layout/*`)
 
+**Plan 2:** frame done (14 px menu text, full competition name, drawer closes on pick, Eventor status refresh). The readout rows are left for plan 3 and sekretariat.
+
 Solved by plan 1: X1 (sidebar scroll), X2 (drawer at 1024 px, readout stacking), X3 and X4 (status words, pill contrast, 14 px sans), X6 for `.btn.sm`, `.status-chip`, `.kbd`, `.faint`, the 36 px inputs, `.reset-btn`, the confirm buttons and `.reconnect-btn`, punch tiles (colour-blind safe), readout action bar, icons (Lucide at the Task 4 sites), card number / active nav / selected history row go ink, flat cards, token contrast, focus ring (including station card and competition pill), wording `ro.feed.live`, `race.reset.body`, status words.
 
 | ID    | Sev    | Rule                               | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Fix (plan 2)                                                                                                                                                                                                                                                                                                                          |
@@ -67,6 +69,8 @@ Solved by plan 1: X1 (sidebar scroll), X2 (drawer at 1024 px, readout stacking),
 
 ## Direktanmälan (`screens/WalkupModal.svelte`)
 
+**Plan 2:** not touched (m2-fees owns WalkupModal). Left for plan 3.
+
 Solved by plan 1: X10 wording for `walk.title`, `walk.desc`, `walk.bana`, `walk.banaPlaceholder`, `walk.save` ("Spara anmälan"), `runners.addSheet.namePlaceholder`, `ro.register`; token contrast (labels, borders); global focus ring; Button and Input 44 px; flat look.
 
 | ID    | Sev    | Rule                               | Finding                                                                                                                                                                                                                                                                                                                         | Fix (plan 2)                                                                                                                                                                              |
@@ -85,6 +89,8 @@ Solved by plan 1: X10 wording for `walk.title`, `walk.desc`, `walk.bana`, `walk.
 
 ## Resultat (`screens/ResultsView.svelte`, `components/ResultsTable.svelte`, `components/ClassTabs.svelte`)
 
+**Plan 2:** not touched. Left for plan 3.
+
 Solved by plan 1: X3 and X4 for the status pill (14 px, SOFT words, contrast), `--fg-faint` contrast, flat table (shadow becomes border), `ro.feed.live` becomes "direkt", focus ring, `--fg-muted` contrast.
 
 | ID   | Sev    | Rule                            | Finding                                                                                                                                                                                                                                                                           | Fix (plan 2)                                                                                                           |
@@ -99,6 +105,8 @@ Solved by plan 1: X3 and X4 for the status pill (14 px, SOFT words, contrast), `
 | RE-8 | low    | consistency                     | "Helskärm" is a hand-rolled `.btn-fs` (`ResultsView.svelte:361-376`) that duplicates `ui/Button`.                                                                                                                                                                                 | `<Button variant="secondary">` with the maximize icon.                                                                 |
 
 ## Lottning (`screens/LottningView.svelte`, `components/PreviousResultsUpload.svelte`, `components/StartTimeHistory.svelte`)
+
+**Plan 2:** not touched. Left for plan 3.
 
 Solved by plan 1: X6 for `.edit-btn` and `.edit-action-btn` (44 px, 14 px), flat cards, token contrast, focus ring.
 
@@ -117,6 +125,8 @@ Solved by plan 1: X6 for `.edit-btn` and `.edit-action-btn` (44 px, 14 px), flat
 
 ## Tävlingsinfo (`screens/CompetitionInfoView.svelte`, `components/ClassKindsPanel.svelte`)
 
+**Plan 2:** not touched. Left for plan 3 (see the one-save-model todo).
+
 Solved by plan 1: X6 for `.ctrl-chip` (44 px, 14 px), flat cards, token contrast (`--fg-muted` labels), focus ring on inputs.
 
 | ID   | Sev    | Rule                            | Finding                                                                                                                                                                                                                                                                                                              | Fix (plan 2)                                                                                                                                                                                                               |
@@ -130,6 +140,8 @@ Solved by plan 1: X6 for `.ctrl-chip` (44 px, 14 px), flat cards, token contrast
 | TI-7 | low    | ADR-0016 r6 / layout            | The auto-print checkbox sits in a grid cell beside "Tidvisning" with its label to the left of the box (screenshot; `.check-row` uses `flex-direction: row-reverse`), unlike every other field.                                                                                                                       | Put the checkbox in its own full-width row below the grid, box left of the label.                                                                                                                                          |
 
 ## Anmälda (`screens/RunnersListView.svelte`, `components/AddRunnerSheet.svelte`, `components/EditCompetitorModal.svelte`)
+
+**Plan 2:** only the import sheet (see Importera löpare). Rest left for plan 3.
 
 Solved by plan 1: X10 wording (`runners.addSheet.namePlaceholder`, `edit.withdraw.confirmBody`, `edit.withdraw.confirm`, `registration.cancelToast`), Button size-sm 44 px, token contrast, flat cards, focus ring on Input and Select.
 
@@ -152,6 +164,8 @@ Solved by plan 1: X10 wording (`runners.addSheet.namePlaceholder`, `edit.withdra
 
 ## Registrering (`screens/RegistrationView.svelte`)
 
+**Plan 2:** done (RG-1 to RG-7).
+
 Solved by plan 1: X10 `registration.cancelToast`, icons, token contrast, Button 44 px, focus ring on Input.
 
 | ID   | Sev    | Rule                           | Finding                                                                                                                                                                                                                                                                                     | Fix (plan 2)                                                                                                                                                                                                                                                                |
@@ -166,6 +180,8 @@ Solved by plan 1: X10 `registration.cancelToast`, icons, token contrast, Button 
 
 ## Importera löpare (`screens/ImportRunnersView.svelte`, `components/DropZone.svelte`, `ui/Modal.svelte`)
 
+**Plan 2:** done (clear next step, relink failure told apart, plain words).
+
 Solved by plan 1: `importRunners.errNoKey` wording, icons (DropZone `✓` and `↓ XML`), Modal flat look and radius, token contrast, focus ring.
 
 | ID   | Sev    | Rule                          | Finding                                                                                                                                                                                                                                                                                                           | Fix (plan 2)                                                                                                                                                             |
@@ -179,6 +195,8 @@ Solved by plan 1: `importRunners.errNoKey` wording, icons (DropZone `✓` and `�
 | IM-7 | low    | ADR-0016 r6 / r7              | `DropZone.svelte:28` hard-coded "Klicka för att byta fil" and `.sub` at 12 px (`:182`).                                                                                                                                                                                                                           | `t('wiz.drop.change')`, 14 px.                                                                                                                                           |
 
 ## Export (`screens/ExportView.svelte`)
+
+**Plan 2:** done (counts, one fetch, next step, stale preview guarded).
 
 Solved by plan 1: icons (`✓`, `✗`, `↓` at the Task 4 sites), token contrast, flat boxes.
 
@@ -195,6 +213,8 @@ Solved by plan 1: icons (`✓`, `✗`, `↓` at the Task 4 sites), token contras
 
 ## Eventor (`screens/EventorPublishView.svelte`)
 
+**Plan 2:** done (last publish remembered, failures shown, no jargon).
+
 Solved by plan 1: `eventor.publish.results.desc` ("Skickar resultatlistan till Eventor."), token contrast, flat boxes.
 
 | ID   | Sev    | Rule                             | Finding                                                                                                                                                                                                                       | Fix (plan 2)                                                                                                                              |
@@ -207,6 +227,8 @@ Solved by plan 1: `eventor.publish.results.desc` ("Skickar resultatlistan till E
 | EV-6 | low    | consistency / tokens             | Hand-rolled `.btn` (`:161-176`, radius 8 px, `opacity: 0.55` when disabled), `.h0` and `.h1` local sizes, `.box.ok a { word-break: break-all }` for the Eventor URL.                                                          | `<Button>`; `--fs-display` and `--fs-heading`; `overflow-wrap: anywhere`.                                                                 |
 
 ## Kvar i skogen (`screens/KvarISkovenView.svelte`)
+
+**Plan 2:** done (empty read, all back and wrapped memory told apart).
 
 Solved by plan 1: X6 `.btn.xs` (44 px, 14 px), icons, token contrast, flat boxes.
 
@@ -223,6 +245,8 @@ Solved by plan 1: X6 `.btn.xs` (44 px, 14 px), icons, token contrast, flat boxes
 
 ## Hyrbrickor (`screens/ActiveHyrbrickorView.svelte`)
 
+**Plan 2:** not touched (m2-fees owns it). Left for plan 3.
+
 Solved by plan 1: X6 for the "Returnerad" `size-sm` button (44 px), token contrast, flat cards.
 
 | ID   | Sev    | Rule                     | Finding                                                                                                                                                                                                                                          | Fix (plan 2)                                                                                                 |
@@ -235,6 +259,8 @@ Solved by plan 1: X6 for the "Returnerad" `size-sm` button (44 px), token contra
 
 ## Tävlingar (`screens/HomeView.svelte`, `components/CompetitionCard.svelte`)
 
+**Plan 2:** done (real status, cards are links, load error with retry).
+
 Solved by plan 1: token contrast, flat cards (`--shadow-md` on hover becomes a ring).
 
 | ID   | Sev    | Rule                                    | Finding                                                                                                                                                                                                                                                               | Fix (plan 2)                                                                                                                                                          |
@@ -246,6 +272,8 @@ Solved by plan 1: token contrast, flat cards (`--shadow-md` on hover becomes a r
 | TV-5 | low    | [behaviour] HTML semantics / navigation | Each card is a `<button>` that contains an `<h3>` and `<div>` (`CompetitionCard.svelte:34-60`) and navigates; headings and blocks are not allowed inside a button, and it cannot be opened in a new tab.                                                              | `<a href="/competition/{id}/readout">` with the same styles.                                                                                                          |
 
 ## Ny tävling (`screens/NewCompetitionWizard.svelte`, `screens/WizardStep1.svelte`, `screens/WizardStep2.svelte`, `screens/WizardStep3.svelte`)
+
+**Plan 2:** done (two steps, create from step 2, NY-1 as decided).
 
 Solved by plan 1: icons (`📁`, `→`, `✓` at the Task 4 sites), token contrast, flat boxes.
 
@@ -261,6 +289,8 @@ Solved by plan 1: icons (`📁`, `→`, `✓` at the Task 4 sites), token contra
 | NY-8 | low    | i18n                          | `NewCompetitionWizard.svelte:24` `aria-label="wizard progress"` is hard-coded English.                                                                                                                                                                                                                                                                                                                                                                                | `t('wiz.progress')` "Steg i guiden".                                                                                                                       |
 
 ## Inställningar (`screens/SettingsView.svelte`, `components/TweaksPanel.svelte`)
+
+**Plan 2:** done (grouped by competition and installation, deep links, save results).
 
 Solved by plan 1: `tw.title` ("Utseende"), `settings.meos.desc`, `settings.helperCodes.description`, token contrast, flat cards, focus ring on Input.
 
@@ -280,6 +310,8 @@ Solved by plan 1: `tw.title` ("Utseende"), `settings.meos.desc`, `settings.helpe
 | IN-12 | low    | ADR-0016 r6                | `sv.json` `settings.integrations.desc` "API-nycklar för externa system. Värdet sparas lokalt..." is jargon.                                                                                                                                                                                                                                                                                                                                        | "Nycklar för Eventor, Livelox och Liveresultat. Nyckeln visas inte igen efter att du sparat den."                                                                |
 
 ## Hjälparinloggning (`screens/AccessView.svelte`)
+
+**Plan 2:** done (failed load vs wrong code, empty list, 16 px fields).
 
 Solved by plan 1: token contrast, flat card, Button 44 px.
 
