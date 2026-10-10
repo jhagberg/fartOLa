@@ -769,4 +769,21 @@ describe('LottningView (mounted)', () => {
     expect(posts.map((p) => p.url.split('/lottning/')[1])).toEqual(['h12', 'h12/bibs']);
     expect(posts[1]!.body).toEqual({ bib_prefix: null, bib_base: 7 });
   });
+
+  it('start-list markers are text: Ny tid, Efteranmäld, Omstart, Seedad with its group', async () => {
+    startList = [
+      { ...drawnRunner(null), id: 'r1', marker: 'new_time' },
+      { ...drawnRunner(null), id: 'r2', name: 'Bo', marker: 'late_entrant' },
+      { ...drawnRunner(null), id: 'r3', name: 'Cia', marker: 'restart' },
+      { ...drawnRunner(null), id: 'r4', name: 'Dan', marker: null, seed_group: 1 },
+      { ...drawnRunner(null), id: 'r5', name: 'Eva', marker: null },
+    ];
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    const texts = [...document.querySelectorAll('[data-testid="lottning-marker"]')].map((e) =>
+      e.textContent!.trim()
+    );
+    expect(texts).toEqual(['Ny tid', 'Efteranmäld', 'Omstart', 'Seedad, grupp 1']);
+  });
 });
