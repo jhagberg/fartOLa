@@ -58,7 +58,7 @@
       <ul>
         {#each panel.onWay as r (r.competitor_id)}
           {@const lp = lastPassing(r)}
-          <li>
+          <li data-testid="spk-onway">
             <span class="nm" data-testid="spk-name">{r.name}</span>
             {#if r.club}<span class="club">{r.club}</span>{/if}
             {#if lp}
