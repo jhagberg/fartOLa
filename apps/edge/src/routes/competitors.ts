@@ -78,6 +78,7 @@ import {
   CompetitorCreateInput,
   type CompetitorDTO,
   entryFeeFor,
+  isYouthByBirthYear,
   localToEpochMs,
   readoutChannel,
 } from '@fartola/shared-types';
@@ -465,7 +466,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         ? null
         : entryFeeFor(
             classRow,
-            input.youth === true,
+            input.birth_year != null && isYouthByBirthYear(input.birth_year, compRow.date),
             now < localToEpochMs(compRow.date, 0) ? 'late' : 'walkup'
           );
 
@@ -489,6 +490,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             scrubbedAtMs: null,
             entryFee: fee?.entry ?? null,
             lateFee: fee?.late ?? null,
+            birthYear: input.birth_year ?? null,
           })
           .run();
 

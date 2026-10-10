@@ -267,6 +267,40 @@ describe('ingestEntryList', () => {
       ctx.handle.close();
     }
   });
+  test('SOFT TR 4.12.6: the EntryList import stores the birth year from Person/BirthDate', () => {
+    const ctx = bootCtx();
+    try {
+      const xml = `<?xml version="1.0"?>
+<EntryList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+  <Event><Name>Born</Name></Event>
+  <PersonEntry>
+    <Person><Name><Family>Ek</Family><Given>Eva</Given></Name><BirthDate>2011-01-01</BirthDate></Person>
+    <Class><Name>H21</Name></Class>
+  </PersonEntry>
+  <PersonEntry>
+    <Person><Name><Family>Berg</Family><Given>Bo</Given></Name></Person>
+    <Class><Name>H21</Name></Class>
+  </PersonEntry>
+</EntryList>`;
+      const parsed = parseIofXml(xml);
+      if (parsed.kind !== 'EntryList') throw new Error('expected EntryList');
+      ingestEntryList(ctx.handle, ctx.competitionId, parsed.data, Date.now());
+      const rows = ctx.handle.db
+        .select({ name: competitors.name, birthYear: competitors.birthYear })
+        .from(competitors)
+        .where(eq(competitors.competitionId, ctx.competitionId))
+        .all();
+      assert.deepEqual(
+        new Map(rows.map((r) => [r.name, r.birthYear])),
+        new Map([
+          ['Eva Ek', 2011],
+          ['Bo Berg', null],
+        ])
+      );
+    } finally {
+      ctx.handle.close();
+    }
+  });
   test('SOFT TA till TR 7.8.3: the EntryList import stores the Eventor person id from Person/Id', () => {
     const ctx = bootCtx();
     try {

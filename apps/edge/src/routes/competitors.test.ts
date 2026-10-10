@@ -1382,12 +1382,14 @@ describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.deepEqual([row.entryFee, row.lateFee], [180, 90]);
   });
 
-  test('open class: youth pay the youth fee and no surcharge', async () => {
+  test('open class: the birth year decides — youth (16 or younger) pay the youth fee and no surcharge', async () => {
     const { competitionId, gul } = await seed('2026-05-22');
-    const youth = await register(competitionId, gul, 1003, { youth: true });
-    assert.deepEqual([youth.entryFee, youth.lateFee], [90, 0]);
-    const adult = await register(competitionId, gul, 1004);
+    const youth = await register(competitionId, gul, 1003, { birth_year: 2010 });
+    assert.deepEqual([youth.entryFee, youth.lateFee, youth.birthYear], [90, 0, 2010]);
+    const adult = await register(competitionId, gul, 1004, { birth_year: 2009 });
     assert.deepEqual([adult.entryFee, adult.lateFee], [180, 90]);
+    const unknown = await register(competitionId, gul, 1008);
+    assert.deepEqual([unknown.entryFee, unknown.lateFee, unknown.birthYear], [180, 90, null]);
   });
 
   test('a class without a fee records none', async () => {

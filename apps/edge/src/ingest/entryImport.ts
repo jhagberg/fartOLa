@@ -164,6 +164,7 @@ function doIngest(
         classId,
         cardNumber: e.card_number,
         eventorPersonId: e.eventor_person_id ?? null,
+        birthYear: e.birth_year ?? null,
         consentAtMs: null,
         consentStatus: 'pending_first_read',
         scrubbedAtMs: null,
