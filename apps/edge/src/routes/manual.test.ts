@@ -626,3 +626,81 @@ describe('POST /api/competitions/:id/unread-dns (+ /undo)', () => {
     assert.equal(statusOf(xml, 'Egen'), 'DidNotStart');
   });
 });
+
+describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+  const FINISH_MS = Date.UTC(2026, 4, 22, 9, 40);
+  const post = (competitionId: string, competitorId: string, path: string, payload: unknown) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/${path}`,
+      payload: payload as object,
+    });
+
+  test('set → 201, a manual_finish_set event, the projection has the finish and reason; clear removes it', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await post(competitionId, competitorId, 'manual-finish', {
+      finish_ms: FINISH_MS,
+      reason: 'Målenheten stod still',
+    });
+    assert.equal(res.statusCode, 201);
+    const row = ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, competitionId))
+      .all()
+      .find((e) => e.eventType === 'manual_finish_set');
+    assert.ok(row);
+    const view = ctx.app.projectionStore
+      .recomputeNow(competitionId)!
+      .competitors.get(competitorId)!;
+    assert.equal(view.manual_finish_ms, FINISH_MS);
+    assert.equal(view.manual_finish_reason, 'Målenheten stod still');
+    assert.ok(
+      ctx.recorded.some(
+        (r) => r.channel === `readout:${competitionId}` && r.envelope.type === 'manual_finish_set'
+      )
+    );
+
+    const cleared = await post(competitionId, competitorId, 'clear-manual-finish', {});
+    assert.equal(cleared.statusCode, 201);
+    const after = ctx.app.projectionStore
+      .recomputeNow(competitionId)!
+      .competitors.get(competitorId)!;
+    assert.equal(after.manual_finish_ms, null);
+  });
+
+  test('no reason, an empty reason or no finish → 400; clear with a body field → 400', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    for (const body of [
+      { finish_ms: FINISH_MS },
+      { finish_ms: FINISH_MS, reason: '' },
+      { reason: 'x' },
+      { finish_ms: 'tio', reason: 'x' },
+    ]) {
+      assert.equal(
+        (await post(competitionId, competitorId, 'manual-finish', body)).statusCode,
+        400
+      );
+    }
+    const res = await post(competitionId, competitorId, 'clear-manual-finish', { x: 1 });
+    assert.equal(res.statusCode, 400);
+  });
+
+  test('a competitor in another competition → 404', async () => {
+    const a = await seedCompetitionAndCompetitor(ctx.app);
+    const b = await seedCompetitionAndCompetitor(ctx.app);
+    const res = await post(a.competitionId, b.competitorId, 'manual-finish', {
+      finish_ms: FINISH_MS,
+      reason: 'x',
+    });
+    assert.equal(res.statusCode, 404);
+  });
+});

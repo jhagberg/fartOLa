@@ -277,7 +277,7 @@ function raceTimes(
     return { start: null, finish: null };
   }
   const read = view.card_read_history[view.card_read_history.length - 1];
-  if (read === undefined) return { start: view.start_time_ms, finish: null };
+  if (read === undefined) return { start: view.start_time_ms, finish: view.manual_finish_ms };
   // The same start and finish the running time is computed from.
   return {
     start: startMs({
@@ -289,9 +289,10 @@ function raceTimes(
       startMethod: cls.start_method,
     }),
     finish:
-      read.finish === null
+      view.manual_finish_ms ??
+      (read.finish === null
         ? null
-        : cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, clockOffsetMin),
+        : cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, clockOffsetMin)),
   };
 }
 

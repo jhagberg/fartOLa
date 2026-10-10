@@ -55,8 +55,11 @@ import {
   ClearManualStatusInput,
   VoidLegInput,
   UnvoidLegInput,
+  ManualFinishInput,
+  ClearCorrectionInput,
   readoutChannel,
 } from '@fartola/shared-types';
+import type { ZodType } from 'zod';
 import { competitors as competitorsTable, type EventPayload } from '../db/schema.ts';
 import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
@@ -65,6 +68,11 @@ import { issuesToErrors } from './_zod-errors.ts';
 /** The reason "Sätt ej utlästa till Ej start" writes; undo clears only
  * DNS with this reason (SOFT TA till TR 7.8.2). */
 export const UNREAD_DNS_REASON = 'Ej utläst: satt till Ej start';
+
+type CorrectionPayload = Extract<
+  EventPayload,
+  { event_type: 'manual_finish_set' | 'manual_finish_cleared' }
+>;
 
 type ManualStatusPayload = Extract<
   EventPayload,
@@ -447,4 +455,65 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
       return reply.code(201).send({ count });
     }
   );
+
+  // ---------------------------------------------------------------------------
+  // Secretariat corrections. Each is one event with a reason, removed by a
+  // compensating event; the projection folds them over the whole log, so a
+  // later read-out does not overwrite one (projection/corrections.ts).
+  //
+  //   POST …/competitors/:cid/manual-finish        SOFT TR 4.20.6 — MeOS
+  //   POST …/competitors/:cid/clear-manual-finish  "Måltid:" (TabRunner.cpp:3446)
+  // ---------------------------------------------------------------------------
+  const correction = <T>(
+    path: string,
+    schema: ZodType<T>,
+    payload: (competitorId: string, body: T) => CorrectionPayload
+  ): void => {
+    app.post<{ Params: { id: string; competitorId: string } }>(
+      `/api/competitions/:id/competitors/:competitorId/${path}`,
+      async (req, reply) => {
+        const { id: competitionId, competitorId } = req.params;
+        const parsed = schema.safeParse(req.body ?? {});
+        if (!parsed.success) {
+          return reply.code(400).send(issuesToErrors(parsed.error.issues));
+        }
+        const competitor = app.fartolaDb.db
+          .select({ id: competitorsTable.id })
+          .from(competitorsTable)
+          .where(
+            and(
+              eq(competitorsTable.id, competitorId),
+              eq(competitorsTable.competitionId, competitionId)
+            )
+          )
+          .get();
+        if (!competitor) return reply.code(404).send({ error: 'competitor_not_found' });
+
+        const p = payload(competitorId, parsed.data);
+        const r = insertEvent(
+          app.fartolaDb,
+          app.fartolaNodeId,
+          p.event_type,
+          Date.now(),
+          p,
+          competitionId
+        );
+        const { event_type: type, ...rest } = p;
+        app.wsBroadcast(readoutChannel(competitionId), { type, payload: rest, seq: r.local_seq });
+        app.projectionStore.markDirty(competitionId);
+        return reply.code(201).send({ local_seq: r.local_seq });
+      }
+    );
+  };
+
+  correction('manual-finish', ManualFinishInput, (competitor_id, body) => ({
+    event_type: 'manual_finish_set',
+    competitor_id,
+    finish_ms: body.finish_ms,
+    reason: body.reason,
+  }));
+  correction('clear-manual-finish', ClearCorrectionInput, (competitor_id) => ({
+    event_type: 'manual_finish_cleared',
+    competitor_id,
+  }));
 }

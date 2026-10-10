@@ -176,6 +176,21 @@ export type EventPayload =
       reason: string;
     }
   | {
+      // SOFT TR 4.20.6: finish time entered by the secretariat (finish unit
+      // failed, card missing). Wins over the card's finish until cleared;
+      // a later read-out does not overwrite it (projection/corrections.ts).
+      event_type: 'manual_finish_set';
+      competitor_id: string;
+      /** Epoch ms on the competition clock (ADR-0012). */
+      finish_ms: number;
+      reason: string;
+    }
+  | {
+      // Undo of manual_finish_set: the card's finish applies again.
+      event_type: 'manual_finish_cleared';
+      competitor_id: string;
+    }
+  | {
       // Phase 2.0 generalization of un_dnf — clears whatever manual override
       // is in force and re-derives status from the latest card_read (or PEND
       // when no card_read has landed).

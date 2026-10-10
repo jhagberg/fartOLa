@@ -454,6 +454,26 @@ export const UnvoidLegInput = z.object({
 export type UnvoidLegInput = z.infer<typeof UnvoidLegInput>;
 
 // ---------------------------------------------------------------------------
+// Secretariat corrections (SOFT TR 4.20.6): a reason is required, as for a
+// manual status; removing a correction takes no body.
+//
+// POST /api/competitions/:id/competitors/:cid/manual-finish
+//   body: { finish_ms: epoch ms on the competition clock, reason }
+// POST /api/competitions/:id/competitors/:cid/clear-manual-finish
+// ---------------------------------------------------------------------------
+
+export const ManualFinishInput = z
+  .object({
+    finish_ms: z.number().int().positive(),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
+export type ManualFinishInput = z.infer<typeof ManualFinishInput>;
+
+export const ClearCorrectionInput = z.object({}).strict();
+export type ClearCorrectionInput = z.infer<typeof ClearCorrectionInput>;
+
+// ---------------------------------------------------------------------------
 // Club — walk-up autocomplete cache.
 // ---------------------------------------------------------------------------
 

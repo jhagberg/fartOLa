@@ -52,6 +52,7 @@ import {
   type StartMethod,
 } from './dnfMp.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
+import { foldCorrections } from './corrections.ts';
 import { buildCardIndex } from './matching.ts';
 import { withEventStartTimes } from './startTimes.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
@@ -165,6 +166,10 @@ export function reduce(input: ReduceInput): CompetitionState {
           control_codes: c.control_codes.filter((code) => !voidedControls.has(code)),
         }));
 
+  // Secretariat corrections (manual finish …): the final state applies to
+  // every read, so a later read-out cannot overwrite one.
+  const corrections = foldCorrections(sortedEvents, input.competition_id);
+
   // Course lookup by class_id for fast per-event MP detection. A course may
   // legitimately have classId=null during XML import; those competitors get
   // an empty expected list and thus MP / OK based purely on punches presence.
@@ -220,6 +225,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         drawnStartMs: view.start_time_ms,
         clockOffsetMin: input.clock_offset_min,
         startMethod: startMethodOf(view.class_id),
+        finishMs: view.manual_finish_ms,
       },
       filterVoidedLegs(course?.control_codes ?? [], view.voided_legs),
       alternativesOf(course)
@@ -243,6 +249,7 @@ export function reduce(input: ReduceInput): CompetitionState {
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
   for (const c of competitorsByCompetition) {
+    const corrected = corrections.get(c.id);
     competitorViews.set(c.id, {
       id: c.id,
       name: c.name,
@@ -268,6 +275,8 @@ export function reduce(input: ReduceInput): CompetitionState {
       suggested_start_offset_ms: null,
       late_start_ms: null,
       early_start_ms: null,
+      manual_finish_ms: corrected?.finish_ms ?? null,
+      manual_finish_reason: corrected?.finish_reason ?? null,
     });
   }
   const pendingUnknownCards = new Set<number>();
@@ -533,6 +542,27 @@ export function reduce(input: ReduceInput): CompetitionState {
     scoreRead(view, latestRead);
   }
 
+  // SOFT TR 4.20.6, card missing: a runner with a finish entered by hand and
+  // no read-out in the race is scored from that finish alone (no punches).
+  for (const v of competitorViews.values()) {
+    if (
+      v.manual_finish_ms === null ||
+      v.manual_status !== null ||
+      v.status !== 'PEND' ||
+      !inRacePhaseAt(v.manual_finish_ms)
+    ) {
+      continue;
+    }
+    scoreRead(v, {
+      event_time_ms: v.manual_finish_ms,
+      card_number: v.card_number ?? 0,
+      card_type: '',
+      punches: [],
+      start: null,
+      finish: null,
+    });
+  }
+
   // 02.1-14 Task 13: flag a finished read with no start (per the class's
   // start method, Task 14) and suggest one. "Read so far" = every read in
   // the log at this reduce(), so the suggestion firms up as more runners
@@ -567,7 +597,7 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (
       v.manual_status !== null ||
       (v.status !== 'OK' && v.status !== 'MP') ||
-      latest.finish === null ||
+      (latest.finish === null && v.manual_finish_ms === null) ||
       startMs(startInput) !== null
     ) {
       continue;

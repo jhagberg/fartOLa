@@ -127,6 +127,8 @@ function makeCompetitorView(
     suggested_start_offset_ms: null,
     late_start_ms: null,
     early_start_ms: null,
+    manual_finish_ms: null,
+    manual_finish_reason: null,
   };
 }
 
@@ -492,6 +494,31 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
       xml,
       /<StartTime>2026-05-19T10:00:00\+02:00<\/StartTime>\s*<FinishTime>2026-05-19T10:12:00\+02:00<\/FinishTime>\s*<Time>720<\/Time>/
     );
+  });
+
+  test('SOFT TR 4.20.6: a finish entered by hand is the FinishTime, with or without a read-out', () => {
+    const state = makeSeededState();
+    const start = Date.parse('2026-05-19T08:00:00Z');
+    const manual = Date.parse('2026-05-19T08:11:30Z');
+    const anna = state.competitors.get('cmp-anna')!;
+    const read = {
+      event_time_ms: Date.parse('2026-05-19T08:15:00Z'),
+      card_number: 7501853,
+      card_type: 'SI10',
+      punches: [],
+      start: null,
+      finish: { seconds_in_half_day: 10 * 3600 + 12 * 60, half_day: 0 as const, weekday: null },
+    };
+    for (const history of [[read], []]) {
+      state.competitors.set(anna.id, {
+        ...anna,
+        start_time_ms: start,
+        manual_finish_ms: manual,
+        card_read_history: history,
+      });
+      const { xml } = buildResultListXml(makeInput({ state }));
+      assert.match(xml, /<FinishTime>2026-05-19T10:11:30\+02:00<\/FinishTime>/);
+    }
   });
 
   test('test 8: round-trip parse confirms structural fields', () => {

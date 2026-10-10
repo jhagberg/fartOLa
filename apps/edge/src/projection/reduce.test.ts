@@ -2182,3 +2182,135 @@ describe('reduce — missing start (02.1-14 Task 13)', () => {
     assert.equal(state.competitors.get('dnf')!.missing_start, false);
   });
 });
+
+// SOFT TR 4.20.6: time may be taken at the finish line, without a finish
+// punch. The secretariat enters it when the finish unit failed or the card
+// is missing (MeOS "Måltid:", TabRunner.cpp:3446).
+describe('reduce — manual finish time (SOFT TR 4.20.6)', () => {
+  const at = (sec: number): number => localToEpochMs('2026-10-03', sec);
+  const START = 10 * 3600;
+  const readAt = { eventTimeMs: at(11 * 3600) };
+  const noFinish = (): Event => cardRead(1, [p(31)], hd(START), null, readAt);
+  const withFinish = (sec: number): Event => cardRead(1, [p(31)], hd(START), hd(sec), readAt);
+  const setFinish = (sec: number, eventTimeMs?: number): Event =>
+    evt(
+      {
+        event_type: 'manual_finish_set',
+        competitor_id: 'a',
+        finish_ms: at(sec),
+        reason: 'enheten',
+      },
+      eventTimeMs === undefined ? {} : { eventTimeMs }
+    );
+  const clear = (): Event =>
+    evt(
+      { event_type: 'manual_finish_cleared', competitor_id: 'a' },
+      { eventTimeMs: at(12 * 3600) }
+    );
+  const base = {
+    competition_id: 'comp-1',
+    competitors: [comp({ id: 'a', cardNumber: 1, startTimeMs: at(START) })],
+    classes: [cls('cls-H21')],
+    courses: [course('cls-H21', [31])],
+  };
+
+  test('a read without a finish punch + a finish by hand → OK, timed to that finish', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      events: [noFinish(), setFinish(START + 40 * 60, at(11 * 3600 + 60))],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.equal(v.elapsed_time_ms, 40 * 60 * 1000);
+    assert.equal(v.manual_finish_ms, at(START + 40 * 60));
+    assert.equal(v.manual_finish_reason, 'enheten');
+  });
+
+  test('the finish entered before the read-out projects the same', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      events: [setFinish(START + 40 * 60, at(10 * 3600 + 50 * 60)), noFinish()],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.equal(v.elapsed_time_ms, 40 * 60 * 1000);
+  });
+
+  test('a later read-out with a finish punch does not overwrite it', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      events: [
+        noFinish(),
+        setFinish(START + 40 * 60, at(11 * 3600 + 60)),
+        cardRead(1, [p(31)], hd(START), hd(START + 45 * 60), { eventTimeMs: at(11 * 3600 + 120) }),
+      ],
+    }).competitors.get('a')!;
+    assert.equal(v.elapsed_time_ms, 40 * 60 * 1000);
+    assert.deepEqual(v.latest_finish, hd(START + 45 * 60));
+  });
+
+  test('cleared → the card decides again', () => {
+    seqCounter = 0;
+    const dnf = reduce({
+      ...base,
+      events: [noFinish(), setFinish(START + 40 * 60, at(11 * 3600 + 60)), clear()],
+    }).competitors.get('a')!;
+    assert.equal(dnf.status, 'DNF');
+    assert.equal(dnf.manual_finish_ms, null);
+    seqCounter = 0;
+    const ok = reduce({
+      ...base,
+      events: [
+        withFinish(START + 45 * 60),
+        setFinish(START + 40 * 60, at(11 * 3600 + 60)),
+        clear(),
+      ],
+    }).competitors.get('a')!;
+    assert.equal(ok.elapsed_time_ms, 45 * 60 * 1000);
+  });
+
+  test('card missing: a finish by hand and no read-out → timed, scored without punches', () => {
+    seqCounter = 0;
+    const state = reduce({
+      ...base,
+      courses: [course('cls-H21', [])],
+      events: [setFinish(START + 40 * 60)],
+    });
+    const v = state.competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.equal(v.elapsed_time_ms, 40 * 60 * 1000);
+    assert.equal(state.results_by_class.get('cls-H21')![0]!.place, 1);
+    seqCounter = 0;
+    const mp = reduce({ ...base, events: [setFinish(START + 40 * 60)] }).competitors.get('a')!;
+    assert.equal(mp.status, 'MP');
+    assert.deepEqual(mp.missing_codes, [31]);
+  });
+
+  test('card missing before the race has started → still not scored', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      race_started_at_ms: null,
+      events: [setFinish(START + 40 * 60)],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'PEND');
+  });
+
+  test('a manual status wins over the finish by hand', () => {
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      events: [
+        noFinish(),
+        setFinish(START + 40 * 60, at(11 * 3600 + 60)),
+        evt(
+          { event_type: 'manual_status_set', competitor_id: 'a', status: 'DQ', reason: 'x' },
+          { eventTimeMs: at(11 * 3600 + 120) }
+        ),
+      ],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'DQ');
+    assert.equal(v.elapsed_time_ms, null);
+  });
+});
