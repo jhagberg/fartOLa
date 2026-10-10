@@ -987,7 +987,7 @@ export function returnHiredCard(
 // Lottning — start-time draw (Phase 2.1 Plan 02.1-02 routes)
 // ---------------------------------------------------------------------------
 
-export type DrawMode = 'SOFT' | 'Random' | 'Simultaneous' | 'Seeded' | 'Pursuit' | 'ReversePursuit';
+export type DrawMode = 'SOFT' | 'Simultaneous' | 'Seeded' | 'Pursuit' | 'ReversePursuit';
 /** 'All' draws the whole class; the others place only the runners without
  * a start time (late entrants, SOFT TR 7.5.7/7.5.8). */
 export type DrawType = 'All' | 'RemainingBefore' | 'RemainingAfter' | 'RemainingVacant';

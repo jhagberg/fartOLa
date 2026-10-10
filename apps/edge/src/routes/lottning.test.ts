@@ -177,12 +177,12 @@ describe('lottning route', () => {
 
   test('test 2: start_time_ms values spaced by intervalSec', async () => {
     // Every runner in the class gets a time, and the times are exactly
-    // first, first + interval, … — in both interval modes (SOFT TR 7.4.1,
+    // first, first + interval, … — at two intervals (SOFT TR 7.4.1,
     // 7.4.4: the same interval through the class).
     const firstStartMs = localToEpochMs('2026-05-24', 10 * 3600);
     for (const [mode, intervalSec] of [
       ['SOFT', 60],
-      ['Random', 120],
+      ['SOFT', 120],
     ] as const) {
       const res = await ctx.app.inject({
         method: 'POST',
@@ -217,7 +217,7 @@ describe('lottning route', () => {
         classId: ctx.classId,
       })
       .run();
-    for (const mode of ['SOFT', 'Random', 'Simultaneous'] as const) {
+    for (const mode of ['SOFT', 'Simultaneous'] as const) {
       const res = await ctx.app.inject({
         method: 'POST',
         url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
@@ -261,11 +261,11 @@ describe('lottning route', () => {
     for (const k of slots) assert.ok(Number.isInteger(k) && k >= 0 && k < 7, `slot ${k}`);
   });
 
-  test('test 4: POST mode=Random → 201, all competitors have start_time_ms', async () => {
+  test('test 4: POST mode=SOFT → 201, all competitors have start_time_ms', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Random', firstStartMs: at(9), intervalSec: 120 },
+      payload: { mode: 'SOFT', firstStartMs: at(9), intervalSec: 120 },
     });
     assert.equal(res.statusCode, 201, res.body);
     const body = res.json() as { drawn: number };
@@ -321,7 +321,7 @@ describe('lottning route', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Random', firstStartMs: newFirstStartMs, intervalSec: 90 },
+      payload: { mode: 'SOFT', firstStartMs: newFirstStartMs, intervalSec: 90 },
     });
     assert.equal(res.statusCode, 201);
 
@@ -405,11 +405,20 @@ describe('lottning route', () => {
     assert.equal(res.statusCode, 400);
   });
 
-  test('test 10b: intervalSec=0 with mode=Random → 400', async () => {
+  test('mode=Random was removed → 400', async () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
-      payload: { mode: 'Random', firstStartMs: at(10), intervalSec: 0 },
+      payload: { mode: 'Random', firstStartMs: at(9), intervalSec: 120 },
+    });
+    assert.equal(res.statusCode, 400);
+  });
+
+  test('test 10b: intervalSec=0 with mode=SOFT → 400', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 0 },
     });
     assert.equal(res.statusCode, 400);
   });
@@ -520,10 +529,10 @@ describe('lottning route', () => {
         .map((r) => [r.id, r.startTimeMs])
     );
 
-  test('SOFT TR 7.3.2: Random draws vacancies too; First puts them before the class', async () => {
+  test('SOFT TR 7.3.2: SOFT draws vacancies too; First puts them before the class', async () => {
     const firstStartMs = at(10);
     const res = await post({
-      mode: 'Random',
+      mode: 'SOFT',
       firstStartMs,
       intervalSec: 60,
       vacantSlots: 2,
@@ -575,7 +584,7 @@ describe('lottning route', () => {
     const firstStartMs = at(10);
     assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
     const x = addRunner('Late X', 'Gamma');
-    const res = await post({ mode: 'Random', drawType: 'RemainingBefore' });
+    const res = await post({ mode: 'SOFT', drawType: 'RemainingBefore' });
     assert.equal(res.statusCode, 201, res.body);
     assert.equal(timesOf().get(x), firstStartMs - 60_000);
     const cls = ctx.handle.db.select().from(classes).where(eq(classes.id, ctx.classId)).get()!;

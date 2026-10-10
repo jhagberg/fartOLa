@@ -16,7 +16,6 @@ import {
 
 export const DRAW_MODES: DrawMode[] = [
   'SOFT',
-  'Random',
   'Simultaneous',
   'Seeded',
   'Pursuit',
@@ -32,8 +31,8 @@ export const VACANT_POSITIONS: VacantPosition[] = ['Mixed', 'First', 'Last'];
 
 export const isPursuit = (m: DrawMode): boolean => m === 'Pursuit' || m === 'ReversePursuit';
 
-/** Late entrants are placed with SOFT or Random (server rule). */
-export const lateEntrantsAllowed = (m: DrawMode): boolean => m === 'SOFT' || m === 'Random';
+/** Late entrants are placed with SOFT (server rule). */
+export const lateEntrantsAllowed = (m: DrawMode): boolean => m === 'SOFT';
 
 export interface DrawForm {
   mode: DrawMode;
@@ -57,7 +56,7 @@ export function visibleFields(mode: DrawMode, drawType: DrawType) {
   return {
     firstStart: whole,
     interval: mode !== 'Simultaneous',
-    vacancies: whole && (mode === 'SOFT' || mode === 'Random' || mode === 'Seeded'),
+    vacancies: whole && (mode === 'SOFT' || mode === 'Seeded'),
     seeding: mode === 'Seeded',
     pursuit: isPursuit(mode),
   };
