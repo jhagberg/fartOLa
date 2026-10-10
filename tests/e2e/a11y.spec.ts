@@ -13,6 +13,11 @@ import { prepareRegistration } from './helpers/registration.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
+import {
+  prepareWizardStep1,
+  prepareWizardStep2,
+  prepareWizardImportError,
+} from './helpers/wizard.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -72,6 +77,9 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
     ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
+    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep1],
+    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep2],
+    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardImportError],
   ];
   const known = JSON.parse(
     readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')

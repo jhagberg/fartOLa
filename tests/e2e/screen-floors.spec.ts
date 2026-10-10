@@ -11,6 +11,11 @@ import { prepareExport, prepareExportError } from './helpers/export.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
+import {
+  prepareWizardStep1,
+  prepareWizardStep2,
+  prepareWizardImportError,
+} from './helpers/wizard.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -100,6 +105,24 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/kvar-i-skogen`,
     ready: (p) => p.getByTestId('kvariskov-view'),
     prepare: async (page) => prepareKvarError(page),
+  },
+  {
+    name: 'Ny tävling',
+    url: () => '/competition/_new?wizard=1',
+    ready: (p) => p.getByTestId('wiz-name'),
+    prepare: async (page) => prepareWizardStep1(page),
+  },
+  {
+    name: 'Ny tävling, steg 2',
+    url: () => '/competition/_new?wizard=1',
+    ready: (p) => p.getByTestId('wiz-name'),
+    prepare: async (page) => prepareWizardStep2(page),
+  },
+  {
+    name: 'Ny tävling med importfel',
+    url: () => '/competition/_new?wizard=1',
+    ready: (p) => p.getByTestId('wiz-name'),
+    prepare: async (page) => prepareWizardImportError(page),
   },
 ];
 

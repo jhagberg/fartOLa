@@ -1,7 +1,8 @@
 <!--
   Authored for fartola. Not ported from upstream.
 
-  Wizard step 2 — file drop + import preview.
+  Wizard step 2 — file drop + import preview. Skapa tävling (in the
+  wizard footer) creates the competition from the chosen file.
 
   Per UI-SPEC §"File import flow" + plan-12 deferred-POST contract:
    - The drop-zone accepts `.xml` files only. Filename re-checked
@@ -11,14 +12,14 @@
      for `<CourseData` or `<EntryList` at the document root. This is
      the cheap "is this even XML I can handle?" gate.
    - The actual XSD validation runs server-side inside the atomic
-     /api/competitions/from-wizard POST (step 3). We do NOT POST here.
+     /api/competitions/from-wizard POST (Skapa tävling). We do NOT POST here.
    - The File object is handed back up to the wizard via `onfile`;
-     the wizard owns `state.pendingFile` until step 3 commits.
+     the wizard owns `state.pendingFile` until Skapa tävling commits.
    - On rejection (non-.xml or root-element regex miss): inline error
      surfaces in the drop-zone; the file is NOT stored.
 
   Codex C-H3 LOCKED: this step performs ZERO network requests. All
-  competition state lives in browser memory until step 3 fires the
+  competition state lives in browser memory until Skapa tävling fires the
   single atomic POST.
 
   Locked by:
@@ -48,7 +49,7 @@
 
   // Sample the first 4 KB — enough to land the root element while
   // staying cheap on browser memory. Reading the whole file here is
-  // wasted work; bytes only need to flow when step 3 base64-encodes.
+  // wasted work; bytes only need to flow when Skapa tävling base64-encodes.
   const HEAD_BYTES = 4096;
 
   async function inspectFile(f: File): Promise<void> {
@@ -74,16 +75,12 @@
       .replace(new RegExp('<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>|$)', 'g'), '');
     const root = cleaned.match(/<\s*([A-Za-z_][A-Za-z0-9_-]*)/);
     if (!root) {
-      onerror(
-        'Filen kunde inte läsas — förväntar Purple Pen .xml eller IOF XML 3.0.'
-      );
+      onerror(t('wiz.err.notCourse'));
       return;
     }
     const rootName = root[1] ?? '';
     if (rootName !== 'CourseData' && rootName !== 'EntryList') {
-      onerror(
-        `Root-elementet är <${rootName}> — förväntar <CourseData> eller <EntryList>.`
-      );
+      onerror(t('wiz.err.notCourse'));
       return;
     }
     onfile(f, {
@@ -97,7 +94,7 @@
   }
 
   function handleReject(filename: string): void {
-    onerror(`Endast .xml-filer accepteras (såg: ${filename}).`);
+    onerror(t('wiz.err.notXml', { name: filename }));
   }
 </script>
 
@@ -107,11 +104,11 @@
   {#if preview && !error}
     <div class="preview" data-testid="wiz-preview">
       <div class="kind">
-        {preview.kind === 'CourseData' ? 'Purple Pen / IOF CourseData' : 'IOF EntryList'}
+        {preview.kind === 'CourseData' ? t('wiz.kind.course') : t('wiz.kind.entries')}
       </div>
       <div class="mono">{preview.filename}</div>
       <div class="hint">
-        Klassantal + kontrollantal verifieras serverside i steg 3.
+        {t('wiz.preview.hint')}
       </div>
     </div>
   {/if}
@@ -140,11 +137,11 @@
   }
   .preview .mono {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg);
   }
   .preview .hint {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
 </style>
