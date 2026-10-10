@@ -9,9 +9,6 @@
       module for its side effect
     - wraps the route slot in <AppShell> so the 240px sidebar + 56px topbar
       + content grid is the default visual chrome
-    - mounts a TweaksPanel (toggled from the sidebar Inställningar item)
-      so locale/density/accent/contrast/font-pair changes are operator-
-      reachable from any route
     - reacts to tweaks-store mutations via $effect — applyTweaksToRoot
       writes data-accent / data-density / data-font-pair attributes on
       <html> so tokens.css attribute selectors pick the right overrides
@@ -28,7 +25,6 @@
   // component calls t(). Locked by RESEARCH §Pitfall 10.
   import '../lib/i18n/index.ts';
   import AppShell from '../lib/layout/AppShell.svelte';
-  import TweaksPanel from '../lib/components/TweaksPanel.svelte';
   import { tweaks, applyTweaksToRoot } from '../lib/stores/tweaks.svelte.ts';
   import {
     bridgeStatus,
@@ -41,8 +37,6 @@
   import { goto } from '$app/navigation';
 
   let { children } = $props();
-
-  let tweaksOpen = $state(false);
 
   // Active competition id: prefer the URL when we're inside
   // /competition/[id]/... so deep-links and bookmarks stay authoritative.
@@ -63,6 +57,8 @@
   const navRoute = $derived.by(() => {
     const p = page.url.pathname;
     if (p === '/') return 'home';
+    if (p === '/installningar') return 'settings';
+    if (p === '/access') return 'access';
     if (p.endsWith('/readout')) return 'readout';
     if (p.endsWith('/runners') || p.endsWith('/import')) return 'runners';
     if (p.endsWith('/registration')) return 'registration';
@@ -77,6 +73,10 @@
   });
 
   function handleNavigate(route: string): void {
+    if (route === 'settings') {
+      void goto('/installningar');
+      return;
+    }
     if (route === 'home') {
       void goto('/');
       return;
@@ -172,7 +172,6 @@
 </script>
 
 <AppShell
-  onOpenSettings={() => (tweaksOpen = true)}
   onNavigate={handleNavigate}
   route={navRoute}
   {activeCompId}
@@ -181,5 +180,3 @@
 >
   {@render children()}
 </AppShell>
-
-<TweaksPanel open={tweaksOpen} onClose={() => (tweaksOpen = false)} />
