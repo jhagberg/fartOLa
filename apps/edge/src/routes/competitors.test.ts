@@ -914,7 +914,7 @@ describe('clubs autocomplete (GET /api/clubs)', () => {
 //   on the compound PK [competitionId, cardNumber] (Pitfall 10).
 // ---------------------------------------------------------------------------
 
-import { hiredCards } from '../db/schema.ts';
+import { classes as classesTable, hiredCards } from '../db/schema.ts';
 
 describe('Phase 2.0 — hired_card extension (Plan 02-02)', () => {
   let ctx: Ctx;
@@ -1407,6 +1407,39 @@ describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.deepEqual([row.entryFee, row.lateFee], [null, null]);
   });
 
+  test('the Eventor fee ids behind the charge are recorded with it: the youth fee id for youth in an open class', async () => {
+    const { competitionId, h21, gul } = await seed('2026-05-22');
+    ctx.handle.db
+      .update(classesTable)
+      .set({ eventorEntryFeeId: 11, eventorYouthFeeId: 13, eventorLateFeeId: 12 })
+      .run();
+    const youth = await register(competitionId, gul, 1010, { birth_year: 2010 });
+    assert.deepEqual([youth.eventorEntryFeeId, youth.eventorLateFeeId], [13, null]);
+    const adult = await register(competitionId, h21, 1011);
+    assert.deepEqual([adult.eventorEntryFeeId, adult.eventorLateFeeId], [11, 12]);
+  });
+
+  test('the rental fee stays with the renter when their card is replaced', async () => {
+    const { competitionId, h21 } = await seed('2026-05-22');
+    const row = await register(competitionId, h21, 1012, {
+      hired_card: true,
+      hired_contact: { name: null, phone: '0701234567', email: null, note: null },
+    });
+    assert.equal(row.cardFee, 30);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        card_number: 1013,
+        replace_card_for_competitor_id: row.id,
+      },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const after = ctx.handle.db.select().from(competitors).where(eq(competitors.id, row.id)).get()!;
+    assert.deepEqual([after.cardNumber, after.cardFee], [1013, 30]);
+  });
+
   test('the card fee is charged only with a hired card', async () => {
     const { competitionId, h21 } = await seed('2026-05-22');
     await register(competitionId, h21, 1006);
@@ -1418,6 +1451,18 @@ describe('fees charged at registration (SOFT TR 4.12.4, TR 4.12.6)', () => {
     assert.deepEqual(
       rows.map((r) => [r.cardNumber, r.fee]),
       [[1007, 30]]
+    );
+    const charged = ctx.handle.db
+      .select({ card: competitors.cardNumber, fee: competitors.cardFee })
+      .from(competitors)
+      .all()
+      .filter((r) => r.card === 1006 || r.card === 1007);
+    assert.deepEqual(
+      new Map(charged.map((r) => [r.card, r.fee])),
+      new Map([
+        [1006, null],
+        [1007, 30],
+      ])
     );
   });
 });

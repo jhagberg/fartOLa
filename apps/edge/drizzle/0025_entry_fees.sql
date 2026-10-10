@@ -9,6 +9,11 @@
 -- competitors.entry_fee / late_fee: what a runner registered in fartOLa
 -- was told to pay (class fee and capped surcharge), fixed at
 -- registration; NULL for pre-entries, whose fee Eventor decided.
+-- competitors.eventor_entry_fee_id / eventor_late_fee_id: the Eventor fee
+-- ids behind those charges, fixed with them so a later class or fee change
+-- does not retarget them. competitors.card_fee: the rental fee charged to
+-- this runner, fixed when their rental opens (a card change keeps it with
+-- the renter).
 -- hired_cards.fee: the rental fee charged for the card, fixed when the
 -- rental opens; NULL = none.
 -- classes.eventor_entry_fee_id / eventor_youth_fee_id / eventor_late_fee_id:
@@ -41,3 +46,9 @@ ALTER TABLE `classes` ADD `eventor_youth_fee_id` integer;
 ALTER TABLE `classes` ADD `eventor_late_fee_id` integer;
 --> statement-breakpoint
 ALTER TABLE `competitors` ADD `birth_year` integer;
+--> statement-breakpoint
+ALTER TABLE `competitors` ADD `eventor_entry_fee_id` integer;
+--> statement-breakpoint
+ALTER TABLE `competitors` ADD `eventor_late_fee_id` integer;
+--> statement-breakpoint
+ALTER TABLE `competitors` ADD `card_fee` integer;

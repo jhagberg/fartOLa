@@ -80,6 +80,7 @@ import {
   entryFeeFor,
   isYouthByBirthYear,
   localToEpochMs,
+  paysYouthFee,
   readoutChannel,
 } from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
@@ -161,15 +162,17 @@ function hiredContactMissing(input: CompetitorCreateInput): boolean {
   return (hc?.phone?.trim() ?? '') === '' && (hc?.email?.trim() ?? '') === '';
 }
 
-/** Open (or reopen) the rental of `cardNumber`. Run inside the write's
- * transaction so a failure leaves no orphan rental. The compound PK
- * [competitionId, cardNumber] upserts (Pitfall 10): re-renting a card resets
- * marked_at_ms and clears returned_at_ms. The rental fee is the
+/** Open (or reopen) the rental of `cardNumber` for `competitorId`. Run
+ * inside the write's transaction so a failure leaves no orphan rental. The
+ * compound PK [competitionId, cardNumber] upserts (Pitfall 10): re-renting a
+ * card resets marked_at_ms and clears returned_at_ms. The rental fee is the
  * competition's card fee at that moment (SOFT TR 4.12.4: only a hired card
- * is charged). */
+ * is charged), recorded on the rental and on the renter, so a later card
+ * change keeps the charge with the runner who rented. */
 function upsertHiredCard(
   app: FastifyInstance,
   input: CompetitorCreateInput,
+  competitorId: string,
   cardNumber: number,
   now: number
 ): void {
@@ -202,6 +205,11 @@ function upsertHiredCard(
       target: [hiredCards.competitionId, hiredCards.cardNumber],
       set: { markedAtMs: now, returnedAtMs: null, ...contact, fee },
     })
+    .run();
+  app.fartolaDb.db
+    .update(competitors)
+    .set({ cardFee: fee })
+    .where(eq(competitors.id, competitorId))
     .run();
 }
 
@@ -318,7 +326,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
               },
             })
             .run();
-          if (input.hired_card === true) upsertHiredCard(app, input, newCardNumber, now);
+          if (input.hired_card === true) upsertHiredCard(app, input, target.id, newCardNumber, now);
         })();
       } catch (err) {
         // The pre-flight SELECT above is non-transactional, so a concurrent
@@ -418,6 +426,9 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         entryFee: classes.entryFee,
         youthEntryFee: classes.youthEntryFee,
         lateFeePct: classes.lateFeePct,
+        eventorEntryFeeId: classes.eventorEntryFeeId,
+        eventorYouthFeeId: classes.eventorYouthFeeId,
+        eventorLateFeeId: classes.eventorLateFeeId,
       })
       .from(classes)
       .where(eq(classes.id, createClassId))
@@ -460,15 +471,27 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
     // fee and the surcharge, capped per class type. Before the competition
     // day it is a late entry, on the day a walk-up. No class fee set → no
     // fee recorded.
+    // The Eventor fee ids behind the charge are fixed with it.
     const now = Date.now();
+    const youthRunner =
+      input.birth_year != null && isYouthByBirthYear(input.birth_year, compRow.date);
     const fee =
       classRow.entryFee === null
         ? null
         : entryFeeFor(
             classRow,
-            input.birth_year != null && isYouthByBirthYear(input.birth_year, compRow.date),
+            youthRunner,
             now < localToEpochMs(compRow.date, 0) ? 'late' : 'walkup'
           );
+    const youthFee =
+      paysYouthFee(classRow.classKind, youthRunner) && classRow.youthEntryFee !== null;
+    const feeIds =
+      fee === null
+        ? { eventorEntryFeeId: null, eventorLateFeeId: null }
+        : {
+            eventorEntryFeeId: youthFee ? classRow.eventorYouthFeeId : classRow.eventorEntryFeeId,
+            eventorLateFeeId: fee.late > 0 ? classRow.eventorLateFeeId : null,
+          };
 
     // (5) Atomic insert: competitor + (clubs upsert) + (card_bound event).
     const competitorId = crypto.randomUUID();
@@ -491,6 +514,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             entryFee: fee?.entry ?? null,
             lateFee: fee?.late ?? null,
             birthYear: input.birth_year ?? null,
+            ...feeIds,
           })
           .run();
 
@@ -536,7 +560,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         // inside the SAME transaction so a failure anywhere above rolls
         // back the rental too (no orphan rentals).
         if (input.hired_card === true && input.card_number !== null) {
-          upsertHiredCard(app, input, input.card_number, now);
+          upsertHiredCard(app, input, competitorId, input.card_number, now);
         }
       })();
     } catch (err) {

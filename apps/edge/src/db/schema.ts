@@ -609,6 +609,13 @@ export const competitors = sqliteTable(
      * decides youth (TR 4.12.6). NULL = unknown. PII (REQ-PRIV-002).
      * Migration 0023. */
     birthYear: integer('birth_year'),
+    /** The Eventor fee ids behind entry_fee / late_fee, fixed at
+     * registration; NULL = not from Eventor. Migration 0023. */
+    eventorEntryFeeId: integer('eventor_entry_fee_id'),
+    eventorLateFeeId: integer('eventor_late_fee_id'),
+    /** SOFT TR 4.12.4 — rental fee charged to this runner, fixed when their
+     * rental opens; NULL = no hired card. Migration 0023. */
+    cardFee: integer('card_fee'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
