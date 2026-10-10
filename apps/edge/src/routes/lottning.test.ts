@@ -1106,6 +1106,37 @@ describe('lottning route', () => {
     assert.equal(m.get('Late Y'), 'late_entrant');
   });
 
+  test('start-list markers: a pursuit without restarters marks nobody as restart', async () => {
+    // Everyone within maxBehind: the restart time is not checked against
+    // the pursuit starts, so a runner may start after it without restarting.
+    setInput({
+      'Runner 0': [30 * 60_000, 'OK'],
+      'Runner 1': [31 * 60_000, 'OK'],
+      'Runner 2': [32 * 60_000, 'OK'],
+      'Runner 3': [33 * 60_000, 'OK'],
+      'Runner 4': [34 * 60_000, 'OK'],
+    });
+    const res = await post({
+      ...pursuitBody,
+      mode: 'Pursuit',
+      restartMs: pursuitBody.firstStartMs + 60_000,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal((res.json() as { restarted: number }).restarted, 0);
+    const list = (
+      (
+        await ctx.app.inject({
+          method: 'GET',
+          url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+        })
+      ).json() as { start_list: Array<{ marker: string | null }> }
+    ).start_list;
+    assert.deepEqual(
+      list.map((r) => r.marker),
+      [null, null, null, null, null]
+    );
+  });
+
   test('SOFT TR 7.4.1: no pursuit and no reverse pursuit in Inskolning or D/H10–12 (422)', async () => {
     for (const [kind, age] of [
       ['ungdom', 10],

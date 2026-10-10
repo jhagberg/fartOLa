@@ -626,7 +626,9 @@ function drawPursuitClass(body: LottningBody, named: Row[]): DrawPlan {
     assignments,
     wholeClass: true,
     classGrid: { firstStartMs: body.firstStartMs!, intervalSec: null },
-    restartMs: body.restartMs!,
+    // Only with restarters: without them the restart time is not checked
+    // against the pursuit starts (drawPursuit), so it marks nobody.
+    ...(restarted > 0 ? { restartMs: body.restartMs! } : {}),
     extra: { restarted, without_result: named.filter((r) => r.inputStatus === null).length },
   };
 }
