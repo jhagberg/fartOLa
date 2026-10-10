@@ -2,8 +2,9 @@
   Authored for fartola. Not ported from upstream.
 
   ReadoutView — primary operator surface. Grid (1fr / 380px → 340px at
-  ≤1280px). Left column: LatestReadCard + ReceiptMirror. Right column:
-  HistoryList.
+  ≤1280px). Left column: LatestReadCard, then auto-print + ReceiptMirror.
+  Right column: radio panel + HistoryList. Stacked below 958 px: card,
+  rail, extras (the DOM order, so Tab follows it).
 
   Data flow:
    - On mount: GET /api/competitions/:id (competition + classes) +
@@ -831,7 +832,7 @@
 
 <div class="readout-wrap">
 <div class="readout" data-density={tweaks.density} data-testid="readout-view">
-  <div class="ro-main">
+  <div class="ro-card">
     <LatestReadCard
       read={latestReadProp}
       flashKey={flashKey}
@@ -865,33 +866,6 @@
         {/if}
       {/snippet}
     </LatestReadCard>
-
-    <div class="ro-extras">
-    <div class="auto-print-row">
-      <label class="auto-toggle">
-        <span class="sw" data-on={autoPrint}>
-          <input
-            type="checkbox"
-            data-testid="auto-print-toggle"
-            checked={autoPrint}
-            onchange={() => void onToggleAutoPrint()}
-          />
-          <span class="sw-thumb"></span>
-        </span>
-        <span class="lbl">{t('ro.autoprint')}</span>
-      </label>
-      <span class="faint">Star TSP143 · /dev/usb/lp0</span>
-    </div>
-
-    {#if receiptRead}
-      <ReceiptMirror
-        read={receiptRead}
-        selected={selectedTemplate}
-        autoPrint={autoPrint}
-        onSelect={onTemplate}
-      />
-    {/if}
-    </div>
   </div>
 
   <aside class="ro-side">
@@ -937,6 +911,33 @@
       </section>
     {/if}
   </aside>
+
+  <div class="ro-extras">
+    <div class="auto-print-row">
+      <label class="auto-toggle">
+        <span class="sw" data-on={autoPrint}>
+          <input
+            type="checkbox"
+            data-testid="auto-print-toggle"
+            checked={autoPrint}
+            onchange={() => void onToggleAutoPrint()}
+          />
+          <span class="sw-thumb"></span>
+        </span>
+        <span class="lbl">{t('ro.autoprint')}</span>
+      </label>
+      <span class="faint">Star TSP143 · /dev/usb/lp0</span>
+    </div>
+
+    {#if receiptRead}
+      <ReceiptMirror
+        read={receiptRead}
+        selected={selectedTemplate}
+        autoPrint={autoPrint}
+        onSelect={onTemplate}
+      />
+    {/if}
+  </div>
 </div>
 </div>
 
@@ -1008,8 +1009,26 @@
       grid-template-columns: minmax(0, 1fr) 340px;
     }
   }
-  .ro-main,
+  /* DOM order card, rail, extras is the reading order in both layouts
+     (ADR-0016: Tab follows what is seen): side by side, row by row (card
+     | rail, then auto-print and the receipt preview under the card); stacked,
+     top to bottom. */
+  .readout {
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'card side'
+      'extras side';
+  }
+  .ro-card {
+    grid-area: card;
+    min-width: 0;
+  }
+  .ro-side {
+    grid-area: side;
+  }
   .ro-extras {
+    grid-area: extras;
+    align-self: start;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -1020,17 +1039,14 @@
   @container readout (max-width: 958px) {
     .readout {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      grid-template-areas: none;
       height: auto;
     }
-    /* Card, then the rail, then auto-print and the receipt preview. */
-    .ro-main {
-      display: contents;
-    }
-    .ro-side {
-      order: 1;
-    }
+    .ro-card,
+    .ro-side,
     .ro-extras {
-      order: 2;
+      grid-area: auto;
     }
   }
   .ro-side {
