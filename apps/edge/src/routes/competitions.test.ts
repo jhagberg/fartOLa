@@ -186,7 +186,7 @@ describe('competitions REST CRUD', () => {
     assert.equal((await patch({ distance: 'stafett' })).statusCode, 400);
   });
 
-  test('SOFT TR 4.16.3/4.22.1: GET returns the closing time — the latest start plus its max time over every runner, null while a starter has no max time', async () => {
+  test('SOFT TR 4.16.3/4.22.1: GET returns the closing time — the latest start plus its max time (the competition’s, else the class’s) over every runner, null while a starter has none', async () => {
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/competitions',
@@ -239,20 +239,23 @@ describe('competitions REST CRUD', () => {
     assert.deepEqual(await closing(), { closing_time_ms: null, last_start_ms: at(11, 30) });
 
     // Written directly: the PATCH routes lock once the first start has passed.
+    const classMax = (classId: string, sec: number) =>
+      ctx.handle.db.update(classes).set({ maxTimeSec: sec }).where(eq(classes.id, classId)).run();
+    // Without a competition max time the class values apply; H21 has none yet.
+    classMax(d21, 5 * 3600);
+    assert.deepEqual(await closing(), { closing_time_ms: null, last_start_ms: at(11, 30) });
+    classMax(h21, 3600);
+    // 09:00 + 5 h = 14:00 is later than 11:30 + 1 h.
+    assert.deepEqual(await closing(), { closing_time_ms: at(14), last_start_ms: at(11, 30) });
+
+    // TR 4.21.1: the competition's max time applies to every class, as in
+    // the reducer (projection/reduce.ts): 11:30 + 2 h.
     ctx.handle.db
       .update(competitions)
       .set({ maxTimeSec: 2 * 3600 })
       .where(eq(competitions.id, id))
       .run();
     assert.deepEqual(await closing(), { closing_time_ms: at(13, 30), last_start_ms: at(11, 30) });
-
-    // A class override that ends later wins (09:00 + 5 h = 14:00).
-    ctx.handle.db
-      .update(classes)
-      .set({ maxTimeSec: 5 * 3600 })
-      .where(eq(classes.id, d21))
-      .run();
-    assert.deepEqual(await closing(), { closing_time_ms: at(14), last_start_ms: at(11, 30) });
   });
 
   test('test 6 (D-15 date format): POST with malformed date returns 400', async () => {

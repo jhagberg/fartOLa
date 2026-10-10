@@ -4,8 +4,9 @@
 // closes, when the max time of the last starter has run out; the time goes
 // in the PM. Last start is the latest start time of any runner (a vacancy
 // has no runner, so a late entrant in one moves it). Each runner's max time
-// is the class's override, else the competition's (TR 4.21.1); a runner
-// with neither leaves the closing time unknown. Runners without a start
+// is the competition's (TR 4.21.1), else the class's, as in the reducer
+// (projection/reduce.ts); a runner with neither leaves the closing time
+// unknown. Runners without a start
 // time (free start, TR 7.4.3) are not counted.
 
 import { and, eq, isNotNull } from 'drizzle-orm';
@@ -38,7 +39,7 @@ export function closingTime(handle: DbHandle, competitionId: string): ClosingTim
   for (const r of rows) {
     const start = r.startTimeMs!;
     if (last === null || start > last) last = start;
-    const maxSec = r.classMaxSec ?? comp?.maxTimeSec ?? null;
+    const maxSec = comp?.maxTimeSec ?? r.classMaxSec ?? null;
     if (maxSec === null) unknown = true;
     else if (closing === null || start + maxSec * 1000 > closing) closing = start + maxSec * 1000;
   }
