@@ -314,7 +314,7 @@
           <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
           {t('kvariskov.emptyRead')}
         </div>
-      {:else}
+      {:else if !loading && !lastFetchFailed}
         <div class="count-badge" class:urgent={missingCards.length > 0}>
           {t('kvariskov.result', { count: missingCards.length })}
         </div>

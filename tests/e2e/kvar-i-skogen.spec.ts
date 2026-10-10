@@ -116,6 +116,36 @@ test('a retry after a failed refetch shows no all-clear until it succeeds', asyn
   await expect(page.getByTestId('kvariskov-error')).toHaveCount(0);
 });
 
+test('the old count and summary are hidden after a failed or pending refetch', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [ANNA]));
+  const badge = page.locator('.count-badge');
+  const text = page.getByTestId('kvariskov-summary-text');
+  await expect(badge).toBeVisible();
+  await expect(text).toContainText('0 löpare saknas');
+  await page.unroute('**/checkunit/snapshot');
+  await page.route('**/checkunit/snapshot', (route) =>
+    route.fulfill({ status: 500, json: { error: 'Serverfel' } })
+  );
+  await page.getByTestId('kvariskov-refetch').click();
+  await expect(page.getByTestId('kvariskov-error')).toBeVisible();
+  await expect(badge).toHaveCount(0);
+  await expect(text).toHaveCount(0);
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.unroute('**/checkunit/snapshot');
+  await page.route('**/checkunit/snapshot', async (route) => {
+    await held;
+    await route.fulfill({ json: snap([ANNA], [ANNA]) });
+  });
+  await page.getByTestId('kvariskov-refetch').click();
+  await expect(page.getByTestId('kvariskov-refetch')).toBeDisabled();
+  await expect(badge).toHaveCount(0);
+  await expect(text).toHaveCount(0);
+  release();
+  await expect(badge).toBeVisible();
+  await expect(text).toContainText('0 löpare saknas');
+});
+
 test('an unknown card is listed and blocks all back', async ({ page }) => {
   await fetchSnapshot(page, snap([ANNA, 9_999_001], [ANNA]));
   await expect(page.getByTestId('kvariskov-unknown')).toContainText('Okända brickor');
