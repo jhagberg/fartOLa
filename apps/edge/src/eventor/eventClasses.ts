@@ -21,12 +21,12 @@ export interface FetchEventorClassTypesOpts {
 const DEFAULT_BASE_URL = 'https://eventor.orientering.se/api/';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
-function first(xml: string, tag: string): string | null {
+export function first(xml: string, tag: string): string | null {
   const m = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`));
   return m && m[1] !== undefined ? m[1].trim() : null;
 }
 
-const unescapeXml = (s: string) =>
+export const unescapeXml = (s: string) =>
   s
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -46,12 +46,12 @@ export function parseEventClassTypes(xml: string): Map<string, number> {
   return out;
 }
 
-export async function fetchEventorClassTypes(
-  opts: FetchEventorClassTypesOpts
-): Promise<Map<string, number>> {
+/** GET {base}{path} with the ApiKey header; the response body. Shared by
+ * the Eventor class type and fee fetches. */
+export async function eventorGet(opts: FetchEventorClassTypesOpts, path: string): Promise<string> {
   if (!opts.apiKey) throw new Error('missing api key');
   const fetchImpl = opts.fetchImpl ?? fetch;
-  const url = `${opts.baseUrl ?? DEFAULT_BASE_URL}eventclasses?eventId=${opts.eventId}`;
+  const url = `${opts.baseUrl ?? DEFAULT_BASE_URL}${path}`;
   const controller = new AbortController();
   const timer = setTimer(() => controller.abort(), opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
@@ -61,9 +61,17 @@ export async function fetchEventorClassTypes(
       signal: controller.signal,
     });
     if (!res.ok)
-      throw new Error(`eventor eventclasses fetch failed: ${res.status} ${res.statusText}`);
-    return parseEventClassTypes(await res.text());
+      throw new Error(
+        `eventor ${path.split('?')[0]} fetch failed: ${res.status} ${res.statusText}`
+      );
+    return await res.text();
   } finally {
     clearTimer(timer);
   }
+}
+
+export async function fetchEventorClassTypes(
+  opts: FetchEventorClassTypesOpts
+): Promise<Map<string, number>> {
+  return parseEventClassTypes(await eventorGet(opts, `eventclasses?eventId=${opts.eventId}`));
 }
