@@ -494,6 +494,33 @@ describe('GET /api/competitions/:id/readout', () => {
     );
   });
 
+  // Corrections are scored into the latest read: an older row is the card as
+  // read, with its own time and no corrections next to it.
+  test('test 2g: corrections are on the latest row only, with the time they give', async () => {
+    const { competitorId } = seedCompetition(ctx.handle, 'comp-2g');
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-2g', 7501853, 2_000, 1);
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-2g', 7501853, 3_000, 2);
+    const add = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/comp-2g/competitors/${competitorId}/time-addition`,
+      payload: { minutes: 2, reason: 'Tjuvstart' },
+    });
+    assert.equal(add.statusCode, 201);
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2g/readout' });
+    const rows = (
+      res.json() as {
+        history: Array<{ elapsed_time_ms: number | null; time_addition_min: number }>;
+      }
+    ).history;
+    assert.deepEqual(
+      rows.map((r) => [r.elapsed_time_ms, r.time_addition_min]),
+      [
+        [32 * 60 * 1000, 2],
+        [30 * 60 * 1000, 0],
+      ]
+    );
+  });
+
   // 02.1-14 Task 14: late start warning on the row (SOFT TR 4.18.9 (2026-07-01)).
   test('test 2c: start punch 3:12 after the start time → late_start_ms on the row', async () => {
     const { competitorId } = seedCompetition(ctx.handle, 'comp-2c');
