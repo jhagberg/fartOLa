@@ -1458,6 +1458,30 @@ describe('lottning route: start clashes between classes', () => {
     assert.deepEqual((check.json() as { start_clashes: unknown[] }).start_clashes, []);
   });
 
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: a pursuit is not an interval start — drawn with warnings, not refused', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    // D21 from 11:00 (11:00, 11:02, 11:04).
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(11) })).statusCode, 201);
+    // No previous results: all of H21 starts in the restart block from 11:00.
+    const res = await draw(ctx.classId, {
+      mode: 'Pursuit',
+      firstStartMs: at(10),
+      intervalSec: 60,
+      restartMs: at(11),
+      maxBehindSec: 3600,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.deepEqual((res.json() as { warnings: unknown[] }).warnings, [
+      {
+        kind: 'same_course',
+        class_id: ctx.otherClassId,
+        class_name: 'D21',
+        minutes: ['11:00', '11:02', '11:04'],
+      },
+    ]);
+    assert.equal(drawEvents().at(-1)!.start_clash_reason, undefined);
+  });
+
   test('SOFT TA till TR 6.5.1 / TR 7.5.3: late entrants are checked by their own new starts', async () => {
     course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
     // H21 10:00–10:08, D21 from 10:10 (10:10, 10:12, 10:14).
