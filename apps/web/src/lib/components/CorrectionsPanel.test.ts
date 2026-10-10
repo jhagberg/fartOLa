@@ -18,10 +18,11 @@ describe('CorrectionsPanel (mounted)', () => {
   let component: ReturnType<typeof mount> | null = null;
   let state: CorrectionsDTO;
   let posts: Array<{ url: string; body: unknown }>;
+  let offset: number;
   const onChanged = vi.fn();
 
   const settle = async (): Promise<void> => {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
       await Promise.resolve();
       await tick();
     }
@@ -40,7 +41,7 @@ describe('CorrectionsPanel (mounted)', () => {
     state = {
       status: 'DNF',
       elapsed_time_ms: null,
-      start_time_ms: at('10:00'),
+      start_ms: at('10:00'),
       read_at_ms: null,
       missing_codes: [],
       manual_finish_ms: null,
@@ -50,6 +51,7 @@ describe('CorrectionsPanel (mounted)', () => {
       time_addition_reason: null,
     };
     posts = [];
+    offset = 120;
     onChanged.mockReset();
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -65,7 +67,7 @@ describe('CorrectionsPanel (mounted)', () => {
           state = {
             ...state,
             status: 'OK',
-            elapsed_time_ms: body.finish_ms! - state.start_time_ms!,
+            elapsed_time_ms: body.finish_ms! - state.start_ms!,
             manual_finish_ms: body.finish_ms!,
             manual_finish_reason: body.reason!,
           };
@@ -89,7 +91,7 @@ describe('CorrectionsPanel (mounted)', () => {
         return json({ local_seq: posts.length }, 201);
       }
       if (url.endsWith('/corrections')) return json(state);
-      return json({ competition: { date: '2026-10-03', clock_offset_min: 120 } });
+      return json({ competition: { date: '2026-10-03', clock_offset_min: offset } });
     }) as unknown as typeof fetch;
   });
   afterEach(() => {
@@ -212,5 +214,18 @@ describe('CorrectionsPanel (mounted)', () => {
         body: { minutes: 3, reason: 'Förmildrande omständigheter' },
       },
     ]);
+  });
+
+  it('places the typed finish on the clock the server has when saving', async () => {
+    await mountIt();
+    // Another tab corrects the offset to +180; the server shifts the start.
+    offset = 180;
+    state.start_ms = clockToEpochMs('2026-10-03', parseTimeOfDay('10:00')!, 180);
+    type('corr-finish-input', '10:28');
+    $<HTMLButtonElement>('corr-finish-set')!.click();
+    await settle();
+    expect((posts[0]!.body as { finish_ms: number }).finish_ms).toBe(
+      clockToEpochMs('2026-10-03', parseTimeOfDay('10:28')!, 180)
+    );
   });
 });

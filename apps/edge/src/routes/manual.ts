@@ -63,7 +63,14 @@ import {
   readoutChannel,
 } from '@fartola/shared-types';
 import type { ZodType } from 'zod';
-import { competitors as competitorsTable, type EventPayload } from '../db/schema.ts';
+import {
+  classes,
+  competitions,
+  competitors as competitorsTable,
+  type EventPayload,
+} from '../db/schema.ts';
+import { startMs } from '../projection/dnfMp.ts';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -522,17 +529,37 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
   };
 
   // GET …/competitors/:cid/corrections — what the correction panel shows:
-  // the corrections in force and the projected result they give.
+  // the corrections in force and the projected result they give. start_ms
+  // is the start the running time runs from (class start method, latest
+  // read), which a finish typed by hand is placed after.
   app.get<{ Params: { id: string; competitorId: string } }>(
     '/api/competitions/:id/competitors/:competitorId/corrections',
     async (req, reply) => {
       const { id: competitionId, competitorId } = req.params;
       const view = app.projectionStore.recomputeNow(competitionId)?.competitors.get(competitorId);
       if (view === undefined) return reply.code(404).send({ error: 'competitor_not_found' });
+      const comp = app.fartolaDb.db
+        .select({ date: competitions.date, clockOffsetMin: competitions.clockOffsetMin })
+        .from(competitions)
+        .where(eq(competitions.id, competitionId))
+        .get()!;
+      const cls = app.fartolaDb.db
+        .select({ startMethod: classes.startMethod })
+        .from(classes)
+        .where(eq(classes.id, view.class_id))
+        .get();
+      const read = view.card_read_history.at(-1);
       return reply.send({
         status: view.status,
         elapsed_time_ms: view.elapsed_time_ms,
-        start_time_ms: view.start_time_ms,
+        start_ms: startMs({
+          start: read?.start ?? null,
+          cardType: read?.card_type ?? '',
+          readAtMs: read?.event_time_ms ?? 0,
+          drawnStartMs: view.start_time_ms,
+          clockOffsetMin: competitionClockOffsetMin(comp.date, comp.clockOffsetMin),
+          startMethod: cls?.startMethod ?? 'auto',
+        }),
         read_at_ms: view.card_read_history.at(-1)?.event_time_ms ?? null,
         missing_codes: view.missing_codes,
         manual_finish_ms: view.manual_finish_ms,

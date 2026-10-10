@@ -582,7 +582,9 @@ export function clearManualStatus(
 export interface CorrectionsDTO {
   status: 'PEND' | 'OK' | 'MP' | 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX';
   elapsed_time_ms: number | null;
-  start_time_ms: number | null;
+  /** The start the running time runs from (class start method, latest
+   * read); null when there is none. */
+  start_ms: number | null;
   /** The latest read-out (epoch ms); null without one. */
   read_at_ms: number | null;
   missing_codes: number[];

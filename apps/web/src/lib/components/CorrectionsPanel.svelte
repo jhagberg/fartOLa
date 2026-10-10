@@ -112,11 +112,14 @@
     }
   }
 
-  function setFinish(): void {
+  async function setFinish(): Promise<void> {
+    // The clock or the start may have changed since the panel loaded (another
+    // tab): place the typed time on what the server has now.
+    await load();
     if (data === null || clock === null) return;
     const entry = resolveFinishInput(
       finishText,
-      { startMs: data.start_time_ms, readAtMs: data.read_at_ms },
+      { startMs: data.start_ms, readAtMs: data.read_at_ms },
       clock
     );
     if ('error' in entry) {
@@ -204,7 +207,7 @@
             size="sm"
             disabled={busy || finishText.trim() === '' || finishReason.trim() === ''}
             data-testid="corr-finish-set"
-            onclick={setFinish}
+            onclick={() => void setFinish()}
           >
             {t('corr.finish.set')}
           </Button>
