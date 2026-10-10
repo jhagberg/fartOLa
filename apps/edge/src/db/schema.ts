@@ -324,6 +324,10 @@ export type EventPayload =
       /** A pursuit draw: start of the restart block (omstart, SOFT TR
        * 7.4.1); a runner starting at or after it is in the block. */
       restart_ms?: number;
+      /** A draw the operator made despite a start clash (SOFT TA till TR
+       * 6.5.1: another class on the same course starts the same minute),
+       * with the operator's reason. */
+      start_clash_reason?: string;
     };
 
 /** What wrote a start_times_set event. */
