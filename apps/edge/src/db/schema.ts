@@ -616,6 +616,11 @@ export const competitors = sqliteTable(
     /** SOFT TR 4.12.4 — rental fee charged to this runner, fixed when their
      * rental opens; NULL = no hired card. Migration 0025. */
     cardFee: integer('card_fee'),
+    /** What the runner paid at the desk (fee, surcharge and card rental
+     * together, whole kronor); 0 = nothing. Migration 0026. */
+    paidAmount: integer('paid_amount').notNull().default(0),
+    /** 'cash' | 'swish' | NULL. Migration 0026. */
+    paidMethod: text('paid_method'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
