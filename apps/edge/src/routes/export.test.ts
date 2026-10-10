@@ -25,7 +25,15 @@ import { eq } from 'drizzle-orm';
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
-import { classes, controls, courses, courseControls, competitors, events } from '../db/schema.ts';
+import {
+  classes,
+  controls,
+  courses,
+  courseControls,
+  competitors,
+  events,
+  hiredCards,
+} from '../db/schema.ts';
 import { validateXml } from '../xml/validate.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
@@ -309,6 +317,32 @@ describe('GET /api/competitions/:id/export[/preview]', () => {
     assert.equal(byClass.get('D21')?.Course.Length, 900);
     const ids = byClass.get('H21')!.PersonResult.map((p) => p.Person.Id ?? null);
     assert.deepEqual(ids, [{ '#text': 4711, '@_type': 'Sweden' }, null]);
+  });
+
+  test('SOFT TR 4.12.4, 4.12.6: the exported ResultList carries the walk-up fee and the rental of the card the runner holds', async () => {
+    seedCompetitionWithThreeReads(ctx.handle, ctx.nodeId, 'comp-fee');
+    ctx.handle.db
+      .update(competitors)
+      .set({ entryFee: 180, lateFee: 90 })
+      .where(eq(competitors.id, 'cmp-comp-fee-anna'))
+      .run();
+    ctx.handle.db
+      .insert(hiredCards)
+      .values({ competitionId: 'comp-fee', cardNumber: 1428824, markedAtMs: 1_000, fee: 30 })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/competitions/comp-fee/export?format=iof30',
+    });
+    assert.equal(res.statusCode, 200);
+    const valid = await validateXml(res.body);
+    assert.equal(valid.valid, true, JSON.stringify(valid));
+    const person = (family: string) =>
+      new RegExp(`<Family>${family}</Family>[\\s\\S]*?</PersonResult>`).exec(res.body)![0];
+    assert.equal(person('Andersson').match(/<AssignedFee>/g)?.length, 2);
+    assert.doesNotMatch(person('Andersson'), /ServiceRequest/);
+    assert.match(person('Berg'), /<Service type="RentalCard">/);
+    assert.doesNotMatch(person('Carlsson'), /AssignedFee|ServiceRequest/);
   });
 
   test('test 3: unsupported format → 400', async () => {
