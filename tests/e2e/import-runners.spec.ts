@@ -120,3 +120,52 @@ test('a failed link save after a good import is not reported as a failed import'
   await expect(page.getByText('Importen misslyckades')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Klar – visa anmälda' })).toBeVisible();
 });
+
+test('retrying a failed link save does not import the runners again', async ({ page, request }) => {
+  const id = await createEmptyCompetition(request);
+  await request.patch(`${BASE}/api/competitions/${id}`, { data: { eventor_event_id: 1111 } });
+  await mockEventorEvents(page);
+  await page.route('**/api/eventor/events/1111', (r) =>
+    r.fulfill({
+      json: { eventId: 1111, name: 'Länkad tävling', startDate: '2026-10-09', organisation: null },
+    })
+  );
+  let imports = 0;
+  await page.route('**/eventor-import**', (r) => {
+    imports += 1;
+    return r.fulfill({
+      status: 201,
+      json: {
+        kind: 'EntryList',
+        competitors_created: 2,
+        competitors_skipped_duplicate: 0,
+        classes_missing: [],
+        auto_bound: [],
+      },
+    });
+  });
+  let patches = 0;
+  await page.route(`**/api/competitions/${id}`, (r) => {
+    if (r.request().method() !== 'PATCH') return r.fallback();
+    patches += 1;
+    // The first two saves fail, the third goes to the server.
+    return patches <= 2 ? r.fulfill({ status: 500, json: { error: 'boom' } }) : r.continue();
+  });
+  await page.goto(`/competition/${id}/runners?import=1`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('linked-relink-btn').click();
+  await expect(page.getByTestId('import-date')).not.toHaveValue('');
+  await page.getByTestId('import-search').click();
+  await page.getByTestId('import-event-btn').click();
+  await expect(page.getByTestId('import-relink-error')).toBeVisible();
+  // The way the message invites: pick the same event again.
+  await page.getByTestId('import-event-btn').click();
+  await expect(async () => expect(patches).toBe(2)).toPass();
+  expect(imports).toBe(1);
+  await expect(page.getByTestId('import-relink-error')).toBeVisible();
+  // The explicit retry.
+  await page.getByTestId('import-relink-retry').click();
+  await expect(page.getByTestId('linked-event-card')).toContainText(EVENT.name);
+  expect(imports).toBe(1);
+  expect(patches).toBe(3);
+});

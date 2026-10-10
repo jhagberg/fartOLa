@@ -63,6 +63,9 @@
   let relinking = $state(false);
   let relinkError = $state<string | null>(null);
   let relinkNoKey = $state(false);
+  /** Imported, but the link save failed: a retry only saves the link, so
+   * the runners are not imported twice. */
+  let pendingLink = $state<EventorEventListItem | null>(null);
 
   // --- Eventor path ---------------------------------------------------------
   /** ISO date the operator wants to search Eventor on. Defaults to the
@@ -263,6 +266,7 @@
     relinking = true;
     relinkError = null;
     relinkNoKey = false;
+    pendingLink = null;
   }
 
   /** Dismiss a failed relink and go back to the event list. */
@@ -272,6 +276,7 @@
   }
 
   async function relinkEvent(ev: EventorEventListItem): Promise<void> {
+    if (pendingLink?.eventId === ev.eventId) return saveLink(ev);
     relinkError = null;
     relinkNoKey = false;
     importingEventId = ev.eventId;
@@ -280,6 +285,7 @@
       const res = await importEntriesFromEventor(competitionId, ev.eventId);
       importResult = res;
       lastImportedEvent = ev;
+      pendingLink = ev;
     } catch (e) {
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
@@ -294,12 +300,21 @@
       return;
     }
     // The import went through; a failed link save is a different problem.
+    await saveLink(ev);
+  }
+
+  /** Save the link to an event whose runners are already imported. */
+  async function saveLink(ev: EventorEventListItem): Promise<void> {
+    relinkError = null;
+    relinkNoKey = false;
+    importingEventId = ev.eventId;
     try {
       await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
       linkedEvent = { eventId: ev.eventId, name: ev.name, startDate: ev.date, organisation: null };
       relinking = false;
+      pendingLink = null;
     } catch {
-      // Stay in relink mode so the operator can try the same event again.
+      // Stay in relink mode; pendingLink makes a retry save only the link.
       relinkError = t('importRunners.relink.linkFailed');
     } finally {
       importingEventId = null;
@@ -489,7 +504,19 @@
         {relinkError}
         {#if relinkNoKey}<EventorKeyLink />{/if}
       </p>
-      <div>
+      <div class="relink-actions">
+        {#if pendingLink}
+          {@const ev = pendingLink}
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={importingEventId !== null}
+            onclick={() => void saveLink(ev)}
+            data-testid="import-relink-retry"
+          >
+            {t('common.retry')}
+          </Button>
+        {/if}
         <Button variant="secondary" size="sm" onclick={cancelRelinkError}>
           {t('importRunners.relink.cancel')}
         </Button>
@@ -691,6 +718,11 @@
     display: flex;
     gap: var(--space-xs);
     flex-shrink: 0;
+  }
+  .relink-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
   }
   .event-list {
     list-style: none;
