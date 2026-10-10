@@ -470,7 +470,16 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
             and(eq(events.competitionId, competitionId), eq(events.eventType, 'start_times_set'))
           )
           .all(),
-        competitionId
+        competitionId,
+        app.fartolaDb.db
+          .select({
+            id: competitors.id,
+            classId: competitors.classId,
+            startTimeMs: competitors.startTimeMs,
+          })
+          .from(competitors)
+          .where(eq(competitors.competitionId, competitionId))
+          .all()
       );
 
       return {
