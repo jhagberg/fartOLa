@@ -30,8 +30,8 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 | Status | Antal |
 |---|---|
 | UPPFYLLD | 36 |
-| DELVIS | 18 |
-| SAKNAS | 16 |
+| DELVIS | 19 |
+| SAKNAS | 15 |
 | PLANERAD | 0 |
 | EJ TILLÄMPLIG | 5 |
 | **Totalt** | **75** |
@@ -84,7 +84,7 @@ ID-kolumnen använder 2026 års numrering: "TR x.y.z" för en tävlingsregel, "T
 
 | ID | Regel (parafras) | Vad programvaran ska göra | fartOLa-status | Belägg / vad som saknas |
 |---|---|---|---|---|
-| TA till TR 6.5.1, TR 7.5.3 (första stycket) | Vid intervallstart får klasser med samma bana inte starta samtidigt. Samtidigt startande klasser med lika kapacitet bör inte ha samma förstakontroll. | Kontrollera starttider över klasser som delar bana eller förstakontroll. | SAKNAS | Lottningen sker per klass (`routes/lottning.ts:75`) utan kontroll mellan klasser. |
+| TA till TR 6.5.1, TR 7.5.3 (första stycket) | Vid intervallstart får klasser med samma bana inte starta samtidigt. Samtidigt startande klasser med lika kapacitet bör inte ha samma förstakontroll. | Kontrollera starttider över klasser som delar bana eller förstakontroll. | DELVIS | `draw/startClash.ts:59` (`startClashes`) jämför klassernas starter per minut på tävlingsklockan (ADR-0012). Samma bana betyder samma kontrollkoder i samma ordning; klasser med gemensam start (intervall 0) räknas inte, eftersom regeln gäller intervallstart, och en jaktstart lottas med krockarna som varningar. Lottningen (`POST …/lottning/:classId`, `routes/lottning.ts:361`) jämför klassens nya starttider med de andra klassernas startande (utan återbud och Ej start, som Kontroll): samma bana samma minut ger 409 `start_clash` med klasserna och minuterna, och inget skrivs. Arrangören kan lotta ändå med en orsak, som sparas i `start_times_set`-händelsen (`start_clash_reason`, `db/schema.ts:330`). Samma förstakontroll samma minut ger en varning i svaret. "Kontroll inför tävlingen" listar båda över hela tävlingen (`projection/preRaceCheck.ts:187`). Test: `draw/startClash.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: same course, same minute is a clash, named by class and minute`, `routes/lottning.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: a class on the same course starting the same minute → 409 start_clash naming the class and minute, nothing written`, `routes/lottning.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: the operator may draw a start clash anyway with a reason, which the start_times_set event keeps`, `routes/lottning.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: the same first control on another course the same minute is drawn with a warning`, `routes/lottning.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: a withdrawn or not-started runner does not clash, as in Kontroll`, `routes/lottning.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: a pursuit is not an interval start — drawn with warnings, not refused`, `routes/preRaceCheck.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: classes on one course starting the same minute are listed, the same first control as a warning` och `apps/web/src/lib/screens/LottningView.test.ts` › `SOFT TA till TR 6.5.1 / TR 7.5.3: a start clash names the class and minutes; drawing anyway needs a reason; a shared first control is a warning`. Saknas: bara lottningen stoppar; en handändrad, importerad eller flyttad starttid syns i Kontroll men stoppas inte. Klassernas kapacitet ("lika kapacitet") finns inte, så förstakontrollen varnar för alla klasser. Ingen planering av första start över klasser. |
 | TA till TR 6.8.2 | Kodsiffror under 31 och kodsiffror som kan förväxlas får inte användas. | Varna vid import eller redigering av banor. | SAKNAS | När en bana skapas krävs bara positiva heltal som kod (`POSITIVE_INT` i `packages/shared-types/src/dtos.ts`, routen `POST /api/competitions/:id/courses` i `routes/courses.ts`), och CourseData-importen tar varje heltal (`asInt` i `xml/parse.ts`). Ingen kontroll av ≥ 31 eller förväxlingsbara koder. |
 
 ## Kapitel 7. Särskilt om tävlingsadministration
@@ -148,7 +148,7 @@ Prioriterade för att kunna köra en sanktionerad tävling (nivå 2–3) med far
 1. **TR 7.1.2 och TR 7.5.2:** fartOLa är inte ett av SOFT godkänt tidtagnings- eller lottningsprogram.
 2. **TR 3.4.8 och TR 4.21.3:** "Deltagit" (utan tidtagning) går bara att välja per klass, inte per deltagare.
 3. **TR 3.4.4, TR 4.14.1 och TR 7.4.2:** födelseår saknas, så ålderskontrollen kan inte göras. Klasstyp och tävlingsnivå finns (TR 3.4.2, TR 3.3.1), men förbudet mot direktanmälan i elitklass är inte byggt, och fri starttid i åldersklass ger bara en varning när löpare saknar starttid.
-4. **TR 7.5.3 och TR 7.5.6:** ingen kontroll av samma bana mellan klasser, och ingen reservlista.
+4. **TR 7.5.3 och TR 7.5.6:** samma bana samma minut stoppas bara vid lottning (handändrade och importerade starttider syns i Kontroll men stoppas inte), och ingen reservlista.
 5. **TR 7.5.4:** startlistan saknar rankingnummer (fartOLa har ingen ranking).
 6. **TR 7.7.1, TR 4.21.4 och TA till TR 7.8.3:** pushen till liveresultat och uppladdningen till Eventor är testade mot ersatta nätanrop, inte mot de riktiga tjänsterna, och att Eventor kopplar på `Id type="Sweden"` är inte provat.
 7. **TR 7.3.2:** fartOLa vet inte hur många platser en elitklass har, så kravet att lotta in vakanser när anmälda överstiger platserna upprätthålls inte.

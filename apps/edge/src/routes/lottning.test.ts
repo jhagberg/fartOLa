@@ -22,7 +22,15 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitions, classes, competitors, courses } from '../db/schema.ts';
+import {
+  competitions,
+  classes,
+  competitors,
+  controls,
+  courseControls,
+  courses,
+  events,
+} from '../db/schema.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 
 /** Epoch ms at h:m local on the test competition's date (2026-05-24). */
@@ -1297,6 +1305,198 @@ describe('lottning route', () => {
     assert.equal(
       (await postBibs({ bib_base: 1, bib_prefix: null }, crypto.randomUUID())).statusCode,
       404
+    );
+  });
+});
+
+describe('lottning route: start clashes between classes', () => {
+  let ctx: Ctx;
+
+  /** A course with these control codes, for these classes. */
+  const course = (id: string, codes: number[], classIds: string[]) => {
+    ctx.handle.db.insert(courses).values({ id, competitionId: ctx.competitionId, name: id }).run();
+    codes.forEach((code, k) => {
+      const controlId = `c${code}`;
+      ctx.handle.db
+        .insert(controls)
+        .values({ id: controlId, competitionId: ctx.competitionId, code })
+        .onConflictDoNothing()
+        .run();
+      ctx.handle.db
+        .insert(courseControls)
+        .values({ id: `${id}-${k}`, courseId: id, controlId, orderIdx: k })
+        .run();
+    });
+    for (const classId of classIds)
+      ctx.handle.db.update(classes).set({ courseId: id }).where(eq(classes.id, classId)).run();
+  };
+  const draw = (classId: string, payload: Record<string, unknown>) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${classId}`,
+      payload: { mode: 'SOFT', intervalSec: 120, ...payload },
+    });
+  const startsOf = (classId: string) =>
+    ctx.handle.db
+      .select({ t: competitors.startTimeMs })
+      .from(competitors)
+      .where(eq(competitors.classId, classId))
+      .all()
+      .map((r) => r.t);
+  const drawEvents = () =>
+    ctx.handle.db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(eq(events.eventType, 'start_times_set'))
+      .all()
+      .map((r) => r.payload as { class_id: string; start_clash_reason?: string });
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: a class on the same course starting the same minute → 409 start_clash naming the class and minute, nothing written', async () => {
+    // Bana 1 for both; D21 starts 10:00, 10:02, 10:04.
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10) })).statusCode, 201);
+    // H21 from 10:04 every minute: 10:04 clashes.
+    const res = await draw(ctx.classId, { firstStartMs: at(10, 4), intervalSec: 60 });
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.json(), {
+      error: 'start_clash',
+      rule: 'SOFT TA till TR 6.5.1',
+      clashes: [{ class_id: ctx.otherClassId, class_name: 'D21', minutes: ['10:04'] }],
+    });
+    assert.ok(startsOf(ctx.classId).every((t) => t === null));
+    assert.deepEqual(
+      drawEvents().map((e) => e.class_id),
+      [ctx.otherClassId]
+    );
+    // Another minute on the same course is fine.
+    const later = await draw(ctx.classId, { firstStartMs: at(10, 5) });
+    assert.equal(later.statusCode, 201);
+    assert.equal((later.json() as { warnings?: unknown[] }).warnings, undefined);
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: the operator may draw a start clash anyway with a reason, which the start_times_set event keeps', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10) })).statusCode, 201);
+    // No reason (or a blank one) → 400, nothing drawn.
+    for (const extra of [{}, { startClashReason: '  ' }]) {
+      const bad = await draw(ctx.classId, {
+        firstStartMs: at(10),
+        allowStartClash: true,
+        ...extra,
+      });
+      assert.equal(bad.statusCode, 400);
+    }
+    assert.ok(startsOf(ctx.classId).every((t) => t === null));
+    const res = await draw(ctx.classId, {
+      firstStartMs: at(10),
+      allowStartClash: true,
+      startClashReason: 'Olika startplatser',
+    });
+    assert.equal(res.statusCode, 201);
+    assert.deepEqual((res.json() as { warnings: unknown[] }).warnings, [
+      {
+        kind: 'same_course',
+        class_id: ctx.otherClassId,
+        class_name: 'D21',
+        minutes: ['10:00', '10:02', '10:04'],
+      },
+    ]);
+    assert.ok(startsOf(ctx.classId).every((t) => t !== null));
+    const last = drawEvents().at(-1)!;
+    assert.equal(last.class_id, ctx.classId);
+    assert.equal(last.start_clash_reason, 'Olika startplatser');
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: the same first control on another course the same minute is drawn with a warning', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId]);
+    course('bana2', [31, 40], [ctx.otherClassId]);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10) })).statusCode, 201);
+    const res = await draw(ctx.classId, { firstStartMs: at(10, 4), intervalSec: 60 });
+    assert.equal(res.statusCode, 201);
+    assert.deepEqual((res.json() as { warnings: unknown[] }).warnings, [
+      {
+        kind: 'same_first_control',
+        class_id: ctx.otherClassId,
+        class_name: 'D21',
+        minutes: ['10:04'],
+      },
+    ]);
+    assert.ok(startsOf(ctx.classId).every((t) => t !== null));
+    assert.equal(drawEvents().at(-1)!.start_clash_reason, undefined);
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: a withdrawn or not-started runner does not clash, as in Kontroll', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10) })).statusCode, 201);
+    // D21's 10:04 starter withdraws (Återbud); H21 from 10:04 every minute
+    // meets nobody who starts.
+    const at1004 = ctx.handle.db
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(eq(competitors.startTimeMs, at(10, 4)))
+      .get()!.id;
+    const withdrawn = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${at1004}/status`,
+      payload: { status: 'CANCEL', reason: 'Återbud' },
+    });
+    assert.equal(withdrawn.statusCode, 201);
+    const res = await draw(ctx.classId, { firstStartMs: at(10, 4), intervalSec: 60 });
+    assert.equal(res.statusCode, 201);
+    const check = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/pre-race-check`,
+    });
+    assert.deepEqual((check.json() as { start_clashes: unknown[] }).start_clashes, []);
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: a pursuit is not an interval start — drawn with warnings, not refused', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    // D21 from 11:00 (11:00, 11:02, 11:04).
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(11) })).statusCode, 201);
+    // No previous results: all of H21 starts in the restart block from 11:00.
+    const res = await draw(ctx.classId, {
+      mode: 'Pursuit',
+      firstStartMs: at(10),
+      intervalSec: 60,
+      restartMs: at(11),
+      maxBehindSec: 3600,
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.deepEqual((res.json() as { warnings: unknown[] }).warnings, [
+      {
+        kind: 'same_course',
+        class_id: ctx.otherClassId,
+        class_name: 'D21',
+        minutes: ['11:00', '11:02', '11:04'],
+      },
+    ]);
+    assert.equal(drawEvents().at(-1)!.start_clash_reason, undefined);
+  });
+
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: late entrants are checked by their own new starts', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    // H21 10:00–10:08, D21 from 10:10 (10:10, 10:12, 10:14).
+    assert.equal((await draw(ctx.classId, { firstStartMs: at(10) })).statusCode, 201);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10, 10) })).statusCode, 201);
+    // A late entrant in H21 after the class lands on 10:10: D21 starts then.
+    ctx.handle.db
+      .insert(competitors)
+      .values({ id: 'late', competitionId: ctx.competitionId, name: 'Sen', classId: ctx.classId })
+      .run();
+    const res = await draw(ctx.classId, { drawType: 'RemainingAfter' });
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(
+      (res.json() as { clashes: Array<{ minutes: string[] }> }).clashes.map((c) => c.minutes),
+      [['10:10']]
     );
   });
 });

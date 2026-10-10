@@ -132,6 +132,16 @@
         card: null,
         detail: null,
       }));
+    // SOFT TA till TR 6.5.1 / TR 7.5.3: two classes and their shared minutes.
+    const clashRows = (list: PreRaceCheck['start_clashes']): Row[] =>
+      list.map((c) => ({
+        key: `${c.class_id}-${c.other_class_id}`,
+        competitorId: null,
+        name: t('prerace.startClash.pair', { class: c.class_name, other: c.other_class_name }),
+        meta: c.minutes.join(', '),
+        card: null,
+        detail: null,
+      }));
     return [
       {
         key: 'noCard',
@@ -145,6 +155,20 @@
         rule: t('prerace.noStart.rule'),
         rows: runnerRows(check.no_start_time),
         action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
+      },
+      {
+        key: 'startClash',
+        title: t('prerace.startClash.title'),
+        rule: t('prerace.startClash.rule'),
+        rows: clashRows(check.start_clashes),
+        action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
+      },
+      {
+        key: 'firstControl',
+        title: t('prerace.firstControl.title'),
+        rule: t('prerace.firstControl.rule'),
+        rows: clashRows(check.first_control_clashes),
+        soft: true,
       },
       {
         key: 'cardTooSmall',

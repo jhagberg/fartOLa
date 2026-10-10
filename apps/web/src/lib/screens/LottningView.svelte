@@ -71,6 +71,7 @@
     bibTakenOf,
     buildLottningBody,
     closingMoved,
+    firstControlWarning,
     lateEntrantsAllowed,
     refusalOf,
     seedGroupsFromInput,
@@ -137,6 +138,10 @@
   let intervalTouched = false;
   /** SOFT TR 4.16.3: the last draw moved the closing time (for the PM). */
   let closingMove: { from: number; to: number } | null = $state(null);
+  /** SOFT TA till TR 6.5.1: classes sharing the first control in the same
+   * minute after the last draw; the reason typed to draw a clash anyway. */
+  let firstControl: string | null = $state(null);
+  let clashReason = $state('');
   /** Every runner of the selected class, drawn or not. */
   let classRunners: CompetitorDTO[] = $state([]);
   /** Previous-stage results stored for a class (pursuit), with the class
@@ -253,6 +258,8 @@
     refusal = null;
     done = null;
     closingMove = null;
+    firstControl = null;
+    clashReason = '';
     error = null;
     redrawConfirmOpen = false;
     drawType = 'All';
@@ -328,9 +335,16 @@
     })}`;
   }
 
-  async function submitDraw(): Promise<void> {
+  /** override: the reason to draw despite a start clash (the redraw was
+   * already confirmed before the clash was refused). */
+  async function submitDraw(override?: string): Promise<void> {
     if (!selectedClassId || resultsBusy) return;
-    if (effectiveDrawType === 'All' && startList.length > 0 && !redrawConfirmOpen) {
+    if (
+      override === undefined &&
+      effectiveDrawType === 'All' &&
+      startList.length > 0 &&
+      !redrawConfirmOpen
+    ) {
       // Existing start list — ask for confirmation
       redrawConfirmOpen = true;
       return;
@@ -341,6 +355,7 @@
     refusal = null;
     done = null;
     closingMove = null;
+    firstControl = null;
     // Everything the draw uses is read now, before the first await: the
     // form is disabled while it runs, and a change made meanwhile must not
     // reach this draw.
@@ -389,9 +404,17 @@
         maxBehindMin: settings.maxBehindMin,
         scale: settings.scale,
       });
-      const res = await postLottning(competitionId, classId, body);
+      const res = await postLottning(
+        competitionId,
+        classId,
+        override === undefined
+          ? body
+          : { ...body, allowStartClash: true, startClashReason: override }
+      );
       done = summaryOf(res, className);
       closingMove = closingMoved(res);
+      firstControl = firstControlWarning(res);
+      clashReason = '';
       // A whole-class draw changes the start order: the class's bibs follow it.
       if (settings.drawType === 'All' && bibs !== null) {
         try {
@@ -933,6 +956,24 @@
             onlyClassId={selectedClassId}
             onSaved={() => void onKindSaved()}
           />
+        {:else if refusal.fix === 'start_clash'}
+          <Field label={t('lottning.startClash.reason')} htmlFor="lottning-clash-reason">
+            <Input
+              id="lottning-clash-reason"
+              type="text"
+              maxlength={500}
+              bind:value={clashReason}
+              data-testid="lottning-clash-reason"
+            />
+          </Field>
+          <Button
+            variant="secondary"
+            onclick={() => void submitDraw(clashReason.trim())}
+            disabled={submitting || clashReason.trim() === ''}
+            data-testid="lottning-clash-override"
+          >
+            {t('lottning.startClash.override')}
+          </Button>
         {:else if refusal.fix === 'level'}
           <a href={infoHref} data-testid="lottning-set-level">{t('lottning.setLevelLink')}</a>
         {/if}
@@ -941,6 +982,11 @@
 
     {#if done !== null}
       <p class="done" role="status" data-testid="lottning-done">{done}</p>
+    {/if}
+    {#if firstControl !== null}
+      <p class="warn" role="status" data-testid="lottning-first-control">
+        {t('lottning.firstControlWarning', { clashes: firstControl })}
+      </p>
     {/if}
     {#if closingMove !== null && clock !== null}
       <p class="warn" role="status" data-testid="lottning-closing-moved">
