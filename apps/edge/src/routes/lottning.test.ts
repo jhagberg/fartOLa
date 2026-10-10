@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { eq, asc } from 'drizzle-orm';
 
-import type { ClassKind, CompetitionLevel } from '@fartola/shared-types';
+import type { ClassKind, CompetitionDistance, CompetitionLevel } from '@fartola/shared-types';
 
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -491,6 +491,100 @@ describe('lottning route', () => {
         'Start list not sorted'
       );
     }
+  });
+
+  test('SOFT TA till TR 7.4.4: GET lottning suggests the distance’s normal interval until the class has one', async () => {
+    const get = async () =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'GET',
+            url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+          })
+        ).json() as { class: { suggested_interval_sec: number | null } }
+      ).class.suggested_interval_sec;
+    const setDistance = (distance: CompetitionDistance | null) =>
+      ctx.handle.db
+        .update(competitions)
+        .set({ distance })
+        .where(eq(competitions.id, ctx.competitionId))
+        .run();
+    const norms: Array<[CompetitionDistance | null, number | null]> = [
+      ['sprint', 60],
+      ['medel', 120],
+      ['natt', 120],
+      ['lang', 180],
+      ['ultralang', null], // normally a mass start
+      [null, null],
+    ];
+    for (const [distance, sec] of norms) {
+      setDistance(distance);
+      assert.equal(await get(), sec, String(distance));
+    }
+    // The class's own interval (TR 7.5.3: one interval through the class) wins.
+    setDistance('lang');
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 90 },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal(await get(), 90);
+  });
+
+  test('SOFT TR 7.4.2: GET lottning says whether free start time is banned and counts the named runners without a start', async () => {
+    const get = async () =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'GET',
+            url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+          })
+        ).json() as { class: { free_start_banned: boolean | null; without_start_time: number } }
+      ).class;
+    const setUp = (level: CompetitionLevel | null, classKind: ClassKind) => {
+      ctx.handle.db
+        .update(competitions)
+        .set({ level })
+        .where(eq(competitions.id, ctx.competitionId))
+        .run();
+      ctx.handle.db
+        .update(classes)
+        .set({ classKind, ageClass: classKind === 'oppen' ? null : 21 })
+        .where(eq(classes.id, ctx.classId))
+        .run();
+    };
+    setUp('niva2', 'senior');
+    const banned = await get();
+    assert.equal(banned.free_start_banned, true);
+    assert.equal(banned.without_start_time, 5);
+    setUp('niva4', 'senior');
+    assert.equal((await get()).free_start_banned, false);
+    setUp('niva1', 'oppen');
+    assert.equal((await get()).free_start_banned, false);
+    setUp(null, 'senior');
+    assert.equal((await get()).free_start_banned, null);
+
+    // After a draw only the unnamed entry (TR 7.5.1) is left, and it is not counted.
+    setUp('niva2', 'senior');
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: crypto.randomUUID(),
+        competitionId: ctx.competitionId,
+        name: ' ',
+        classId: ctx.classId,
+        consentStatus: 'explicit',
+        source: 'walkup',
+      })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+      payload: { mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    assert.equal((await get()).without_start_time, 0);
   });
 
   // ---- M1 helpers --------------------------------------------------------

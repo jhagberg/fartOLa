@@ -6,8 +6,10 @@
 //   POST /api/competitions/:id/lottning/:classId — draw and write start times
 //   PUT  /api/competitions/:id/lottning/:classId/seeding — store seeding groups
 //   GET  /api/competitions/:id/lottning/:classId — fetch current start list,
-//        plus the stored seeding groups of every runner in the class and
-//        how many runners have a previous-stage result (pursuit, TR 7.4.1)
+//        plus the stored seeding groups of every runner in the class, how
+//        many runners have a previous-stage result (pursuit, TR 7.4.1), the
+//        suggested interval (TA till TR 7.4.4) and whether free start time
+//        is banned, with the named runners still without a start (TR 7.4.2)
 //
 // POST semantics:
 //   1. Validate the body with Zod. intervalSec must be > 0 except for
@@ -32,7 +34,7 @@
 
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
@@ -43,6 +45,7 @@ import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../
 import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
+import { freeStartBanned, normalIntervalSec } from '../draw/startRules.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
@@ -182,6 +185,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         classKindSource: classes.classKindSource,
         ageClass: classes.ageClass,
         level: competitions.level,
+        distance: competitions.distance,
       })
       .from(classes)
       .innerJoin(competitions, eq(competitions.id, classes.competitionId))
@@ -350,6 +354,15 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         .where(and(eq(competitors.classId, classId), isNotNull(competitors.inputStatus)))
         .all();
 
+      // SOFT TR 7.4.2: named runners without a start time would start
+      // freely (timed from the start punch, dnfMp.startMs).
+      const withoutStart = app.fartolaDb.db
+        .select({ name: competitors.name })
+        .from(competitors)
+        .where(and(eq(competitors.classId, classId), isNull(competitors.startTimeMs)))
+        .all()
+        .filter((r) => r.name.trim().length > 0).length;
+
       return {
         class: {
           id: classRow.id,
@@ -358,6 +371,11 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           start_interval_sec: classRow.startIntervalSec,
           max_time_sec: classRow.maxTimeSec,
           class_kind: classRow.classKind,
+          // SOFT TA till TR 7.4.4: the class's interval, else the distance's norm.
+          suggested_interval_sec: classRow.startIntervalSec ?? normalIntervalSec(classRow.distance),
+          // SOFT TR 7.4.2: true/false, null while kind or level is unknown.
+          free_start_banned: freeStartBanned(classRow, classRow.level),
+          without_start_time: withoutStart,
         },
         start_list: startList.map((r) => ({
           id: r.id,
