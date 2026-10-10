@@ -71,16 +71,51 @@ describe('speaker board', () => {
     );
   });
 
-  test('a class without timing has no radio controls', () => {
+  test('a class without timing has no radio controls and no radio finish', () => {
     const b = buildSpeakerBoard(
       input({
         classes: [{ id: 'c1', name: 'U10', course_id: 'k1', no_timing: true }],
         runners: [runner({ id: 'a', card: 1 })],
-        radio: [punch(1, 50, 10)],
+        radio: [punch(1, 50, 10), punch(1, 100, 20)],
       })
     );
     assert.deepEqual(b.classes[0]!.controls, []);
+    assert.equal(b.classes[0]!.runners[0]!.radio_finish_ms, null);
     assert.deepEqual(b.events, []);
+  });
+
+  test('a radio control visited twice is two columns, each its own passing', () => {
+    const b = buildSpeakerBoard(
+      input({
+        courses: [
+          {
+            id: 'k1',
+            class_id: null,
+            controls: [31, 50, 60, 32, 50].map((c, i) => ({ control_code: c, order_idx: i })),
+          },
+        ],
+        classes: [{ id: 'c1', name: 'H21', course_id: 'k1' }],
+        runners: [runner({ id: 'a', card: 1 }), runner({ id: 'b', card: 2 })],
+        // a: 50, 60, 50 again. b: missed the first 50 unit, then 60 and 50.
+        radio: [
+          punch(1, 50, 5),
+          punch(1, 60, 10),
+          punch(1, 50, 20),
+          punch(2, 60, 11),
+          punch(2, 50, 22),
+        ],
+      })
+    );
+    assert.deepEqual(b.classes[0]!.controls, [50, 60, 50]);
+    const [a, bb] = b.classes[0]!.runners;
+    assert.deepEqual(
+      a!.passings.map((p) => p?.elapsed_ms),
+      [5 * MIN, 10 * MIN, 20 * MIN]
+    );
+    assert.deepEqual(
+      bb!.passings.map((p) => p?.elapsed_ms ?? null),
+      [null, 11 * MIN, 22 * MIN]
+    );
   });
 
   test('without a radio control list, the codes that received punches count', () => {
