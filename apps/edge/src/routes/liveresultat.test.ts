@@ -21,6 +21,7 @@ import {
   type PushQueueStatus,
 } from '../integrations/liveresultat/queue.ts';
 import { competitions, events } from '../db/schema.ts';
+import { clockToEpochMs, competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { liveresultatConfig, liveresultatMopMeta } from './liveresultat.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
@@ -273,6 +274,11 @@ describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
       seconds_in_half_day: sec,
       weekday: null,
     });
+    const readAtMs = clockToEpochMs(
+      '2026-10-04',
+      36_000 + 1800 + 60,
+      competitionClockOffsetMin('2026-10-04', null)
+    );
     ctx.handle.db
       .insert(events)
       .values({
@@ -280,8 +286,11 @@ describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
         localSeq: 1,
         competitionId: id,
         eventType: 'card_read',
-        eventTimeMs: Date.now(),
-        recordedAtMs: Date.now(),
+        // Read a minute after the finish on the competition day, not now:
+        // the card's 10:00-10:30 would otherwise land on the day before
+        // whenever the test runs before 10:30.
+        eventTimeMs: readAtMs,
+        recordedAtMs: readAtMs,
         payload: {
           event_type: 'card_read',
           card_number: 101,

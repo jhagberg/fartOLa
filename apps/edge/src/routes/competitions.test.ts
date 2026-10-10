@@ -28,6 +28,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import { competitors, events } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
+import { clockToEpochMs, competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
 
 interface Ctx {
@@ -509,7 +510,18 @@ describe('competitions REST CRUD', () => {
         .statusCode,
       201
     );
-    // A 700 s run in each class.
+    // A 700 s run in each class, read a minute after the finish on the
+    // competition day (a read stamped now would put 09:00-09:11 on the day
+    // before whenever the test runs before 09:12).
+    const readAtMs = clockToEpochMs(
+      '2026-10-04',
+      9 * 3600 + 760,
+      competitionClockOffsetMin('2026-10-04', null)
+    );
+    // start-race stamps now; the race must have started before the read.
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET race_started_at_ms = 1 WHERE id = ?')
+      .run(id);
     classIds.forEach((classId, i) => {
       ctx.handle.db
         .insert(competitors)
@@ -522,8 +534,8 @@ describe('competitions REST CRUD', () => {
           localSeq: 1000 + i,
           competitionId: id,
           eventType: 'card_read',
-          eventTimeMs: Date.now() + 1000,
-          recordedAtMs: Date.now() + 1000,
+          eventTimeMs: readAtMs,
+          recordedAtMs: readAtMs,
           payload: {
             event_type: 'card_read',
             card_number: 100 + i,
