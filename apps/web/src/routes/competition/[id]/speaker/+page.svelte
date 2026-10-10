@@ -11,6 +11,9 @@
   const competitionId = $derived(page.params['id'] ?? '');
 </script>
 
+<!-- Keyed: another competition id is a fresh view (board, choice, socket). -->
 {#if competitionId}
-  <SpeakerView {competitionId} />
+  {#key competitionId}
+    <SpeakerView {competitionId} />
+  {/key}
 {/if}

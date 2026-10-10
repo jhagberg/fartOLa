@@ -51,6 +51,9 @@
   let wsClient: WsClient | null = null;
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
   let tick: ReturnType<typeof setInterval> | null = null;
+  let destroyed = false;
+  /** Only the newest request may set the board (responses can overtake). */
+  let latestRequest = 0;
   let panelsEl: HTMLElement | undefined = $state();
 
   const shown = $derived(
@@ -82,6 +85,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     wsClient?.close();
     if (refetchTimer) clearTimeout(refetchTimer);
     if (tick) clearInterval(tick);
@@ -99,6 +103,8 @@
       // The name is cosmetic here; the board still loads.
     }
     await refetch();
+    // Left the page while loading: no socket, nothing would close it.
+    if (destroyed) return;
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
     wsClient = new WsClient(wsUrl, scheduleRefetch);
     wsClient.preSubscribe(resultsChannel(competitionId));
@@ -106,8 +112,11 @@
   }
 
   async function refetch(): Promise<void> {
+    const request = ++latestRequest;
     try {
-      board = await getSpeakerBoard(competitionId);
+      const next = await getSpeakerBoard(competitionId);
+      if (request !== latestRequest || destroyed) return;
+      board = next;
       nowMs = Date.now();
     } catch {
       // Keep the last board; the next envelope tries again.
