@@ -32,7 +32,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import { events } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import type { ChannelName } from '@fartola/shared-types';
+import { formatClockTime, type ChannelName } from '@fartola/shared-types';
 import { eq } from 'drizzle-orm';
 
 interface Ctx {
@@ -675,6 +675,27 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       .recomputeNow(competitionId)!
       .competitors.get(competitorId)!;
     assert.equal(after.manual_finish_ms, null);
+  });
+
+  test('ADR-0017: changing the clock offset keeps the finish on its clock time, with its reason', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    // 11:40 on the competition clock at +120 (2026-05-22 is CEST).
+    await post(competitionId, competitorId, 'manual-finish', {
+      finish_ms: FINISH_MS,
+      reason: 'Enheten',
+    });
+    const patch = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${competitionId}`,
+      payload: { clock_offset_min: 180 },
+    });
+    assert.equal(patch.statusCode, 200);
+    const view = ctx.app.projectionStore
+      .recomputeNow(competitionId)!
+      .competitors.get(competitorId)!;
+    assert.equal(view.manual_finish_ms, FINISH_MS - 60 * 60_000);
+    assert.equal(formatClockTime(view.manual_finish_ms!, 180), formatClockTime(FINISH_MS, 120));
+    assert.equal(view.manual_finish_reason, 'Enheten');
   });
 
   test('no reason, an empty reason or no finish → 400; clear with a body field → 400', async () => {
