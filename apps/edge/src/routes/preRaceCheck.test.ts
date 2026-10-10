@@ -220,6 +220,29 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     );
   });
 
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: classes on one course starting the same minute are listed, the same first control as a warning', async () => {
+    // H40 runs H21's course; H35's course shares only the first control.
+    // Every start is in the first minute (02:00 on the clock, UTC+2).
+    handle.db
+      .insert(classes)
+      .values({ id: 'h40', competitionId: COMP, name: 'H40', classKind: 'veteran' })
+      .run();
+    handle.sqlite.prepare(`UPDATE classes SET course_id = 'long' WHERE id = 'h40'`).run();
+    runner('h40', 'Ola Fyrtio', 'h40', 8_000_008, 'OK Ek', 30_000);
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/competitions/${COMP}/pre-race-check`,
+    });
+    const body = res.json() as PreRaceCheck;
+    const pairs = (list: PreRaceCheck['start_clashes']) =>
+      list.map((c) => [c.class_name, c.other_class_name, c.minutes]);
+    assert.deepEqual(pairs(body.start_clashes), [['H21', 'H40', ['02:00']]]);
+    assert.deepEqual(pairs(body.first_control_clashes), [
+      ['H21', 'H35', ['02:00']],
+      ['H35', 'H40', ['02:00']],
+    ]);
+  });
+
   test('404 for an unknown competition', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/competitions/nope/pre-race-check' });
     assert.equal(res.statusCode, 404);

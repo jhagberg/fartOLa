@@ -17,11 +17,14 @@
 //     card but has more controls than the card stores with time (an SI5
 //     over 30), so the course is checked but splits after 30 are missing.
 //   - classes_without_course: a class with runners but no course.
+//   - start_clashes: two interval-start classes on the same course start
+//     the same minute (SOFT TA till TR 6.5.1 / TR 7.5.3, draw/startClash.ts).
+//   - first_control_clashes: a soft warning: two classes on different
+//     courses with the same first control start the same minute.
 //
 // MeOS's "Löpare utan klass" and "SI-dubbletter" cannot happen here:
 // competitors.class_id is NOT NULL and a card is unique per competition
-// (competitors_card_per_comp, 409 card_taken). Its same-course /
-// same-first-control start checks belong to start distribution (M3a).
+// (competitors_card_per_comp, 409 card_taken).
 // Withdrawn runners (Återbud) and those already set to Ej start are left
 // out: they need neither card nor start time.
 
@@ -29,6 +32,11 @@ import type { ReduceInput } from './reduce.ts';
 import type { CompetitionState, CompetitorView } from './types.ts';
 import { cardPunchCapacity } from '../si/cardCapacity.ts';
 import { kindConfirmed } from '../draw/classKind.ts';
+import {
+  controlsByClass as classControls,
+  startClashes,
+  type StartClash,
+} from '../draw/startClash.ts';
 
 type ClassRow = ReduceInput['classes'][number];
 type Level = 'niva1' | 'niva2' | 'niva3' | 'niva4' | 'traning' | null;
@@ -50,6 +58,8 @@ export interface PreRaceCheck {
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
   splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
+  start_clashes: StartClash[];
+  first_control_clashes: StartClash[];
 }
 
 /**
@@ -97,15 +107,10 @@ export function preRaceCheck(
   const classById = new Map(input.classes.map((c) => [c.id, c]));
   // class.course_id wins; the legacy courses.class_id pointer is the
   // fallback, as in the reducer.
-  const courseById = new Map(input.courses.map((c) => [c.id, c]));
-  const controlsByClass = new Map<string, number>();
-  for (const c of input.courses) {
-    if (c.classId !== null) controlsByClass.set(c.classId, c.control_codes.length);
-  }
-  for (const cls of input.classes) {
-    const assigned = cls.courseId ? courseById.get(cls.courseId) : undefined;
-    if (assigned) controlsByClass.set(cls.id, assigned.control_codes.length);
-  }
+  const codesByClass = classControls(
+    input.classes,
+    input.courses.map((c) => ({ id: c.id, classId: c.classId, controls: c.control_codes }))
+  );
 
   const active = [...state.competitors.values()]
     .filter((v) => v.manual_status !== 'CANCEL' && v.manual_status !== 'DNS')
@@ -129,6 +134,8 @@ export function preRaceCheck(
     card_too_small: [],
     splits_missing: [],
     classes_without_course: [],
+    start_clashes: [],
+    first_control_clashes: [],
   };
   const runnersPerClass = new Map<string, number>();
   for (const v of active) {
@@ -144,7 +151,7 @@ export function preRaceCheck(
     }
     if (v.club === null || v.club.trim() === '') out.no_club.push(row(v));
     if (v.name.trim().length < 2) out.no_name.push(row(v));
-    const controls = controlsByClass.get(v.class_id);
+    const controls = codesByClass.get(v.class_id)?.length;
     const capacity = v.card_number === null ? null : cardPunchCapacity(v.card_number);
     if (controls !== undefined && capacity !== null && controls > capacity.punches) {
       out.card_too_small.push({ ...row(v), capacity: capacity.punches, controls });
@@ -154,9 +161,23 @@ export function preRaceCheck(
   }
   for (const cls of [...input.classes].sort((a, b) => a.name.localeCompare(b.name, 'sv'))) {
     const runners = runnersPerClass.get(cls.id) ?? 0;
-    if (runners > 0 && !controlsByClass.has(cls.id)) {
+    if (runners > 0 && !codesByClass.has(cls.id)) {
       out.classes_without_course.push({ class_id: cls.id, class_name: cls.name, runners });
     }
   }
+  const clashes = startClashes(
+    input.classes.map((cls) => ({
+      id: cls.id,
+      name: cls.name,
+      controls: codesByClass.get(cls.id) ?? null,
+      intervalSec: cls.startIntervalSec,
+      startsMs: active.flatMap((v) =>
+        v.class_id === cls.id && v.start_time_ms !== null ? [v.start_time_ms] : []
+      ),
+    })),
+    input.clock_offset_min
+  );
+  out.start_clashes = clashes.same_course;
+  out.first_control_clashes = clashes.same_first_control;
   return out;
 }
