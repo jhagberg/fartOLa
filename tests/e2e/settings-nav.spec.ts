@@ -13,7 +13,9 @@ test('Inställningar in the sidebar opens the settings page, marked active', asy
   await page.goto('/');
   const nav = page.locator('.sidebar').getByRole('button', { name: 'Inställningar' });
   await nav.click();
-  await expect(page).toHaveURL(/\/installningar$/);
+  // vite dev compiles the settings route on its first visit; under a
+  // parallel run that can take longer than the default 5 s.
+  await expect(page).toHaveURL(/\/installningar$/, { timeout: 20_000 });
   await expect(page.getByTestId('settings-view')).toBeVisible();
   await expect(nav).toHaveAttribute('aria-current', 'page');
   await expect(
