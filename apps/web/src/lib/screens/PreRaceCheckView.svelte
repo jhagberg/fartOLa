@@ -464,7 +464,7 @@
     align-items: center;
     gap: var(--space-xs);
     padding: var(--space-sm) var(--space-md);
-    color: var(--mp-fg);
+    color: var(--dnf);
   }
   .section-head.clear {
     color: var(--ok);
