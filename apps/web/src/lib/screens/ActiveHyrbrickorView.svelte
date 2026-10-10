@@ -116,7 +116,7 @@
                   >{t('hyrbrickor.markedAt', { time: formatTime(row.marked_at_ms) })}</span
                 >
                 {#if row.fee != null}
-                  <span class="muted small" data-testid="hyrbrickor-row-fee"
+                  <span class="muted small fee" data-testid="hyrbrickor-row-fee"
                     >{t('hyrbrickor.fee', { fee: row.fee })}</span
                   >
                 {/if}
@@ -264,8 +264,12 @@
   }
   .card-line {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 8px;
+  }
+  .fee {
+    white-space: nowrap;
   }
   .lbl-card {
     font-size: var(--fs-label);
