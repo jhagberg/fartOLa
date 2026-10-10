@@ -60,6 +60,7 @@
   /** Set while relinking (date picker flow replaces the linked event). */
   let relinking = $state(false);
   let relinkError = $state<string | null>(null);
+  let relinkNoKey = $state(false);
 
   // --- Eventor path ---------------------------------------------------------
   /** ISO date the operator wants to search Eventor on. Defaults to the
@@ -70,6 +71,7 @@
   let events = $state<EventorEventListItem[]>([]);
   let searching = $state(false);
   let searchError = $state<string | null>(null);
+  let searchNoKey = $state(false);
   /** True after a successful search; lets us render "no events" instead of
    * just showing an empty list (which the operator might mistake for
    * "didn't run yet"). */
@@ -83,6 +85,7 @@
    * wrong row otherwise gets a bare count with no recourse. */
   let lastImportedEvent = $state<EventorEventListItem | null>(null);
   let importError = $state<string | null>(null);
+  let importNoKey = $state(false);
 
   // --- Upload-XML path ------------------------------------------------------
   let uploadInput: HTMLInputElement | undefined = $state();
@@ -161,8 +164,10 @@
 
   async function search(): Promise<void> {
     searchError = null;
+    searchNoKey = false;
     importResult = null;
     importError = null;
+    importNoKey = false;
     if (!validDate(searchDate)) {
       dateError = t('importRunners.errBadDate');
       return;
@@ -178,6 +183,7 @@
     } catch (e) {
       if (e instanceof ApiError && e.status === 503) {
         searchError = t('importRunners.errNoKey');
+        searchNoKey = true;
       } else {
         searchError = (e as Error).message || t('importRunners.errSearchFailed');
       }
@@ -190,6 +196,7 @@
 
   async function importEvent(ev: EventorEventListItem): Promise<void> {
     importError = null;
+    importNoKey = false;
     importResult = null;
     importingEventId = ev.eventId;
     try {
@@ -200,6 +207,7 @@
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
         importError = t('importRunners.errNoKey');
+        importNoKey = true;
       } else if (e instanceof ApiError && e.status === 502) {
         importError = t('importRunners.errEventorDown');
       } else {
@@ -215,6 +223,7 @@
   async function importFromLinkedEvent(): Promise<void> {
     if (!linkedEvent) return;
     importError = null;
+    importNoKey = false;
     importResult = null;
     importingEventId = linkedEvent.eventId;
     try {
@@ -230,6 +239,7 @@
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
         importError = t('importRunners.errNoKey');
+        importNoKey = true;
       } else if (e instanceof ApiError && e.status === 502) {
         importError = t('importRunners.errEventorDown');
       } else {
@@ -247,10 +257,12 @@
     linkedEvent = null;
     relinking = true;
     relinkError = null;
+    relinkNoKey = false;
   }
 
   async function relinkEvent(ev: EventorEventListItem): Promise<void> {
     relinkError = null;
+    relinkNoKey = false;
     importingEventId = ev.eventId;
     try {
       await patchCompetition(competitionId, { eventor_event_id: ev.eventId });
@@ -263,6 +275,7 @@
       lastImportedEvent = null;
       if (e instanceof ApiError && e.status === 503) {
         relinkError = t('importRunners.errNoKey');
+        relinkNoKey = true;
       } else if (e instanceof ApiError && e.status === 502) {
         relinkError = t('importRunners.errEventorDown');
       } else {
@@ -285,6 +298,7 @@
     uploadError = null;
     importResult = null;
     importError = null;
+    importNoKey = false;
     uploading = true;
     try {
       const res = await importCompetitionFile(competitionId, file);
@@ -360,7 +374,7 @@
       {#if relinkError}
         <p class="err" role="alert" data-testid="import-relink-error">
         {relinkError}
-        {#if relinkError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+        {#if relinkNoKey}<EventorKeyLink />{/if}
       </p>
       {/if}
     {:else}
@@ -414,7 +428,7 @@
       {#if searchError}
         <p class="err" role="alert" data-testid="import-search-error">
         {searchError}
-        {#if searchError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+        {#if searchNoKey}<EventorKeyLink />{/if}
       </p>
       {/if}
 
@@ -525,7 +539,7 @@
   {#if importError}
     <p class="err" role="alert" data-testid="import-error">
         {importError}
-        {#if importError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+        {#if importNoKey}<EventorKeyLink />{/if}
       </p>
   {/if}
 </section>

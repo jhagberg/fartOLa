@@ -19,21 +19,25 @@
   let resultsPushing = $state(false);
   let resultsUrl = $state<string | null>(null);
   let resultsError = $state<string | null>(null);
+  let resultsNoKey = $state(false);
 
   let startlistPushing = $state(false);
   let startlistUrl = $state<string | null>(null);
   let startlistError = $state<string | null>(null);
+  let startlistNoKey = $state(false);
 
   async function pushResults(): Promise<void> {
     resultsPushing = true;
     resultsUrl = null;
     resultsError = null;
+    resultsNoKey = false;
     try {
       const res = await postEventorPushResults(competitionId);
       resultsUrl = res.url;
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         resultsError = t('eventor.publish.noKey');
+        resultsNoKey = true;
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         resultsError = t('eventor.publish.error', { message: msg });
@@ -47,12 +51,14 @@
     startlistPushing = true;
     startlistUrl = null;
     startlistError = null;
+    startlistNoKey = false;
     try {
       const res = await postEventorPushStartlist(competitionId);
       startlistUrl = res.url;
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         startlistError = t('eventor.publish.noKey');
+        startlistNoKey = true;
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         startlistError = t('eventor.publish.error', { message: msg });
@@ -87,7 +93,7 @@
     {#if resultsError}
       <div class="box err" data-testid="eventor-results-err">
         {resultsError}
-        {#if resultsError === t('eventor.publish.noKey')}<EventorKeyLink />{/if}
+        {#if resultsNoKey}<EventorKeyLink />{/if}
       </div>
     {/if}
   </section>
@@ -111,7 +117,7 @@
     {#if startlistError}
       <div class="box err" data-testid="eventor-startlist-err">
         {startlistError}
-        {#if startlistError === t('eventor.publish.noKey')}<EventorKeyLink />{/if}
+        {#if startlistNoKey}<EventorKeyLink />{/if}
       </div>
     {/if}
   </section>
