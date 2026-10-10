@@ -56,6 +56,8 @@ import { buildCardIndex } from './matching.ts';
 import { withEventStartTimes } from './startTimes.ts';
 import type { CompetitionState, CompetitorView, ResultView } from './types.ts';
 
+type ReadView = CompetitorView['card_read_history'][number];
+
 /** Course extended with the in-order list of expected control codes. Plan 08
  * (projection store) loads courses via `course_controls` join + `controls`
  * lookup and produces this `course + control_codes` shape; the reducer
@@ -203,6 +205,40 @@ export function reduce(input: ReduceInput): CompetitionState {
     course: CourseWithControlCodes | undefined
   ): ControlAlternatives | undefined =>
     course === undefined ? undefined : input.replacementControls?.get(course.id);
+  /** Score a read for a competitor: course match (minus voided legs, with
+   * replacement controls), running time, and MAX for an OK run over the
+   * class max time (MP/DNF take precedence, as MeOS — 02.1-14 Task 7). */
+  const scoreRead = (view: CompetitorView, read: ReadView): void => {
+    const course = courseByClass.get(view.class_id);
+    const detected = detectStatus(
+      {
+        start: read.start,
+        finish: read.finish,
+        punches: read.punches,
+        cardType: read.card_type,
+        readAtMs: read.event_time_ms,
+        drawnStartMs: view.start_time_ms,
+        clockOffsetMin: input.clock_offset_min,
+        startMethod: startMethodOf(view.class_id),
+      },
+      filterVoidedLegs(course?.control_codes ?? [], view.voided_legs),
+      alternativesOf(course)
+    );
+    view.status = detected.status;
+    view.missing_codes = detected.missing_codes;
+    view.extra_codes = detected.extra_codes;
+    view.out_of_order_codes = detected.out_of_order_codes;
+    view.elapsed_time_ms = detected.elapsed_time_ms;
+    const maxTimeSec = maxTimeByClass.get(view.class_id);
+    if (
+      view.status === 'OK' &&
+      maxTimeSec !== undefined &&
+      view.elapsed_time_ms !== null &&
+      view.elapsed_time_ms / 1000 > maxTimeSec
+    ) {
+      view.status = 'MAX';
+    }
+  };
 
   // Seed competitor views (all PEND until a card_read or manual_dnf lands).
   const competitorViews = new Map<string, CompetitorView>();
@@ -313,41 +349,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // Manual override wins: don't overwrite status/elapsed when an
         // operator-asserted state is still in force (DQ, or pre-race).
         if (view.manual_status === null && inRacePhase) {
-          const course = courseByClass.get(competitor.classId);
-          const expected = course?.control_codes ?? [];
-          const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
-          const detected = detectStatus(
-            {
-              start: payload.start,
-              finish: payload.finish,
-              punches: payload.punches,
-              cardType: payload.card_type,
-              readAtMs: e.eventTimeMs,
-              drawnStartMs: competitor.startTimeMs,
-              clockOffsetMin: input.clock_offset_min,
-              startMethod: startMethodOf(competitor.classId),
-            },
-            resolvedExpected,
-            alternativesOf(course)
-          );
-          view.status = detected.status;
-          view.missing_codes = detected.missing_codes;
-          view.extra_codes = detected.extra_codes;
-          view.out_of_order_codes = detected.out_of_order_codes;
-          view.elapsed_time_ms = detected.elapsed_time_ms;
-          // Phase 2.1 (D-08): MAX auto-compute — if the competitor finished OK
-          // and their class has a time cap, promote to MAX when elapsed
-          // exceeds the cap. MP/DNF take precedence over MAX (MeOS: only an
-          // OK run becomes over-time; 02.1-14 Task 7).
-          const maxTimeSec = maxTimeByClass.get(competitor.classId);
-          if (
-            view.status === 'OK' &&
-            maxTimeSec !== undefined &&
-            view.elapsed_time_ms !== null &&
-            view.elapsed_time_ms / 1000 > maxTimeSec
-          ) {
-            view.status = 'MAX';
-          }
+          scoreRead(view, view.card_read_history[view.card_read_history.length - 1]!);
         }
         break;
       }
@@ -453,9 +455,6 @@ export function reduce(input: ReduceInput): CompetitionState {
           ) {
             view.latest_punches = [...latestRead.punches];
           }
-          const competitor = competitorsByCompetition.find((c) => c.id === payload.competitor_id);
-          const course = competitor ? courseByClass.get(competitor.classId) : undefined;
-          const expected = course?.control_codes ?? [];
           // Re-detect only a read the race-phase gate lets score; a pre-race
           // identity scan goes back to PEND, as it was before the override.
           if (
@@ -465,36 +464,7 @@ export function reduce(input: ReduceInput): CompetitionState {
               view.latest_finish !== null ||
               view.latest_start !== null)
           ) {
-            const resolvedExpected = filterVoidedLegs(expected, view.voided_legs);
-            const detected = detectStatus(
-              {
-                start: view.latest_start,
-                finish: view.latest_finish,
-                punches: view.latest_punches,
-                cardType: latestRead?.card_type ?? '',
-                readAtMs: latestRead?.event_time_ms ?? e.eventTimeMs,
-                drawnStartMs: competitor?.startTimeMs ?? null,
-                clockOffsetMin: input.clock_offset_min,
-                startMethod: startMethodOf(competitor?.classId),
-              },
-              resolvedExpected,
-              alternativesOf(course)
-            );
-            view.status = detected.status;
-            view.missing_codes = detected.missing_codes;
-            view.extra_codes = detected.extra_codes;
-            view.out_of_order_codes = detected.out_of_order_codes;
-            view.elapsed_time_ms = detected.elapsed_time_ms;
-            // Re-apply MAX auto-compute gate after clearing manual override.
-            const maxTimeSec = competitor ? maxTimeByClass.get(competitor.classId) : undefined;
-            if (
-              view.status === 'OK' &&
-              maxTimeSec !== undefined &&
-              view.elapsed_time_ms !== null &&
-              view.elapsed_time_ms / 1000 > maxTimeSec
-            ) {
-              view.status = 'MAX';
-            }
+            scoreRead(view, latestRead);
           } else {
             view.status = 'PEND';
             view.missing_codes = [];
@@ -560,37 +530,7 @@ export function reduce(input: ReduceInput): CompetitionState {
     if (view.manual_status !== null || view.status === 'PEND') continue;
     const latestRead = view.card_read_history[view.card_read_history.length - 1];
     if (latestRead === undefined) continue;
-    const competitor = competitorsByCompetition.find((c) => c.id === view.id);
-    const course = competitor ? courseByClass.get(competitor.classId) : undefined;
-    const expected = course?.control_codes ?? [];
-    const detected = detectStatus(
-      {
-        start: latestRead.start,
-        finish: latestRead.finish,
-        punches: latestRead.punches,
-        cardType: latestRead.card_type,
-        readAtMs: latestRead.event_time_ms,
-        drawnStartMs: competitor?.startTimeMs ?? null,
-        clockOffsetMin: input.clock_offset_min,
-        startMethod: startMethodOf(competitor?.classId),
-      },
-      filterVoidedLegs(expected, view.voided_legs),
-      alternativesOf(course)
-    );
-    view.status = detected.status;
-    view.missing_codes = detected.missing_codes;
-    view.extra_codes = detected.extra_codes;
-    view.out_of_order_codes = detected.out_of_order_codes;
-    view.elapsed_time_ms = detected.elapsed_time_ms;
-    const maxTimeSec = competitor ? maxTimeByClass.get(competitor.classId) : undefined;
-    if (
-      view.status === 'OK' &&
-      maxTimeSec !== undefined &&
-      view.elapsed_time_ms !== null &&
-      view.elapsed_time_ms / 1000 > maxTimeSec
-    ) {
-      view.status = 'MAX';
-    }
+    scoreRead(view, latestRead);
   }
 
   // 02.1-14 Task 13: flag a finished read with no start (per the class's
