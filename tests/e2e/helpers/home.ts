@@ -6,7 +6,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { BASE } from './seed.ts';
 
-function dayOffset(days: number): string {
+export function dayOffset(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   const p = (n: number): string => String(n).padStart(2, '0');
@@ -15,15 +15,15 @@ function dayOffset(days: number): string {
 
 /** One competition per status; the today one is linked to an Eventor event. */
 export async function seedHomeStatuses(request: APIRequestContext): Promise<void> {
-  for (const [days, start] of [
-    [0, true],
-    [0, false],
-    [-1, false],
-    [1, false],
+  for (const [days, start, label] of [
+    [0, true, 'started'],
+    [0, false, 'today'],
+    [-1, false, 'yesterday'],
+    [1, false, 'tomorrow'],
   ] as const) {
     const res = await request.post(`${BASE}/api/competitions`, {
       data: {
-        name: `Designlabb status ${Date.now()}`,
+        name: `Designlabb status ${label} ${Date.now()}`,
         date: dayOffset(days),
         ...(days === 0 && start ? { eventor_event_id: 12345 } : {}),
       },

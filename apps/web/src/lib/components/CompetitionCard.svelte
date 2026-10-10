@@ -2,13 +2,12 @@
   Authored for fartola. Not ported from upstream.
 
   Single competition tile rendered inside HomeView's auto-fill grid.
-  Mirrors `screens-home.jsx` `.comp-card`:
+  Contents:
     - hover darkens the border
     - top row: title + ISO date + status pill (from date and race start)
     - optional Eventor chip
 
-  The card is an `<a>` to the readout, so it opens in a new tab and is
-  announced as a link. 44px min-height is already exceeded by the inner
+  The card is an `<a>` to the readout, so it is announced as a link. 44px min-height is already exceeded by the inner
   padding so the --hit token doesn't need an explicit clamp here.
 
   Locked by:

@@ -71,7 +71,6 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       prepareKvarError,
     ],
     ['/installningar', (p) => p.getByTestId('appearance-section')],
-    // Last: its mocked 503 stays on the page, so the next pass unroutes it.
     ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
   ];
   const known = JSON.parse(
@@ -80,7 +79,6 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
   const allowed = new Set(known.map((k) => `${k.rule} ${k.target}`));
   const found: string[] = [];
   for (const high of [false, true]) {
-    await page.unrouteAll();
     for (const [url, ready, prepare] of screens) {
       await page.goto(url);
       await expect(ready(page)).toBeVisible();
@@ -91,6 +89,8 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       // The walk-up modal over registration belongs to another screen pass.
       if (url.endsWith('/registration')) axe.exclude('[data-testid=walkup-modal]');
       const result = await axe.analyze();
+      // Home's list filter / mocked 503 must not distort the chrome of later screens.
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
       for (const v of result.violations) {
         for (const n of v.nodes) {
           const key = `${v.id} ${n.target.join(' ')}`;
