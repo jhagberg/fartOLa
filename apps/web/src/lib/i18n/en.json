@@ -661,6 +661,7 @@
   "eventor.publish.startlist.desc": "Sends IOF XML 3.0 StartList to Eventor.",
   "eventor.publish.success": "Published!",
   "eventor.publish.noKey": "Eventor API key not configured. Set it under Settings.",
+  "eventor.keyLink": "Add the Eventor key",
   "eventor.publish.error": "Publish failed: {{message}}",
   "eventor.publish.pushing": "Sending…",
   "nav.kvariskov": "Still in forest",

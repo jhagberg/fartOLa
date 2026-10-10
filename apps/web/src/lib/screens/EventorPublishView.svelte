@@ -8,6 +8,7 @@
 <script lang="ts">
   import { postEventorPushResults, postEventorPushStartlist, ApiError } from '#lib/api/client.ts';
   import { t } from '#lib/i18n/index.ts';
+  import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
 
   interface Props {
     competitionId: string;
@@ -86,6 +87,7 @@
     {#if resultsError}
       <div class="box err" data-testid="eventor-results-err">
         {resultsError}
+        {#if resultsError === t('eventor.publish.noKey')}<EventorKeyLink />{/if}
       </div>
     {/if}
   </section>
@@ -109,6 +111,7 @@
     {#if startlistError}
       <div class="box err" data-testid="eventor-startlist-err">
         {startlistError}
+        {#if startlistError === t('eventor.publish.noKey')}<EventorKeyLink />{/if}
       </div>
     {/if}
   </section>

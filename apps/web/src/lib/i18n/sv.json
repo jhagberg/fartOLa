@@ -661,6 +661,7 @@
   "eventor.publish.startlist.desc": "Skickar IOF XML 3.0 StartList till Eventor.",
   "eventor.publish.success": "Publicerat!",
   "eventor.publish.noKey": "Eventor API-nyckel saknas. Konfigurera under Inställningar.",
+  "eventor.keyLink": "Lägg in Eventor-nyckeln",
   "eventor.publish.error": "Publicering misslyckades: {{message}}",
   "eventor.publish.pushing": "Skickar…",
   "nav.kvariskov": "Kvar i skogen",
