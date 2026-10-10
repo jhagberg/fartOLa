@@ -79,6 +79,7 @@ function rowToDTO(r: {
   contactPhone: string | null;
   contactEmail: string | null;
   note: string | null;
+  fee: number | null;
 }): HiredCardRow {
   return {
     competition_id: r.competitionId,
@@ -89,6 +90,7 @@ function rowToDTO(r: {
     contact_phone: r.contactPhone,
     contact_email: r.contactEmail,
     note: r.note,
+    fee: r.fee,
   };
 }
 
