@@ -17,6 +17,25 @@
 //     readCount: number,        // length of cardNumbers
 //   }
 //
+// Additive fields (SOFT TR 4.22.1, in-forest from every source; the fields
+// above keep their meaning, cardNumbers now also holds the cards seen by
+// radio or a start-punch read that are not out):
+//   sources: Record<card, InForestSource[]>   — checkunit / radio Kxx / read
+//   noCheckCardNumbers: number[]              — "ingen checkstämpling"
+//   outCardNumbers: number[]                  — out by a hand-set status
+//   returnedCardNumbers also holds manual finish times (TR 4.20.6)
+//   checkunit: 'read' | 'stored' | 'unavailable'
+//   updated: { checkunit_read_at_ms, radio_enabled, radio_last_punch_at_ms,
+//              roc_last_success_at }
+// With no reader connected the route answers 200 with the radio/read based
+// list (checkunit: 'unavailable', or 'stored' when an earlier read exists)
+// when at least one runner is not out; with nobody to list it keeps the
+// 503 no_reader, so an empty answer is never an all-clear without the
+// check unit having been read.
+//
+// GET /api/competitions/:id/in-forest returns the same list from stored data
+// only (no reader), per runner with name/club/class.
+//
 // Error responses:
 //   404  { error: 'competition_not_found' }
 //   503  { error: 'no_reader', message: string }      — no bridge connected
@@ -44,17 +63,55 @@
 // - REQ-OPS-004
 
 import type { FastifyInstance } from 'fastify';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
-import { competitions, events } from '../db/schema.ts';
+import { competitions } from '../db/schema.ts';
+import { loadInForest, type InForestData } from './_inForest.ts';
+import type { CompetitorView } from '../projection/types.ts';
 import {
   readBackupMemory,
   readCoupledBackupMemory,
   CoupledStationAsleepError,
 } from '@fartola/sportident';
-import type { EventPayload } from '../db/schema.ts';
 
 export default async function registerCheckunitRoutes(app: FastifyInstance): Promise<void> {
+  const competitorsOf = (id: string): CompetitorView[] => {
+    const state = app.projectionStore.get(id) ?? app.projectionStore.recomputeNow(id);
+    return state ? [...state.competitors.values()] : [];
+  };
+  const updatedOf = (id: string, data: InForestData) => ({
+    checkunit_read_at_ms: data.checkunit?.read_at_ms ?? null,
+    radio_enabled: data.radio_enabled,
+    radio_last_punch_at_ms: data.radio_last_punch_at_ms,
+    roc_last_success_at: app.rocPoller?.status(id)?.lastSuccessAt ?? null,
+  });
+
+  // GET /api/competitions/:id/in-forest — the list from stored data only.
+  app.get<{ Params: { id: string } }>('/api/competitions/:id/in-forest', async (req, reply) => {
+    const { id } = req.params;
+    const competitors = competitorsOf(id);
+    const data = loadInForest(app.fartolaDb, id, competitors);
+    if (!data) return reply.code(404).send({ error: 'competition_not_found' });
+    const byCard = new Map(
+      competitors.filter((c) => c.card_number !== null).map((c) => [c.card_number, c])
+    );
+    return reply.code(200).send({
+      runners: data.cards.map((c) => {
+        const r = byCard.get(c.card_number);
+        return {
+          ...c,
+          competitor_id: r?.id ?? null,
+          name: r?.name ?? null,
+          club: r?.club ?? null,
+          class_id: r?.class_id ?? null,
+          start_time_ms: r?.start_time_ms ?? null,
+        };
+      }),
+      overflow: data.checkunit?.overflow ?? false,
+      updated: updatedOf(id, data),
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // POST /api/competitions/:id/checkunit/snapshot
   // ---------------------------------------------------------------------------
@@ -96,18 +153,29 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
         if (!lifecycle) lifecycle = lifecycles[0];
       }
 
-      if (!lifecycle) {
-        return reply.code(503).send({
-          error: 'no_reader',
-          message: 'No SI reader configured. Start the bridge with --serial.',
-        });
-      }
-
-      const station = lifecycle.getStation();
+      const station = lifecycle?.getStation() ?? null;
       if (!station) {
+        // No reader: answer from radio, reads and the stored check-unit read
+        // when that lists someone still in the forest (TR 4.22.1).
+        const data = loadInForest(app.fartolaDb, id, competitorsOf(id));
+        if (data && data.cards.length > 0) {
+          return reply
+            .code(200)
+            .send(
+              snapshotBody(
+                id,
+                data,
+                data.checkunit?.cards ?? [],
+                data.checkunit?.overflow ?? false,
+                'stored'
+              )
+            );
+        }
         return reply.code(503).send({
           error: 'no_reader',
-          message: 'SI reader not connected. Check the bridge connection and retry.',
+          message: lifecycle
+            ? 'SI reader not connected. Check the bridge connection and retry.'
+            : 'No SI reader configured. Start the bridge with --serial.',
         });
       }
 
@@ -141,46 +209,50 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
         return reply.code(500).send({ error: 'snapshot_failed', message });
       }
 
-      // Find which cards have physically returned (card_read with finish punch).
-      // We look at ALL card_read events for this competition and collect the
-      // card_numbers whose most-recent card_read had a non-null finish field.
-      //
-      // Implementation: fetch all card_read events for this competition,
-      // deduplicate by card_number keeping only the most recent, then filter
-      // for non-null finish.
-      interface CardReadRow {
-        payload: EventPayload;
-      }
-      const cardReadRows = app.fartolaDb.db
-        .select({
-          payload: events.payload,
+      // Keep the read: the in-forest list uses it with no reader connected.
+      const readAtMs = Date.now();
+      app.fartolaDb.db
+        .update(competitions)
+        .set({
+          checkunitCards: JSON.stringify(readResult.cardNumbers),
+          checkunitOverflow: readResult.overflow,
+          checkunitReadAtMs: readAtMs,
         })
-        .from(events)
-        .where(and(eq(events.competitionId, id), eq(events.eventType, 'card_read')))
-        .orderBy(desc(events.eventTimeMs))
-        .all() as unknown as CardReadRow[];
+        .where(eq(competitions.id, id))
+        .run();
 
-      // Deduplicate: keep only the most-recent card_read per card number.
-      // (orderBy desc means first occurrence per card is the latest.)
-      const seenCards = new Set<number>();
-      const returnedCardNumbers = new Set<number>();
-      for (const row of cardReadRows) {
-        const payload = row.payload;
-        if (payload.event_type !== 'card_read') continue;
-        const cn = payload.card_number;
-        if (seenCards.has(cn)) continue;
-        seenCards.add(cn);
-        if (payload.finish !== null && payload.finish !== undefined) {
-          returnedCardNumbers.add(cn);
-        }
-      }
-
-      return reply.code(200).send({
-        cardNumbers: readResult.cardNumbers,
-        returnedCardNumbers: Array.from(returnedCardNumbers),
+      // Returned = a card read with a finish punch (the latest read per card)
+      // or a manual finish time; computed statuses never count here.
+      const data = loadInForest(app.fartolaDb, id, competitorsOf(id), {
+        cards: readResult.cardNumbers,
         overflow: readResult.overflow,
-        readCount: readResult.readCount,
-      });
+        readAtMs,
+      }) as InForestData;
+      return reply
+        .code(200)
+        .send(snapshotBody(id, data, readResult.cardNumbers, readResult.overflow, 'read'));
     }
   );
+
+  /** The snapshot response: the legacy fields plus the additive ones. */
+  function snapshotBody(
+    id: string,
+    data: InForestData,
+    checkunitCards: number[],
+    overflow: boolean,
+    mode: 'read' | 'stored'
+  ) {
+    const cardNumbers = [...new Set([...checkunitCards, ...data.cards.map((c) => c.card_number)])];
+    return {
+      cardNumbers,
+      returnedCardNumbers: data.out.filter((o) => o.reason !== 'status').map((o) => o.card_number),
+      overflow,
+      readCount: cardNumbers.length,
+      sources: Object.fromEntries(data.cards.map((c) => [c.card_number, c.sources])),
+      noCheckCardNumbers: data.cards.filter((c) => c.no_check).map((c) => c.card_number),
+      outCardNumbers: data.out.filter((o) => o.reason === 'status').map((o) => o.card_number),
+      checkunit: data.checkunit === null ? 'unavailable' : mode,
+      updated: updatedOf(id, data),
+    };
+  }
 }
