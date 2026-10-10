@@ -159,6 +159,8 @@ test('the set button carries the count and is disabled at 0; undo is secondary',
   await page.goto(`/competition/${competitionId}/export`);
   const pending = page.getByTestId('export-pending');
   await expect(pending).toBeVisible({ timeout: 5_000 });
+  // A warning, not an error: amber, not red.
+  await expect(pending).toHaveClass(/\bwarn\b/);
   const n = Number((await pending.innerText()).match(/(\d+) löpare/)?.[1]);
   expect(n).toBeGreaterThan(0);
   const set = page.getByTestId('export-unread-dns');

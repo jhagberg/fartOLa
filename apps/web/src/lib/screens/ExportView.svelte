@@ -202,7 +202,7 @@
   <section class="sec" data-testid="export-section-unread">
     <h2 class="h1">{t('export.unreadDns.title')}</h2>
     {#if preview !== null && preview.valid && preview.summary.pending_count > 0}
-      <div class="box err" data-testid="export-pending">
+      <div class="box warn" data-testid="export-pending">
         <strong><Icon name="alert-triangle" size={18} /> {t('export.pending', { n: preview.summary.pending_count })}</strong>
         <p>{t('export.pendingHint')}</p>
       </div>
@@ -310,6 +310,11 @@
     border: 1px solid var(--dnf);
     background: var(--dnf-soft);
     color: var(--fg);
+  }
+  .box.warn {
+    border: 1px solid var(--mp);
+    background: var(--mp-soft);
+    color: var(--mp-fg);
   }
   .box ul {
     margin: 8px 0 0;
