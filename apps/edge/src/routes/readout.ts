@@ -135,9 +135,11 @@ interface HistoryRow {
    * clock, as the running time is computed): the UI resolves an edited
    * start before it. Null without a finish. */
   finish_ms: number | null;
-  /** SOFT TR 4.20.6 — mirrors CompetitorView.manual_finish_ms / reason:
-   * the competitor's finish entered by hand. It is the latest read's
-   * finish_ms above; finish_seconds_in_half_day stays the card's. */
+  /** Secretariat corrections (SOFT TR 4.20.6, 8.1.4, 10.4.2), on the
+   * competitor's latest read only: that is the read they are scored into.
+   * An older row is the card as read, with none (and its own time).
+   * The finish by hand is the latest read's finish_ms above;
+   * finish_seconds_in_half_day stays the card's. */
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;
   /** SOFT TR 8.1.4 (kommentar) — mirrors CompetitorView.manual_punches:
@@ -330,6 +332,8 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         const latest = view?.card_read_history[view.card_read_history.length - 1];
         const isLatest =
           latest?.event_time_ms === e.eventTimeMs && latest.card_number === payload.card_number;
+        // Corrections show on the read they are scored into.
+        const corrected = isLatest ? view : null;
         const readElapsedMs = (): number | null => {
           if (!view || !competitor || clockOffsetMin === null) return null;
           if (isLatest) return view.elapsed_time_ms;
@@ -399,11 +403,11 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
                     e.eventTimeMs,
                     clockOffsetMin
                   ),
-          manual_finish_ms: view?.manual_finish_ms ?? null,
-          manual_finish_reason: view?.manual_finish_reason ?? null,
-          manual_punches: view?.manual_punches ?? [],
-          time_addition_min: view?.time_addition_min ?? 0,
-          time_addition_reason: view?.time_addition_reason ?? null,
+          manual_finish_ms: corrected?.manual_finish_ms ?? null,
+          manual_finish_reason: corrected?.manual_finish_reason ?? null,
+          manual_punches: corrected?.manual_punches ?? [],
+          time_addition_min: corrected?.time_addition_min ?? 0,
+          time_addition_reason: corrected?.time_addition_reason ?? null,
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
           class_place: classRow?.place ?? null,
