@@ -840,6 +840,7 @@
   "kvariskov.refetch": "Read again",
   "kvariskov.summary": "{{missing}} runners missing, {{back}} back.",
   "kvariskov.warnLabel": "Note:",
+  "kvariskov.noneMissingOverflow": "No one missing among the cards read, but the memory wrapped. Check the start list for early starters.",
   "prerace.title": "Pre-race check",
   "prerace.hint": "What is still wrong before the first start. Fix it and run the check again.",
   "prerace.tab.check": "Check",

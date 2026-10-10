@@ -28,6 +28,7 @@ test('empty check unit is not "all back"', async ({ page }) => {
   await fetchSnapshot(page, snap([]));
   await expect(view(page)).toContainText('Inga stämplingar lästes från dosan.');
   await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  await expect(page.locator('.count-badge')).toHaveCount(0);
 });
 
 test('all back', async ({ page }) => {
@@ -66,4 +67,33 @@ test('fetch time and fetch again', async ({ page }) => {
   await fetchSnapshot(page, snap([ANNA, CIA]));
   await expect(page.getByTestId('kvariskov-fetched-at')).toHaveText(/^Hämtad \d\d:\d\d$/);
   await expect(page.getByTestId('kvariskov-refetch')).toHaveText('Hämta igen');
+});
+
+test('wrapped memory is never all clear', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [ANNA], true));
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  await expect(view(page)).not.toContainText('Ingen saknas:');
+  await expect(view(page)).toContainText(
+    'Ingen saknas bland de lästa brickorna, men minnet har runnit runt. Kontrollera startlistan för tidiga starter.'
+  );
+});
+
+test('a failed refetch removes the all-back box', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [ANNA]));
+  await expect(view(page)).toContainText('Alla löpare har återkommit.');
+  await page.unroute('**/checkunit/snapshot');
+  await page.route('**/checkunit/snapshot', (route) =>
+    route.fulfill({ status: 500, json: { error: 'Serverfel' } })
+  );
+  await page.getByTestId('kvariskov-refetch').click();
+  await expect(page.getByTestId('kvariskov-error')).toBeVisible();
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  await expect(page.getByTestId('kvariskov-fetched-at')).toBeVisible();
+});
+
+test('an unknown card is listed and blocks all back', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA, 9_999_001], [ANNA]));
+  await expect(page.getByTestId('kvariskov-unknown')).toContainText('Okända brickor');
+  await expect(page.getByTestId('kvariskov-unknown')).toContainText('#9999001');
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
 });
