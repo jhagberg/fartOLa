@@ -32,7 +32,7 @@ async function importXml(
 
 export async function seedCompetition(
   request: APIRequestContext,
-  opts: { controls: number }
+  opts: { controls: number; start?: boolean }
 ): Promise<{ competitionId: string }> {
   const created = await request.post(`${BASE}/api/competitions`, {
     data: { name: `Designlabb ${Date.now()}`, date: '2026-10-09' },
@@ -45,8 +45,10 @@ export async function seedCompetition(
     data: { competition_id: id },
   });
   expect(active.status()).toBe(200);
-  const start = await request.post(`${BASE}/api/competitions/${id}/start-race`);
-  expect([200, 201]).toContain(start.status());
+  if (opts.start ?? true) {
+    const start = await request.post(`${BASE}/api/competitions/${id}/start-race`);
+    expect([200, 201]).toContain(start.status());
+  }
   return { competitionId: id };
 }
 
