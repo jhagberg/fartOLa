@@ -41,21 +41,17 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 
-import {
-  competitions,
-  classes as classesTable,
-  competitors as competitorsTable,
-} from '../db/schema.ts';
+import { competitions, classes as classesTable } from '../db/schema.ts';
 import {
   validateAndBuild,
   validateAndBuildStartList,
   type ExportStatus,
   type ExportInput,
   type StartListInput,
-  type StartListCompetitor,
 } from '../xml/iofExport.ts';
 import type { CompetitionDTO, ClassDTO, StartMethod } from '@fartola/shared-types';
 import { resultListInputs } from './_resultListInputs.ts';
+import { startListClasses } from './_startListInputs.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 
 function parseStatus(raw: unknown): ExportStatus {
@@ -260,58 +256,9 @@ export default async function registerExportRoutes(app: FastifyInstance): Promis
         return reply.code(404).send({ error: 'competition_not_found' });
       }
 
-      const classRows = app.fartolaDb.db
-        .select()
-        .from(classesTable)
-        .where(eq(classesTable.competitionId, id))
-        .all() as ClassRow[];
-
-      // Load competitors with start times.
-      interface CompetitorStartRow {
-        id: string;
-        name: string;
-        club: string | null;
-        classId: string;
-        cardNumber: number | null;
-        startTimeMs: number | null;
-      }
-      const competitorRows = app.fartolaDb.db
-        .select({
-          id: competitorsTable.id,
-          name: competitorsTable.name,
-          club: competitorsTable.club,
-          classId: competitorsTable.classId,
-          cardNumber: competitorsTable.cardNumber,
-          startTimeMs: competitorsTable.startTimeMs,
-        })
-        .from(competitorsTable)
-        .where(eq(competitorsTable.competitionId, id))
-        .all() as CompetitorStartRow[];
-
-      // Group competitors by class.
-      const byClass = new Map<string, CompetitorStartRow[]>();
-      for (const c of competitorRows) {
-        const arr = byClass.get(c.classId) ?? [];
-        arr.push(c);
-        byClass.set(c.classId, arr);
-      }
-
-      const startListClasses: StartListInput['classes'] = classRows.map((cls) => {
-        const classCompetitors = byClass.get(cls.id) ?? [];
-        return {
-          name: cls.name,
-          competitors: classCompetitors.map((c): StartListCompetitor => ({
-            name: c.name,
-            club: c.club,
-            startTimeMs: c.startTimeMs,
-            // No bibNumber on this path — bib allocation is a future plan.
-          })),
-        };
-      });
-
       const input: StartListInput = {
         competition: competitionRowToDTO(compRow),
-        classes: startListClasses,
+        classes: startListClasses(app.fartolaDb, id),
       };
 
       const result = await validateAndBuildStartList(input);

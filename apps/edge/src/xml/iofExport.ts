@@ -122,6 +122,10 @@ export interface StartListCompetitor {
 
 export interface StartListClass {
   name: string;
+  /** SOFT TR 7.5.4: the class's course (IOF ClassStart/Course). */
+  course?: { name: string; lengthM: number | null; climbM: number | null };
+  /** SOFT TR 7.5.4: the class's start place (IOF ClassStart/StartName). */
+  startName?: string | null;
   competitors: StartListCompetitor[];
 }
 
@@ -514,6 +518,8 @@ interface PersonStartNode {
 
 interface ClassStartNode {
   Class: { Name: string };
+  Course?: { Name: string; Length?: number; Climb?: number };
+  StartName?: string;
   PersonStart?: PersonStartNode[];
 }
 
@@ -592,10 +598,18 @@ export function buildStartListXml(input: StartListInput): StartListBuildResult {
     // behavior where empty classes are dropped).
     if (personStarts.length === 0) continue;
 
-    classStarts.push({
-      Class: { Name: cls.name },
-      PersonStart: personStarts,
-    });
+    // XSD order: Class, Course*, StartName*, PersonStart* (IOF.xsd lines
+    // 1930-1951); keys are built top-down.
+    const classStart: ClassStartNode = { Class: { Name: cls.name } };
+    if (cls.course !== undefined)
+      classStart.Course = {
+        Name: cls.course.name,
+        ...(cls.course.lengthM !== null ? { Length: cls.course.lengthM } : {}),
+        ...(cls.course.climbM !== null ? { Climb: cls.course.climbM } : {}),
+      };
+    if (cls.startName != null && cls.startName.length > 0) classStart.StartName = cls.startName;
+    classStart.PersonStart = personStarts;
+    classStarts.push(classStart);
   }
 
   const startListNode: StartListNode = {

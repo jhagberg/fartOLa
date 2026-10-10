@@ -31,21 +31,13 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 
-import {
-  competitions,
-  classes as classesTable,
-  competitors as competitorsTable,
-} from '../db/schema.ts';
+import { competitions, classes as classesTable } from '../db/schema.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { pushToEventor } from '../eventor/push.ts';
-import {
-  buildStartListXml,
-  validateAndBuild,
-  type ExportStatus,
-  type StartListCompetitor,
-} from '../xml/iofExport.ts';
+import { buildStartListXml, validateAndBuild, type ExportStatus } from '../xml/iofExport.ts';
 import type { CompetitionState } from '../projection/types.ts';
 import { resultListInputs } from './_resultListInputs.ts';
+import { startListClasses } from './_startListInputs.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { CompetitionDTO, StartMethod } from '@fartola/shared-types';
 
@@ -209,52 +201,10 @@ export default async function registerEventorPushRoutes(app: FastifyInstance): P
         return reply.code(404).send({ error: 'competition_not_found' });
       }
 
-      // Load classes.
-      const classRows = app.fartolaDb.db
-        .select()
-        .from(classesTable)
-        .where(eq(classesTable.competitionId, id))
-        .all() as ClassRow[];
-
-      // Load competitors with start times.
-      interface CompetitorStartRow {
-        id: string;
-        name: string;
-        club: string | null;
-        classId: string;
-        startTimeMs: number | null;
-      }
-      const competitorRows = app.fartolaDb.db
-        .select({
-          id: competitorsTable.id,
-          name: competitorsTable.name,
-          club: competitorsTable.club,
-          classId: competitorsTable.classId,
-          startTimeMs: competitorsTable.startTimeMs,
-        })
-        .from(competitorsTable)
-        .where(eq(competitorsTable.competitionId, id))
-        .all() as CompetitorStartRow[];
-
-      // Group competitors by class.
-      const byClass = new Map<string, CompetitorStartRow[]>();
-      for (const c of competitorRows) {
-        const arr = byClass.get(c.classId) ?? [];
-        arr.push(c);
-        byClass.set(c.classId, arr);
-      }
-
       // Build StartList XML (pure, no XSD validation).
       const { xml } = buildStartListXml({
         competition: competitionRowToDTO(compRow),
-        classes: classRows.map((cls) => ({
-          name: cls.name,
-          competitors: (byClass.get(cls.id) ?? []).map((c): StartListCompetitor => ({
-            name: c.name,
-            club: c.club,
-            startTimeMs: c.startTimeMs,
-          })),
-        })),
+        classes: startListClasses(app.fartolaDb, id),
       });
 
       // Push to Eventor.

@@ -812,6 +812,40 @@ describe('buildStartListXml — IOF XML 3.0 StartList builder', () => {
       assert.equal(res.build.summary.person_start_count, 6);
     }
   });
+
+  test('SOFT TR 7.5.4: ClassStart carries the course length and start place, PersonStart the bib; XSD-valid', async () => {
+    const base = makeStartListInput();
+    const res = await validateAndBuildStartList({
+      ...base,
+      classes: [
+        {
+          ...base.classes[0]!,
+          course: { name: 'Bana 1', lengthM: 5400, climbM: 120 },
+          startName: 'Start 1',
+        },
+        { ...base.classes[1]!, course: { name: 'Bana 2', lengthM: null, climbM: null } },
+      ],
+    });
+    if (!res.valid) assert.fail(res.errors.map((e) => e.message).join('\n'));
+    const parsed = new XMLParser({ parseTagValue: false }).parse(res.build.xml) as {
+      StartList: {
+        ClassStart: Array<{
+          Course: { Name: string; Length?: string; Climb?: string };
+          StartName?: string;
+          PersonStart: Array<{ Start: { BibNumber?: string } }>;
+        }>;
+      };
+    };
+    const [h21, d21] = parsed.StartList.ClassStart;
+    assert.deepEqual(h21!.Course, { Name: 'Bana 1', Length: '5400', Climb: '120' });
+    assert.equal(h21!.StartName, 'Start 1');
+    assert.deepEqual(
+      h21!.PersonStart.map((p) => p.Start.BibNumber),
+      ['101', '102', undefined]
+    );
+    assert.deepEqual(d21!.Course, { Name: 'Bana 2' });
+    assert.equal(d21!.StartName, undefined);
+  });
 });
 
 // 02.1-14 Task 9: an untimed class mirrors Eventor's ResultList —
