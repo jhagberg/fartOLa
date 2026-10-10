@@ -56,12 +56,15 @@ const PatchClassInput = z
     maxTimeSec: z.number().int().positive().nullable().optional(),
     no_timing: z.boolean().optional(),
     start_method: StartMethod.optional(),
+    // SOFT TR 7.5.4: bib numbering (OLA's prefix and base) and start place.
+    bib_prefix: z.string().trim().max(8).nullable().optional(),
+    bib_base: z.number().int().nonnegative().max(99999).nullable().optional(),
+    start_name: z.string().trim().max(60).nullable().optional(),
   })
   .strict()
-  .refine(
-    (b) => b.maxTimeSec !== undefined || b.no_timing !== undefined || b.start_method !== undefined,
-    { message: 'maxTimeSec, no_timing or start_method required' }
-  );
+  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+    message: 'maxTimeSec, no_timing, start_method, bib_prefix, bib_base or start_name required',
+  });
 
 /** The kind a new class gets: the operator's when given, else the SOFT-name
  * suggestion, else none. */
@@ -142,7 +145,8 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
         return reply.code(404).send({ error: 'class_not_found' });
       }
 
-      const { maxTimeSec, no_timing, start_method } = parsed.data;
+      const { maxTimeSec, no_timing, start_method, bib_prefix, bib_base, start_name } = parsed.data;
+      const orNull = (v: string | null) => (v === null || v === '' ? null : v);
       // SOFT TR 4.21.2: no max time change after the first start.
       if (maxTimeSec !== undefined && maxTimeLocked(app.fartolaDb, competitionId, Date.now())) {
         const current = app.fartolaDb.db
@@ -160,6 +164,9 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
           ...(maxTimeSec !== undefined ? { maxTimeSec } : {}),
           ...(no_timing !== undefined ? { noTiming: no_timing } : {}),
           ...(start_method !== undefined ? { startMethod: start_method } : {}),
+          ...(bib_prefix !== undefined ? { bibPrefix: orNull(bib_prefix) } : {}),
+          ...(bib_base !== undefined ? { bibBase: bib_base } : {}),
+          ...(start_name !== undefined ? { startName: orNull(start_name) } : {}),
         })
         .where(eq(classes.id, classId))
         .run();
