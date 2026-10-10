@@ -21,11 +21,7 @@ left small findings that did not block it. Plan 2 (screen passes from
 
 Visual and wording:
 
-- "fel ordn." fits its punch tile but touches the right edge; trim padding on
-  order tiles or widen the medium minimum.
-- 12–13 px text plan 1 did not reach: `ReadoutView .pending-row .cta`, `.toast`
-  (13 px), `.meta` "direkt", WalkupModal alternatives chip.
-- Radio panel date and SIAC warnings still use a text "!" marker; use `<Icon>`.
+- 12–13 px text plan 1 did not reach: WalkupModal alternatives chip.
 - Double edges (border plus `--shadow-md` ring): `LatestReadCard .dnf-pop`,
   `CompetitionCard .comp-card:hover`.
 - Leftovers from removed symbols: `ActiveCompetitionPill .row-check` 10 px,
@@ -40,8 +36,6 @@ Visual and wording:
   `registration.cancelling`; "Bröt loppet" tooltip vs "Utgått"; `ro.dnf` "Bryt";
   `ro.missingStart.hint` and `tw.contrast` still English in sv.json; audit row
   WA-10 should use the existing `--mp-fg`.
-- Stacked readout: Tab order (card, auto-print, receipt, rail) differs from the
-  visual order (card, rail, auto-print, receipt).
 
 Code and tests:
 
@@ -54,7 +48,6 @@ Code and tests:
   the inline copy.
 - `readout-long-course.spec.ts`: `+ 0` noise; `pageScroll` ignores `.main`.
 - PunchGrid: test struck/extra with `verdict=false`; guard an empty punch area.
-- Status picker: re-measure open direction on resize.
 - `StatusLabel.test.ts` asserts the style string, not the resolved colour; axe
   does not force the "connecting" state.
 - `check-icons.mjs`: comment stripping is line-based (trailing `//` comments
