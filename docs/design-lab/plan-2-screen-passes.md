@@ -11,7 +11,8 @@ Tävlingar, Ny tävling, Inställningar and Hjälparinloggning. Also do the
 audit's shared fixes and the plan 1 leftovers that are not on the
 readout.
 
-**Architecture:** First come three shared tasks:
+**Architecture:** Task 0 fixes two defects that Codex found in the
+merged plan 1 code. Then come three shared tasks:
 
 - tokens and a lint gate for undefined tokens;
 - shared UI pieces (a hint on disabled buttons, a load-error line with
@@ -99,9 +100,10 @@ state as of `origin/main` ce7e6c7.
    date must create the competition and open the readout in one click
    on step 2. No timer, no "Söker läsare". An import error must show on
    step 2 and clear on the next try. → e2e in Task 10.
-2. **Kvar i skogen with an empty check unit.** It must never say "Alla
-   löpare har återkommit" when nothing was read, and a runner marked
-   safe stays visible as marked. → e2e with a mocked snapshot in
+2. **Kvar i skogen with an empty check unit, or with runners only
+   marked safe.** It must never say "Alla löpare har återkommit" unless
+   every started card was read out at finish. A runner marked safe
+   stays visible as marked. → e2e with a mocked snapshot in
    Task 8.
 3. **Export after setting Ej start.** The download must stay disabled
    while a new preview loads or once the type changed. "Ångra" must not
@@ -119,6 +121,7 @@ state as of `origin/main` ce7e6c7.
 
 | File                                                                                                                                                                                                                | Change                                                                                                 | Task |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---- |
+| `screens/SettingsView.svelte` (key save → status refresh), `layout/AppShell.svelte` (close the drawer on navigation), `tests/e2e/settings-nav.spec.ts`, `tests/e2e/layout.spec.ts`                                  | Codex review of plan 1 code                                                                            | 0    |
 | `apps/web/src/lib/tokens.css`, `tokens.contrast.test.ts`                                                                                                                                                            | `--fs-caption` 14, `--scrim`, `--focus-ring`, drop `--icon-*`, darker bright-sun `--mp-fg`, more pairs | 1    |
 | `scripts/check-tokens.mjs` (new), `package.json`                                                                                                                                                                    | lint gate: no undefined custom properties                                                              | 1    |
 | `ui/Modal.svelte`, `layout/AppShell.svelte`, `screens/NewCompetitionWizard.svelte`, `ExportView`, `EventorPublishView`, `KvarISkovenView`                                                                           | token swaps only                                                                                       | 1    |
@@ -136,6 +139,98 @@ state as of `origin/main` ce7e6c7.
 | `i18n/sv.json`, `i18n/en.json`                                                                                                                                                                                      | wording per task                                                                                       | 2–12 |
 | `tests/e2e/a11y.spec.ts`                                                                                                                                                                                            | one screen per screen task                                                                             | 4–12 |
 | `docs/design-lab/README.md`, `.planning/todos/pending/2026-10-10-design-lab-plan-1-leftovers.md`                                                                                                                    | what changed, leftovers closed                                                                         | 13   |
+
+---
+
+### Task 0: Fixes from the Codex review of plan 1's code
+
+Codex (gpt-6.1-sol, xhigh) read the merged #92–#97 diff on 2026-10-10.
+Two behaviour defects belong here. A third, the wizard draft that is
+lost on the way to the key field, is fixed in Task 10. The width
+check on targets is in Task 3.
+
+**Files:** `apps/web/src/lib/screens/SettingsView.svelte`,
+`apps/web/src/lib/layout/AppShell.svelte`,
+`tests/e2e/settings-nav.spec.ts`, `tests/e2e/layout.spec.ts`.
+
+**Interfaces:** Consumes `refreshEventorStatus()` from
+`stores/eventorStatus.svelte.ts` (exists).
+
+- [ ] **Step 1: Write the failing tests**
+
+In `settings-nav.spec.ts`:
+
+```ts
+test('saving the Eventor key updates the status line at once', async ({ page }) => {
+  let saved = false;
+  await page.route('**/api/eventor/status', (r) =>
+    r.fulfill({
+      json: saved
+        ? { state: 'ready', ageDays: 0, competitorCount: 10, fartola_dev: false }
+        : { state: 'no_key', ageDays: null, competitorCount: 0, fartola_dev: false },
+    })
+  );
+  await page.route('**/api/settings/integrations/EVENTOR_API_KEY', (r) => {
+    saved = true;
+    return r.fulfill({ json: { key: 'EVENTOR_API_KEY', configured: true, source: 'config' } });
+  });
+  await page.goto('/installningar#eventor');
+  const label = page.locator('#eventor').getByTestId('eventor-status-label');
+  await expect(label).toHaveText('Eventor: nyckel saknas');
+  // fill and save the Eventor key field (look up its test ids in SettingsView)
+  await expect(label).toHaveText('Eventor: cache OK (0 dagar gammal)');
+});
+```
+
+First read `setIntegration` in `api/client.ts` and the Eventor key
+row in `SettingsView.svelte`. Then fix the route URL, the response
+shape and the fill/save steps to match the code. The test must click
+the real save button.
+
+In `layout.spec.ts` (820×1180):
+
+1. Open the drawer.
+2. Open the competition picker inside it and choose another
+   competition. Seed two competitions with `seedCompetition`.
+3. Expect `/competition/<id>/readout`, a hidden drawer, and `main`
+   without the `inert` property:
+   `expect(await page.locator('main').evaluate((m) => (m as HTMLElement).inert)).toBe(false)`.
+
+- [ ] **Step 2: Run them and see them fail**
+
+Run: `pnpm exec playwright test tests/e2e/settings-nav.spec.ts tests/e2e/layout.spec.ts`
+Expected: the two new tests FAIL. The status stays "nyckel saknas",
+and the drawer stays open over the readout.
+
+- [ ] **Step 3: Fix**
+
+- **SettingsView:** after a successful save or clear of
+  `EVENTOR_API_KEY`, call `void refreshEventorStatus()`.
+- **AppShell:**
+
+```ts
+import { afterNavigate } from '$app/navigation';
+afterNavigate(() => {
+  if (drawerOpen) drawerOpen = false;
+});
+```
+
+Set the state directly and do not call `closeDrawer()`. On a page
+change focus belongs to the new page, not to the menu button.
+
+- [ ] **Step 4: Run them and see them pass, then run the gate**
+
+Run: `pnpm exec playwright test tests/e2e/settings-nav.spec.ts tests/e2e/layout.spec.ts`,
+then `pnpm lint && pnpm typecheck && pnpm test`.
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add apps/web/src/lib/screens/SettingsView.svelte apps/web/src/lib/layout/AppShell.svelte \
+  tests/e2e/settings-nav.spec.ts tests/e2e/layout.spec.ts
+git commit -m "fix(web): refresh the eventor status on key save and close the drawer on navigation"
+```
 
 ---
 
@@ -199,8 +294,14 @@ const KNOWN = new Set([
   'apps/web/src/lib/screens/WalkupModal.svelte --bg-soft',
 ]);
 
+// Comments are blanked first (newlines kept, so line numbers hold): a
+// comment that mentions "--mp-soft:" must not count as a declaration.
+const strip = (text) =>
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
 const declared = (text) => new Set([...text.matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
-const global = declared(TOKENS);
+const global = declared(strip(TOKENS));
 
 function* svelteFiles(dir) {
   for (const name of readdirSync(dir)) {
@@ -212,7 +313,7 @@ function* svelteFiles(dir) {
 
 const errors = [];
 for (const file of svelteFiles(SRC)) {
-  const text = readFileSync(file, 'utf8');
+  const text = strip(readFileSync(file, 'utf8'));
   const local = declared(text);
   const rel = path.relative(ROOT, file);
   for (const m of text.matchAll(/var\(\s*(--[\w-]+)/g)) {
@@ -347,6 +448,7 @@ RG-1 / TV-2 / HI-1 (a failed load says so and offers a retry), IN-7
 - Create: `apps/web/src/lib/ui/LoadError.test.ts`
 - Modify: `apps/web/src/lib/ui/Input.svelte`, `ui/Select.svelte`,
   `layout/StationCard.svelte`, `layout/ActiveCompetitionPill.svelte`,
+  `layout/Clock.svelte` and any other `layout/*.svelte` with text under 14 px,
   `components/AppearanceSettings.svelte`
 - Modify: `apps/web/src/lib/i18n/sv.json`, `en.json` (`common.retry`)
 
@@ -450,7 +552,7 @@ Expected: FAIL (`.btn-hint` missing; `LoadError.svelte` missing).
 
 **`ui/Button.svelte`:**
 
-- Destructure `disabled` and `disabledHint` from the props (both are in `...rest` today; pass `{disabled}` to the `<button>` explicitly), and add `const hintId = $props.id() + '-hint'` (Svelte 5.57 has `$props.id()`).
+- Destructure `disabled` and `disabledHint` from the props (both are in `...rest` today; pass `{disabled}` to the `<button>` explicitly), and add `const uid = $props.id(); const hintId = `${uid}-hint`;`. `$props.id()` must stand alone in its own declaration; the compiler rejects `$props.id() + '-hint'` (`props_id_invalid_placement`).
 - Set `aria-describedby={disabled && disabledHint ? hintId : undefined}`.
 - After `</button>`, add
   `{#if disabled && disabledHint}<span class="btn-hint" id={hintId}>{disabledHint}</span>{/if}`.
@@ -518,6 +620,15 @@ disabled primary is grey, not green.
 outline lines. Keep a `border-color: var(--accent)` if the rule has one,
 so a mouse click still shows which field is active.
 
+**Frame text:** Every screen task measures the frame too, so all of
+it must reach 14 px here. In every `apps/web/src/lib/layout/*.svelte`,
+each `font-size` below 14 px becomes `var(--fs-label)`. Codex found
+StationCard's labels at 11–12 px and the `Clock.svelte` caption at
+10 px. Find the rest with
+`grep -n 'font-size' apps/web/src/lib/layout/*.svelte`. If a value
+then makes a frame row wrap at 1366×768 or 820×1180, report it with a
+screenshot; do not shrink it back.
+
 **`layout/ActiveCompetitionPill.svelte`:**
 
 - Every `font-size` below 14 px (10, 11, 13 px; `.row-check` included)
@@ -541,7 +652,7 @@ Expected: PASS.
 git add apps/web/src/lib/ui/Button.svelte apps/web/src/lib/ui/Button.test.ts \
   apps/web/src/lib/ui/LoadError.svelte apps/web/src/lib/ui/LoadError.test.ts \
   apps/web/src/lib/ui/Input.svelte apps/web/src/lib/ui/Select.svelte \
-  apps/web/src/lib/layout/StationCard.svelte apps/web/src/lib/layout/ActiveCompetitionPill.svelte \
+  apps/web/src/lib/layout/*.svelte \
   apps/web/src/lib/components/AppearanceSettings.svelte \
   apps/web/src/lib/i18n/sv.json apps/web/src/lib/i18n/en.json
 git commit -m "feat(web): say why a button is disabled and offer a retry on load errors"
@@ -564,12 +675,10 @@ can show RED then GREEN. Also the test-tooling leftovers.
 
 **Interfaces:**
 
-- Produces `smallTargets(page: Page): Promise<string[]>`. It is the same
-  logic as today's `targets.spec.ts`, moved to the helper.
-- Produces `smallText(page: Page, minPx = 14): Promise<string[]>`. It
-  returns a description of every visible element whose own text is not
-  empty and whose computed `font-size` is below `minPx`.
-  `.receipt-mirror` and `.skip-link` are skipped.
+- Produces `smallTargets(page: Page, opts?: FloorOpts): Promise<string[]>`
+  and `smallText(page: Page, opts?: FloorOpts & { minPx?: number }): Promise<string[]>`,
+  with `FloorOpts = { root?: string; width?: boolean; labels?: boolean }`
+  (code below).
 - Produces `seedCompetition(request, { controls, start?: boolean })`,
   where `start` defaults to `true`.
 - Produces `tests/e2e/screen-floors.spec.ts`, built around a
@@ -583,59 +692,105 @@ can show RED then GREEN. Also the test-tooling leftovers.
 // tests/e2e/helpers/floors.ts
 // Authored for fartola. Not ported from upstream.
 //
-// ADR-0016 rule 7 floors, measured in the browser: targets ≥ 44 px and
-// no text that carries meaning below 14 px.
+// ADR-0016 rule 7 floors, measured in the browser: targets ≥ 44 × 44 px
+// and no text that carries meaning below 14 px. Skips what a person
+// cannot see or reach: inert subtrees (the closed drawer), aria-hidden,
+// visually hidden (clipped 1 px) elements, the skip link and the
+// receipt mirror (a paper preview, ESC/POS sizes).
 import type { Page } from '@playwright/test';
 
-export async function smallTargets(page: Page): Promise<string[]> {
-  return page.$$eval(
-    'button, a[href], input:not([type=checkbox]):not([type=radio]), select, [role="button"]',
-    (els) =>
-      els
-        .filter((e) => {
+export type FloorOpts = {
+  /** CSS selector to measure inside; default the whole page. */
+  root?: string;
+  /** Also require 44 px width (default true). */
+  width?: boolean;
+  /** Measure the label row of checkboxes and radios (default false). */
+  labels?: boolean;
+};
+
+const HIDDEN = '[inert], [aria-hidden="true"], .skip-link, .receipt-mirror';
+
+export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<string[]> {
+  return page
+    .locator(opts.root ?? 'body')
+    .first()
+    .evaluate(
+      (root, { hidden, width, labels }) => {
+        const seen = (e: Element): boolean => {
+          if (e.closest(hidden)) return false;
           const r = e.getBoundingClientRect();
-          const style = getComputedStyle(e);
-          const shown = r.width > 0 && r.height > 0 && style.visibility !== 'hidden';
-          const onScreen =
-            r.bottom > 0 && r.right > 0 && r.top < innerHeight * 3 && r.left < innerWidth;
-          return shown && onScreen && !e.closest('.skip-link') && Math.round(r.height) < 44;
-        })
-        .map(
-          (e) =>
-            `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${Math.round(e.getBoundingClientRect().height)}px`
-        )
-  );
+          const s = getComputedStyle(e);
+          if (r.width <= 1 || r.height <= 1 || s.visibility === 'hidden') return false;
+          if (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)') return false;
+          return r.bottom > 0 && r.right > 0 && r.top < innerHeight * 3 && r.left < innerWidth;
+        };
+        const name = (e: Element, r: DOMRect) =>
+          `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${Math.round(r.width)}×${Math.round(r.height)}`;
+        const out: string[] = [];
+        const sel =
+          'button, a[href], input:not([type=checkbox]):not([type=radio]):not([type=file]), select, [role="button"]';
+        for (const e of root.querySelectorAll(sel)) {
+          if (!seen(e)) continue;
+          // WCAG 2.5.8 inline exception: a link inside running text.
+          if (e.tagName === 'A' && getComputedStyle(e).display === 'inline') continue;
+          const r = e.getBoundingClientRect();
+          if (Math.round(r.height) < 44 || (width && Math.round(r.width) < 44))
+            out.push(name(e, r));
+        }
+        if (labels) {
+          for (const i of root.querySelectorAll('input[type=checkbox], input[type=radio]')) {
+            const l =
+              i.closest('label') ?? (i.id ? root.querySelector(`label[for="${i.id}"]`) : null);
+            if (!l || !seen(l)) continue;
+            const r = l.getBoundingClientRect();
+            if (Math.round(r.height) < 44) out.push(name(l, r));
+          }
+        }
+        return out;
+      },
+      { hidden: HIDDEN, width: opts.width ?? true, labels: opts.labels ?? false }
+    );
 }
 
-export async function smallText(page: Page, minPx = 14): Promise<string[]> {
-  return page.$$eval(
-    'body *',
-    (els, min) =>
-      els
-        .filter((e) => {
-          if (e.closest('.receipt-mirror, .skip-link, script, style')) return false;
-          const own = [...e.childNodes]
-            .filter((n) => n.nodeType === Node.TEXT_NODE)
-            .map((n) => n.textContent ?? '')
-            .join('')
-            .trim();
-          if (!own) return false;
-          const r = e.getBoundingClientRect();
-          const style = getComputedStyle(e);
-          if (r.width === 0 || r.height === 0 || style.visibility === 'hidden') return false;
-          return parseFloat(style.fontSize) < min;
-        })
-        .map(
-          (e) =>
-            `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${getComputedStyle(e).fontSize}`
-        ),
-    minPx
-  );
+export async function smallText(
+  page: Page,
+  opts: FloorOpts & { minPx?: number } = {}
+): Promise<string[]> {
+  return page
+    .locator(opts.root ?? 'body')
+    .first()
+    .evaluate(
+      (root, { hidden, min }) =>
+        [...root.querySelectorAll('*')]
+          .filter((e) => {
+            if (e.closest(`${hidden}, script, style`)) return false;
+            const own = [...e.childNodes]
+              .filter((n) => n.nodeType === Node.TEXT_NODE)
+              .map((n) => n.textContent ?? '')
+              .join('')
+              .trim();
+            if (!own) return false;
+            const r = e.getBoundingClientRect();
+            const s = getComputedStyle(e);
+            if (r.width <= 1 || r.height <= 1 || s.visibility === 'hidden') return false;
+            if (s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)') return false;
+            return parseFloat(s.fontSize) < min;
+          })
+          .map(
+            (e) =>
+              `${e.tagName.toLowerCase()}.${[...e.classList].join('.')} "${(e.textContent ?? '').trim().slice(0, 30)}" ${getComputedStyle(e).fontSize}`
+          ),
+      { hidden: HIDDEN, min: opts.minPx ?? 14 }
+    );
 }
 ```
 
-Copy `smallTargets` from `targets.spec.ts` exactly (only the
-`.map(...)` text may differ). Then make `targets.spec.ts` import it.
+`smallTargets` keeps today's `targets.spec.ts` rules and adds the
+width check, the inert/clipped skips and the inline-link exception.
+Make `targets.spec.ts` import it. If the width check now flags a
+readout element (sekretariat's files), call it with
+`{ width: false }` there. Add a comment naming the element, and add
+the element to "Handed to other tracks". Do not edit the readout.
 Replace the inline seeding in its start-race test with
 `seedCompetition(request, { controls: 8, start: false })`.
 
@@ -654,7 +809,13 @@ import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
 
-type Screen = { name: string; url: (id: string) => string; ready: (p: Page) => Locator };
+type Screen = {
+  name: string;
+  url: (id: string) => string;
+  ready: (p: Page) => Locator;
+  /** Measure only inside this selector (a dialog over another track's screen). */
+  root?: string;
+};
 const SCREENS: Screen[] = [
   // Task 4 onwards: { name: 'Registrering', url: (id) => `/competition/${id}/registration`, ready: (p) => p.getByTestId('registration-view') },
 ];
@@ -673,15 +834,16 @@ for (const s of SCREENS) {
       await page.setViewportSize({ width: w, height: h });
       await page.goto(s.url(id));
       await expect(s.ready(page)).toBeVisible();
-      expect(await smallText(page)).toEqual([]);
-      expect(await smallTargets(page)).toEqual([]);
+      expect(await smallText(page, { root: s.root })).toEqual([]);
+      expect(await smallTargets(page, { root: s.root, labels: true })).toEqual([]);
     });
   }
 }
 ```
 
-The frame (sidebar, top bar) is measured on every screen too, so
-Task 2's frame fixes are needed before Task 4's entry passes.
+The frame (sidebar, top bar, station card, clock) is measured on every
+screen without a `root`. Task 2's frame fixes make that pass. The
+closed drawer is `inert` and is skipped.
 
 In `seed.ts`, add `start?: boolean` to `opts` and skip the
 `start-race` POST when it is `false`.
@@ -767,23 +929,32 @@ test('the add button says what is missing', async ({ page, request }) => {
   await expect(page.getByText('Skriv ett bricknummer')).toBeVisible();
   await page.getByTestId('reg-manual-input').fill('7501853');
   await expect(page.getByText('Skriv ett bricknummer')).toBeHidden();
+  // The button still submits the form.
+  await page.getByTestId('reg-manual-form').getByRole('button', { name: 'Lägg till' }).click();
+  await expect(page.getByTestId('reg-queue-badge')).toContainText('1');
 });
 ```
 
 Before you write the route mock, read the screen's `onMount` (around
-`getCompetition`, lines ~99–111) and match the URL it fetches.
+`getCompetition`, lines ~99–111) and match the URL it fetches. Check
+what a manual add does to `reg-queue-badge` (it may open a sheet
+instead of queueing). Assert the real effect, not this guess.
+
+`load()` sets `loadError = false` before each fetch, so a retry that
+succeeds clears the alert. The same rule applies to every `LoadError`
+user in Tasks 9 and 12.
 
 **Edits:**
 
-| Row  | Where (current)                                                                                                                                                             | Change                                                                                                                                                                                                                   |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| RG-1 | `onMount` `catch {}` after `getCompetition` (~104–111)                                                                                                                      | Keep a `loadError` state and render `<LoadError message={t('registration.loadError')} onretry={load} />` above the queue. Move the fetch into `load()`. Key: "Kunde inte hämta klasser." / "Could not load the classes." |
-| RG-2 | `registration.cancelRegistration`, `registration.cancelling`                                                                                                                | "Återbud" and "Registrerar återbud…" (en: "Withdraw", "Withdrawing…"). Grep the keys; if another screen uses them, split the key.                                                                                        |
-| RG-3 | manual "Lägg till" (`disabled={manualCard.trim()===''}`, ~405)                                                                                                              | Use `<Button variant="primary" disabledHint={t('registration.manualEntry.missing')}>`. Delete `.manual-btn` and its `:disabled` CSS. Key: "Skriv ett bricknummer" / "Type a card number".                                |
-| RG-4 | `.reg-head .badge` 12, `.manual-err` 13, `.reg-queue-count` 12 (height 22 px), `.reg-queue-chip .cta` 13, `.known-label` 13, `.known-club` 13, `.known-err` 13, `.toast` 13 | 14 px each; `.reg-queue-count` `height: auto`.                                                                                                                                                                           |
-| RG-5 | `.reg-head .badge` `background: var(--accent); color: #fff`                                                                                                                 | `background: var(--bg-sunken); color: var(--fg); border: 1px solid var(--border-strong)`.                                                                                                                                |
-| RG-6 | `.reg-queue-count { color: oklch(0.45 0.12 70) }`; `.known-cancel { color: #fff }`                                                                                          | `var(--mp-fg)`; `var(--accent-fg)`.                                                                                                                                                                                      |
-| RG-7 | `.manual-input:focus` outline                                                                                                                                               | Delete the outline lines; keep `border-color: var(--accent)`.                                                                                                                                                            |
+| Row  | Where (current)                                                                                                                                                             | Change                                                                                                                                                                                                                                                                                                          |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RG-1 | `onMount` `catch {}` after `getCompetition` (~104–111)                                                                                                                      | Keep a `loadError` state and render `<LoadError message={t('registration.loadError')} onretry={load} />` above the queue. Move the fetch into `load()`. Key: "Kunde inte hämta klasser." / "Could not load the classes."                                                                                        |
+| RG-2 | `registration.cancelRegistration`, `registration.cancelling`                                                                                                                | "Återbud" and "Registrerar återbud…" (en: "Withdraw", "Withdrawing…"). Grep the keys; if another screen uses them, split the key.                                                                                                                                                                               |
+| RG-3 | manual "Lägg till" (`<button type="submit">` inside `reg-manual-form`, `disabled={manualCard.trim()===''}`, ~405; submit runs `onManualSubmit` ~331)                        | Use `<Button type="submit" variant="primary" disabledHint={t('registration.manualEntry.missing')}>`. `type="submit"` is required because Button defaults to `button`, and without it the form never submits. Delete `.manual-btn` and its `:disabled` CSS. Key: "Skriv ett bricknummer" / "Type a card number". |
+| RG-4 | `.reg-head .badge` 12, `.manual-err` 13, `.reg-queue-count` 12 (height 22 px), `.reg-queue-chip .cta` 13, `.known-label` 13, `.known-club` 13, `.known-err` 13, `.toast` 13 | 14 px each; `.reg-queue-count` `height: auto`.                                                                                                                                                                                                                                                                  |
+| RG-5 | `.reg-head .badge` `background: var(--accent); color: #fff`                                                                                                                 | `background: var(--bg-sunken); color: var(--fg); border: 1px solid var(--border-strong)`.                                                                                                                                                                                                                       |
+| RG-6 | `.reg-queue-count { color: oklch(0.45 0.12 70) }`; `.known-cancel { color: #fff }`                                                                                          | `var(--mp-fg)`; `var(--accent-fg)`.                                                                                                                                                                                                                                                                             |
+| RG-7 | `.manual-input:focus` outline                                                                                                                                               | Delete the outline lines; keep `border-color: var(--accent)`.                                                                                                                                                                                                                                                   |
 
 **Commit:** `fix(web): registration says why add is disabled and when classes fail`
 
@@ -791,7 +962,7 @@ Before you write the route mock, read the screen's `onMount` (around
 
 ### Task 5: Importera löpare (+ DropZone)
 
-**Coordination:** IM-1 adds about five lines to
+**Coordination:** IM-1 adds about five lines (and one CSS rule) to
 `screens/RunnersListView.svelte`, which m2-bibs and m2-prerace also
 edit. Before you start, the controller pings the
 `meos-capture-windows-build` session, so those tracks know a small
@@ -806,7 +977,11 @@ conflict is coming.
 - `tests/e2e/screen-floors.spec.ts`, `a11y.spec.ts`, plus a new
   `tests/e2e/import-runners.spec.ts`
 
-**Floor entry:** `{ name: 'Importera löpare', url: (id) => `/competition/${id}/import`, ready: (p) => p.getByTestId('import-runners-view') }`
+**Floor entry:** `{ name: 'Importera löpare', url: (id) => `/competition/${id}/import`, ready: (p) => p.getByTestId('import-runners-view'), root: '[role="dialog"]' }`.
+`/import` redirects to the roster with the import sheet open, and the
+roster behind it belongs to m2-bibs/m2-prerace (its 12 px chips are
+theirs). So this entry measures the dialog only. Check that `ui/Modal`
+renders `role="dialog"`, and use its real selector if it does not.
 
 **Behaviour tests** (`tests/e2e/import-runners.spec.ts`; synthetic
 fixture `apps/edge/test/fixtures/iof30-entrylist-sample.xml`):
@@ -816,7 +991,8 @@ fixture `apps/edge/test/fixtures/iof30-entrylist-sample.xml`):
   "Klart: N löpare importerade och sparade." and a primary button
   "Klar – visa anmälda". Clicking it closes the modal, and the list
   shows the imported names without a reload.
-- **Relink only after import.** With `**/eventor/import**` mocked to
+- **Relink only after import.** With `**/eventor-import**` (the real path,
+  `api/client.ts` ~894) mocked to
   503, clicking "Länka om" and choosing another event leaves the
   competition's `eventor_event_id` unchanged
   (`GET /api/competitions/<id>`). An error is shown, and "Välj annan
@@ -824,16 +1000,16 @@ fixture `apps/edge/test/fixtures/iof30-entrylist-sample.xml`):
 
 **Edits:**
 
-| Row  | Where (current)                                                                                                                         | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IM-1 | `Props` (`competitionId`, `embedded`); `.result.ok` banner (`import-result`); RunnersListView Modal (~359–374)                          | Add an `onDone?: () => void` prop. When it is set and the import succeeded, show `<Button variant="primary" onclick={onDone}>{t('importRunners.done')}</Button>` under the result. RunnersListView passes `onDone={() => { importOpen = false; void reload(); }}`, using its existing close-and-refetch code; read it first. Keys: `importRunners.done` "Klar – visa anmälda" / "Done – show entries"; `importRunners.success` "Klart: {{count}} löpare importerade och sparade." / "Done: {{count}} runners imported and saved."; `importRunners.autoBound` "{{count}} brickor kopplades till löpare som redan lästs ut." / "{{count}} cards were matched to runners already read out." |
-| IM-2 | `<Button variant="ghost" data-testid="import-upload-btn">`                                                                              | `variant="secondary"`, `<Icon name="folder-open" />` before the label.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| IM-3 | `relinkEvent()` PATCHes, then imports (~263–285)                                                                                        | Import first, then `patchCompetition` only if the import succeeded. Add a secondary "Välj annan tävling" (`importRunners.relink.cancel`; en "Choose another event") that resets the relink state. Keep the rendered error and `EventorKeyLink`.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| IM-4 | `.small` 13, `.err` 13                                                                                                                  | 14 px.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| IM-5 | `importRunners.upload.title`, `.upload.desc`, `.subtitle`, `.errEventorDown`, `.errWrongKind`, `runners.empty.desc`, `wiz.drop.formats` | "Ladda upp anmälningsfil (XML)"; "Använd om Eventor inte svarar eller tävlingen ligger hos en annan klubb. Förväntar en anmälningslista från Eventor eller Purple Pen (XML)."; "Hämta anmälda från Eventor, eller ladda upp en anmälningsfil."; "Eventor svarar inte. Försök igen senare eller ladda upp en anmälningsfil."; "Filen är inte en anmälningslista. Välj en anmälningsfil (XML)."; "Hämta anmälda från Eventor eller ladda upp en anmälningsfil."; `wiz.drop.formats` → Task 10. Write English versions with the same meaning.                                                                                                                                               |
-| IM-6 | Modal scrim                                                                                                                             | Done in Task 1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| IM-7 | DropZone `<div class="sub">Klicka för att byta fil</div>`; `.sub` 12 px; `.icon` 32 px                                                  | `t('wiz.drop.change')` ("Klicka för att byta fil" / "Click to choose another file"); `.sub` 14 px. `.icon` is now an `<Icon>`: drop the `font-size` and pass `size={32}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| NY-3 | DropZone `{t('wiz.imported')}: {file.name}`                                                                                             | `t('wiz.drop.chosen', { name: file.name })`: "Vald fil: {{name}}. Läses in när du går vidare." / "Chosen file: {{name}}. It is read when you continue." Grep `wiz.imported`, and remove the key if this was its last use.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Row  | Where (current)                                                                                                                                                                                                                  | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IM-1 | `Props` (`competitionId`, `embedded`); `.result.ok` banner (`import-result`); RunnersListView Modal (~359–374): state `importSheetOpen` (~69), handler `closeImportSheet` (~140, also drops `?import=1`), loader `loadAll` (~77) | Add an `onDone?: () => void` prop. When it is set and the import succeeded, show `<Button variant="primary" onclick={onDone}>{t('importRunners.done')}</Button>` under the result. RunnersListView passes `onDone={closeImportSheet}`; read it first, and if it does not call `loadAll()`, have it do so. In the same file, the sheet's close button `.sheet-close` (36 px, ~655) becomes `width/height: var(--hit)`. This is the only CSS change there, and it is part of the coordination ping. Keys: `importRunners.done` "Klar – visa anmälda" / "Done – show entries"; `importRunners.success` "Klart: {{count}} löpare importerade och sparade." / "Done: {{count}} runners imported and saved."; `importRunners.autoBound` "{{count}} brickor kopplades till löpare som redan lästs ut." / "{{count}} cards were matched to runners already read out." |
+| IM-2 | `<Button variant="ghost" data-testid="import-upload-btn">`                                                                                                                                                                       | `variant="secondary"`, `<Icon name="folder-open" />` before the label.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| IM-3 | `relinkEvent()` PATCHes, then imports (~263–285); `relinkError` renders inside the `linkedEvent` branch (~342)                                                                                                                   | Import first, then `patchCompetition` only if the import succeeded. Move the relink error out of the `{#if linkedEvent}` branch: after a failed import-first, `linkedEvent` may be null and the error would be invisible. Add a secondary "Välj annan tävling" (`importRunners.relink.cancel`; en "Choose another event") that resets the relink state. Keep `EventorKeyLink`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| IM-4 | `.small` 13, `.err` 13                                                                                                                                                                                                           | 14 px.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| IM-5 | `importRunners.upload.title`, `.upload.desc`, `.subtitle`, `.errEventorDown`, `.errWrongKind`, `runners.empty.desc`, `wiz.drop.formats`                                                                                          | "Ladda upp anmälningsfil (XML)"; "Använd om Eventor inte svarar eller tävlingen ligger hos en annan klubb. Förväntar en anmälningslista från Eventor eller Purple Pen (XML)."; "Hämta anmälda från Eventor, eller ladda upp en anmälningsfil."; "Eventor svarar inte. Försök igen senare eller ladda upp en anmälningsfil."; "Filen är inte en anmälningslista. Välj en anmälningsfil (XML)."; "Hämta anmälda från Eventor eller ladda upp en anmälningsfil."; `wiz.drop.formats` → Task 10. Write English versions with the same meaning.                                                                                                                                                                                                                                                                                                                    |
+| IM-6 | Modal scrim                                                                                                                                                                                                                      | Done in Task 1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| IM-7 | DropZone `<div class="sub">Klicka för att byta fil</div>`; `.sub` 12 px; `.icon` 32 px                                                                                                                                           | `t('wiz.drop.change')` ("Klicka för att byta fil" / "Click to choose another file"); `.sub` 14 px. `.icon` is now an `<Icon>`: drop the `font-size` and pass `size={32}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| NY-3 | DropZone `{t('wiz.imported')}: {file.name}`                                                                                                                                                                                      | `t('wiz.drop.chosen', { name: file.name })`: "Vald fil: {{name}}. Läses in när du går vidare." / "Chosen file: {{name}}. It is read when you continue." Grep `wiz.imported`, and remove the key if this was its last use.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 **Out of this task:** `importRunners.eventor.desc` and `.noEvents` name
 "StorTuna OK". The organisation is fixed in the edge's Eventor search;
@@ -867,21 +1043,27 @@ text).
     new preview arrives.
   - Exactly one preview request is made on page load (count the
     requests with `page.on('request')`).
-- **Next step after a download.** After a download, the text "Nästa:
-  publicera till Eventor" links to `/competition/<id>/eventor-publish`.
+  - Overlapping requests: hold the first Final preview with a route
+    that waits for a promise you resolve by hand. Switch to Preliminär
+    and back to Final, let the second Final answer, then release the
+    first. The download is enabled only after the newest response, and
+    the held one changes nothing.
+- **Next step after a download.** After a download, the text
+  "Hämtningen har startat." shows, and "publicera till Eventor" links
+  to `/competition/<id>/eventor-publish`.
 
 **Edits:**
 
-| Row  | Where (current)                                                                                                                                          | Change                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| EX-1 | error boxes                                                                                                                                              | Colours fixed in Task 1. Every error box also starts with `<Icon name="alert-triangle" />` and a bold word ("Fel:"), so colour is not the only cue.                                                                                                                                                                                                                                                         |
-| EX-2 | two `.btn` "Sätt ej utlästa…" / "Ångra…" (~191–196)                                                                                                      | `<Button variant="primary" disabled={pending===0 \|\| busy}>`, text `export.unreadDns.set` "Sätt {{n}} ej utlästa till Ej start" / "Set {{n}} unread to DNS"; busy label `export.unreadDns.busy` "Sätter Ej start…" / "Setting DNS…". Undo: `<Button variant="secondary" disabled={busy}>`, text "Ångra Ej start" / "Undo DNS". Runner names: out of scope (needs a new edge field).                        |
-| EX-3 | hard-coded h1, intro, "Slutgiltig (Final)", "Provisorisk (Provisional)", "Validerar …", "XSD-fel", "rad {line}:", "· status {status}"                    | Keys `export.title` "Exportera resultat"; `export.intro` "Kontrollera och hämta resultatfilen för Eventor."; `export.type.final` "Slutgiltig"; `export.type.provisional` "Preliminär"; `export.checking` "Kontrollerar filen…"; `export.invalid` "Filen är inte giltig"; the line list goes inside `<details><summary>{t('export.details')}</summary>` ("Visa detaljer"). Drop "status …" from the summary. |
-| EX-4 | "Exporttyp", "Validering", "Validering misslyckades", "Validering OK", "Nedladdning", "Hämta ResultList.xml", "Okänt fel" ×2, "klasser · personresultat" | Every string goes to `export.*` keys in sv and en: "Typ", "Kontroll", "Filen är inte giltig", "Filen är giltig", "Hämta fil", "Hämta resultatfilen", `common.unknownError` "Något gick fel", "{{classes}} klasser · {{results}} resultat".                                                                                                                                                                  |
-| EX-5 | after the download (~204–216)                                                                                                                            | Once the download link was clicked, show `export.next`: "Filen sparades i Hämtade filer. Nästa: <a>publicera till Eventor</a>". Render the link with an `<a href>` in markup, not inside the i18n string.                                                                                                                                                                                                   |
-| EX-6 | `onMount` `refresh()` plus `$effect` on `status` (~57–71); `canDownload` (~55)                                                                           | Remove the `onMount` call; the `$effect` alone fetches. `canDownload = preview?.valid && !loading && previewStatus === status`; keep `previewStatus` from the response. The download `<a>` gets `aria-disabled` and no `href` when it cannot download (no `pointer-events: none`).                                                                                                                          |
-| EX-7 | `.radio` rows                                                                                                                                            | `accent-color: var(--accent)`; `input { width: 24px; height: 24px }`; row `min-height: var(--hit)`.                                                                                                                                                                                                                                                                                                         |
-| EX-8 | hand-rolled `.btn` (~286–303), `.box` radius 8, `.h0` 28, `.h1` 18                                                                                       | `<Button>` (the download stays an `<a>` styled with Button's classes `btn variant-primary size-md`), `var(--radius)`, `font-size: var(--fs-display)` and `var(--fs-heading)`. Delete the unused CSS.                                                                                                                                                                                                        |
+| Row  | Where (current)                                                                                                                                          | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EX-1 | error boxes                                                                                                                                              | Colours fixed in Task 1. Every error box also starts with `<Icon name="alert-triangle" />` and a bold word ("Fel:"), so colour is not the only cue.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| EX-2 | two `.btn` "Sätt ej utlästa…" / "Ångra…" (~191–196)                                                                                                      | `<Button variant="primary" disabled={pending===0 \|\| busy}>`, text `export.unreadDns.set` "Sätt {{n}} ej utlästa till Ej start" / "Set {{n}} unread to DNS"; busy label `export.unreadDns.busy` "Sätter Ej start…" / "Setting DNS…". Undo: `<Button variant="secondary" disabled={busy}>`, text "Ångra Ej start" / "Undo DNS". Runner names: out of scope (needs a new edge field).                                                                                                                                                                                                                                                                                 |
+| EX-3 | hard-coded h1, intro, "Slutgiltig (Final)", "Provisorisk (Provisional)", "Validerar …", "XSD-fel", "rad {line}:", "· status {status}"                    | Keys `export.title` "Exportera resultat"; `export.intro` "Kontrollera och hämta resultatfilen för Eventor."; `export.type.final` "Slutgiltig"; `export.type.provisional` "Preliminär"; `export.checking` "Kontrollerar filen…"; `export.invalid` "Filen är inte giltig"; the line list goes inside `<details><summary>{t('export.details')}</summary>` ("Visa detaljer"). Drop "status …" from the summary.                                                                                                                                                                                                                                                          |
+| EX-4 | "Exporttyp", "Validering", "Validering misslyckades", "Validering OK", "Nedladdning", "Hämta ResultList.xml", "Okänt fel" ×2, "klasser · personresultat" | Every string goes to `export.*` keys in sv and en: "Typ", "Kontroll", "Filen är inte giltig", "Filen är giltig", "Hämta fil", "Hämta resultatfilen", `common.unknownError` "Något gick fel", "{{classes}} klasser · {{results}} resultat".                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| EX-5 | after the download (~204–216)                                                                                                                            | Once the download link was clicked, show `export.next`: "Hämtningen har startat. Nästa: <a>publicera till Eventor</a>" / "The download has started. Next: publish to Eventor". Render the link with an `<a href>` in markup, not inside the i18n string. The page cannot know where the browser saved the file, so it does not say.                                                                                                                                                                                                                                                                                                                                  |
+| EX-6 | `onMount` `refresh()` plus `$effect` on `status` (~57–71); `canDownload` (~55); every `refresh` overwrites `preview` and clears `loading`                | Remove the `onMount` call; the `$effect` alone fetches. Guard responses with a request counter: `const gen = ++requestGen;` before the fetch, and after it `if (gen !== requestGen) return;`. The `finally` that clears `loading` needs the same check, so an older response can neither set `preview` nor clear `loading`. `canDownload = preview?.valid && !loading && previewStatus === status`, with `previewStatus` set from the response that won. The download `<a>` gets `aria-disabled="true"` and no `href` when it cannot download (no `pointer-events: none`).                                                                                           |
+| EX-7 | `.radio` rows                                                                                                                                            | `accent-color: var(--accent)`; `input { width: 24px; height: 24px }`; row `min-height: var(--hit)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| EX-8 | hand-rolled `.btn` (~286–303), `.box` radius 8, `.h0` 28, `.h1` 18                                                                                       | Buttons become `<Button>`. The download stays an `<a class="download">` with its own local CSS, because Button's styles are scoped to Button and copying its class names does not style the anchor: `display:inline-flex; align-items:center; gap:8px; min-height:var(--hit); padding:0 var(--space-md); border-radius:var(--radius); background:var(--accent); color:var(--accent-fg); border:1px solid var(--accent); text-decoration:none`, plus an `[aria-disabled="true"]` rule using Button's disabled look (`--bg-sunken`, `--fg-muted`, `--border`). Also `var(--radius)` and `font-size: var(--fs-display)` and `var(--fs-heading)`. Delete the unused CSS. |
 
 **Existing specs to run:** `export.spec.ts` and `results.spec.ts`.
 
@@ -946,22 +1128,26 @@ case).
   clicking "Markera säker" on 7501853 moves that runner into
   "Markerade som säkra (1)", with the text "Markerad på den här
   datorn". The missing count drops to 1.
+- **Marked is not returned.** With `{ cardNumbers: [7501853], returnedCardNumbers: [] }`,
+  mark 7501853 safe. The page shows "Ingen saknas: 0 har kommit
+  tillbaka och 1 är markerade som säkra." and never "Alla löpare har
+  återkommit".
 - **Fetch time.** After a fetch, "Hämtad HH:MM" and a "Hämta igen"
   button show beside the table heading.
 
 **Edits:**
 
-| Row  | Where (current)                                                                          | Change                                                                                                                                                                                                                                                                                                                                                               |
-| ---- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| KV-1 | `confirmedSafe` (sessionStorage), mark buttons (~318, ~341)                              | Below the table, add a section `kvariskov.markedHeading` "Markerade som säkra ({{n}})" / "Marked safe ({{n}})" listing name, card and class. Under the heading: `kvariskov.markedLocal` "Markerad på den här datorn. Andra datorer ser inte markeringen." / "Marked on this computer only. Other computers do not see it." Undo and a shared event are out of scope. |
-| KV-2 | `{#if missingCards.length === 0}` → "Alla löpare har återkommit." (~353–357, hard-coded) | If `startedCards.length === 0`, show `kvariskov.emptyRead` "Inga stämplingar lästes från dosan. Kontrollera att dosan är väckt och försök igen." Otherwise show `kvariskov.allBack` "Alla löpare har återkommit." Both are keys.                                                                                                                                     |
-| KV-3 | no fetch time; `elapsed()` at render                                                     | Store `fetchedAt` on success. Show `kvariskov.fetchedAt` "Hämtad {{time}}" and a secondary `<Button>` "Hämta igen" (`kvariskov.refetch`) beside the table heading. Re-render the gångtid once a minute with a `$state` tick set by `setInterval` in an `$effect`, cleared on destroy.                                                                                |
-| KV-4 | `kvariskov.hint`, `kvariskov.step2`                                                      | "Lägg stämpeldosan på mini-läsaren och klicka Hämta för att se vem som är kvar i skogen."; step 2 "Lägg dosan på mini-läsaren (USB)."                                                                                                                                                                                                                                |
-| KV-5 | tokens                                                                                   | Done in Task 1. Also add an icon and a word to the error and warning boxes, as in EX-1.                                                                                                                                                                                                                                                                              |
-| KV-6 | `.summary-text` mono 13 px, `break-all`; `kvariskov.safetySummary` "Saknade: {{names}}"  | A plain 16 px sentence: `kvariskov.summary` "{{missing}} löpare saknas, {{back}} är tillbaka." / "{{missing}} runners missing, {{back}} back." The copied text keeps the names (`safetySummary`). No mono, no `break-all`.                                                                                                                                           |
-| KV-7 | three `<p class="step">`, numbers in the strings                                         | `<ol class="steps">` with `<li>`; remove "1. ", "2. " and "3. " from `kvariskov.step1`–`step3` (sv and en).                                                                                                                                                                                                                                                          |
-| KV-8 | hand-rolled `.btn`, `.box` radius 8, `.h0`, `.h1`                                        | `<Button>`, `var(--radius)`, type tokens.                                                                                                                                                                                                                                                                                                                            |
-| —    | `kvariskov.copied` "Kopierat!"                                                           | "Kopierat." (no exclamation mark).                                                                                                                                                                                                                                                                                                                                   |
+| Row  | Where (current)                                                                                                                                                             | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| KV-1 | `confirmedSafe` (sessionStorage), mark buttons (~318, ~341)                                                                                                                 | Below the table, add a section `kvariskov.markedHeading` "Markerade som säkra ({{n}})" / "Marked safe ({{n}})" listing name, card and class. Under the heading: `kvariskov.markedLocal` "Markerad på den här datorn. Andra datorer ser inte markeringen." / "Marked on this computer only. Other computers do not see it." Undo and a shared event are out of scope.                                                                                                                                                                                                                               |
+| KV-2 | `{#if missingCards.length === 0}` → "Alla löpare har återkommit." (~353–357, hard-coded); `missingCards` (~87) leaves out both physically returned and locally marked cards | Three cases. If `startedCards.length === 0`, show `kvariskov.emptyRead` "Inga stämplingar lästes från dosan. Kontrollera att dosan är väckt och försök igen." If no card is missing and every started card is in `returnedCards` (read out at finish), show `kvariskov.allBack` "Alla löpare har återkommit." If no card is missing but some are only marked safe, show `kvariskov.noneMissing` "Ingen saknas: {{back}} har kommit tillbaka och {{marked}} är markerade som säkra." / "No one missing: {{back}} back, {{marked}} marked safe." A manual mark must never read as a physical return. |
+| KV-3 | no fetch time; `elapsed()` at render                                                                                                                                        | Store `fetchedAt` on success. Show `kvariskov.fetchedAt` "Hämtad {{time}}" and a secondary `<Button>` "Hämta igen" (`kvariskov.refetch`) beside the table heading. Re-render the gångtid once a minute with a `$state` tick set by `setInterval` in an `$effect`, cleared on destroy.                                                                                                                                                                                                                                                                                                              |
+| KV-4 | `kvariskov.hint`, `kvariskov.step2`                                                                                                                                         | "Lägg stämpeldosan på mini-läsaren och klicka Hämta för att se vem som är kvar i skogen."; step 2 "Lägg dosan på mini-läsaren (USB)."                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| KV-5 | tokens                                                                                                                                                                      | Done in Task 1. Also add an icon and a word to the error and warning boxes, as in EX-1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| KV-6 | `.summary-text` mono 13 px, `break-all`; `kvariskov.safetySummary` "Saknade: {{names}}"                                                                                     | A plain 16 px sentence: `kvariskov.summary` "{{missing}} löpare saknas, {{back}} är tillbaka." / "{{missing}} runners missing, {{back}} back." The copied text keeps the names (`safetySummary`). No mono, no `break-all`.                                                                                                                                                                                                                                                                                                                                                                         |
+| KV-7 | three `<p class="step">`, numbers in the strings                                                                                                                            | `<ol class="steps">` with `<li>`; remove "1. ", "2. " and "3. " from `kvariskov.step1`–`step3` (sv and en).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| KV-8 | hand-rolled `.btn`, `.box` radius 8, `.h0`, `.h1`                                                                                                                           | `<Button>`, `var(--radius)`, type tokens.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| —    | `kvariskov.copied` "Kopierat!"                                                                                                                                              | "Kopierat." (no exclamation mark).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Commit:** `fix(web): kvar i skogen tells an empty read from all back`
 
@@ -1001,13 +1187,13 @@ a new `tests/e2e/home.spec.ts`.
 
 **Edits:**
 
-| Row  | Where (current)                                                                                     | Change                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TV-1 | CompetitionCard `status='live'` default, pill, progress bar, meta counts                            | Remove the `starters`, `finished` and `status` props, the progress bar and the counts. Derive the pill from the competition: today's date (local) → `home.status.today` "Pågår" when `race_started_at_ms` is set, otherwise "I dag"; past → "Avslutad"; future → "Kommande". en: "Running", "Today", "Finished", "Upcoming". Remove `home.status.live`, `home.starters` and `home.finished` if nothing else uses them (grep first). |
-| TV-2 | hero `<p>StorTuna OK</p>`; hero and empty-state CTAs both shown; raw `loadError`                    | Remove the club line. Hide the hero CTA while the empty state shows. On error, show `<LoadError message={t('home.loadError')} onretry={load} />` ("Kunde inte hämta tävlingar." / "Could not load the competitions."). `home.new` "+ Ny tävling" → "Ny tävling" with `<Icon name="plus" />`.                                                                                                                                        |
-| TV-3 | `.date` 12, `.pill` 11 uppercase, `.meta` 13, `.eventor-chip` 11, `h3` 17; HomeView `.small` 12     | 14 px; pill in sentence case (no `text-transform`, no letter-spacing); `h3` 18 px.                                                                                                                                                                                                                                                                                                                                                  |
-| TV-4 | hero `linear-gradient(...)`; card hover `border-color: var(--accent); box-shadow: var(--shadow-md)` | Hero `background: var(--bg-elev); border: 1px solid var(--border)`. Hover: `border-color: var(--border-strong)` only (this also closes the double-edge leftover).                                                                                                                                                                                                                                                                   |
-| TV-5 | card `<button>` with `<h3>` inside; HomeView `openCompetition` uses `goto`                          | `<a class="comp-card" href="/competition/{id}/readout">`, same styles. HomeView drops `onclick`. If `openCompetition` also sets the active competition, keep that as an `onclick` on the link that does not `preventDefault`; read it first.                                                                                                                                                                                        |
+| Row  | Where (current)                                                                                                             | Change                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TV-1 | CompetitionCard `status='live'` default, pill, progress bar, meta counts                                                    | Remove the `starters`, `finished` and `status` props, the progress bar and the counts. Derive the pill from the competition: today's date (local) → `home.status.today` "Pågår" when `race_started_at_ms` is set, otherwise "I dag"; past → "Avslutad"; future → "Kommande". en: "Running", "Today", "Finished", "Upcoming". Remove `home.status.live`, `home.starters` and `home.finished` if nothing else uses them (grep first). |
+| TV-2 | hero `<p>StorTuna OK</p>`; hero and empty-state CTAs both shown; raw `loadError`, never reset after a successful load (~39) | Remove the club line. Hide the hero CTA while the empty state shows. On error, show `<LoadError message={t('home.loadError')} onretry={load} />` ("Kunde inte hämta tävlingar." / "Could not load the competitions."). `load()` resets the error before fetching. `home.new` "+ Ny tävling" → "Ny tävling" with `<Icon name="plus" />`.                                                                                             |
+| TV-3 | `.date` 12, `.pill` 11 uppercase, `.meta` 13, `.eventor-chip` 11, `h3` 17; HomeView `.small` 12                             | 14 px; pill in sentence case (no `text-transform`, no letter-spacing); `h3` 18 px.                                                                                                                                                                                                                                                                                                                                                  |
+| TV-4 | hero `linear-gradient(...)`; card hover `border-color: var(--accent); box-shadow: var(--shadow-md)`                         | Hero `background: var(--bg-elev); border: 1px solid var(--border)`. Hover: `border-color: var(--border-strong)` only (this also closes the double-edge leftover).                                                                                                                                                                                                                                                                   |
+| TV-5 | card `<button>` with `<h3>` inside; HomeView `openCompetition` uses `goto`                                                  | `<a class="comp-card" href="/competition/{id}/readout">`, same styles. HomeView drops `onclick`. If `openCompetition` also sets the active competition, keep that as an `onclick` on the link that does not `preventDefault`; read it first.                                                                                                                                                                                        |
 
 **Existing specs to run:** `wizard.spec.ts`, `walking-skeleton.spec.ts`
 and `skeleton.spec.ts` (they open the home page). Grep for
@@ -1027,7 +1213,7 @@ readout; nothing waits for a reader.
 
 - `screens/NewCompetitionWizard.svelte`, `WizardStep1.svelte`,
   `WizardStep2.svelte`
-- `WizardStep3.svelte` (deleted; its `start()` moves to the wizard)
+- `WizardStep3.svelte` (deleted; its `start()` and `mapServerError` move to the wizard)
 - `i18n/sv.json`, `en.json`
 - `tests/e2e/wizard.spec.ts`, `screen-floors.spec.ts`, `a11y.spec.ts`
 
@@ -1050,19 +1236,32 @@ readout; nothing waits for a reader.
   next click.
 - **A bad date says so.** With date `2026-13-99x`, the text "Skriv
   datum som ÅÅÅÅ-MM-DD" shows and Nästa is disabled.
+- **The draft survives the key detour** (Codex review of plan 1).
+  1. Mock `**/api/eventor/events/**` to `no_key`.
+  2. Fill name and date, type an Eventor ID and click Hämta.
+  3. Click "Lägg in Eventor-nyckeln", then `page.goBack()`.
+  4. Expect the wizard with the same name and date.
+  5. Cancel the wizard, open it again, and expect empty fields.
 
 **Edits:**
 
-| Row  | Where (current)                                                                                                                                                                                                                                 | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| NY-1 | `step: 1\|2\|3`; step bar `[1,2,3]`; `{step}/3`; step 3 = `WizardStep3`; Nästa only when `step<3`                                                                                                                                               | `step: 1\|2`; bar `[1,2]`; `{step}/2`. At step 2 the footer shows `<Button variant="primary" data-testid="wiz-start" disabled={!canAdvanceFromStep2 \|\| submitting}>` with label `wiz.create` "Skapa tävling" / "Create competition" and busy label `wiz.creating` "Skapar…" / "Creating…". Move `start()` (base64, `createCompetitionFromWizard`, `setActiveCompetition`, `goto`) into the wizard as `create()`, and keep the `mapServerError` mapping. Delete `WizardStep3.svelte` and the keys `wiz.step3.*`, `wiz.detecting`, `wiz.detected`, `wiz.station`, `wiz.handshake` and `wiz.start` (grep each first). |
-| NY-2 | `mapServerError` dead-end text; `importError` cleared only in `back()`; 'Filen kunde inte hanteras.', 'Nätverksfel', WizardStep1 'Eventor svarar inte'                                                                                          | Keys: `wiz.err.needCourse` "Välj en banfil (XML) först. Anmälningsfilen läser du in efteråt."; `wiz.err.file` "Filen kunde inte läsas."; `wiz.err.network` "Kunde inte nå servern. Försök igen."; `wiz.err.eventorDown` "Eventor svarar inte. Försök igen senare." (en to match). Clear `importError` when a new file is chosen and at the start of `create()`.                                                                                                                                                                                                                                                      |
-| NY-3 | DropZone "Importerad"                                                                                                                                                                                                                           | Done in Task 5 (`wiz.drop.chosen`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| NY-4 | step 1 `btn primary` ×2 (banfil, Hämta) plus Nästa; sub-labels "Skapa / Importera / Klar"; silent bad date                                                                                                                                      | "Välj banfil…" and "Hämta" become `variant="secondary"`; Nästa stays primary. Remove the sub-labels; the step titles are `wiz.step1.title` "Namn och datum" and `wiz.step2.title` "Bana". When the date field is not empty and not ISO, show `wiz.date.invalid` "Skriv datum som ÅÅÅÅ-MM-DD" under it (`aria-describedby`). Nästa gets `disabledHint={t('wiz.next.missing')}` "Fyll i namn och datum".                                                                                                                                                                                                               |
-| NY-5 | WizardStep1 `.small` 12.5, `label` 13, `.small-btn` 12.5, `.loaded-msg` 13.5, `.divider-or` 11.5 uppercase `--fg-faint`; WizardStep2 `.preview .mono` 13, `.hint` 12; wizard `.small` 13, `.wiz-step` 13, `.lbl .small` 11, `.discard-msg` 13.5 | 14 px (`label` 14, `.discard-msg` 16). `.divider-or`: sentence case, no letter-spacing, `--fg-muted`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| NY-6 | `wiz.step1.quickstart.hint`, `wiz.step2.desc`, `wiz.drop.formats`                                                                                                                                                                               | "Banfil från Purple Pen eller Condes (XML). Namn och datum läses från filen; du kan ändra dem."; "Banfil från Purple Pen eller Condes (XML). Klasserna skapas från filen."; "Banfil från Purple Pen eller Condes (XML)". (`wiz.handshake` goes with NY-1.)                                                                                                                                                                                                                                                                                                                                                           |
-| NY-7 | `box-shadow` at ~306; `.btn.danger { color:#fff }`                                                                                                                                                                                              | The scrim is done in Task 1. Keep `--shadow-lg` (the spec: a modal floats over the scrim). `color: var(--accent-fg)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| NY-8 | `aria-label="wizard progress"`                                                                                                                                                                                                                  | `aria-label={t('wiz.progress')}`, "Steg i guiden" / "Wizard steps".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Row  | Where (current)                                                                                                                                                                                                                                                                         | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NY-1 | `step: 1\|2\|3`; step bar `[1,2,3]`; `{step}/3`; step 3 = `WizardStep3`; Nästa only when `step<3`                                                                                                                                                                                       | `step: 1\|2`; bar `[1,2]`; `{step}/2`. At step 2 the footer shows `<Button variant="primary" data-testid="wiz-start" disabled={!canAdvanceFromStep2 \|\| submitting}>` with label `wiz.create` "Skapa tävling" / "Create competition" and busy label `wiz.creating` "Skapar…" / "Creating…". Move `start()` (base64, `createCompetitionFromWizard`, `setActiveCompetition`, `goto`) into the wizard as `create()`, with `mapServerError` (its strings are rewritten under NY-2). Delete `WizardStep3.svelte` and the keys `wiz.step3.*`, `wiz.detected`, `wiz.station`, `wiz.handshake` and `wiz.start`, after grepping each. **Keep `wiz.detecting`**: `layout/StationCard.svelte` (~43) uses it. |
+| NY-2 | `mapServerError` (WizardStep3): the dead-end EntryList text and an "IOF XML 3.0" message (~87), 'Filen kunde inte hanteras.', 'Nätverksfel'; `importError` cleared only in `back()`; WizardStep1 'Eventor svarar inte' (~218)                                                           | Every string `mapServerError` can return becomes a key with no developer words: `wiz.err.needCourse` "Välj en banfil (XML) först. Anmälningsfilen läser du in efteråt."; `wiz.err.notCourse` "Filen är ingen banfil. Välj banfilen från Purple Pen eller Condes (XML)." (for the IOF XML 3.0 message); `wiz.err.file` "Filen kunde inte läsas."; `wiz.err.network` "Kunde inte nå servern. Försök igen."; `wiz.err.eventorDown` "Eventor svarar inte. Försök igen senare." (en to match). Read `mapServerError` and map each branch. Clear `importError` when a new file is chosen and at the start of `create()`.                                                                                 |
+| NY-3 | DropZone "Importerad"                                                                                                                                                                                                                                                                   | Done in Task 5 (`wiz.drop.chosen`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| NY-4 | step 1 `btn primary` ×2 (banfil, Hämta) plus Nästa; sub-labels "Skapa / Importera / Klar"; silent bad date                                                                                                                                                                              | "Välj banfil…" and "Hämta" become `variant="secondary"`; Nästa stays primary. Remove the sub-labels; the step titles are `wiz.step1.title` "Namn och datum" and `wiz.step2.title` "Bana". When the date field is not empty and not ISO, show `wiz.date.invalid` "Skriv datum som ÅÅÅÅ-MM-DD" under it (`aria-describedby`). Nästa gets `disabledHint={t('wiz.next.missing')}` "Fyll i namn och datum".                                                                                                                                                                                                                                                                                             |
+| NY-5 | WizardStep1 `.small` 12.5, `label` 13, `.small-btn` 12.5, `.loaded-msg` 13.5, `.divider-or` 11.5 uppercase `--fg-faint`; WizardStep2 `.preview .mono` 13, `.hint` 12; wizard `.small` 13, `.wiz-step` 13, `.lbl .small` 11, `.discard-msg` 13.5                                         | 14 px (`label` 14, `.discard-msg` 16). `.divider-or`: sentence case, no letter-spacing, `--fg-muted`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| NY-6 | `wiz.step1.quickstart.hint`, `wiz.step2.desc`, `wiz.drop.formats`; WizardStep2 hard-coded preview (~110–114): `'Purple Pen / IOF CourseData' : 'IOF EntryList'` and "Klassantal + kontrollantal verifieras serverside i steg 3."; the `onerror` "Endast .xml-filer accepteras (såg: …)" | "Banfil från Purple Pen eller Condes (XML). Namn och datum läses från filen; du kan ändra dem."; "Banfil från Purple Pen eller Condes (XML). Klasserna skapas från filen."; "Banfil från Purple Pen eller Condes (XML)". Preview kind: keys `wiz.kind.course` "Banfil" and `wiz.kind.entries` "Anmälningsfil". The hint becomes `wiz.preview.hint` "Klasser och kontroller kontrolleras när du skapar tävlingen." The reject message becomes `wiz.err.notXml` "Välj en XML-fil (du valde {{name}})." en to match. (`wiz.handshake` goes with NY-1.)                                                                                                                                                |
+| NY-7 | `box-shadow` at ~306; `.btn.danger { color:#fff }`                                                                                                                                                                                                                                      | The scrim is done in Task 1. Keep `--shadow-lg` (the spec: a modal floats over the scrim). `color: var(--accent-fg)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| NY-8 | `aria-label="wizard progress"`                                                                                                                                                                                                                                                          | `aria-label={t('wiz.progress')}`, "Steg i guiden" / "Wizard steps".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+**Draft across the key detour.** While the wizard is open, keep
+`{ name, date, eventorId }` in `sessionStorage` under
+`fartola-wizard-draft` (try/catch). Restore it when the wizard mounts.
+Remove it after a successful `create()`, and on Avbryt or discard. The
+chosen file is not kept; the user picks it again on step 2. This fixes
+the Codex finding that following the key link loses what was typed.
 
 **Existing specs to run:** `wizard.spec.ts`, `settings-nav.spec.ts`
 (wizard no-key), `design-lab-screens.spec.ts` (with
@@ -1114,26 +1313,34 @@ done here; m2-fees and m2-closing own that screen.
   kod." shows inside the Hjälpkoder card.
 - **"Sparat." clears on edit.** In the MeOS card: save, then type in
   the password field; "Sparat." disappears.
+- **The MeOS checkbox alone saves without touching the password.**
+  Intercept `PUT **/api/settings/meos`. Tick "Tillåt MeOS utan
+  lösenord" and click Spara: the body is
+  `{ meos_allow_without_password: true }` with no `meos_password` key.
+- **A deep link waits for the competition.** Delay
+  `**/api/sessions/active-competition` by 1 s, open
+  `/installningar#hjalpkoder`, and expect `#hjalpkoder h3` focused and
+  in view once it appears.
 
 Look up the exact endpoints in `api/client.ts` (`setLiveresultatCredentials`,
 `generateEventCode`, `setMeosSettings`) before writing the route mocks.
 
 **Edits:**
 
-| Row   | Where (current)                                                                           | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B     | six sibling `<section>`s                                                                  | Two `<div class="group">`, each with an `<h2 class="group-title">`:<br>• `settings.group.competition` "Den här tävlingen: {{name}}" / "This competition: {{name}}";<br>• `settings.group.install` "Alla tävlingar på den här datorn" / "All competitions on this computer".<br>The section `h2`s become `h3`; keep `tabindex="-1"` and update the hash-focus code to `#id h3`. Without an active competition, the competition group shows `settings.group.noCompetition` "Välj en tävling under Tävlingar först." with a link to `/`, in place of its sections. Update `settings-nav.spec.ts` selectors from `#eventor h2` to `#eventor h3`. |
-| IN-1  | Liveresultat "Spara och starta" / "Sluta skicka" act with no result text                  | Keep the labels. After a save, show `settings.liveresultat.saved` "Liveresultat är påslaget." / "Live results are on."; after a clear, `settings.liveresultat.cleared` "Liveresultat är avstängt." / "Live results are off." Use `role="status"`.                                                                                                                                                                                                                                                                                                                                                                                            |
-| IN-2  | `handleGenerate`/`handleRevoke` `catch { // soft fail }`; masking after 30 s with no hint | Errors: `settings.helperCodes.generateError` "Kunde inte skapa en kod." and `.revokeError` "Kunde inte återkalla koden.", in the card with `role="alert"`. Next to a revealed code: `settings.helperCodes.revealHint` "Koden visas i 30 sekunder."                                                                                                                                                                                                                                                                                                                                                                                           |
-| IN-3  | `meos-allow-checkbox` saves on change; "Sparat." cleared only by a timer                  | The checkbox saves with the card's Spara button, like the password. Clear `meosToast` on any input or change in the card.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| IN-5  | AppearanceSettings font `<option>{fp}</option>` raw ids                                   | Map the ids to display names: `plex` "IBM Plex", `geist` "Geist", `source` "Source Sans", `atkinson` "Atkinson Hyperlegible".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| IN-6  | `.small` 13, `.badge` 11, `.banner` 13, `.toast` 13, `.code-expiry` 12                    | 14 px.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| IN-7  | `.key-input:focus` outline                                                                | Delete the outline lines; keep `border-color`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| IN-8  | `.code-row.revoked { opacity: .5 }`                                                       | No opacity; `.code` gets `text-decoration: line-through`, and the word "Återkallad" stays.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| IN-9  | checkboxes 18 px / native                                                                 | `width: 24px; height: 24px; accent-color: var(--accent)`; rows `min-height: var(--hit)`, in both SettingsView and AppearanceSettings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| IN-10 | AppearanceSettings `.sw-*` oklch literals                                                 | At the top of `<style>`, a `.swatches { --swatch-forest: …; --swatch-blue: …; --swatch-magenta: …; --swatch-charcoal: …; }` block with a comment ("previews of each theme; must not follow the active theme"), used by the four `.sw-*` rules.                                                                                                                                                                                                                                                                                                                                                                                               |
-| IN-12 | `settings.integrations.desc`                                                              | "Nycklar för Eventor, Livelox och Liveresultat. Nyckeln visas inte igen efter att du sparat den." / "Keys for Eventor, Livelox and Liveresultat. A key is not shown again after you save it."                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| —     | `settings.helperCodes.noCompetition` "Välj en tävling ovan."                              | Unused once the group shows `noCompetition`. Grep it; remove it if unused.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Row   | Where (current)                                                                                                                                                                                                                                           | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B     | six sibling `<section>`s; the hash-focus `$effect` (~91) runs once, before `activeCompetition` has loaded (the store starts empty, `stores/activeCompetition.svelte.ts` ~30)                                                                              | Two `<div class="group">`, each with an `<h2 class="group-title">`:<br>• `settings.group.competition` "Den här tävlingen: {{name}}" / "This competition: {{name}}";<br>• `settings.group.install` "Alla tävlingar på den här datorn" / "All competitions on this computer".<br>The section `h2`s become `h3`; keep `tabindex="-1"`. Without an active competition, the competition group shows `settings.group.noCompetition` "Välj en tävling under Tävlingar först." with a link to `/`, in place of its sections. **Deep links:** the competition sections appear only after the store hydrates. The hash-focus effect must therefore read the store's loaded state and the current competition id, so it re-runs when they change. After `await tick()` it focuses `#id h3`, and it does so once per hash. Update `settings-nav.spec.ts` selectors from `#eventor h2` to `#eventor h3`. |
+| IN-1  | Liveresultat "Spara och starta" / "Sluta skicka" act with no result text                                                                                                                                                                                  | Keep the labels. After a save, show `settings.liveresultat.saved` "Liveresultat är påslaget." / "Live results are on."; after a clear, `settings.liveresultat.cleared` "Liveresultat är avstängt." / "Live results are off." Use `role="status"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| IN-2  | `handleGenerate`/`handleRevoke` `catch { // soft fail }`; masking after 30 s with no hint                                                                                                                                                                 | Errors: `settings.helperCodes.generateError` "Kunde inte skapa en kod." and `.revokeError` "Kunde inte återkalla koden.", in the card with `role="alert"`. Next to a revealed code: `settings.helperCodes.revealHint` "Koden visas i 30 sekunder."                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| IN-3  | `meos-allow-checkbox` saves on change; Spara (~682) is disabled without a password draft and otherwise sends `meos_password: draft`; an empty password clears it (`setMeosSettings`, client ~948); `meosToast` "Sparat." stays until the next save (~138) | The card gets one Spara for both fields. Spara is enabled when the checkbox differs from the saved value or the password field is not empty. The body sends `meos_allow_without_password` when it changed and `meos_password` only when the field is not empty. Never send an empty password from Spara. Keep a separate secondary "Ta bort lösenord" (`settings.meos.clearPassword` / "Remove password"), shown when a password is set, which sends `meos_password: ''`. Clear `meosToast` on any input or change in the card.                                                                                                                                                                                                                                                                                                                                                             |
+| IN-5  | AppearanceSettings font `<option>{fp}</option>` raw ids                                                                                                                                                                                                   | Map the ids to display names: `plex` "IBM Plex", `geist` "Geist", `source` "Source Sans", `atkinson` "Atkinson Hyperlegible".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| IN-6  | `.small` 13, `.badge` 11, `.banner` 13, `.toast` 13, `.code-expiry` 12                                                                                                                                                                                    | 14 px.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| IN-7  | `.key-input:focus` outline                                                                                                                                                                                                                                | Delete the outline lines; keep `border-color`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| IN-8  | `.code-row.revoked { opacity: .5 }` (~1050)                                                                                                                                                                                                               | No opacity. `.code-row.revoked .code-mono, .code-row.revoked .code-masked` get `text-decoration: line-through`, and the word "Återkallad" stays.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| IN-9  | checkboxes 18 px / native                                                                                                                                                                                                                                 | `width: 24px; height: 24px; accent-color: var(--accent)`; rows `min-height: var(--hit)`, in both SettingsView and AppearanceSettings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| IN-10 | AppearanceSettings `.sw-*` oklch literals                                                                                                                                                                                                                 | At the top of `<style>`, a `.swatches { --swatch-forest: …; --swatch-blue: …; --swatch-magenta: …; --swatch-charcoal: …; }` block with a comment ("previews of each theme; must not follow the active theme"), used by the four `.sw-*` rules.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| IN-12 | `settings.integrations.desc`                                                                                                                                                                                                                              | "Nycklar för Eventor, Livelox och Liveresultat. Nyckeln visas inte igen efter att du sparat den." / "Keys for Eventor, Livelox and Liveresultat. A key is not shown again after you save it."                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| —     | `settings.helperCodes.noCompetition` "Välj en tävling ovan."                                                                                                                                                                                              | Unused once the group shows `noCompetition`. Grep it; remove it if unused.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 **Commit:** `feat(settings): group settings by competition and installation`
 
@@ -1163,14 +1370,14 @@ Look up the exact endpoints in `api/client.ts` (`setLiveresultatCredentials`,
 
 **Edits:**
 
-| Row  | Where (current)                                                       | Change                                                                                                                                                                                                                        |
-| ---- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HI-1 | `catch { loadError = true }` → `access.error.unknown`; no empty state | `<LoadError message={t('access.loadError')} onretry={load} />` ("Kunde inte hämta tävlingar."). Empty: `access.empty` "Inga tävlingar att logga in på." Hint: `access.codeHint` "Koden får du av sekretariatet". en to match. |
-| HI-2 | `.select, .code-input { font-size: var(--fs-label) }`                 | `var(--fs-body)` (16 px; iOS does not zoom).                                                                                                                                                                                  |
-| HI-3 | `access.codePlaceholder` used for both label and placeholder          | `access.codeLabel` "Kod" / "Code"; `access.codePlaceholder` "t.ex. sänkan-127" / "e.g. sänkan-127".                                                                                                                           |
-| HI-4 | `.err` 13 px                                                          | 14 px with `<Icon name="alert-triangle" />`.                                                                                                                                                                                  |
-| HI-5 | submit disabled with no reason                                        | `disabledHint={t('access.missing')}`, "Välj tävling och skriv koden" / "Choose a competition and type the code".                                                                                                              |
-| HI-6 | `.select:focus`/`.code-input:focus` outline                           | Delete the outline lines.                                                                                                                                                                                                     |
+| Row  | Where (current)                                                                          | Change                                                                                                                                                                                                                                                                     |
+| ---- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HI-1 | `catch { loadError = true }` → `access.error.unknown`, never reset (~39); no empty state | `<LoadError message={t('access.loadError')} onretry={load} />` ("Kunde inte hämta tävlingar."). `load()` resets `loadError` before fetching. Empty: `access.empty` "Inga tävlingar att logga in på." Hint: `access.codeHint` "Koden får du av sekretariatet". en to match. |
+| HI-2 | `.select, .code-input { font-size: var(--fs-label) }`                                    | `var(--fs-body)` (16 px; iOS does not zoom).                                                                                                                                                                                                                               |
+| HI-3 | `access.codePlaceholder` used for both label and placeholder                             | `access.codeLabel` "Kod" / "Code"; `access.codePlaceholder` "t.ex. sänkan-127" / "e.g. sänkan-127".                                                                                                                                                                        |
+| HI-4 | `.err` 13 px                                                                             | 14 px with `<Icon name="alert-triangle" />`.                                                                                                                                                                                                                               |
+| HI-5 | submit disabled with no reason                                                           | `disabledHint={t('access.missing')}`, "Välj tävling och skriv koden" / "Choose a competition and type the code".                                                                                                                                                           |
+| HI-6 | `.select:focus`/`.code-input:focus` outline                                              | Delete the outline lines.                                                                                                                                                                                                                                                  |
 
 **Commit:** `fix(web): helper login tells a failed load from a wrong code`
 
@@ -1215,7 +1422,8 @@ Look up the exact endpoints in `api/client.ts` (`setLiveresultatCredentials`,
 
 Three PRs, stacked (`gh stack`), opened only when Jonas says so:
 
-1. Tasks 1–3: `fix(web): tokens, disabled hints and floor checks for the screen passes`.
+1. Tasks 0–3: `fix(web): tokens, disabled hints and floor checks for the screen passes`
+   (with Task 0's two fixes from the Codex review of plan 1).
 2. Tasks 4–8: `fix(web): secretariat screens in plain swedish with clear next steps`
    (Registrering, Import, Export, Eventor, Kvar i skogen).
 3. Tasks 9–13: `feat(web): two-step wizard, home links and grouped settings`
@@ -1251,3 +1459,29 @@ another track owns. The controller sends this list to
   false result, so it is left as is.
 - Consent from the Eventor entry at import is its own todo
   (`2026-10-10-consent-from-eventor-entry.md`).
+
+## Review log
+
+- 2026-10-10, Codex (gpt-6.1-sol, xhigh), read-only review of this plan:
+  18 findings, all taken. They covered:
+  - the `$props.id()` placement and the registration submit type;
+  - RunnersListView's real names (`importSheetOpen`, `closeImportSheet`,
+    `loadAll`);
+  - the frame text the floor test would catch, and false positives in
+    the floor helpers (inert drawer, clipped inputs);
+  - scoping the import check to the dialog;
+  - the relink URL, and its error rendered outside the linked-event
+    branch;
+  - comments in `check-tokens`, the scoped Button CSS on the download
+    link, and stale export responses;
+  - settings deep links before hydration, and the MeOS payload;
+  - retry resetting the error, the remaining wizard jargon, the shared
+    `wiz.detecting` key, the revoked-code classes, and the download
+    wording.
+- 2026-10-10, Codex, read-only review of the merged plan 1 code
+  (992bf4b..ce7e6c7): 4 findings.
+  - The Eventor status after a key save and the drawer after picker
+    navigation are fixed in Task 0.
+  - The wizard draft lost on the way to the key field is fixed in
+    Task 10.
+  - The height-only target check is fixed in Task 3.
