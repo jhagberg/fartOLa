@@ -491,6 +491,29 @@ describe('ResultList times on the competition clock (ADR-0012)', () => {
     assert.equal(Date.parse(r.StartTime), Date.parse('2026-10-25T01:50:00Z'));
   });
 
+  test('SOFT TR 10.4.2 and TR 4.20.6: a time addition and a finish by hand, set through the routes, are in the exported Time and FinishTime', async () => {
+    seedRun('corr', '2026-10-03', [10, 0], [10, 30], Date.parse('2026-10-03T08:35:00Z'));
+    const post = (path: string, payload: object) =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/corr/competitors/corr-x/${path}`,
+        payload,
+      });
+    assert.equal(
+      (await post('time-addition', { minutes: 2, reason: 'Tjuvstart' })).statusCode,
+      201
+    );
+    assert.equal((await result('corr')).Time, 32 * 60);
+    const finishMs = Date.parse('2026-10-03T08:28:00Z');
+    assert.equal(
+      (await post('manual-finish', { finish_ms: finishMs, reason: 'Målenheten' })).statusCode,
+      201
+    );
+    const r = await result('corr');
+    assert.equal(r.FinishTime, '2026-10-03T10:28:00+02:00');
+    assert.equal(r.Time, 30 * 60);
+  });
+
   test('midnight: 23:50 → 00:10 is 20 min', async () => {
     seedRun('midnight', '2026-10-03', [23, 50], [0, 10], Date.parse('2026-10-03T22:15:00Z'));
     const r = await result('midnight');
