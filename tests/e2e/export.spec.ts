@@ -201,12 +201,21 @@ test('an older preview response changes nothing', async ({ page, request }) => {
   const { competitionId } = await setupCompetition(request);
   let release: () => void = () => {};
   const held = new Promise<void>((r) => (release = r));
+  let answered: () => void = () => {};
+  const staleSent = new Promise<void>((r) => (answered = r));
   let finals = 0;
   await page.route('**/export/preview**', async (route) => {
     if (route.request().url().includes('status=Final')) {
       finals += 1;
-      // Hold the first Final; the second answers at once.
-      if (finals === 1) await held;
+      // Hold the first Final, then answer it with something visibly wrong.
+      if (finals === 1) {
+        await held;
+        await route.fulfill({
+          json: { valid: false, errors: [{ line: 1, column: 1, message: 'stale' }] },
+        });
+        answered();
+        return;
+      }
     }
     await route.continue();
   });
@@ -218,7 +227,11 @@ test('an older preview response changes nothing', async ({ page, request }) => {
   await expect(link).toHaveAttribute('aria-disabled', 'false');
   await expect(link).toHaveAttribute('href', /status=Final/);
   release();
-  await page.waitForTimeout(500);
+  await staleSent;
+  // Let the page react to the stale answer, if it wrongly applies it.
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('export-valid')).toBeVisible();
+  await expect(page.getByTestId('export-invalid')).toHaveCount(0);
   await expect(link).toHaveAttribute('aria-disabled', 'false');
   await expect(link).toHaveAttribute('href', /status=Final/);
   await expect(page.getByTestId('export-loading')).toHaveCount(0);

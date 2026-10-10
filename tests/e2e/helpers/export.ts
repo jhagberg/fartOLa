@@ -3,7 +3,7 @@
 //
 // Puts /export into the states its changed parts show in: the valid
 // summary, the Ej start section with a count and a result message, and
-// the next step after a download. exportErrors then swaps the preview
+// the next step after a download. prepareExportError then swaps the preview
 // for a failing one to show the error boxes.
 import { expect, type Page } from '@playwright/test';
 
@@ -38,6 +38,6 @@ export async function prepareExportError(page: Page, kind: 'invalid' | 'network'
   await expect(
     page.getByTestId(kind === 'invalid' ? 'export-invalid' : 'export-error-network')
   ).toBeVisible();
-  if (kind === 'invalid') await page.getByText('Visa detaljer').click();
+  await page.getByText('Visa detaljer').click();
   await page.unroute(pattern);
 }

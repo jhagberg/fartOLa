@@ -97,6 +97,7 @@
   let busy = $state<boolean>(false);
   async function unreadDns(undo: boolean): Promise<void> {
     busy = true;
+    downloaded = false;
     try {
       const { count } = await setUnreadDns(competitionId, undo);
       unreadMessage = t(undo ? 'export.unreadDns.undone' : 'export.unreadDns.done', {
@@ -160,7 +161,11 @@
     {:else if lastError !== null}
       <div class="box err" data-testid="export-error-network">
         <strong><Icon name="alert-triangle" size={18} /> {t('export.error')}</strong>
-        <p>{lastError}</p>
+        <p>{t('export.loadError')}</p>
+        <details>
+          <summary>{t('export.details')}</summary>
+          <p>{lastError}</p>
+        </details>
       </div>
     {:else if preview === null}
       <p class="muted">—</p>
