@@ -40,6 +40,7 @@
   import Field from '#lib/ui/Field.svelte';
   import Input from '#lib/ui/Input.svelte';
   import Icon from '#lib/ui/Icon.svelte';
+  import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
 
   interface Props {
     competitionId: string;
@@ -357,7 +358,10 @@
         </div>
       </div>
       {#if relinkError}
-        <p class="err" role="alert" data-testid="import-relink-error">{relinkError}</p>
+        <p class="err" role="alert" data-testid="import-relink-error">
+        {relinkError}
+        {#if relinkError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+      </p>
       {/if}
     {:else}
       <!-- Normal date-picker search flow. Also used when relinking=true so
@@ -408,7 +412,10 @@
       {/if}
 
       {#if searchError}
-        <p class="err" role="alert" data-testid="import-search-error">{searchError}</p>
+        <p class="err" role="alert" data-testid="import-search-error">
+        {searchError}
+        {#if searchError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+      </p>
       {/if}
 
       {#if searched && events.length === 0 && !searchError}
@@ -516,7 +523,10 @@
   {/if}
 
   {#if importError}
-    <p class="err" role="alert" data-testid="import-error">{importError}</p>
+    <p class="err" role="alert" data-testid="import-error">
+        {importError}
+        {#if importError === t('importRunners.errNoKey')}<EventorKeyLink />{/if}
+      </p>
   {/if}
 </section>
 

@@ -31,6 +31,7 @@
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
+  import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
   import { getEventorEvent } from '#lib/api/client.ts';
   import { ApiError } from '#lib/api/client.ts';
 
@@ -84,6 +85,7 @@
   let eventorIdInput = $state('');
   let eventorFetching = $state(false);
   let eventorError = $state<string | null>(null);
+  let eventorNoKey = $state(false);
 
   /** Same 4 KB head sample Step 2 uses — enough to land the root
    * element + the small <Event> block at the top of an IOF document. */
@@ -186,6 +188,7 @@
 
   async function fetchEventorQuickstart(): Promise<void> {
     eventorError = null;
+    eventorNoKey = false;
     const id = Number.parseInt(eventorIdInput.trim(), 10);
     if (!Number.isFinite(id) || id <= 0) {
       eventorError = t('wizard.eventor.error', { message: 'Ogiltigt ID' });
@@ -207,7 +210,10 @@
         const body = e.body as { error?: string } | undefined;
         const code = body?.error ?? '';
         if (code === 'not_found') msg = 'Tävlingen hittades inte i Eventor';
-        else if (code === 'no_key') msg = 'Eventor API-nyckel saknas';
+        else if (code === 'no_key') {
+          msg = 'Eventor API-nyckel saknas';
+          eventorNoKey = true;
+        }
         else if (code === 'forbidden') msg = 'Åtkomst nekad av Eventor';
         else if (code === 'eventor_down') msg = 'Eventor svarar inte';
         else msg = code || e.message;
@@ -223,6 +229,7 @@
   function clearEventorQuickstart(): void {
     eventorIdInput = '';
     eventorError = null;
+    eventorNoKey = false;
     oneventorquickstartclear?.();
   }
 
@@ -324,7 +331,10 @@
         </button>
       </form>
       {#if eventorError}
-        <p class="err small" role="alert" data-testid="wiz-evqs-error">{eventorError}</p>
+        <p class="err small" role="alert" data-testid="wiz-evqs-error">
+          {eventorError}
+          {#if eventorNoKey}<EventorKeyLink />{/if}
+        </p>
       {/if}
     {:else}
       <div class="loaded-row" data-testid="wiz-evqs-loaded">
