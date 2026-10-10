@@ -97,6 +97,53 @@ describe('speaker route', () => {
     assert.equal(board.events[0]!.new_leader, true);
   });
 
+  it('a finish event is at the finish punch, not at the readout', async () => {
+    // No drawn start: timed from the start punch, read out a minute later.
+    handle.sqlite.prepare(`UPDATE competitors SET start_time_ms = NULL WHERE id = 'r1'`).run();
+    const clock = (min: number) => ({
+      seconds_in_half_day: 10 * 3600 + min * 60,
+      half_day: 0 as const,
+      weekday: null,
+    });
+    insertEvent(
+      handle,
+      nodeId,
+      'race_started',
+      START - 60_000,
+      { event_type: 'race_started', started_at_ms: START - 60_000 },
+      COMP
+    );
+    insertEvent(
+      handle,
+      nodeId,
+      'card_read',
+      START + 31 * 60_000,
+      {
+        event_type: 'card_read',
+        card_number: 9000001,
+        card_type: 'SI10',
+        start: clock(0),
+        finish: clock(30),
+        check: null,
+        clear: null,
+        punch_count: 3,
+        punches: [
+          { code: 31, ...clock(5) },
+          { code: 50, ...clock(12) },
+          { code: 32, ...clock(20) },
+        ],
+        card_holder: null,
+      },
+      COMP
+    );
+    const board = (
+      await app.inject({ method: 'GET', url: `/api/competitions/${COMP}/speaker` })
+    ).json() as SpeakerBoard;
+    assert.equal(board.classes[0]!.runners[0]!.finish?.elapsed_ms, 30 * 60_000);
+    const fin = board.events.find((e) => e.kind === 'finish')!;
+    assert.equal(fin.at_ms, START + 30 * 60_000);
+  });
+
   it('404 for an unknown competition', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/competitions/nope/speaker' });
     assert.equal(res.statusCode, 404);

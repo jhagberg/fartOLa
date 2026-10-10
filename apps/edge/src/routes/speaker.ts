@@ -11,6 +11,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { classes, competitions, events } from '../db/schema.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { placeTimeOfDay } from '../integrations/roc/place.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
 import { parseRocControls } from '../integrations/roc/status.ts';
 import { buildSpeakerBoard, type BoardRunnerIn } from '../speaker/board.ts';
 import { loadCourseDTOs } from './_courses.ts';
@@ -45,12 +46,21 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
       .orderBy(asc(classes.name))
       .all();
 
+    const offsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
     const resultById = new Map(
       [...state.results_by_class.values()].flat().map((r) => [r.competitor_id, r])
     );
     const runners: BoardRunnerIn[] = [...state.competitors.values()].map((c) => {
       const res = resultById.get(c.id);
-      const lastRead = c.card_read_history.at(-1)?.event_time_ms ?? null;
+      // The clock time the speaker reads out is the finish punch itself, not
+      // the readout and not start + running time (a time addition changes
+      // the time, not when the runner crossed the line).
+      const read = c.card_read_history.at(-1);
+      const finishAt = read?.finish
+        ? cardClockToEpochMs(read.finish, read.card_type, read.event_time_ms, offsetMin)
+        : c.start_time_ms !== null && c.elapsed_time_ms !== null
+          ? c.start_time_ms + c.elapsed_time_ms
+          : (read?.event_time_ms ?? null);
       return {
         id: c.id,
         name: c.name,
@@ -62,16 +72,12 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
         elapsed_time_ms: res?.elapsed_time_ms ?? null,
         place: res?.place ?? null,
         behind_leader_ms: res?.behind_leader_ms ?? null,
-        finish_at_ms:
-          c.start_time_ms !== null && c.elapsed_time_ms !== null
-            ? c.start_time_ms + c.elapsed_time_ms
-            : lastRead,
+        finish_at_ms: finishAt,
       };
     });
 
-    // Placed from the time of day and the receive time, as the poller and
-    // the radio status do.
-    const offsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
+    // Radio punches are placed from the time of day and the receive time, as
+    // the poller and the radio status do.
     const radio = db
       .select({ payload: events.payload })
       .from(events)
