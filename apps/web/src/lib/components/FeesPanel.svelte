@@ -56,8 +56,9 @@
     } catch {
       error = t('fees.err.saveFailed');
     } finally {
-      busy = false;
+      // Stay disabled until the reload lands: the next edit builds on it.
       await load();
+      busy = false;
     }
   }
 
@@ -95,8 +96,8 @@
     } catch (e) {
       error = t(eventorErrorKey(e));
     } finally {
-      busy = false;
       await load();
+      busy = false;
     }
   }
 
