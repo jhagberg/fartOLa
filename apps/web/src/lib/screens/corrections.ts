@@ -34,12 +34,16 @@ export function resolveFinishInput(
 
 /** The corrections a runner has, as lines for the readout card. */
 export interface CorrectionLine {
-  key: 'corr.line.finish';
+  key: 'corr.line.finish' | 'corr.line.punch';
   vars: Record<string, string>;
 }
 
 export function correctionLines(
-  row: { manual_finish_ms: number | null; manual_finish_reason: string | null },
+  row: {
+    manual_finish_ms: number | null;
+    manual_finish_reason: string | null;
+    manual_punches: Array<{ control_code: number; reason: string }>;
+  },
   clockOffsetMin: number | null
 ): CorrectionLine[] {
   const lines: CorrectionLine[] = [];
@@ -52,5 +56,17 @@ export function correctionLines(
       },
     });
   }
+  for (const p of row.manual_punches) {
+    lines.push({
+      key: 'corr.line.punch',
+      vars: { code: String(p.control_code), reason: p.reason },
+    });
+  }
   return lines;
+}
+
+/** A control code typed by hand, or null when it is not one. */
+export function parseControlCode(text: string): number | null {
+  const n = Number(text.trim());
+  return /^\d+$/.test(text.trim()) && n > 0 ? n : null;
 }

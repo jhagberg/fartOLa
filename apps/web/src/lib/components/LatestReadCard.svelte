@@ -297,7 +297,7 @@
 
       {#if read.corrections.length > 0}
         <ul class="corrections" data-testid="corrections-line">
-          {#each read.corrections as line (line.key)}
+          {#each read.corrections as line, i (i)}
             <li><Icon name="edit" size={16} /> {t(line.key, line.vars)}</li>
           {/each}
         </ul>

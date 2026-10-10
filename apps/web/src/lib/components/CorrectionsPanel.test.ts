@@ -68,6 +68,15 @@ describe('CorrectionsPanel (mounted)', () => {
             manual_finish_ms: body.finish_ms!,
             manual_finish_reason: body.reason!,
           };
+        } else if (url.endsWith('/manual-punch')) {
+          const b = body as unknown as { control_code: number; reason: string };
+          state = {
+            ...state,
+            missing_codes: state.missing_codes.filter((c) => c !== b.control_code),
+            manual_punches: [...state.manual_punches, b],
+          };
+        } else if (url.endsWith('/remove-manual-punch')) {
+          state = { ...state, manual_punches: [] };
         } else if (url.endsWith('/clear-manual-finish')) {
           state = { ...state, status: 'DNF', elapsed_time_ms: null, manual_finish_ms: null };
         }
@@ -120,5 +129,42 @@ describe('CorrectionsPanel (mounted)', () => {
     expect(posts).toEqual([]);
     expect(document.body.textContent).toContain('Måltiden är före starttiden.');
     expect($('corr-finish-input')!.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('offers the missing controls; adds a punch with its reason and removes it', async () => {
+    state.missing_codes = [32, 35];
+    await mountIt();
+    const picks = [
+      ...document.querySelectorAll<HTMLButtonElement>('[data-testid="corr-punch-pick"]'),
+    ];
+    expect(picks.map((b) => b.textContent?.trim())).toEqual(['32', '35']);
+    picks[1]!.click();
+    flushSync();
+    expect($<HTMLInputElement>('corr-punch-input')!.value).toBe('35');
+    $<HTMLButtonElement>('corr-punch-add')!.click();
+    await settle();
+    expect(posts).toEqual([
+      {
+        url: '/api/competitions/c1/competitors/r1/manual-punch',
+        body: { control_code: 35, reason: 'Stiftklämma på startkortet' },
+      },
+    ]);
+    expect($('corr-punch')!.textContent).toContain('35');
+    $<HTMLButtonElement>('corr-punch-remove')!.click();
+    await settle();
+    expect(posts[1]).toEqual({
+      url: '/api/competitions/c1/competitors/r1/remove-manual-punch',
+      body: { control_code: 35 },
+    });
+    expect($('corr-punch')).toBeNull();
+  });
+
+  it('a code that is not a number is refused without a request', async () => {
+    await mountIt();
+    type('corr-punch-input', '3x');
+    $<HTMLButtonElement>('corr-punch-add')!.click();
+    await settle();
+    expect(posts).toEqual([]);
+    expect(document.body.textContent).toContain('Skriv kontrollens kodsiffra.');
   });
 });

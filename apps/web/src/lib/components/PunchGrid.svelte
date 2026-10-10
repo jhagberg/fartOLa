@@ -4,8 +4,8 @@
   PunchGrid — the runner's controls in course order, then appended
   punches, then the finish. Each state differs in lightness, border, icon
   and word, so it reads without colour (design-lab spec "Punch tiles";
-  ADR-0016 rule 7): ok, miss ("saknas"), order ("fel ordn."), extra,
-  struck ("struken"), finish. Without a course (`verdict` false) tiles
+  ADR-0016 rule 7): ok, manual ("manuell", punched by hand), miss
+  ("saknas"), order ("fel ordn."), extra, struck ("struken"), finish. Without a course (`verdict` false) tiles
   are plain punches: nothing claims correct or missing.
 
   Size follows course length: large up to 20 course controls (struck
@@ -35,9 +35,10 @@
   );
   const size = $derived(courseCount > LARGE_MAX ? 'medium' : 'large');
 
-  type State = 'ok' | 'miss' | 'order' | 'extra' | 'struck' | 'finish' | 'plain';
+  type State = 'ok' | 'manual' | 'miss' | 'order' | 'extra' | 'struck' | 'finish' | 'plain';
   const ICON: Partial<Record<State, IconName>> = {
     ok: 'check',
+    manual: 'edit',
     miss: 'x',
     order: 'arrow-left-right',
     extra: 'plus',
@@ -46,6 +47,7 @@
 
   function stateOf(p: ReceiptPunch): State {
     if (p.finish) return 'finish';
+    if (p.manual) return 'manual';
     if (p.kind) return p.kind;
     if (!verdict) return 'plain';
     return p.ok ? 'ok' : 'miss';
@@ -53,7 +55,8 @@
 
   function bottomText(p: ReceiptPunch, s: State): string {
     if (s === 'miss') return t('ro.missing');
-    if (s === 'order' || s === 'extra' || s === 'struck') return punchLabel(p) ?? '';
+    if (s === 'order' || s === 'extra' || s === 'struck' || s === 'manual')
+      return punchLabel(p) ?? '';
     return p.split;
   }
 </script>
@@ -148,6 +151,14 @@
   }
   .punch.ok .code,
   .punch.ok .split {
+    color: var(--fg);
+  }
+  .punch.manual {
+    background: var(--punch-ok-fill);
+    border: 1.5px dashed var(--punch-ok-line);
+    color: var(--punch-ok-line);
+  }
+  .punch.manual .code {
     color: var(--fg);
   }
   .punch.miss {
