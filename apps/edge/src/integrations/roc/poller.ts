@@ -79,6 +79,8 @@ export interface RocPollerOpts {
   intervalMs?: number;
   maxBackoffMs?: number;
   timeoutMs?: number;
+  /** Called after a poll stored new rows (the speaker view listens). */
+  onInserted?: (competitionId: string) => void;
 }
 
 interface Runtime extends RocPollStatus {
@@ -260,7 +262,9 @@ export function createRocPoller(opts: RocPollerOpts): RocPollerHandle {
       }
       return true;
     });
-    return apply() ? batch : null;
+    if (!apply()) return null;
+    if (batch.inserted > 0) opts.onInserted?.(competitionId);
+    return batch;
   }
 
   async function tickOne(id: string): Promise<void> {

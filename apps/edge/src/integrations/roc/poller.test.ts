@@ -284,6 +284,22 @@ describe('ROC poller', () => {
     assert.equal(batch?.malformed, 1);
   });
 
+  test('onInserted fires after a poll that stored rows, not after one that stored none', async () => {
+    const handle = setup();
+    const { fetchImpl } = fakeFetch(['1;78;9000001;2026-10-04 10:00:00', '']);
+    const calls: string[] = [];
+    const p = createRocPoller({
+      handle,
+      nodeId: 'node-A',
+      fetchImpl,
+      now: () => NOON,
+      onInserted: (id) => calls.push(id),
+    });
+    await p.pollOnce(COMP);
+    await p.pollOnce(COMP);
+    assert.deepEqual(calls, [COMP]);
+  });
+
   test('backs off on errors: 5 s, then doubling up to the cap', () => {
     assert.equal(nextDelayMs(0, 5000, 60000), 5000);
     assert.equal(nextDelayMs(1, 5000, 60000), 10000);
