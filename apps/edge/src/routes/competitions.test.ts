@@ -21,6 +21,7 @@
 
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
@@ -182,6 +183,76 @@ describe('competitions REST CRUD', () => {
       assert.equal((res.json() as { distance: string | null }).distance, value);
     }
     assert.equal((await patch({ distance: 'stafett' })).statusCode, 400);
+  });
+
+  test('SOFT TR 4.16.3/4.22.1: GET returns the closing time — the latest start plus its max time over every runner, null while a starter has no max time', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitions',
+      payload: { name: 'Stängning', date: '2027-05-24' },
+    });
+    const { id } = created.json() as { id: string };
+    const at = (h: number, m = 0) =>
+      clockToEpochMs(
+        '2027-05-24',
+        h * 3600 + m * 60,
+        competitionClockOffsetMin('2027-05-24', null)
+      );
+    const cls = async (name: string) =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: `/api/competitions/${id}/classes`,
+            payload: { name },
+          })
+        ).json() as { id: string }
+      ).id;
+    const h21 = await cls('H21');
+    const d21 = await cls('D21');
+    const runner = (classId: string, startTimeMs: number | null) =>
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: crypto.randomUUID(),
+          competitionId: id,
+          name: 'Löpare',
+          classId,
+          consentStatus: 'explicit',
+          source: 'walkup',
+          startTimeMs,
+        })
+        .run();
+    runner(h21, at(10));
+    runner(h21, at(11, 30)); // last start
+    runner(d21, at(9));
+    runner(d21, null); // free start: not counted
+    const closing = async () =>
+      (
+        (await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` })).json() as {
+          closing: { closing_time_ms: number | null; last_start_ms: number | null };
+        }
+      ).closing;
+
+    // No max time yet: the last start is known, the closing time is not.
+    assert.deepEqual(await closing(), { closing_time_ms: null, last_start_ms: at(11, 30) });
+
+    const maxTime = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/max-time`,
+      payload: { max_time_sec: 2 * 3600 },
+    });
+    assert.equal(maxTime.statusCode, 200, maxTime.body);
+    assert.deepEqual(await closing(), { closing_time_ms: at(13, 30), last_start_ms: at(11, 30) });
+
+    // A class override that ends later wins (09:00 + 5 h = 14:00).
+    const override = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/classes/${d21}`,
+      payload: { maxTimeSec: 5 * 3600 },
+    });
+    assert.equal(override.statusCode, 200, override.body);
+    assert.deepEqual(await closing(), { closing_time_ms: at(14), last_start_ms: at(11, 30) });
   });
 
   test('test 6 (D-15 date format): POST with malformed date returns 400', async () => {

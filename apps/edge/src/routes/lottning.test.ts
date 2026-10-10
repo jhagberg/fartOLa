@@ -580,6 +580,25 @@ describe('lottning route', () => {
     );
   });
 
+  test('SOFT TR 4.16.3/4.22.1: a late draw that moves the last start returns the closing time before and after', async () => {
+    ctx.handle.db
+      .update(competitions)
+      .set({ maxTimeSec: 3 * 3600 })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    const first = await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 });
+    assert.equal(first.statusCode, 201, first.body);
+    const drawn = first.json() as { previous_closing_time_ms: null; closing_time_ms: number };
+    assert.equal(drawn.previous_closing_time_ms, null);
+    assert.equal(drawn.closing_time_ms, at(13, 4));
+    addRunner('Late X', 'Gamma');
+    const late = await post({ mode: 'SOFT', drawType: 'RemainingAfter' });
+    assert.equal(late.statusCode, 201, late.body);
+    const body = late.json() as { previous_closing_time_ms: number; closing_time_ms: number };
+    assert.equal(body.previous_closing_time_ms, at(13, 4));
+    assert.equal(body.closing_time_ms, at(13, 5));
+  });
+
   test('SOFT TR 7.5.8: late entrants before the class (day) — block ends one interval before the first start', async () => {
     const firstStartMs = at(10);
     assert.equal((await post({ mode: 'SOFT', firstStartMs, intervalSec: 60 })).statusCode, 201);
@@ -920,7 +939,13 @@ describe('lottning route', () => {
     });
     const res = await post({ ...pursuitBody, mode: 'Pursuit' });
     assert.equal(res.statusCode, 201, res.body);
-    assert.deepEqual(res.json(), { drawn: 5, restarted: 3, without_result: 2 });
+    assert.deepEqual(res.json(), {
+      drawn: 5,
+      restarted: 3,
+      without_result: 2,
+      previous_closing_time_ms: null,
+      closing_time_ms: null,
+    });
     const byName = new Map(
       ctx.handle.db
         .select({ name: competitors.name, t: competitors.startTimeMs })
