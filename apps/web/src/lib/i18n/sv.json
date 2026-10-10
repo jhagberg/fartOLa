@@ -205,6 +205,7 @@
   "importRunners.errImportFailed": "Importen misslyckades — försök igen.",
   "importRunners.errEventorDown": "Eventor svarar inte — försök igen senare eller ladda upp en EntryList-fil.",
   "importRunners.errWrongKind": "Filen är inte en EntryList — välj en IOF EntryList XML.",
+  "importRunners.courseSuccess": "Banfilen är inläst: {{count}} banor.",
 
   "home.title": "Tävlingar",
   "home.empty.title": "Inga aktiva tävlingar",

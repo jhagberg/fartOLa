@@ -80,6 +80,9 @@
    * double-tap can't double-POST. Null while no import is in flight. */
   let importingEventId = $state<number | null>(null);
   let importResult = $state<EventorImportResult | null>(null);
+  /** A CourseData file uploaded here (e.g. from "Läs in banor" in the
+   * pre-race check): how many courses it brought in. */
+  let courseResult = $state<{ courses_created: number } | null>(null);
   /** Captured at the moment of a successful import so the success banner
    * can say "X importerade FRÅN <event-name>" — operator who picked the
    * wrong row otherwise gets a bare count with no recourse. */
@@ -297,6 +300,7 @@
     if (!file) return;
     uploadError = null;
     importResult = null;
+    courseResult = null;
     importError = null;
     importNoKey = false;
     uploading = true;
@@ -308,6 +312,8 @@
       const r = res as unknown as EventorImportResult;
       if (r && r.kind === 'EntryList') {
         importResult = r;
+      } else if (res.kind === 'CourseData') {
+        courseResult = { courses_created: Number(res['courses_created'] ?? 0) };
       } else {
         uploadError = t('importRunners.errWrongKind');
       }
@@ -503,6 +509,11 @@
   </section>
 
   <!-- Result banner --------------------------------------------------- -->
+  {#if courseResult}
+    <div class="result ok" role="status" data-testid="import-course-result">
+      <strong>{t('importRunners.courseSuccess', { count: courseResult.courses_created })}</strong>
+    </div>
+  {/if}
   {#if importResult}
     <div class="result ok" role="status" data-testid="import-result">
       <strong>
