@@ -1433,6 +1433,31 @@ describe('lottning route: start clashes between classes', () => {
     assert.equal(drawEvents().at(-1)!.start_clash_reason, undefined);
   });
 
+  test('SOFT TA till TR 6.5.1 / TR 7.5.3: a withdrawn or not-started runner does not clash, as in Kontroll', async () => {
+    course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
+    assert.equal((await draw(ctx.otherClassId, { firstStartMs: at(10) })).statusCode, 201);
+    // D21's 10:04 starter withdraws (Återbud); H21 from 10:04 every minute
+    // meets nobody who starts.
+    const at1004 = ctx.handle.db
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(eq(competitors.startTimeMs, at(10, 4)))
+      .get()!.id;
+    const withdrawn = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${at1004}/status`,
+      payload: { status: 'CANCEL', reason: 'Återbud' },
+    });
+    assert.equal(withdrawn.statusCode, 201);
+    const res = await draw(ctx.classId, { firstStartMs: at(10, 4), intervalSec: 60 });
+    assert.equal(res.statusCode, 201);
+    const check = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/pre-race-check`,
+    });
+    assert.deepEqual((check.json() as { start_clashes: unknown[] }).start_clashes, []);
+  });
+
   test('SOFT TA till TR 6.5.1 / TR 7.5.3: late entrants are checked by their own new starts', async () => {
     course('bana1', [31, 32, 33], [ctx.classId, ctx.otherClassId]);
     // H21 10:00–10:08, D21 from 10:10 (10:10, 10:12, 10:14).

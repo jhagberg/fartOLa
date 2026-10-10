@@ -55,7 +55,7 @@ import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
 import { controlsByClass, startClashes } from '../draw/startClash.ts';
 import { normalIntervalSec } from '../draw/startRules.ts';
-import { freeStartForbidden } from '../projection/preRaceCheck.ts';
+import { freeStartForbidden, willStart } from '../projection/preRaceCheck.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
@@ -228,7 +228,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
 
   /** The other classes whose starts clash with the class's new starts
    * (startsMs), each with the shared minutes (draw/startClash.ts). The
-   * class's current starts are replaced by the new ones. */
+   * class's current starts are replaced by the new ones; the other
+   * classes' starts are the projection's, without runners who will not
+   * start (willStart, as Kontroll). */
   const clashesWith = (
     competitionId: string,
     cls: { id: string; name: string; date: string; clockOffsetMin: number | null },
@@ -255,13 +257,10 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       }))
     );
     const starts = new Map<string, number[]>();
-    for (const r of db
-      .select({ classId: competitors.classId, startTimeMs: competitors.startTimeMs })
-      .from(competitors)
-      .where(and(eq(competitors.competitionId, competitionId), isNotNull(competitors.startTimeMs)))
-      .all())
-      if (r.classId !== cls.id)
-        starts.set(r.classId, [...(starts.get(r.classId) ?? []), r.startTimeMs!]);
+    const state = app.projectionStore.recomputeNow(competitionId);
+    for (const v of state?.competitors.values() ?? [])
+      if (v.class_id !== cls.id && v.start_time_ms !== null && willStart(v))
+        starts.set(v.class_id, [...(starts.get(v.class_id) ?? []), v.start_time_ms]);
     const found = startClashes(
       all.map((c) => ({
         id: c.id,

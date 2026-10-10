@@ -99,6 +99,13 @@ export function freeStartForbidden(
   );
 }
 
+/** A runner who will start: not withdrawn (Återbud, CANCEL) and not set
+ * to Ej start (DNS). The start-clash check in the draw route uses it too,
+ * so the draw and Kontroll agree. */
+export function willStart(v: Pick<CompetitorView, 'manual_status'>): boolean {
+  return v.manual_status !== 'CANCEL' && v.manual_status !== 'DNS';
+}
+
 export function preRaceCheck(
   input: ReduceInput,
   state: CompetitionState,
@@ -113,7 +120,7 @@ export function preRaceCheck(
   );
 
   const active = [...state.competitors.values()]
-    .filter((v) => v.manual_status !== 'CANCEL' && v.manual_status !== 'DNS')
+    .filter(willStart)
     .sort((a, b) => a.name.localeCompare(b.name, 'sv'));
   const drawn = new Set(active.filter((v) => v.start_time_ms !== null).map((v) => v.class_id));
 
