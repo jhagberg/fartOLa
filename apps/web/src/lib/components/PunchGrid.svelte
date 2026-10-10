@@ -5,8 +5,9 @@
   punches, then the finish. Each state differs in lightness, border, icon
   and word, so it reads without colour (design-lab spec "Punch tiles";
   ADR-0016 rule 7): ok, manual ("manuell", punched by hand), miss
-  ("saknas"), order ("fel ordn."), extra, struck ("struken"), finish. Without a course (`verdict` false) tiles
-  are plain punches: nothing claims correct or missing.
+  ("saknas"), order ("fel ordn."), extra, struck ("struken"), finish.
+  Without a course (`verdict` false) tiles are plain punches: nothing
+  claims correct or missing.
 
   Size follows course length: large up to 20 course controls (struck
   included, appended punches and finish not), medium above, so a long
@@ -173,6 +174,12 @@
     background: var(--punch-order-fill);
     border: 3px solid var(--punch-order-line);
     color: var(--punch-order-line);
+    /* The thicker border takes from the padding, so "fel ordn." keeps the
+       same gap to the edge as other tiles. */
+    padding-inline: 4px;
+  }
+  .medium .punch.order {
+    padding-inline: 3px;
   }
   .punch.order .code {
     color: var(--fg);
