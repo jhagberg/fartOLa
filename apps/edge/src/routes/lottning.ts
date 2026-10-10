@@ -11,7 +11,8 @@
 //        plus the stored seeding groups of every runner in the class, how
 //        many runners have a previous-stage result (pursuit, TR 7.4.1), the
 //        suggested interval (TA till TR 7.4.4) and whether free start time
-//        is banned, with the named runners still without a start (TR 7.4.2)
+//        is banned, with the named runners still without a start (TR 7.4.2),
+//        and per runner a start marker from the start-time events
 //
 // POST semantics:
 //   1. Validate the body with Zod. intervalSec must be > 0 except for
@@ -40,7 +41,7 @@ import { and, asc, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { ClassKind, ClassKindSource, CompetitionLevel } from '@fartola/shared-types';
-import { classes, competitions, competitors } from '../db/schema.ts';
+import { classes, competitions, competitors, events } from '../db/schema.ts';
 import { kindProblem, pursuitBanned } from '../draw/classKind.ts';
 import { drawPursuit } from '../draw/pursuit.ts';
 import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../draw/remaining.ts';
@@ -55,6 +56,7 @@ import { closingTime } from './_closingTime.ts';
 import { classCourseLength } from './_courses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
+import { startMarkers } from '../projection/startTimes.ts';
 import { StartTimeMs } from './competitors.ts';
 
 // ---------------------------------------------------------------------------
@@ -134,6 +136,8 @@ interface DrawPlan {
   classGrid?: { firstStartMs: number | null; intervalSec: number | null };
   /** Counts the response adds (pursuit: restarted, without_result). */
   extra?: Record<string, number>;
+  /** Pursuit: the restart block's start, kept on the event (markers). */
+  restartMs?: number;
 }
 
 /** A SOFT rule that refuses this draw in this class, or null. The rules
@@ -270,6 +274,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           ? all.map((r) => ({ competitorId: r.id, startTimeMs: at.get(r.id) ?? null }))
           : plan.assignments.map((a) => ({ competitorId: a.id, startTimeMs: a.startTimeMs })),
         ...(plan.classGrid !== undefined ? { classGrid: plan.classGrid } : {}),
+        ...(plan.restartMs !== undefined ? { restartMs: plan.restartMs } : {}),
       });
 
       app.projectionStore.markDirty(competitionId);
@@ -455,6 +460,19 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         .all()
         .filter((r) => r.name.trim().length > 0).length;
 
+      // Text markers per runner (new time, late entrant, restart) from the
+      // start_times_set events of the competition.
+      const markers = startMarkers(
+        app.fartolaDb.db
+          .select()
+          .from(events)
+          .where(
+            and(eq(events.competitionId, competitionId), eq(events.eventType, 'start_times_set'))
+          )
+          .all(),
+        competitionId
+      );
+
       return {
         class: {
           id: classRow.id,
@@ -487,6 +505,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           start_time_ms: r.startTimeMs,
           seed_group: r.seedGroup,
           bib: r.bib,
+          marker: markers.get(r.id) ?? null,
         })),
         seeding: seeding.map((r) => ({ id: r.id, seed_group: r.seedGroup! })),
         previous_results: {
@@ -607,6 +626,7 @@ function drawPursuitClass(body: LottningBody, named: Row[]): DrawPlan {
     assignments,
     wholeClass: true,
     classGrid: { firstStartMs: body.firstStartMs!, intervalSec: null },
+    restartMs: body.restartMs!,
     extra: { restarted, without_result: named.filter((r) => r.inputStatus === null).length },
   };
 }

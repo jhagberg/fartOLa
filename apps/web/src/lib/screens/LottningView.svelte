@@ -1044,7 +1044,21 @@
                   {/if}
                 </td>
               {/if}
-              <td class="col-name">{runner.name}</td>
+              <td class="col-name">
+                {runner.name}
+                {#if runner.marker || runner.seed_group !== null}
+                  <span class="markers" data-testid="lottning-marker">
+                    {[
+                      runner.marker ? t(`lottning.marker.${runner.marker}`) : null,
+                      runner.seed_group !== null
+                        ? t('lottning.marker.seeded', { group: runner.seed_group })
+                        : null,
+                    ]
+                      .filter((x) => x !== null)
+                      .join(' · ')}
+                  </span>
+                {/if}
+              </td>
               <td class="col-club">{runner.club ?? '—'}</td>
               <td class="col-start mono">
                 {#if editingStartTime[runner.id] !== undefined}
@@ -1280,6 +1294,11 @@
   }
   .col-name {
     min-width: 8rem;
+  }
+  .markers {
+    display: block;
+    font-size: var(--fs-label);
+    color: var(--fg-muted);
   }
   .col-bib {
     width: 4.5rem;

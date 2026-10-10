@@ -321,6 +321,9 @@ export type EventPayload =
       }>;
       /** cause 'undo': the start_times_set event this one reverses. */
       undoes?: { node_id: string; local_seq: number };
+      /** A pursuit draw: start of the restart block (omstart, SOFT TR
+       * 7.4.1); a runner starting at or after it is in the block. */
+      restart_ms?: number;
     };
 
 /** What wrote a start_times_set event. */

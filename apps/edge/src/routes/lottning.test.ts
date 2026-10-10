@@ -1066,6 +1066,46 @@ describe('lottning route', () => {
     );
   });
 
+  test('start-list markers: restart block, hand edit and late entrant come back in GET lottning', async () => {
+    setInput({ 'Runner 0': [30 * 60_000, 'OK'], 'Runner 3': [32 * 60_000, 'OK'] });
+    assert.equal((await post({ ...pursuitBody, mode: 'Pursuit' })).statusCode, 201);
+    const get = async () =>
+      new Map(
+        (
+          (
+            await ctx.app.inject({
+              method: 'GET',
+              url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+            })
+          ).json() as { start_list: Array<{ name: string; marker: string | null }> }
+        ).start_list.map((r) => [r.name, r.marker])
+      );
+    let m = await get();
+    assert.deepEqual(
+      ['Runner 0', 'Runner 3', 'Runner 1', 'Runner 2', 'Runner 4'].map((n) => m.get(n)),
+      [null, null, 'restart', 'restart', 'restart']
+    );
+    const id0 = ctx.handle.db
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(eq(competitors.name, 'Runner 0'))
+      .get()!.id;
+    const edit = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${ctx.competitionId}/competitors/${id0}/start-time`,
+      payload: { start_time_ms: pursuitBody.firstStartMs + 30_000 },
+    });
+    assert.equal(edit.statusCode, 200, edit.body);
+    addRunner('Late Y', 'Gamma');
+    assert.equal(
+      (await post({ mode: 'SOFT', drawType: 'RemainingAfter', intervalSec: 60 })).statusCode,
+      201
+    );
+    m = await get();
+    assert.equal(m.get('Runner 0'), 'new_time');
+    assert.equal(m.get('Late Y'), 'late_entrant');
+  });
+
   test('SOFT TR 7.4.1: no pursuit and no reverse pursuit in Inskolning or D/H10–12 (422)', async () => {
     for (const [kind, age] of [
       ['ungdom', 10],

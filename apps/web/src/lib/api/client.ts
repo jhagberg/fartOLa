@@ -1156,6 +1156,9 @@ export interface StartListEntry {
   seed_group: number | null;
   /** Bib (startnummer, SOFT TR 7.5.4); null = none. */
   bib: string | null;
+  /** Why the start is what it is: set by hand or from a missing start,
+   * placed as a late entrant, in a pursuit's restart block; null = none. */
+  marker: 'new_time' | 'late_entrant' | 'restart' | null;
 }
 
 export interface LottningResponse {

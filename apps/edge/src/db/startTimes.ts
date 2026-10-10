@@ -43,6 +43,8 @@ export interface StartTimeWrite {
     intervalSec: number | null;
   }>;
   undoes?: { node_id: string; local_seq: number };
+  /** A pursuit draw's restart block start (payload restart_ms). */
+  restartMs?: number;
 }
 
 /** A competitor id that is not in the competition. Nothing was written. */
@@ -141,6 +143,7 @@ export function writeStartTimes(
         ...(classGrid !== undefined ? { class_grid: classGrid } : {}),
         ...(classGrids.length > 0 ? { class_grids: classGrids } : {}),
         ...(write.undoes !== undefined ? { undoes: write.undoes } : {}),
+        ...(write.restartMs !== undefined ? { restart_ms: write.restartMs } : {}),
       },
       competitionId
     );
