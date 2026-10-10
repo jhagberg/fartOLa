@@ -1169,7 +1169,7 @@
     background: var(--bg-sunken);
   }
   .pending-row .cta {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--accent);
     font-weight: 600;
   }
@@ -1182,7 +1182,7 @@
     color: var(--bg-elev);
     padding: 10px 18px;
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
     box-shadow: var(--shadow-lg);
     z-index: 100;
   }

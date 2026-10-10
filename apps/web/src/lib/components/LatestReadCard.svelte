@@ -452,7 +452,7 @@
     font-weight: 600;
   }
   .meta {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
   .actions {
