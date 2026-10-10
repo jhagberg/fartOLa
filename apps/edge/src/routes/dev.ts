@@ -45,7 +45,8 @@ import { fileURLToPath } from 'node:url';
 import { competitions } from '../db/schema.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { ingestEventorCache } from '../eventor/cache.ts';
-import { readoutChannel } from '@fartola/shared-types';
+import { formatClockTime, readoutChannel, resultsChannel } from '@fartola/shared-types';
+import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import { eq } from 'drizzle-orm';
 import type { EventPayload } from '../db/schema.ts';
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
@@ -248,5 +249,49 @@ export default async function registerDevRoutes(app: FastifyInstance): Promise<v
       app.log.error({ err }, 'eventor-seed failed');
       return reply.code(500).send({ ok: false, error: (err as Error).message });
     }
+  });
+
+  // Speaker view e2e: store one ROC radio punch as the poller would and send
+  // the same radio_punch hint. Body: { competition_id, card_number,
+  // control_code, time_ms } with time_ms the punch time (epoch ms).
+  app.post('/api/__dev/simulate-radio', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const id = b['competition_id'];
+    const [card, code, timeMs] = [b['card_number'], b['control_code'], b['time_ms']];
+    if (
+      typeof id !== 'string' ||
+      ![card, code, timeMs].every((n) => typeof n === 'number' && Number.isInteger(n) && n > 0)
+    ) {
+      return reply.code(400).send({ error: 'invalid simulate-radio body' });
+    }
+    const comp = app.fartolaDb.db
+      .select({ date: competitions.date, clockOffsetMin: competitions.clockOffsetMin })
+      .from(competitions)
+      .where(eq(competitions.id, id))
+      .get();
+    if (!comp) return reply.code(404).send({ error: 'competition not found' });
+    const t = timeMs as number;
+    const offsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
+    insertEvent(
+      app.fartolaDb,
+      app.fartolaNodeId,
+      'radio_punch',
+      t,
+      {
+        event_type: 'radio_punch',
+        source: 'roc',
+        idempotency_key: `dev:${card}:${code}:${t}`,
+        roc_id: 0,
+        card_number: card as number,
+        control_code: code as number,
+        time_of_day: formatClockTime(t, offsetMin),
+        received_at_ms: Math.max(t, Date.now()),
+        roc_date: comp.date,
+        date_mismatch: false,
+      },
+      id
+    );
+    app.wsBroadcast(resultsChannel(id), { type: 'radio_punch', payload: {} });
+    return reply.code(201).send({ ok: true });
   });
 }
