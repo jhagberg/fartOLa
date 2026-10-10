@@ -22,12 +22,13 @@
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { eq } from 'drizzle-orm';
 
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
-import { competitors, events } from '../db/schema.ts';
+import { classes, competitions, competitors, events } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import { clockToEpochMs, competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
@@ -189,14 +190,14 @@ describe('competitions REST CRUD', () => {
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/competitions',
-      payload: { name: 'Stängning', date: '2027-05-24' },
+      payload: { name: 'Stängning', date: '2026-05-24' },
     });
     const { id } = created.json() as { id: string };
     const at = (h: number, m = 0) =>
       clockToEpochMs(
-        '2027-05-24',
+        '2026-05-24',
         h * 3600 + m * 60,
-        competitionClockOffsetMin('2027-05-24', null)
+        competitionClockOffsetMin('2026-05-24', null)
       );
     const cls = async (name: string) =>
       (
@@ -237,21 +238,20 @@ describe('competitions REST CRUD', () => {
     // No max time yet: the last start is known, the closing time is not.
     assert.deepEqual(await closing(), { closing_time_ms: null, last_start_ms: at(11, 30) });
 
-    const maxTime = await ctx.app.inject({
-      method: 'PATCH',
-      url: `/api/competitions/${id}/max-time`,
-      payload: { max_time_sec: 2 * 3600 },
-    });
-    assert.equal(maxTime.statusCode, 200, maxTime.body);
+    // Written directly: the PATCH routes lock once the first start has passed.
+    ctx.handle.db
+      .update(competitions)
+      .set({ maxTimeSec: 2 * 3600 })
+      .where(eq(competitions.id, id))
+      .run();
     assert.deepEqual(await closing(), { closing_time_ms: at(13, 30), last_start_ms: at(11, 30) });
 
     // A class override that ends later wins (09:00 + 5 h = 14:00).
-    const override = await ctx.app.inject({
-      method: 'PATCH',
-      url: `/api/competitions/${id}/classes/${d21}`,
-      payload: { maxTimeSec: 5 * 3600 },
-    });
-    assert.equal(override.statusCode, 200, override.body);
+    ctx.handle.db
+      .update(classes)
+      .set({ maxTimeSec: 5 * 3600 })
+      .where(eq(classes.id, d21))
+      .run();
     assert.deepEqual(await closing(), { closing_time_ms: at(14), last_start_ms: at(11, 30) });
   });
 
