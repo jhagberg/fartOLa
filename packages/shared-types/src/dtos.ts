@@ -359,9 +359,10 @@ export const CompetitorCreateInput = z
       })
       .nullable()
       .optional(),
-    /** SOFT TR 4.12.6 — the runner is 16 or younger. Only an open class
-     * uses it: youth pay the youth fee and no surcharge. */
-    youth: z.boolean().optional(),
+    /** The runner's birth year (Eventor or the desk). In an open class
+     * it decides the youth fee and that no surcharge is charged (SOFT TR
+     * 4.12.1, 4.12.6). */
+    birth_year: z.number().int().min(1900).max(2100).nullable().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.replace_card_for_competitor_id !== undefined) {
@@ -544,6 +545,8 @@ export const EventorLookupCandidate = z.object({
   given_name: z.string(),
   club_id: z.number().int().nullable(),
   club_name: z.string().nullable(),
+  /** Birth year from the Eventor cache; null when undisclosed. */
+  birth_year: z.number().int().nullable().optional(),
 });
 export type EventorLookupCandidate = z.infer<typeof EventorLookupCandidate>;
 
@@ -577,6 +580,7 @@ export const EventorNameSuggestion = z.object({
   given_name: z.string(),
   club_name: z.string().nullable(),
   si_card: z.number().int().nullable(),
+  birth_year: z.number().int().nullable().optional(),
 });
 export type EventorNameSuggestion = z.infer<typeof EventorNameSuggestion>;
 

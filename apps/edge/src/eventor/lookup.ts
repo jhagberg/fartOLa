@@ -53,6 +53,9 @@ export interface EventorLookupCandidate {
   given_name: string;
   club_id: number | null;
   club_name: string | null;
+  /** Birth year from the cache (fees in open classes, SOFT TR 4.12.6);
+   * null when undisclosed. */
+  birth_year: number | null;
 }
 
 export interface EventorLookupHit extends EventorLookupCandidate {
@@ -85,6 +88,7 @@ export interface EventorNameSuggestion {
   given_name: string;
   club_name: string | null;
   si_card: number | null;
+  birth_year: number | null;
 }
 
 /** Lookup by SI card number. Returns a tri-state discriminated union:
@@ -122,6 +126,7 @@ export function lookupBySiCard(
       given_name: eventorCompetitors.givenName,
       club_id: eventorCompetitors.clubId,
       club_name: eventorClubs.name,
+      birth_year: eventorCompetitors.birthYear,
       modify_date_ms: eventorCompetitors.modifyDateMs,
     })
     .from(eventorCompetitors)
@@ -140,6 +145,7 @@ export function lookupBySiCard(
     given_name: r.given_name,
     club_id: r.club_id,
     club_name: r.club_name ?? null,
+    birth_year: r.birth_year,
   });
 
   if (rows.length === 1) {
@@ -199,6 +205,7 @@ export function lookupByNamePrefix(
       given_name: eventorCompetitors.givenName,
       club_name: eventorClubs.name,
       si_card: eventorCompetitors.siCard,
+      birth_year: eventorCompetitors.birthYear,
     })
     .from(eventorCompetitors)
     .leftJoin(eventorClubs, eq(eventorCompetitors.clubId, eventorClubs.clubId))
@@ -213,6 +220,7 @@ export function lookupByNamePrefix(
     given_name: r.given_name,
     club_name: r.club_name ?? null,
     si_card: r.si_card,
+    birth_year: r.birth_year,
   }));
 }
 
@@ -229,6 +237,7 @@ interface FtsCompetitorRow {
   given_name: string;
   club_name: string | null;
   si_card: number | null;
+  birth_year: number | null;
 }
 
 interface FtsClubRow {
@@ -288,7 +297,8 @@ export function searchCompetitorsByName(
            c.family_name,
            c.given_name,
            k.name AS club_name,
-           c.si_card
+           c.si_card,
+           c.birth_year
          FROM eventor_competitors_fts f
          JOIN eventor_competitors c ON c.person_id = f.rowid
          LEFT JOIN eventor_clubs k ON k.club_id = c.club_id
@@ -305,6 +315,7 @@ export function searchCompetitorsByName(
       given_name: r.given_name,
       club_name: r.club_name ?? null,
       si_card: r.si_card,
+      birth_year: r.birth_year,
     }));
   }
 
@@ -321,7 +332,8 @@ export function searchCompetitorsByName(
          c.family_name,
          c.given_name,
          k.name AS club_name,
-         c.si_card
+         c.si_card,
+         c.birth_year
        FROM eventor_competitors_fts f
        JOIN eventor_competitors c ON c.person_id = f.rowid
        LEFT JOIN eventor_clubs k ON k.club_id = c.club_id
@@ -337,6 +349,7 @@ export function searchCompetitorsByName(
     given_name: r.given_name,
     club_name: r.club_name ?? null,
     si_card: r.si_card,
+    birth_year: r.birth_year,
   }));
 }
 

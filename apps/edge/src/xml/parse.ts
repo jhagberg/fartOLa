@@ -92,6 +92,9 @@ export interface ParsedEntryList {
     /** SOFT TA till TR 7.8.3: the person's id in Eventor (Person/Id), so
      * the ResultList export can link results. Absent when not parsed. */
     eventor_person_id?: number | null;
+    /** Person/BirthDate's year (fees in open classes, SOFT TR 4.12.6).
+     * Absent when not parsed. */
+    birth_year?: number | null;
   }>;
 }
 
@@ -227,6 +230,12 @@ function eventorPersonId(person: RawNode): number | null {
     if (n !== null && n > 0) return n;
   }
   return null;
+}
+
+/** The year of Person/BirthDate (xsd:date, 'YYYY-MM-DD'); null if absent. */
+function birthYear(person: RawNode): number | null {
+  const m = /^(\d{4})-/.exec(asString(person?.BirthDate) ?? '');
+  return m === null ? null : Number(m[1]);
 }
 
 /** 02.1-14 Task 9: <Class resultListMode="UnorderedNoTimes"> is a class
@@ -408,6 +417,7 @@ function normalizeEntryList(raw: RawNode): ParsedEntryList {
       ...(isNoTiming(klass as RawNode) ? { class_no_timing: true } : {}),
       card_number,
       eventor_person_id: eventorPersonId(person),
+      birth_year: birthYear(person),
     });
   }
 
