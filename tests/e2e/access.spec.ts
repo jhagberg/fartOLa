@@ -24,6 +24,34 @@ test('a failed load is not a failed login, and retry fills the select', async ({
   await expect(page.getByText('Kunde inte hämta tävlingar.')).toHaveCount(0);
 });
 
+test('the empty text waits for the list to load', async ({ page }) => {
+  await page.route('**/api/competitions', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await new Promise((r) => setTimeout(r, 1000));
+    return route.fulfill({ json: { competitions: [] } });
+  });
+  await page.goto('/access');
+  await expect(page.getByTestId('access-view')).toBeVisible();
+  await expect(page.getByText('Inga tävlingar att logga in på.')).toHaveCount(0);
+  await expect(page.getByText('Inga tävlingar att logga in på.')).toBeVisible();
+  await expect(page.getByText('Välj tävling och skriv koden')).toHaveCount(0);
+});
+
+test('a wrong code is not a failed load', async ({ page }) => {
+  await mockCompetitions(page, ACCESS_COMPS);
+  await page.route('**/access', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 401, json: { error: 'invalid_code' } })
+      : route.continue()
+  );
+  await page.goto('/access');
+  await page.locator('#access-comp').selectOption('c-1');
+  await page.locator('#access-code').fill('fel-000');
+  await page.getByTestId('access-submit').click();
+  await expect(page.getByText('Ogiltig kod')).toBeVisible();
+  await expect(page.getByText('Kunde inte hämta tävlingar.')).toHaveCount(0);
+});
+
 test('an empty list says there is nothing to log in to', async ({ page }) => {
   await mockCompetitions(page, []);
   await page.goto('/access');

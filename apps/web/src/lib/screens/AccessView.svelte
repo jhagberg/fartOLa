@@ -33,6 +33,7 @@
   let submitting = $state(false);
   let errorKey: string | null = $state(null);
   let loadError = $state(false);
+  let loaded = $state(false);
 
   onMount(() => {
     void loadCompetitions();
@@ -40,9 +41,11 @@
 
   async function loadCompetitions(): Promise<void> {
     loadError = false;
+    loaded = false;
     try {
       const r = await listCompetitions();
       competitions = r.competitions;
+      loaded = true;
       if (competitions.length === 1) {
         selectedCompId = competitions[0]!.id;
       }
@@ -81,6 +84,8 @@
   <div class="card">
     {#if loadError}
       <LoadError message={t('access.loadError')} onretry={() => void loadCompetitions()} />
+    {:else if loaded && competitions.length === 0}
+      <p class="hint" data-testid="access-empty">{t('access.empty')}</p>
     {:else}
       <div class="field">
         <!-- svelte-ignore a11y_label_has_associated_control -->
@@ -102,9 +107,6 @@
             {/each}
           {/if}
         </select>
-        {#if competitions.length === 0}
-          <p class="hint">{t('access.empty')}</p>
-        {/if}
       </div>
 
       <div class="field">
