@@ -5,7 +5,7 @@
 // both modes; violations already known (a11y-known.json, rule + target)
 // are allowed until plan 2 fixes them, and the list may only shrink.
 
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
@@ -29,110 +29,191 @@ import {
 } from './helpers/wizard.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
-test.describe.configure({ mode: 'serial' });
-
 // Buttons fade their colours (0.12 s): switch transitions off so axe never
 // reads a mid-fade colour. (Not reducedMotion: it also drops scrim blur.)
 async function noTransitions(page: Page): Promise<void> {
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
 }
 
-test('no new contrast or target-size violations', async ({ page, request }) => {
-  test.setTimeout(120_000);
-  const { competitionId: id } = await seedCompetition(request, { controls: 12 });
-  await simulateRead(request, id, 7_501_853, [31, 32, 33, 35, 34, 36, 37, 38, 39, 40, 41, 42]);
-  // Registration gets its own competition: its prepared state reads cards,
-  // which would replace the latest read the readout screen waits for.
-  const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
-  const kvId = (await seedCompetition(request, { controls: 12 })).competitionId;
-  const imId = (await seedCompetition(request, { controls: 12 })).competitionId;
-  const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
-  // Each screen is scanned only once its own content is on the page.
-  const screens: Array<[string, (page: Page) => Locator, ((page: Page) => Promise<void>)?]> = [
-    ['/', (p) => p.getByTestId('comp-grid'), (p) => prepareHome(p, request)],
+type Ids = { id: number; regId: number; kvId: number; imId: number; exId: number };
+type Screen = [
+  label: string,
+  url: string,
+  ready: (page: Page) => Locator,
+  prepare?: (page: Page) => Promise<void>,
+];
+
+// Seeded once per worker (the dev server keeps the rows), so every screen
+// below is its own short test and a failure names the screen.
+let seeded: Promise<Ids> | undefined;
+function seedAll(request: APIRequestContext): Promise<Ids> {
+  seeded ??= (async () => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 12 });
+    await simulateRead(request, id, 7_501_853, [31, 32, 33, 35, 34, 36, 37, 38, 39, 40, 41, 42]);
+    // Registration gets its own competition: its prepared state reads cards,
+    // which would replace the latest read the readout screen waits for.
+    const regId = (await seedCompetition(request, { controls: 12 })).competitionId;
+    const kvId = (await seedCompetition(request, { controls: 12 })).competitionId;
+    const imId = (await seedCompetition(request, { controls: 12 })).competitionId;
+    const exId = (await seedCompetition(request, { controls: 12 })).competitionId;
+    return { id, regId, kvId, imId, exId };
+  })();
+  return seeded;
+}
+
+// Each screen is scanned only once its own content is on the page.
+function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestContext): Screen[] {
+  return [
+    ['home', '/', (p) => p.getByTestId('comp-grid'), (p) => prepareHome(p, request)],
     [
+      'readout',
       `/competition/${id}/readout`,
       (p) => p.getByTestId('latest-read').filter({ hasText: '7501853' }),
     ],
-    [`/competition/${id}/readout?walkup=7500123`, (p) => p.getByTestId('walkup-modal')],
-    [`/competition/${id}/results`, (p) => p.getByTestId('results-view')],
-    [`/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
-    [`/competition/${regId}/registration`, (p) => p.getByTestId('registration-view')],
-    [`/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
-    [`/competition/${exId}/export`, (p) => p.getByTestId('export-view'), prepareExport],
     [
+      'readout walkup',
+      `/competition/${id}/readout?walkup=7500123`,
+      (p) => p.getByTestId('walkup-modal'),
+    ],
+    ['results', `/competition/${id}/results`, (p) => p.getByTestId('results-view')],
+    ['lottning', `/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
+    [
+      'registration',
+      `/competition/${regId}/registration`,
+      (p) => p.getByTestId('registration-view'),
+    ],
+    ['info', `/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
+    ['export', `/competition/${exId}/export`, (p) => p.getByTestId('export-view'), prepareExport],
+    [
+      'export invalid',
       `/competition/${exId}/export`,
       (p) => p.getByTestId('export-view'),
       (p) => prepareExportError(p, 'invalid'),
     ],
     [
+      'export network',
       `/competition/${exId}/export`,
       (p) => p.getByTestId('export-view'),
       (p) => prepareExportError(p, 'network'),
     ],
     [
+      'eventor publish',
       `/competition/${exId}/eventor-publish`,
       (p) => p.getByTestId('eventor-publish-view'),
       prepareEventor,
     ],
     [
+      'eventor publish no key',
       `/competition/${exId}/eventor-publish`,
       (p) => p.getByTestId('eventor-publish-view'),
       prepareEventorNoKey,
     ],
-    [`/competition/${kvId}/kvar-i-skogen`, (p) => p.getByTestId('kvariskov-view'), prepareKvar],
     [
+      'kvar i skogen',
+      `/competition/${kvId}/kvar-i-skogen`,
+      (p) => p.getByTestId('kvariskov-view'),
+      prepareKvar,
+    ],
+    [
+      'kvar i skogen asleep',
       `/competition/${kvId}/kvar-i-skogen`,
       (p) => p.getByTestId('kvariskov-view'),
       prepareKvarAsleep,
     ],
     [
+      'kvar i skogen error',
       `/competition/${kvId}/kvar-i-skogen`,
       (p) => p.getByTestId('kvariskov-view'),
       prepareKvarError,
     ],
-    ['/installningar', (p) => p.getByTestId('appearance-section'), (p) => prepareSettings(p, id)],
-    ['/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
-    [`/competition/${imId}/import`, (p) => p.getByTestId('import-runners-view'), prepareImport],
-    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep1],
-    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardStep2],
-    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardImportError],
-    ['/competition/_new?wizard=1', (p) => p.getByTestId('wiz-name'), prepareWizardDiscard],
-    ['/access', (p) => p.getByTestId('access-view'), prepareAccess],
-    ['/access', (p) => p.getByTestId('access-view'), prepareAccessWrongCode],
-    ['/access', (p) => p.getByTestId('access-view'), prepareAccessLoadError],
-    ['/access', (p) => p.getByTestId('access-view'), prepareAccessEmpty],
+    [
+      'settings',
+      '/installningar',
+      (p) => p.getByTestId('appearance-section'),
+      (p) => prepareSettings(p, id),
+    ],
+    ['home error', '/', (p) => p.getByTestId('comp-grid'), prepareHomeError],
+    [
+      'import',
+      `/competition/${imId}/import`,
+      (p) => p.getByTestId('import-runners-view'),
+      prepareImport,
+    ],
+    [
+      'wizard step 1',
+      '/competition/_new?wizard=1',
+      (p) => p.getByTestId('wiz-name'),
+      prepareWizardStep1,
+    ],
+    [
+      'wizard step 2',
+      '/competition/_new?wizard=1',
+      (p) => p.getByTestId('wiz-name'),
+      prepareWizardStep2,
+    ],
+    [
+      'wizard import error',
+      '/competition/_new?wizard=1',
+      (p) => p.getByTestId('wiz-name'),
+      prepareWizardImportError,
+    ],
+    [
+      'wizard discard',
+      '/competition/_new?wizard=1',
+      (p) => p.getByTestId('wiz-name'),
+      prepareWizardDiscard,
+    ],
+    ['access', '/access', (p) => p.getByTestId('access-view'), prepareAccess],
+    ['access wrong code', '/access', (p) => p.getByTestId('access-view'), prepareAccessWrongCode],
+    ['access load error', '/access', (p) => p.getByTestId('access-view'), prepareAccessLoadError],
+    ['access empty', '/access', (p) => p.getByTestId('access-view'), prepareAccessEmpty],
   ];
-  const known = JSON.parse(
-    readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
-  ) as Array<{ rule: string; target: string }>;
-  const allowed = new Set(known.map((k) => `${k.rule} ${k.target}`));
-  const found: string[] = [];
-  for (const high of [false, true]) {
-    for (const [url, ready, prepare] of screens) {
-      await page.goto(url);
-      await noTransitions(page);
-      await expect(ready(page)).toBeVisible();
-      if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
-      await prepare?.(page);
-      // A prepare may reload (dropping the style tag): inject again.
-      await noTransitions(page);
-      if (high) {
-        await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
-      }
-      const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
-      // The walk-up modal over registration belongs to another screen pass.
-      if (url.endsWith('/registration')) axe.exclude('[data-testid=walkup-modal]');
-      const result = await axe.analyze();
-      // Home's list filter / mocked 503 must not distort the chrome of later screens.
-      await page.unrouteAll({ behavior: 'ignoreErrors' });
-      for (const v of result.violations) {
-        for (const n of v.nodes) {
-          const key = `${v.id} ${n.target.join(' ')}`;
-          if (!allowed.has(key)) found.push(`${high ? 'sun' : 'default'} ${url}: ${key}`);
+}
+
+const known = JSON.parse(
+  readFileSync(new URL('./a11y-known.json', import.meta.url), 'utf8')
+) as Array<{
+  rule: string;
+  target: string;
+}>;
+const allowed = new Set(known.map((k) => `${k.rule} ${k.target}`));
+
+// Labels only; the table needs ids, so names come from a throwaway build.
+const labels = screensFor(
+  { id: 0, regId: 0, kvId: 0, imId: 0, exId: 0 },
+  undefined as unknown as APIRequestContext
+).map((s) => s[0]);
+
+for (const high of [false, true]) {
+  test.describe(high ? 'sun' : 'default', () => {
+    labels.forEach((label, i) => {
+      test(`no new contrast or target-size violations: ${label}`, async ({ page, request }) => {
+        test.setTimeout(60_000);
+        const ids = await seedAll(request);
+        const [, url, ready, prepare] = screensFor(ids, request)[i];
+        await page.goto(url);
+        await noTransitions(page);
+        await expect(ready(page)).toBeVisible();
+        if (url.endsWith('/registration')) await prepareRegistration(page, ids.regId, request);
+        await prepare?.(page);
+        // A prepare may reload (dropping the style tag): inject again.
+        await noTransitions(page);
+        if (high) {
+          await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
         }
-      }
-    }
-  }
-  expect(found, found.join('\n')).toEqual([]);
-});
+        const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
+        // The walk-up modal over registration belongs to another screen pass.
+        if (url.endsWith('/registration')) axe.exclude('[data-testid=walkup-modal]');
+        const result = await axe.analyze();
+        const found: string[] = [];
+        for (const v of result.violations) {
+          for (const n of v.nodes) {
+            const key = `${v.id} ${n.target.join(' ')}`;
+            if (!allowed.has(key)) found.push(`${url}: ${key}`);
+          }
+        }
+        expect(found, found.join('\n')).toEqual([]);
+      });
+    });
+  });
+}
