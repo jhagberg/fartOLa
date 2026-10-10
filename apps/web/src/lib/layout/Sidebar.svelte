@@ -103,6 +103,15 @@
   </NavItem>
 
   <NavItem
+    active={route === 'prerace'}
+    disabled={compScopedDisabled}
+    onclick={() => onNavigate?.('prerace')}
+  >
+    {#snippet icon()}<Icon name="check" />{/snippet}
+    {t('nav.prerace')}
+  </NavItem>
+
+  <NavItem
     active={route === 'results'}
     disabled={compScopedDisabled}
     onclick={() => onNavigate?.('results')}
