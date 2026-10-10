@@ -51,7 +51,7 @@
 | TR 4.14.3, TR 4.18.18–4.18.21, TR 4.20.9 (lag/omstart), TR 7.5.10 med TA, TA till TR 7.8.2 (stafett), TR 8.2.10, TR 10.4.5–10.4.6 | SAKNAS | DELVIS | Nummerlappar `Bib` för löpare, lag och klass (`oEvent.cpp:249`, `oEvent.cpp:362`, `oEvent.cpp:392`), `oEvent::addBib` (`oEvent.cpp:4975`). Omstart och repdragning per sträcka (`oClass.cpp:289-350`): "Omstart", "Omstartstid", "Repdragningstid" (`swedish.lng:1239-1243`, `swedish.lng:1395`). Listan "Lagändringblankett" (`TabList.cpp:2963`). Stafettresultat per sträcka och lag (`oListInfo.cpp:4334-4352`). | Nästan hela stafettmodellen finns. "En sträcka per person" spärras inte, men rapporten "Löpare som förekommer i mer än ett lag" (`oReport.cpp:734`) visar dem. Placering vid omstart har inte verifierats. |
 | TR 4.14.4 | UPPFYLLD | UPPFYLLER | Inget särskilt samtyckesfält (`oEvent.cpp:240-285`), och regeln kräver inget. | Samtycket uppstår genom anmälan (TR 4.14.4); en kryssruta eller ett sparat samtycke krävs inte. fartOLa:s krav på bekräftat samtycke vid direktanmälan är egen policy. |
 | TR 4.16.1 (startlistor) | DELVIS | UPPFYLLER | Knappen "Publicera startlista" till Eventor (`TabCompetition.cpp:1108`). Utskrivbar startlista "Startlista" via listsystemet (`oListInfo.cpp:4788-4802`). |  |
-| TR 4.16.3, TR 4.22.1 | SAKNAS | UPPFYLLER INTE | Maxtid finns som värde (`oEvent.cpp:165`, `oEvent.cpp:356`), men inget räknar ut sista start plus maxtid. | Sökt: "Stängning", "Målstängning", `getMaximumRunnerTime` i kombination med sista start. |
+| TR 4.16.3, TR 4.22.1 | UPPFYLLD | UPPFYLLER INTE | Maxtid finns som värde (`oEvent.cpp:165`, `oEvent.cpp:356`), men inget räknar ut sista start plus maxtid. | Sökt: "Stängning", "Målstängning", `getMaximumRunnerTime` i kombination med sista start. |
 | TR 4.18.9 med TA (sen start) | UPPFYLLD | DELVIS | Startstämpeln ersätter den lottade starttiden (`oRunner.cpp:1331-1344`, `tUseStartPunch` är true som standard enligt `oRunner.cpp:295`). Klassinställningen `IgnoreStart` "Ej startstämpling" (`oEvent.cpp:340-341`, `oClass.cpp:2787-2789`) stänger av det när löparen har starttid (`oRunner.cpp:1226-1227`). Ny starttid skrivs i fältet "Starttid:" (`TabRunner.cpp:3445`). | **Standardinställningen strider mot regeln i klasser med lottade starttider:** startstämpeln ersätter den lottade starttiden (`tUseStartPunch`, `oRunner.cpp:295`; `oRunner.cpp:1331-1344`), så en löpare som är sen av eget fel tidtas från stämpeln. Kryssrutan "Ej startstämpling" (`IgnoreStart`, `oClass.cpp:55`, `oRunner.cpp:1226-1227`) ger det regelrätta beteendet och måste sättas per klass. Startstämpling som startmetod är i sig tillåten (TR 4.18.16). Ingen varning för sen start. |
 | TA till TR 4.18.9 (ny starttid noteras) | DELVIS | UPPFYLLER | Starttid skrivs för hand per löpare i fältet "Starttid:" (`TabRunner.cpp:3445`, sparas på `TabRunner.cpp:680`, `oRunner.cpp:1331`). Kommentar per deltagare: knappen "Kommentar >>" (`TabRunner.cpp:3532`). | Den faktiska starten kan noteras i en kommentar utan att den officiella starttiden ändras. Att meddela tävlingsledningen är arrangörens rutin. (Tidigare anmärkning om saknad samlad panel gällde inte vad anvisningen kräver.) |
 | TR 4.18.10 | UPPFYLLD | UPPFYLLER | SI-lägen "Registrera hyrbrickor", "Tilldela hyrbrickor" och "Avstämning hyrbrickor" (`TabSI.cpp:81-83`). Kryssrutan "Hyrbricka" i anmälan (`TabSI.cpp:3729`). "Vänligen återlämna hyrbrickan" vid avläsning (`TabSI.cpp:3386`). Rapporten "Hyrbricksrapport" (`oListInfo.cpp:4846`). Fältet `Phone` "Telefon" (`oEvent.cpp:267`). | Kontaktuppgift krävs inte för hyrbricka. Avstämningen görs lokalt på en dator och ändrar inte tävlingen (`swedish.lng:2364`). |
@@ -143,14 +143,15 @@
 | EJ TILLÄMPLIG | 6 |
 | **Totalt** | **75** |
 
-Som jämförelse har fartOLa 33 UPPFYLLD, 19 DELVIS, 18 SAKNAS och 5 EJ TILLÄMPLIG.
+Som jämförelse har fartOLa 34 UPPFYLLD, 19 DELVIS, 17 SAKNAS och 5 EJ TILLÄMPLIG.
 
 MeOS-betygen är rättade efter en oberoende källkodsgranskning (Codex, MeOS 5.0 U3 build 1851, utan att programmet byggts eller körts): TR 3.4.8/4.14.1 (utan tidtagning), TR 4.14.4, TA till TR 4.18.9 och TR 4.23.3 blev UPPFYLLER, och TA till TR 7.8.3 (koppling) och TR 10.2.2/10.2.3 EJ TILLÄMPLIG. Anmärkningarna för TR 4.14.1 (direktanmälan), 4.18.9, 4.20.6, 4.20.7, 4.20.8, 4.20.9, 4.20.10, 4.21.1, 4.21.3, 7.5.2 och 10.4.10 är preciserade. TR 7.6.1 är DELVIS för båda av samma skäl (godkännande och angivelse i Eventor ligger utanför programmet).
 
 Raderna jämförs i ordningen UPPFYLLD/UPPFYLLER > DELVIS > SAKNAS/UPPFYLLER INTE.
 
-**fartOLa ligger före MeOS (9 rader):**
+**fartOLa ligger före MeOS (10 rader):**
 
+- TR 4.16.3, TR 4.22.1: fartOLa räknar fram och visar när målet stänger (sista start plus maxtid) och varnar när en lottning flyttar det. MeOS räknar inte ut det.
 - TR 4.18.9 med TA (sen start): fartOLa räknar tiden från starttiden som standard och varnar för sen start. MeOS gör det bara med "Ej startstämpling" påslaget i varje klass.
 - TR 4.20.10: fartOLa räknar alltid tiden för hela banan och drar aldrig av sträcktid. MeOS kan göra det med kontrollstatus "Utan tidtagning" eller "Försvunnen".
 - TR 4.20.7: fartOLa avrundar den officiella tiden till hel sekund. MeOS klipper av när tiondelar är påslagna (standard är hela sekunder).
@@ -171,7 +172,7 @@ Med samma status har fartOLa dessutom några kvalitativa fördelar. SOFT-lottnin
 - Lottning: TA till TR 6.5.1 (samma bana eller förstakontroll), TR 7.3.2 (vakanser), TR 7.3.6/7.3.7 (ranking och delning), TR 7.3.8, TR 7.4.1 (jaktstart och bokning), TR 7.4.5 (seedning), TR 7.5.5, TR 7.5.7/7.5.8 (efteranmälda), TR 7.5.9 (kval/final).
 - TR 7.1.2: MeOS används som godkänt huvudsystem, vilket fartOLa inte är. Det går inte att belägga i koden.
 
-**Lika (43 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: stängningstid för målet (TR 4.16.3), målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
+**Lika (42 rader, varav 5 där båda är EJ TILLÄMPLIG):** antingen har båda funktionen eller så saknar båda den. Gemensamma luckor: målgångsordning vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2), reservlista (TR 7.5.6) och klockkontroll av enheterna. Nu lika: TR 4.14.4 (samtycket följer av anmälan), TR 7.7.1 (liveresultat med inloggningsuppgifter) och TA till TR 7.8.2 (Ej start: båda sätter ej avlästa till Ej start med en åtgärd och kan ångra).
 
 ## 4. MeOS-funktioner som fartOLa saknar utöver regelraderna
 
