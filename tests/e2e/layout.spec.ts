@@ -53,6 +53,30 @@ test('Escape closes the drawer and returns focus to the menu button', async ({ p
   await expect(page.getByTestId('topbar-menu')).toBeFocused();
 });
 
+test('choosing a competition in the drawer closes it on the new page', async ({
+  page,
+  request,
+}) => {
+  await seedCompetition(request, { controls: 3 });
+  const { competitionId: current } = await seedCompetition(request, { controls: 3 });
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto('/');
+  await page.getByTestId('topbar-menu').click();
+  await expect(page.getByTestId('drawer-close')).toBeVisible();
+  await page.getByTestId('active-comp-pill').click();
+  await page
+    .getByTestId('active-comp-panel')
+    .getByRole('option')
+    .and(page.locator(':not(.current)'))
+    .first()
+    .click();
+  // vite dev compiles the readout route on first visit.
+  await expect(page).toHaveURL(/\/competition\/[^/]+\/readout$/, { timeout: 20_000 });
+  expect(page.url()).not.toContain(current);
+  await expect(page.getByTestId('drawer-close')).toHaveCount(0);
+  expect(await page.locator('main').evaluate((m) => (m as HTMLElement).inert)).toBe(false);
+});
+
 test('settings reachable in the sidebar at 1366×768', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto('/');
