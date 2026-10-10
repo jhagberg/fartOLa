@@ -340,14 +340,22 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       }
 
       // SOFT TA till TR 6.5.1 / TR 7.5.3: the new starts against the other
-      // classes' starts. A mass start is not an interval start.
+      // classes' starts. The rule is about interval start: a mass start is
+      // left out, and a pursuit is drawn whatever it meets. Its starts follow
+      // the previous stage's time gaps, so the operator cannot space them
+      // per minute; its clashes, the same course included, come back as
+      // warnings, which still help when moving the pursuit's first start or
+      // restart. Kontroll cannot tell a pursuit from an interval start and
+      // lists them all.
       const clashes = clashesWith(
         competitionId,
         classRow,
         body.mode === 'Simultaneous' ? 0 : null,
         plan.assignments.map((a) => a.startTimeMs)
       );
-      const sameCourse = clashes.filter((c) => c.kind === 'same_course');
+      const sameCourse = isPursuit(body.mode)
+        ? []
+        : clashes.filter((c) => c.kind === 'same_course');
       if (sameCourse.length > 0 && body.allowStartClash !== true) {
         return reply.code(409).send({
           error: 'start_clash',
