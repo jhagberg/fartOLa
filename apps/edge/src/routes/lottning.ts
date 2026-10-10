@@ -45,7 +45,8 @@ import { fillVacancies, placeBeforeOrAfter, seamClubs, smallestGapMs } from '../
 import { drawSeeded } from '../draw/seeded.ts';
 import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
-import { freeStartBanned, normalIntervalSec } from '../draw/startRules.ts';
+import { normalIntervalSec } from '../draw/startRules.ts';
+import { freeStartForbidden } from '../projection/preRaceCheck.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
@@ -377,9 +378,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
             (classRow.startIntervalSec ?? 0) > 0
               ? classRow.startIntervalSec
               : normalIntervalSec(classRow.distance),
-          // SOFT TR 7.4.2: start times required (no free start order) —
-          // true/false, null while kind or level is unknown.
-          free_start_banned: freeStartBanned(classRow, classRow.level),
+          // SOFT TR 7.4.2: start times required (no free start order); false
+          // while the kind is unconfirmed or the level unset.
+          free_start_banned: freeStartForbidden(classRow, classRow.level),
           without_start_time: withoutStart,
         },
         start_list: startList.map((r) => ({
