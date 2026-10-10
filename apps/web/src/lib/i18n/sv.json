@@ -947,5 +947,12 @@
   "fees.err.loadFailed": "Det gick inte att läsa avgifterna: {{error}}",
   "fees.err.saveFailed": "Det gick inte att spara avgiften.",
   "fees.err.kronor": "Ange beloppet i hela kronor.",
-  "fees.err.percent": "Ange tillägget i hela procent, 0–100."
+  "fees.err.percent": "Ange tillägget i hela procent, 0–100.",
+  "walk.fee.total": "Att betala: {{total}} kr",
+  "walk.fee.entry": "avgift {{amount}} kr",
+  "walk.fee.late": "tillägg {{amount}} kr",
+  "walk.fee.card": "brickhyra {{amount}} kr",
+  "walk.birthYear": "Födelseår",
+  "walk.birthYear.ph": "t.ex. 2012",
+  "walk.err.birthYear": "Ange födelseåret med fyra siffror, eller lämna tomt."
 }

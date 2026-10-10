@@ -10,7 +10,11 @@
    - Klubb (optional, ClubAutocomplete)
    - Klass (required, select from props.classes)
    - Bricka (pre-filled from props.cardNumber, editable, int ≥ 1)
-   - Consent (checkbox, default checked — REQ-PRIV-001)
+   - Consent (checkbox, unticked until the secretary confirms —
+     REQ-PRIV-001; decided 2026-10-10, design-lab audit WA-2)
+   - Födelseår (optional, filled from Eventor) and the fee to pay (SOFT
+     TR 4.12.4, 4.12.6; screens/fees.ts, the same rule the edge records).
+     In an open class the birth year decides the youth fee.
 
   On Spara: POST /api/competitors with consent: true AND
   consent_status='explicit' (matches plan 02 schema default). On 201 →
@@ -36,7 +40,13 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createCompetitor, lookupEventorBySiCard } from '#lib/api/client.ts';
+  import {
+    createCompetitor,
+    getFees,
+    lookupEventorBySiCard,
+    type FeesResponse,
+  } from '#lib/api/client.ts';
+  import { parseBirthYear, walkupFee } from '#lib/screens/fees.ts';
   import { t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/Button.svelte';
   import Field from '#lib/ui/Field.svelte';
@@ -167,6 +177,9 @@
       if (club.trim() === '' && eventorHint.club_name) {
         club = eventorHint.club_name;
       }
+      if (birthYearText.trim() === '' && eventorHint.birth_year != null) {
+        birthYearText = String(eventorHint.birth_year);
+      }
       if (selectedClubId === null && eventorHint.club_id !== null) {
         selectedClubId = eventorHint.club_id;
       }
@@ -189,7 +202,8 @@
   // captured-at-init (warning state_referenced_locally).
   const initialCard: number | '' = untrack(() => (cardNumber > 0 ? cardNumber : ''));
   let cardNumberLocal = $state<number | ''>(initialCard);
-  let consent = $state(true);
+  // WA-2 (decided 2026-10-10): unticked, so consent is an active choice.
+  let consent = $state(false);
 
   // Phase 2.0 D-HB-3 — Hyrbricka checkbox + expandable contact fields.
   // The contact fields appear only when hiredCard=true; validate() enforces
@@ -200,6 +214,28 @@
   let contactPhone = $state('');
   let contactEmail = $state('');
   let contactNote = $state('');
+
+  // SOFT TR 4.12.6 — the fees, to show what the runner pays. In an open
+  // class the runner's birth year decides the fee and the surcharge.
+  let fees = $state<FeesResponse | null>(null);
+  const initialBirthYear: string = untrack(() =>
+    eventorHint?.hit === true && eventorHint.birth_year != null
+      ? String(eventorHint.birth_year)
+      : ''
+  );
+  let birthYearText = $state(initialBirthYear);
+  const birthYear = $derived(parseBirthYear(birthYearText));
+  $effect(() => {
+    getFees(competitionId).then(
+      (f) => (fees = f),
+      () => (fees = null)
+    );
+  });
+  const fee = $derived(
+    fees === null || classId === ''
+      ? null
+      : walkupFee(fees, classId, birthYear ?? null, hiredCard, Date.now())
+  );
 
   // Lightweight info note when the form was pre-filled from the Eventor
   // cache. Cleared on first edit so it doesn't linger.
@@ -233,6 +269,8 @@
       club !== initialClubVal ||
       classId !== '' ||
       cardNumberLocal !== initialCard ||
+      consent !== false ||
+      birthYearText !== initialBirthYear ||
       hiredCard !== false ||
       contactName !== '' ||
       contactPhone !== '' ||
@@ -281,6 +319,7 @@
     if (s.si_card !== null && cardNumberLocal === '') {
       cardNumberLocal = s.si_card;
     }
+    if (s.birth_year != null) birthYearText = String(s.birth_year);
     eventorFillNote = t('walk.eventor.fill');
   }
 
@@ -302,6 +341,7 @@
     if (typeof cardNumberLocal !== 'number' || cardNumberLocal < 1) {
       return t('walk.err.cardRequired');
     }
+    if (birthYear === undefined) return t('walk.err.birthYear');
     if (!consent) return t('walk.err.consent');
     // D-HB-3 — at least phone OR email required when Hyrbricka set.
     if (hiredCard && contactPhone.trim() === '' && contactEmail.trim() === '') {
@@ -330,6 +370,7 @@
         card_number: cardNumberLocal as number,
         consent: true,
         consent_status: 'explicit',
+        birth_year: birthYear ?? null,
         hired_card: hiredCard,
         ...(hiredCard
           ? {
@@ -397,6 +438,8 @@
         // and club; show chip when alternatives > 0.
         if (name.trim() === '') name = `${r.family_name}, ${r.given_name}`;
         if (club.trim() === '' && r.club_name) club = r.club_name;
+        if (birthYearText.trim() === '' && r.birth_year != null)
+          birthYearText = String(r.birth_year);
         eventorFillNote = t('walk.eventor.fill');
         if (r.alternatives > 0) {
           alternativesCandidates = r.allCandidates;
@@ -418,6 +461,7 @@
     name = `${candidate.family_name}, ${candidate.given_name}`;
     if (candidate.club_name) club = candidate.club_name;
     selectedClubId = candidate.club_id;
+    if (candidate.birth_year != null) birthYearText = String(candidate.birth_year);
     eventorFillNote = t('walk.eventor.fill');
     showAlternativesPicker = false;
   }
@@ -574,6 +618,16 @@
         />
       </Field>
 
+      <Field label={t('walk.birthYear')} htmlFor="walkup-birth-year">
+        <Input
+          id="walkup-birth-year"
+          data-testid="walkup-birth-year"
+          inputmode="numeric"
+          placeholder={t('walk.birthYear.ph')}
+          bind:value={birthYearText}
+        />
+      </Field>
+
       <label class="consent-row">
         <input
           type="checkbox"
@@ -626,6 +680,21 @@
             />
           </Field>
         </div>
+      {/if}
+
+      {#if fee !== null}
+        <p class="fee-line" data-testid="walkup-fee" aria-live="polite">
+          {t('walk.fee.total', { total: fee.total })}
+          <span class="fee-parts"
+            >({[
+              fee.entry > 0 ? t('walk.fee.entry', { amount: fee.entry }) : null,
+              fee.late > 0 ? t('walk.fee.late', { amount: fee.late }) : null,
+              fee.card > 0 ? t('walk.fee.card', { amount: fee.card }) : null,
+            ]
+              .filter((p) => p !== null)
+              .join(', ')})</span
+          >
+        </p>
       {/if}
 
       {#if fieldError}
@@ -787,6 +856,15 @@
     margin: 0;
     color: var(--dnf);
     font-size: 13px;
+  }
+  .fee-line {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
+  .fee-parts {
+    font-weight: 400;
+    color: var(--fg-muted);
   }
   .info {
     margin: 0;

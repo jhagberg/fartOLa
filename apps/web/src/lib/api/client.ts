@@ -347,6 +347,8 @@ export interface ClassFeeItem {
 }
 
 export interface FeesResponse {
+  /** The competition date: before it an entry is late, on it a walk-up. */
+  date: string;
   card_fee: number | null;
   classes: ClassFeeItem[];
 }
