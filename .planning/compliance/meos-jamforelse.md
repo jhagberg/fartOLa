@@ -229,7 +229,7 @@ Storlek är en grov uppskattning av arbetet i fartOLa: S är några dagar, M är
 | Efteranmälda före eller efter | Lottar in efteranmälda utan att de redan lottade flyttas. | "Efteranmälda (före ordinarie)", "(efter ordinarie)" (`TabClass.cpp:6318-6319`), `drawRemaining` (`oEventDraw.cpp:1705`). | Nej. Omlottning nollställer klassen. | M |
 | Vakanser som platser | Vakanser är egna poster med starttid och kan ges till efteranmälda. | "Andel vakanser" (`TabClass.cpp:1763`), "Tillsätt ytterligare vakans" (`TabRunner.cpp:2699`). | Delvis. Luckor i SOFT-läget (`draw/soft.ts`), som inte går att boka. | S |
 | Seedning och seedningsgrupper | Lottning efter ranking, resultat eller tid, med grupper. | "Seedad lottning", "Seedningsgrupper:" (`TabClass.cpp:575`). | Nej. | M |
-| Nummerlappar | Automatisk eller manuell numrering per klass. | "Nummerlappar..." (`TabClass.cpp:4563`). | Ja. Per klass med prefix och första nummer i startordning, och för hand (`routes/lottning.ts:328`, `routes/competitors.ts:690`). Stafett ingår inte. | S |
+| Nummerlappar | Automatisk eller manuell numrering per klass. | "Nummerlappar..." (`TabClass.cpp:4563`). | Ja. Per klass med prefix och första nummer i startordning, och för hand (`routes/lottning.ts:343`, `routes/competitors.ts:690`). Stafett ingår inte. | S |
 | Startgrupper | Löpare lottas in i namngivna startgrupper. | "Startgrupper" (`TabClass.cpp:4627`), `drawListStartGroups` (`oEventDraw.cpp:1875`). | Nej. | M |
 | Dela och slå ihop klasser | Klassen delas per klubb, ranking, resultat eller i jämna delar. | "Dela klassen..." (`TabClass.cpp:4603`), `oClass.cpp:2231-2241`. | Nej. | M |
 | Klungstart och parstart | Starter i grupper eller par. | `DrawMethod::Clumped` (`oEvent.h:554`), "Tillämpa parstart". | Nej. | S |
