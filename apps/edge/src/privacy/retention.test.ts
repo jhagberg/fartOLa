@@ -130,6 +130,11 @@ describe('scheduleDailyRetention', () => {
       club: 'StorTuna IF',
       cardNumber: 7501853,
     });
+    ctx.handle.db
+      .update(competitors)
+      .set({ birthYear: 1980 })
+      .where(eq(competitors.id, competitorId))
+      .run();
     const retention = scheduleDailyRetention(ctx.handle, {
       retentionDays: 30,
       testClock: { now: () => FIXED_NOW },
@@ -148,6 +153,7 @@ describe('scheduleDailyRetention', () => {
       assert.ok(row);
       assert.equal(row.name, 'Anonymiserad');
       assert.equal(row.club, null);
+      assert.equal(row.birthYear, null);
       assert.equal(row.scrubbedAtMs, FIXED_NOW);
 
       // PRESERVED fields (RESEARCH A7 + research.md §6).

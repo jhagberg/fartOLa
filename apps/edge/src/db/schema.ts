@@ -476,6 +476,11 @@ export const classes = sqliteTable(
     /** The late / walk-up surcharge in percent, capped per class type when
      * charged (shared-types fees.ts); NULL = none. Migration 0025. */
     lateFeePct: integer('late_fee_pct'),
+    /** Eventor's EntryFeeId of the class fee, youth fee and late fee,
+     * written back as Fee/Id; NULL = not from Eventor. Migration 0023. */
+    eventorEntryFeeId: integer('eventor_entry_fee_id'),
+    eventorYouthFeeId: integer('eventor_youth_fee_id'),
+    eventorLateFeeId: integer('eventor_late_fee_id'),
   },
   (t) => [uniqueIndex('classes_name_per_comp').on(t.competitionId, t.name)]
 );
@@ -600,6 +605,10 @@ export const competitors = sqliteTable(
      * decided their fee). Migration 0025. */
     entryFee: integer('entry_fee'),
     lateFee: integer('late_fee'),
+    /** Birth year (Eventor entry or cache, or the desk); in an open class it
+     * decides youth (TR 4.12.6). NULL = unknown. PII (REQ-PRIV-002).
+     * Migration 0023. */
+    birthYear: integer('birth_year'),
   },
   (t) => [
     // D-11 partial unique index: same physical card cannot be bound to two
