@@ -24,8 +24,15 @@ describe('classNeedsStartTimes', () => {
     classKindSource: 'eventor' | 'name' | 'operator' | null = classKind && 'operator'
   ) => ({ startMethod, firstStartMs, classKind, classKindSource });
 
-  test('start method decides first, then a draw, then age class at nivå 1-3', () => {
-    assert.equal(classNeedsStartTimes(cls('start_punch', 1, 'senior'), 'niva1', true), false);
+  test('age class at nivå 1-3 first, then start method, then a draw', () => {
+    // Timed from the start punch (TR 4.18.16), but the order is drawn (TR 7.4.2).
+    assert.equal(classNeedsStartTimes(cls('start_punch', null, 'senior'), 'niva1', false), true);
+    assert.equal(classNeedsStartTimes(cls('start_punch', 1, 'senior'), 'niva4', true), false);
+    assert.equal(classNeedsStartTimes(cls('start_punch', 1, 'oppen'), 'niva1', true), false);
+    assert.equal(
+      classNeedsStartTimes(cls('start_punch', null, 'senior', 'name'), 'niva1', false),
+      false
+    );
     assert.equal(classNeedsStartTimes(cls('start_time', null, 'oppen'), null, false), true);
     assert.equal(classNeedsStartTimes(cls('auto', 1, 'oppen'), null, false), true);
     assert.equal(classNeedsStartTimes(cls('auto', null, 'oppen'), 'niva2', true), true);
@@ -96,7 +103,7 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
           classKindSource: 'operator',
           startMethod: 'start_punch',
         },
-        // The same but drawn: start punching is allowed (TR 4.18.16).
+        // The same, drawn and with a start time: nothing to fix.
         {
           id: 'd18',
           competitionId: COMP,
@@ -194,8 +201,9 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
     const body = res.json() as PreRaceCheck;
     const ids = (rows: Array<{ competitor_id: string }>) => rows.map((r) => r.competitor_id);
     assert.deepEqual(ids(body.no_card), ['nocard']);
-    // H21 is drawn; D10 is an age class at nivå 2; Öppen 1 has free start.
-    assert.deepEqual(ids(body.no_start_time), ['nostart', 'd10']);
+    // H21 is drawn; D10 is an age class at nivå 2; D16 too, though timed
+    // from the start punch; H16's kind is only guessed; Öppen 1 has free start.
+    assert.deepEqual(ids(body.no_start_time), ['nostart', 'd10', 'd16']);
     assert.deepEqual(ids(body.no_club), ['noclub']);
     assert.deepEqual(ids(body.no_name), ['x']);
     assert.deepEqual(
@@ -210,9 +218,6 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
       body.classes_without_course.map((c) => c.class_id),
       ['d10', 'd16', 'd18', 'h16']
     );
-    assert.deepEqual(body.start_punch_not_allowed, [
-      { class_id: 'd16', class_name: 'D16', runners: 1 },
-    ]);
   });
 
   test('404 for an unknown competition', async () => {

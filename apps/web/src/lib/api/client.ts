@@ -1170,8 +1170,6 @@ export interface PreRaceCheck {
   /** Soft warning: the course fits, but splits after `timed` are missing. */
   splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
-  /** Classes timed from the start punch that must draw start times (TR 7.4.2). */
-  start_punch_not_allowed: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
 /** One runner's projected state (GET …/runner-status). */
