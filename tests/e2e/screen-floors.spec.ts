@@ -14,6 +14,12 @@ import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
 import { prepareSettings } from './helpers/settings.ts';
 import {
+  prepareAccess,
+  prepareAccessWrongCode,
+  prepareAccessLoadError,
+  prepareAccessEmpty,
+} from './helpers/access.ts';
+import {
   prepareWizardStep1,
   prepareWizardStep2,
   prepareWizardImportError,
@@ -145,6 +151,30 @@ const SCREENS: Screen[] = [
     url: () => '/installningar',
     ready: (p) => p.getByTestId('settings-view'),
     prepare: async (page, id) => prepareSettings(page, id),
+  },
+  {
+    name: 'Hjälparinloggning',
+    url: () => '/access',
+    ready: (p) => p.getByTestId('access-view'),
+    prepare: async (page) => prepareAccess(page),
+  },
+  {
+    name: 'Hjälparinloggning med fel kod',
+    url: () => '/access',
+    ready: (p) => p.getByTestId('access-view'),
+    prepare: async (page) => prepareAccessWrongCode(page),
+  },
+  {
+    name: 'Hjälparinloggning med laddningsfel',
+    url: () => '/access',
+    ready: (p) => p.getByTestId('access-view'),
+    prepare: async (page) => prepareAccessLoadError(page),
+  },
+  {
+    name: 'Hjälparinloggning utan tävlingar',
+    url: () => '/access',
+    ready: (p) => p.getByTestId('access-view'),
+    prepare: async (page) => prepareAccessEmpty(page),
   },
 ];
 

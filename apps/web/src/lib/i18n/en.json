@@ -923,7 +923,12 @@
 
   "access.title": "Sign in as helper",
   "access.selectCompetition": "Select competition",
-  "access.codePlaceholder": "Code (e.g. sänkan-127)",
+  "access.codeLabel": "Code",
+  "access.codePlaceholder": "e.g. sänkan-127",
+  "access.codeHint": "You get the code from the secretariat",
+  "access.missing": "Choose a competition and type the code",
+  "access.loadError": "Could not load competitions.",
+  "access.empty": "No competitions to sign in to.",
   "access.submit": "Sign in",
   "access.submitting": "Signing in…",
   "access.error.invalid_code": "Invalid code",

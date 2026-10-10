@@ -923,7 +923,12 @@
 
   "access.title": "Logga in som hjälpare",
   "access.selectCompetition": "Välj tävling",
-  "access.codePlaceholder": "Kod (t.ex. sänkan-127)",
+  "access.codeLabel": "Kod",
+  "access.codePlaceholder": "t.ex. sänkan-127",
+  "access.codeHint": "Koden får du av sekretariatet",
+  "access.missing": "Välj tävling och skriv koden",
+  "access.loadError": "Kunde inte hämta tävlingar.",
+  "access.empty": "Inga tävlingar att logga in på.",
   "access.submit": "Logga in",
   "access.submitting": "Loggar in…",
   "access.error.invalid_code": "Ogiltig kod",
