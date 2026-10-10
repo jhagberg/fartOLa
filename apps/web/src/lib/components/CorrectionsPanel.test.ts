@@ -77,6 +77,11 @@ describe('CorrectionsPanel (mounted)', () => {
           };
         } else if (url.endsWith('/remove-manual-punch')) {
           state = { ...state, manual_punches: [] };
+        } else if (url.endsWith('/time-addition')) {
+          const b = body as unknown as { minutes: number; reason: string };
+          state = { ...state, time_addition_min: b.minutes, time_addition_reason: b.reason };
+        } else if (url.endsWith('/clear-time-addition')) {
+          state = { ...state, time_addition_min: 0, time_addition_reason: null };
         } else if (url.endsWith('/clear-manual-finish')) {
           state = { ...state, status: 'DNF', elapsed_time_ms: null, manual_finish_ms: null };
         }
@@ -166,5 +171,45 @@ describe('CorrectionsPanel (mounted)', () => {
     await settle();
     expect(posts).toEqual([]);
     expect(document.body.textContent).toContain('Skriv kontrollens kodsiffra.');
+  });
+
+  it('a false start gives one minute in one click; removing it takes it away', async () => {
+    await mountIt();
+    $<HTMLButtonElement>('corr-false-start')!.click();
+    await settle();
+    expect(posts).toEqual([
+      {
+        url: '/api/competitions/c1/competitors/r1/time-addition',
+        body: { minutes: 1, reason: 'Tjuvstart' },
+      },
+    ]);
+    expect($('corr-addition-min')!.textContent?.trim()).toBe('1 min');
+    $<HTMLButtonElement>('corr-addition-remove')!.click();
+    await settle();
+    expect(posts[1]!.url).toBe('/api/competitions/c1/competitors/r1/clear-time-addition');
+    expect($('corr-addition-min')).toBeNull();
+  });
+
+  it('1 to 5 minutes with a reason', async () => {
+    await mountIt();
+    const select = $<HTMLSelectElement>('corr-addition-select')!;
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      '1 min',
+      '2 min',
+      '3 min',
+      '4 min',
+      '5 min',
+    ]);
+    select.value = '3';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    type('corr-addition-reason', 'Förmildrande omständigheter');
+    $<HTMLButtonElement>('corr-addition-set')!.click();
+    await settle();
+    expect(posts).toEqual([
+      {
+        url: '/api/competitions/c1/competitors/r1/time-addition',
+        body: { minutes: 3, reason: 'Förmildrande omständigheter' },
+      },
+    ]);
   });
 });

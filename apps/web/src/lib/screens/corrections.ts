@@ -34,7 +34,7 @@ export function resolveFinishInput(
 
 /** The corrections a runner has, as lines for the readout card. */
 export interface CorrectionLine {
-  key: 'corr.line.finish' | 'corr.line.punch';
+  key: 'corr.line.finish' | 'corr.line.punch' | 'corr.line.addition';
   vars: Record<string, string>;
 }
 
@@ -43,6 +43,8 @@ export function correctionLines(
     manual_finish_ms: number | null;
     manual_finish_reason: string | null;
     manual_punches: Array<{ control_code: number; reason: string }>;
+    time_addition_min: number;
+    time_addition_reason: string | null;
   },
   clockOffsetMin: number | null
 ): CorrectionLine[] {
@@ -60,6 +62,12 @@ export function correctionLines(
     lines.push({
       key: 'corr.line.punch',
       vars: { code: String(p.control_code), reason: p.reason },
+    });
+  }
+  if (row.time_addition_min > 0) {
+    lines.push({
+      key: 'corr.line.addition',
+      vars: { minutes: String(row.time_addition_min), reason: row.time_addition_reason ?? '' },
     });
   }
   return lines;

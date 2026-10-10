@@ -8,6 +8,9 @@
     - Stämplar: a control punched by hand from the start card or a pin punch,
       no time (SOFT TR 8.1.4 kommentar; MeOS "<< Lägg till stämpling",
       TabRunner.cpp:3571). The missing controls are offered.
+    - Tidstillägg: 1–5 whole minutes (SOFT TR 10.4.2), one minute for a false
+      start (TR 4.18.14, its own button); part of the time and the place
+      (MeOS "Tidstillägg:", TabRunner.cpp:3455).
   A later read-out does not overwrite a correction. Shows the result the
   corrections give, so the operator sees the effect. Logic lives in
   screens/corrections.ts.
@@ -18,9 +21,11 @@
   import {
     addManualPunch,
     clearManualFinish,
+    clearTimeAddition,
     getCorrections,
     removeManualPunch,
     setManualFinish,
+    setTimeAddition,
     type CorrectionsDTO,
   } from '#lib/api/client.ts';
   import { fetchCompetitionClock, type CompetitionClock } from '#lib/screens/competition-clock.ts';
@@ -52,6 +57,10 @@
   let punchReason = $state('');
   let punchError = $state<string | null>(null);
 
+  const MINUTES = [1, 2, 3, 4, 5];
+  let additionMin = $state(1);
+  let additionReason = $state('');
+
   /** Only the latest load may set the data (a reload can overlap). */
   let generation = 0;
   async function load(): Promise<void> {
@@ -80,6 +89,8 @@
     punchText = '';
     punchReason = t('corr.punch.reasonDefault');
     punchError = null;
+    additionMin = 1;
+    additionReason = '';
     saveError = null;
     void load();
   });
@@ -264,6 +275,71 @@
       {/if}
     </div>
 
+    <div class="part" data-testid="corr-addition">
+      <h4>{t('corr.addition')}</h4>
+      {#if data.time_addition_min > 0}
+        <div class="current">
+          <span class="mono" data-testid="corr-addition-min">
+            {t('corr.addition.minutes', { minutes: data.time_addition_min })}
+          </span>
+          <span class="reason">{data.time_addition_reason}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            data-testid="corr-addition-remove"
+            onclick={() => void run(() => clearTimeAddition(competitionId, competitorId))}
+          >
+            {t('corr.remove')}
+          </Button>
+        </div>
+      {:else}
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy}
+          data-testid="corr-false-start"
+          onclick={() =>
+            void run(() =>
+              setTimeAddition(competitionId, competitorId, 1, t('corr.addition.falseStart'))
+            )}
+        >
+          {t('corr.addition.falseStartBtn')}
+        </Button>
+        <div class="entry">
+          <label class="field">
+            <span>{t('corr.addition.min')}</span>
+            <select bind:value={additionMin} data-testid="corr-addition-select">
+              {#each MINUTES as m (m)}
+                <option value={m}>{t('corr.addition.minutes', { minutes: m })}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="field grow">
+            <span>{t('corr.reason')}</span>
+            <input
+              type="text"
+              maxlength="500"
+              bind:value={additionReason}
+              data-testid="corr-addition-reason"
+            />
+          </label>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || additionReason.trim() === ''}
+            data-testid="corr-addition-set"
+            onclick={() =>
+              void run(() =>
+                setTimeAddition(competitionId, competitorId, additionMin, additionReason.trim())
+              )}
+          >
+            {t('corr.addition.set')}
+          </Button>
+        </div>
+      {/if}
+    </div>
+
     {#if saveError !== null}
       <p class="err" role="alert" data-testid="corr-error">{saveError}</p>
     {/if}
@@ -343,7 +419,8 @@
     font-size: var(--fs-caption);
     color: var(--fg-muted);
   }
-  .field input {
+  .field input,
+  .field select {
     min-height: var(--hit);
     padding: 0 12px;
     border: 1px solid var(--border);

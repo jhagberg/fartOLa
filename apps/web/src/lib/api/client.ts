@@ -638,6 +638,30 @@ export function removeManualPunch(
   });
 }
 
+/** SOFT TR 10.4.2: a time addition of 1–5 whole minutes (TR 4.18.14:
+ * one for a false start). Replaces any earlier one. */
+export function setTimeAddition(
+  competitionId: string,
+  competitorId: string,
+  minutes: number,
+  reason: string
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/time-addition`, {
+    method: 'POST',
+    body: { minutes, reason },
+  });
+}
+
+export function clearTimeAddition(
+  competitionId: string,
+  competitorId: string
+): Promise<{ local_seq: number }> {
+  return apiFetch(`${competitorPath(competitionId, competitorId)}/clear-time-addition`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
 export function clearManualFinish(
   competitionId: string,
   competitorId: string

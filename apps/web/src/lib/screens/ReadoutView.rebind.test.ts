@@ -61,6 +61,8 @@ function row(attached: boolean) {
     manual_finish_ms: null,
     manual_finish_reason: null,
     manual_punches: [],
+    time_addition_min: 0,
+    time_addition_reason: null,
     class_place: null,
     class_behind_leader_ms: null,
     class_finished_count: 0,

@@ -26,6 +26,8 @@ const row = (over: Partial<ReadoutHistoryRow>): ReadoutHistoryRow =>
     manual_finish_ms: null,
     manual_finish_reason: null,
     manual_punches: [],
+    time_addition_min: 0,
+    time_addition_reason: null,
     punches: [{ code: 31, seconds_in_half_day: 10 * 3600 + 120, half_day: 0 }],
     start_seconds_in_half_day: 10 * 3600 + 60,
     start_half_day: 0,
