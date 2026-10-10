@@ -281,6 +281,8 @@ export const CompetitorDTO = z.object({
    * 02.1-02); this field makes it available at the /competitors endpoint
    * for display in the runners list and readout views. */
   start_time_ms: z.number().int().nonnegative().nullable(),
+  /** SOFT TR 7.5.4 — the runner's bib (startnummer); NULL = none. */
+  bib: z.string().nullable().optional(),
 });
 export type CompetitorDTO = z.infer<typeof CompetitorDTO>;
 
