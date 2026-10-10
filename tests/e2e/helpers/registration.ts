@@ -9,12 +9,12 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import { simulateRead } from './seed.ts';
 
 /** Wait for the modal to show `card`, skipping the "who is entered" step on the way. */
-async function showsCard(page: Page, card: number): Promise<void> {
+async function showsCard(page: Page, card: number, within = 10_000): Promise<void> {
   const skip = page.getByRole('button', { name: /direktanmälan/ });
   await expect(async () => {
     if (await skip.isVisible()) await skip.click();
     await expect(page.getByTestId('walkup-card')).toHaveValue(String(card), { timeout: 500 });
-  }).toPass({ timeout: 10_000 });
+  }).toPass({ timeout: within });
 }
 
 export async function prepareRegistration(
@@ -26,10 +26,12 @@ export async function prepareRegistration(
   const A = 1_000_000 + Math.floor(Math.random() * 8_000_000);
   const B = A + 1;
   const C = A + 2;
-  // The page subscribes to reads after it mounts; an earlier read is lost.
-  await page.waitForTimeout(1_000);
-  await simulateRead(request, id, A, []);
-  await showsCard(page, A);
+  // The page subscribes to reads after it mounts, so an early read can be
+  // lost: read again until the modal shows the card.
+  await expect(async () => {
+    await simulateRead(request, id, A, []);
+    await showsCard(page, A, 1_500);
+  }).toPass({ timeout: 15_000 });
   await simulateRead(request, id, B, []);
   await simulateRead(request, id, C, []);
   await expect(page.getByTestId('reg-queue-badge')).toContainText('2', { timeout: 5_000 });
@@ -41,9 +43,6 @@ export async function prepareRegistration(
   await showsCard(page, B);
   await simulateRead(request, id, A, []);
   await expect(page.getByTestId('reg-known-banner')).toBeVisible({ timeout: 5_000 });
-  // Current card read again: dedupe toast (lives about 3 s).
-  await simulateRead(request, id, B, []);
-  await expect(page.getByTestId('reg-toast')).toBeVisible({ timeout: 3_000 });
   // Manual entry error.
   await page.getByTestId('reg-manual-input').fill('abc');
   await page.getByTestId('reg-manual-input').blur();
@@ -57,6 +56,11 @@ export async function prepareRegistration(
         .map((a) => a.finished)
     )
   );
+  // Last: the current card read again gives the dedupe toast, which
+  // lives about 3 s, so measure straight after this returns.
+  await simulateRead(request, id, B, []);
+  await expect(page.getByTestId('reg-toast')).toBeVisible({ timeout: 3_000 });
+  await expect(page.getByTestId('reg-known-banner')).toBeVisible();
   await expect(page.getByTestId('reg-queue-badge')).toBeVisible();
   await expect(page.getByTestId('reg-queue-chip').first()).toBeVisible();
 }
