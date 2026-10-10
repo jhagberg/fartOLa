@@ -116,5 +116,12 @@ for (const viewport of [
     expect(history.y).toBeGreaterThanOrEqual(card.y + card.height);
     expect(history.y + history.height).toBeLessThanOrEqual(receipt.y);
     expect(unknown.y + unknown.height).toBeLessThanOrEqual(receipt.y);
+    // Tab follows what is seen: the rail's controls come before auto-print.
+    const railFirst = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="history-list"]')!;
+      const toggle = document.querySelector('[data-testid="auto-print-toggle"]')!;
+      return Boolean(rail.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(railFirst).toBe(true);
   });
 }
