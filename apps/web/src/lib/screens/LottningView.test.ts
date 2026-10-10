@@ -11,6 +11,7 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 import {
   buildLottningBody,
   closingMoved,
+  firstControlWarning,
   refusalOf,
   startOrderNote,
   seedGroupsFromInput,
@@ -161,6 +162,32 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     expect(startOrderNote({ free_start_banned: true, without_start_time: 0 })).toBeNull();
     expect(startOrderNote({ free_start_banned: null, without_start_time: 3 })).toBeNull();
     expect(startOrderNote({ class_kind: 'inskolning' })?.key).toBe('lottning.openClassFreeStart');
+  });
+
+  it('SOFT TA till TR 6.5.1 / TR 7.5.3: a start clash refusal lists the classes and minutes; only first-control warnings warn', () => {
+    const e = new ApiError(
+      409,
+      'x',
+      {
+        error: 'start_clash',
+        clashes: [
+          { class_id: 'd', class_name: 'D21', minutes: ['10:02', '10:04'] },
+          { class_id: 'h', class_name: 'H50', minutes: ['10:06'] },
+        ],
+      },
+      ''
+    );
+    expect(refusalOf(e, 'H21')).toEqual({
+      key: 'lottning.err.startClash',
+      fix: 'start_clash',
+      vars: { class: 'H21', clashes: 'D21 (10:02, 10:04), H50 (10:06)' },
+    });
+    expect(
+      firstControlWarning({
+        drawn: 1,
+        warnings: [{ kind: 'same_course', class_id: 'd', class_name: 'D21', minutes: ['10:02'] }],
+      })
+    ).toBeNull();
   });
 
   it('every refusal and mode label exists in sv and en, and names the SOFT rule', async () => {
@@ -421,6 +448,49 @@ describe('LottningView (mounted)', () => {
     await settle();
     await settle();
     expect($('lottning-start-note')?.textContent).toContain('2 löpare saknar starttid');
+  });
+
+  it('SOFT TA till TR 6.5.1 / TR 7.5.3: a start clash names the class and minutes; drawing anyway needs a reason; a shared first control is a warning', async () => {
+    drawAnswer = {
+      status: 409,
+      body: {
+        error: 'start_clash',
+        rule: 'SOFT TA till TR 6.5.1',
+        clashes: [{ class_id: 'd21', class_name: 'D21', minutes: ['10:04', '10:06'] }],
+      },
+    };
+    await mountView();
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect($('lottning-refusal')!.textContent).toContain(
+      'H12 har samma bana som D21 (10:04, 10:06) och skulle starta samma minut (SOFT TA till TR 6.5.1).'
+    );
+    const override = $('lottning-clash-override') as HTMLButtonElement;
+    expect(override.disabled).toBe(true);
+    const reason = $('lottning-clash-reason') as HTMLInputElement;
+    reason.value = 'Olika startplatser';
+    reason.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    drawAnswer = {
+      status: 201,
+      body: {
+        drawn: 2,
+        warnings: [
+          { kind: 'same_course', class_id: 'd21', class_name: 'D21', minutes: ['10:04'] },
+          { kind: 'same_first_control', class_id: 'h50', class_name: 'H50', minutes: ['10:08'] },
+        ],
+      },
+    };
+    override.click();
+    await settle();
+    expect(posts[1]!.body).toMatchObject({
+      allowStartClash: true,
+      startClashReason: 'Olika startplatser',
+    });
+    expect($('lottning-refusal')).toBeNull();
+    expect($('lottning-first-control')!.textContent).toContain(
+      'Samma förstakontroll som H50 (10:08) samma minut.'
+    );
   });
 
   it('SOFT TR 4.16.3: a draw that moves the closing time says from what to what', async () => {

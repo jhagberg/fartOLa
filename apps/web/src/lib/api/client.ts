@@ -1176,6 +1176,20 @@ export interface LottningBody {
   maxBehindSec?: number;
   /** Pursuit: time factor. Default 1. */
   scale?: number;
+  /** SOFT TA till TR 6.5.1: draw despite a class on the same course
+   * starting the same minute, with the operator's reason. */
+  allowStartClash?: boolean;
+  startClashReason?: string;
+}
+
+/** Another class starting the same minute as the drawn one (SOFT TA till
+ * TR 6.5.1 / TR 7.5.3): 'same_course' refuses the draw (409 start_clash),
+ * 'same_first_control' is a warning. Minutes are HH:MM on the clock. */
+export interface StartClashWith {
+  kind?: 'same_course' | 'same_first_control';
+  class_id: string;
+  class_name: string;
+  minutes: string[];
 }
 
 /** What a draw did; a pursuit adds who restarts and who had no result. */
@@ -1186,6 +1200,8 @@ export interface LottningResult {
   /** SOFT TR 4.16.3: the closing time (epoch ms) before and after the draw. */
   previous_closing_time_ms?: number | null;
   closing_time_ms?: number | null;
+  /** Classes starting the same minute (SOFT TA till TR 6.5.1). */
+  warnings?: StartClashWith[];
 }
 
 export interface StartListEntry {
@@ -1375,6 +1391,18 @@ export interface PreRaceCheck {
   /** Soft warning: the course fits, but splits after `timed` are missing. */
   splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
+  /** SOFT TA till TR 6.5.1 / TR 7.5.3: two classes on one course starting
+   * the same minute (HH:MM); the first-control list is a warning. */
+  start_clashes: PreRaceStartClash[];
+  first_control_clashes: PreRaceStartClash[];
+}
+
+export interface PreRaceStartClash {
+  class_id: string;
+  class_name: string;
+  other_class_id: string;
+  other_class_name: string;
+  minutes: string[];
 }
 
 /** One runner's projected state (GET …/runner-status). */
