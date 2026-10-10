@@ -8,8 +8,8 @@
   screens the panels get narrower but names still wrap instead of being cut.
 
   Wire flow:
-   - On mount: GET /api/competitions/:id (name, clock offset) and
-     GET /api/competitions/:id/speaker (the board).
+   - On mount: GET /api/competitions/:id (name) and
+     GET /api/competitions/:id/speaker (the board, with the clock offset).
    - WS results:<id>. Any envelope (results_full on every hello,
      results_update on a read, radio_punch when ROC punches are stored)
      refetches the board, debounced. No polling.
@@ -45,7 +45,6 @@
 
   let board = $state<SpeakerBoard | null>(null);
   let competitionName = $state('');
-  let offsetMin = $state(0);
   let chosen: string[] = $state([]);
   let nowMs = $state(Date.now());
   let fullscreen = $state(false);
@@ -58,6 +57,7 @@
     board ? board.classes.filter((c) => chosen.includes(c.class_id)) : []
   );
   const grid = $derived(speakerGrid(shown.length));
+  const offsetMin = $derived(board?.clock_offset_min ?? 0);
   const strip = $derived(
     board
       ? board.events
@@ -95,9 +95,8 @@
     try {
       const { competition } = await getCompetition(competitionId);
       competitionName = competition.name;
-      offsetMin = competition.clock_offset_min;
     } catch {
-      // Name and clock are cosmetic here; the board still loads.
+      // The name is cosmetic here; the board still loads.
     }
     await refetch();
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;

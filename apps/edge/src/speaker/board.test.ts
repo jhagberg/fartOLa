@@ -49,6 +49,7 @@ function input(over: Partial<BoardInput> = {}): BoardInput {
     radio: [],
     radioControls: [50, 60],
     finishCodes: [100],
+    clockOffsetMin: 120,
     ...over,
   };
 }
