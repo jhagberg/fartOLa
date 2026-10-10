@@ -94,6 +94,7 @@ function competitionRowToDTO(row: Competition): CompetitionDTO {
     max_time_sec: row.maxTimeSec ?? null,
     clock_offset_min: competitionClockOffsetMin(row.date, row.clockOffsetMin),
     level: row.level,
+    distance: row.distance,
   };
 }
 
@@ -142,6 +143,7 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       maxTimeSec: null,
       clockOffsetMin: null,
       level: null,
+      distance: null,
       rocCompetitionId: null,
       rocEnabled: false,
       rocStartId: null,
@@ -221,6 +223,8 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       patch.clockOffsetMin = parsed.data.clock_offset_min;
     // SOFT TR 3.3.1 — competition level; null clears it.
     if (parsed.data.level !== undefined) patch.level = parsed.data.level;
+    // SOFT TA till TR 7.4.4 — distance; null clears it.
+    if (parsed.data.distance !== undefined) patch.distance = parsed.data.distance;
 
     // Empty-body PATCH is a no-op 200 (idempotent). Skip the UPDATE so we
     // don't issue a SET-less SQL statement.
