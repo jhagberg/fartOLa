@@ -24,7 +24,10 @@
   import Info from '@lucide/svelte/icons/info';
   import Key from '@lucide/svelte/icons/key';
   import List from '@lucide/svelte/icons/list';
+  import Maximize from '@lucide/svelte/icons/maximize';
   import Menu from '@lucide/svelte/icons/menu';
+  import Mic from '@lucide/svelte/icons/mic';
+  import Minimize from '@lucide/svelte/icons/minimize';
   import Minus from '@lucide/svelte/icons/minus';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Play from '@lucide/svelte/icons/play';
@@ -34,7 +37,9 @@
   import Search from '@lucide/svelte/icons/search';
   import Settings from '@lucide/svelte/icons/settings';
   import Shuffle from '@lucide/svelte/icons/shuffle';
+  import Sun from '@lucide/svelte/icons/sun';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Trophy from '@lucide/svelte/icons/trophy';
   import UserPlus from '@lucide/svelte/icons/user-plus';
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
@@ -71,13 +76,19 @@
     'corner-down-right': CornerDownRight,
     'credit-card': CreditCard,
     circle: Circle,
+    mic: Mic,
+    trophy: Trophy,
+    sun: Sun,
+    maximize: Maximize,
+    minimize: Minimize,
   };
   export type IconName =
     | 'home' | 'radio' | 'list' | 'arrow-up-right' | 'download' | 'key' | 'settings'
     | 'check' | 'menu' | 'x' | 'users' | 'user-plus' | 'search' | 'plus' | 'edit'
     | 'info' | 'chevron-right' | 'chevron-down' | 'shuffle' | 'alert-triangle'
     | 'printer' | 'arrow-right' | 'arrow-left' | 'arrow-left-right' | 'minus'
-    | 'play' | 'folder-open' | 'corner-down-right' | 'credit-card' | 'circle';
+    | 'play' | 'folder-open' | 'corner-down-right' | 'credit-card' | 'circle'
+    | 'mic' | 'trophy' | 'sun' | 'maximize' | 'minimize';
 </script>
 
 <script lang="ts">

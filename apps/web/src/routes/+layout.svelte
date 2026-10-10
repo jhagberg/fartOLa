@@ -65,6 +65,7 @@
     if (p.endsWith('/lottning')) return 'lottning';
     if (p.endsWith('/kontroll')) return 'prerace';
     if (p.endsWith('/results')) return 'results';
+    if (p.endsWith('/speaker')) return 'speaker';
     if (p.endsWith('/export')) return 'export';
     if (p.endsWith('/hyrbrickor')) return 'hyrbrickor';
     if (p.endsWith('/eventor-publish')) return 'eventor-publish';
@@ -94,6 +95,7 @@
     else if (route === 'lottning') void goto(`/competition/${activeCompId}/lottning`);
     else if (route === 'prerace') void goto(`/competition/${activeCompId}/kontroll`);
     else if (route === 'results') void goto(`/competition/${activeCompId}/results`);
+    else if (route === 'speaker') void goto(`/competition/${activeCompId}/speaker`);
     else if (route === 'export') void goto(`/competition/${activeCompId}/export`);
     else if (route === 'hyrbrickor') void goto(`/competition/${activeCompId}/hyrbrickor`);
     else if (route === 'eventor-publish')
