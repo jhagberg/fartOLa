@@ -88,8 +88,7 @@ function choose(select: HTMLSelectElement, value: string): void {
 describe('WalkupModal — fee and consent', () => {
   let component: ReturnType<typeof mount> | null = null;
 
-  beforeEach(async () => {
-    installFetch();
+  const open = async (eventorHint: unknown = null): Promise<void> => {
     component = mount(WalkupModal, {
       target: document.body,
       props: {
@@ -97,9 +96,14 @@ describe('WalkupModal — fee and consent', () => {
         competitionId: COMP,
         classes: [cls(H21, 'H21'), cls(GUL, 'Gul 2,5')],
         onClose: vi.fn(),
+        eventorHint: eventorHint as never,
       },
     });
     await settle();
+  };
+
+  beforeEach(async () => {
+    installFetch();
   });
   afterEach(() => {
     if (component) void unmount(component);
@@ -109,6 +113,7 @@ describe('WalkupModal — fee and consent', () => {
   });
 
   it('WA-2: consent starts unticked and blocks the save until ticked', async () => {
+    await open();
     expect(q<HTMLInputElement>('walkup-consent')!.checked).toBe(false);
     (q('walkup-name') as HTMLInputElement).value = 'Eva Ek';
     q('walkup-name')!.dispatchEvent(new Event('input', { bubbles: true }));
@@ -121,6 +126,7 @@ describe('WalkupModal — fee and consent', () => {
   });
 
   it('shows the class fee, the surcharge and the card rental', async () => {
+    await open();
     expect(q('walkup-fee')).toBeNull();
     choose(q<HTMLSelectElement>('walkup-class')!, H21);
     await settle();
@@ -132,6 +138,7 @@ describe('WalkupModal — fee and consent', () => {
   });
 
   it('open class: the birth year decides the youth fee and is sent', async () => {
+    await open();
     choose(q<HTMLSelectElement>('walkup-class')!, GUL);
     await settle();
     expect(q('walkup-fee')?.textContent).toMatch(/Att betala: 270 kr/);
@@ -157,6 +164,7 @@ describe('WalkupModal — fee and consent', () => {
   });
 
   it('an unreadable birth year blocks the save', async () => {
+    await open();
     (q('walkup-name') as HTMLInputElement).value = 'Eva Ek';
     q('walkup-name')!.dispatchEvent(new Event('input', { bubbles: true }));
     choose(q<HTMLSelectElement>('walkup-class')!, H21);
@@ -169,5 +177,36 @@ describe('WalkupModal — fee and consent', () => {
     await settle();
     expect(q('walkup-error')?.textContent).toMatch(/födelseåret/);
     expect(posts).toHaveLength(0);
+  });
+
+  it("picking another runner replaces the card hit's birth year, also with none", async () => {
+    const youthYear = new Date().getFullYear() - 12;
+    const kid = {
+      person_id: 1,
+      family_name: 'Ek',
+      given_name: 'Eva',
+      club_id: null,
+      club_name: null,
+      birth_year: youthYear,
+    };
+    const adult = {
+      person_id: 2,
+      family_name: 'Ek',
+      given_name: 'Anna',
+      club_id: null,
+      club_name: null,
+      birth_year: null,
+    };
+    await open({ hit: true, ...kid, alternatives: 1, allCandidates: [kid, adult] });
+    expect(q<HTMLInputElement>('walkup-birth-year')!.value).toBe(String(youthYear));
+    q('walkup-alternatives-chip')!.click();
+    await settle();
+    q('walkup-alternative-2')!.click();
+    await settle();
+    // Anna's year is unknown: the field is empty, not Eva's year.
+    expect(q<HTMLInputElement>('walkup-birth-year')!.value).toBe('');
+    choose(q<HTMLSelectElement>('walkup-class')!, GUL);
+    await settle();
+    expect(q('walkup-fee')?.textContent).toMatch(/Att betala: 270 kr/);
   });
 });
