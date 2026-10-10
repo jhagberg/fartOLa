@@ -181,6 +181,7 @@ describe('LottningView (mounted)', () => {
   let component: ReturnType<typeof mount> | null = null;
   let posts: Array<{ url: string; body: Record<string, unknown> }>;
   let puts: Array<{ url: string; body: unknown }>;
+  let patches: Array<{ url: string; body: unknown }>;
   let drawAnswer: { status: number; body: unknown };
   let startList: unknown[];
   let seeding: Array<{ id: string; seed_group: number }>;
@@ -209,6 +210,7 @@ describe('LottningView (mounted)', () => {
   beforeEach(() => {
     posts = [];
     puts = [];
+    patches = [];
     startList = [];
     seeding = [];
     previousResults = { results: 0, ok: 0 };
@@ -236,7 +238,10 @@ describe('LottningView (mounted)', () => {
         posts.push({ url, body });
         return json(drawAnswer.body, drawAnswer.status);
       }
-      if (init?.method === 'PATCH') return json({ ok: true });
+      if (init?.method === 'PATCH') {
+        patches.push({ url, body });
+        return json({ ok: true, competitor: {} });
+      }
       if (init?.method === 'PUT') {
         puts.push({ url, body });
         if (url.endsWith('/classes/kinds')) classKindSource = 'operator';
@@ -785,5 +790,21 @@ describe('LottningView (mounted)', () => {
       e.textContent!.trim()
     );
     expect(texts).toEqual(['Ny tid', 'Efteranmäld', 'Omstart', 'Seedad, grupp 1']);
+  });
+
+  it('saving only a bib does not rewrite the start time', async () => {
+    // 00:10 the day after the competition date (an overnight start).
+    const overnight = Date.parse('2026-10-08T22:10:00Z');
+    startList = [{ ...drawnRunner('101'), start_time_ms: overnight }];
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    ($('lottning-edit-time-btn') as HTMLButtonElement).click();
+    await settle();
+    await typeInto('lottning-edit-bib-input', '150');
+    ($('lottning-save-time') as HTMLButtonElement).click();
+    await settle();
+    expect(patches.map((p) => p.url.split('/api/')[1])).toEqual(['competitors/r1/profile']);
+    expect(patches[0]!.body).toEqual({ bib: '150' });
   });
 });

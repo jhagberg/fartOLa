@@ -545,9 +545,13 @@
           return;
         }
       }
-      const { date, offsetMin } = await fetchCompetitionClock(competitionId);
-      const newMs = clockToEpochMs(date, newSec, offsetMin);
-      await patchCompetitorStartTime(competitionId, id, newMs);
+      // An unchanged time is not written: rebuilt from the competition date
+      // it would move a start after midnight back a day.
+      if (runner === undefined || raw !== msToHHMMSS(runner.start_time_ms)) {
+        const { date, offsetMin } = await fetchCompetitionClock(competitionId);
+        const newMs = clockToEpochMs(date, newSec, offsetMin);
+        await patchCompetitorStartTime(competitionId, id, newMs);
+      }
       // Refresh the start list
       await loadStartList();
       cancelEditTime(id);
