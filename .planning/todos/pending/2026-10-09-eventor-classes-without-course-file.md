@@ -27,6 +27,13 @@ files:
    Those entries would be skipped. MeOS keeps the Eventor class id in
    `oClass.ExtId`, and IOF CourseData carries it as
    `ClassCourseAssignment/ClassId`.
+   The short names are the expected ones in a course file: SOFT's course
+   setting guide (Snättringe SK, among SOFT's support documents) says the
+   class names in OCAD must equal the classes' short names in Eventor, as
+   OLA links courses to classes by short name. Eventor's ClassList has
+   both (`H21 Kort` / `ShortName` `H21K`, `D21 Kort` / `D21K`,
+   `Inskolning 2,0` / `Insk. 2,0` at Tuna Ting); its EntryList has only the
+   class id and the long name.
 
 ## Fix
 
@@ -34,8 +41,9 @@ files:
   from Eventor's class list (`eventclasses`, already fetched for class
   kinds) with their Eventor class id, so entries can be imported before
   any course file.
-- Store the Eventor class id on the class. Match entries and course
-  assignments by that id first, by name second.
+- Store the Eventor class id and short name on the class. Match entries
+  by class id; match course assignments by class id, then short name,
+  then name.
 - A later course file then attaches courses to the existing classes
   (by class id, else name) instead of creating new ones.
 
