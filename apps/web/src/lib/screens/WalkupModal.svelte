@@ -863,6 +863,7 @@
     font-weight: 600;
   }
   .fee-parts {
+    display: inline-block;
     font-weight: 400;
     color: var(--fg-muted);
   }
@@ -877,7 +878,7 @@
     flex-direction: column;
     gap: 10px;
     padding: 10px 12px;
-    background: var(--bg-soft, rgba(0, 0, 0, 0.03));
+    background: var(--bg-sunken);
     border-radius: var(--radius);
   }
   .banner {
@@ -985,7 +986,7 @@
     gap: 2px;
   }
   .alternatives-candidate:hover {
-    background: var(--bg-soft, rgba(0, 0, 0, 0.04));
+    background: var(--bg-sunken);
   }
   .alternatives-candidate + .alternatives-candidate {
     border-top: 1px solid var(--border);

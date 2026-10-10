@@ -329,7 +329,7 @@
     padding: 12px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: var(--bg-soft, rgba(0, 0, 0, 0.03));
+    background: var(--bg-sunken);
     display: flex;
     flex-direction: column;
     gap: 6px;
