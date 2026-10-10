@@ -54,6 +54,8 @@
   let { competitionId }: Props = $props();
 
   let competition: CompetitionDTO | null = $state(null);
+  /** Bumped when a class kind is saved, to reload the fees. */
+  let feesKey = $state(0);
   let classes: ClassDTO[] = $state([]);
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
@@ -402,7 +404,7 @@
       {#if classes.length === 0}
         <p class="empty">{t('info.classes.empty')}</p>
       {:else}
-        <ClassKindsPanel {competitionId} details={classDetails} />
+        <ClassKindsPanel {competitionId} details={classDetails} onSaved={() => feesKey++} />
       {/if}
     </section>
 
@@ -411,7 +413,11 @@
       <header class="card-head">
         <h2>{t('fees.heading')}</h2>
       </header>
-      <FeesPanel {competitionId} eventorLinked={competition?.eventor_event_id != null} />
+      <!-- Remounted after a class kind is saved: the kind decides the youth
+           fee field and the cap shown. -->
+      {#key feesKey}
+        <FeesPanel {competitionId} eventorLinked={competition?.eventor_event_id != null} />
+      {/key}
     </section>
 
     <!-- Courses with ordered control codes -->
