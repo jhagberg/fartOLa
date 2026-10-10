@@ -74,6 +74,10 @@ export interface ExportInput {
   /** Competitor id → Eventor person id (EntryList import), written as
    * Person > Id so Eventor links the results (SOFT TA till TR 7.8.3). */
   eventorPersonIds?: ReadonlyMap<string, number>;
+  /** Competitor id → the fees fartOLa charged (SOFT TR 4.12.4, 4.12.6):
+   * class fee and surcharge of a walk-up or late entry (null for a
+   * pre-entry, whose fee Eventor decided) and the card rental fee. */
+  fees?: ReadonlyMap<string, RunnerFees>;
   state: CompetitionState;
   status?: ExportStatus;
   /** Creator attribute on the root element. Defaults to `fartOLa v0.1`. Tests
@@ -82,6 +86,12 @@ export interface ExportInput {
   /** Override `Date.now()` for deterministic createTime. Tests pin this so
    * the frozen-fixture round-trip is byte-stable. */
   now?: () => Date;
+}
+
+export interface RunnerFees {
+  entry: number | null;
+  late: number | null;
+  card: number | null;
 }
 
 export interface ExportSummary {
@@ -221,12 +231,24 @@ export function resultListStatusFor(input: ExportStatus): 'Complete' | 'Snapshot
 // every push.
 // ---------------------------------------------------------------------------
 
+interface FeeNode {
+  '@_type'?: 'Normal' | 'Late';
+  Name: string;
+  Amount: { '@_currency': 'SEK'; '#text': number };
+}
+
 interface ResultNode {
   StartTime?: string;
   FinishTime?: string;
   Time?: number;
   Position?: number;
   Status: IofResultStatus;
+  AssignedFee?: { Fee: FeeNode }[];
+  ServiceRequest?: {
+    Service: { '@_type': 'RentalCard'; Name: string };
+    RequestedQuantity: 1;
+    AssignedFee: { Fee: FeeNode };
+  };
 }
 
 interface PersonResultNode {
@@ -305,7 +327,8 @@ function buildPersonResult(
   place: number | null,
   cls: ClassDTO,
   eventorPersonId: number | undefined,
-  clockOffsetMin: number
+  clockOffsetMin: number,
+  fees: RunnerFees | undefined
 ): PersonResultNode | null {
   const xmlStatus = statusForXml(view.status);
   if (xmlStatus === null) return null;
@@ -347,8 +370,31 @@ function buildPersonResult(
     // PersonRaceResult documentation).
     result.Position = place;
   }
-  // Status is required and MUST be the trailing key of the keys we emit.
+  // Status is required and comes after the timing keys.
   result.Status = xmlStatus;
+  // After Status in PersonRaceResult: AssignedFee*, ServiceRequest*. The
+  // class fee and the surcharge are separate fees, "Normal" and "Late", and
+  // a rental card is a ServiceRequest of type "RentalCard", as MeOS writes
+  // them (iof30interface.cpp:2838-2915, writeAssignedFee and
+  // writeRentalCardService); SOFT TR 4.12.9 wants the late fee apart from
+  // the base fee. No PaidAmount: fartOLa takes no payments.
+  const amount = (n: number) => ({ '@_currency': 'SEK' as const, '#text': n });
+  const assigned: { Fee: FeeNode }[] = [];
+  if (fees?.entry != null)
+    assigned.push({
+      Fee: { '@_type': 'Normal', Name: 'Anmälningsavgift', Amount: amount(fees.entry) },
+    });
+  if (fees?.late != null && fees.late > 0)
+    assigned.push({
+      Fee: { '@_type': 'Late', Name: 'Efteranmälningsavgift', Amount: amount(fees.late) },
+    });
+  if (assigned.length > 0) result.AssignedFee = assigned;
+  if (fees?.card != null && fees.card > 0)
+    result.ServiceRequest = {
+      Service: { '@_type': 'RentalCard', Name: 'Hyrbricka' },
+      RequestedQuantity: 1,
+      AssignedFee: { Fee: { Name: 'Brickhyra', Amount: amount(fees.card) } },
+    };
 
   // PersonResult sequence order per IOF.xsd lines 2360-2404:
   // EntryId?, Person, Organisation?, Result*, Extensions?. We emit
@@ -413,7 +459,8 @@ export function buildResultListXml(input: ExportInput): BuildResult {
         row.place,
         cls,
         input.eventorPersonIds?.get(view.id),
-        input.competition.clock_offset_min
+        input.competition.clock_offset_min,
+        input.fees?.get(view.id)
       );
       if (node === null) {
         pendingCount += 1; // PEND: no result yet, left out

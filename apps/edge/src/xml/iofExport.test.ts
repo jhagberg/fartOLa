@@ -525,6 +525,39 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
     }
   });
 
+  test('SOFT TR 4.12.4, 4.12.6, 4.12.9: fees fartOLa charged go out as AssignedFee (Normal, Late) and a RentalCard ServiceRequest, XSD-valid', async () => {
+    const res = await validateAndBuild(
+      makeInput({
+        fees: new Map([
+          ['cmp-anna', { entry: 180, late: 180, card: 30 }],
+          ['cmp-bo', { entry: null, late: null, card: 30 }],
+          ['cmp-cia', { entry: 90, late: 0, card: null }],
+        ]),
+      })
+    );
+    if (!res.valid) assert.fail(`XSD-invalid: ${JSON.stringify(res.errors)}`);
+    const xml = res.build.xml;
+    const person = (family: string) =>
+      new RegExp(`<Family>${family}</Family>[\\s\\S]*?</PersonResult>`).exec(xml)![0];
+    const anna = person('Andersson');
+    assert.match(
+      anna,
+      /<Status>OK<\/Status>\s*<AssignedFee>\s*<Fee type="Normal">\s*<Name>Anmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>\s*<\/Fee>\s*<\/AssignedFee>\s*<AssignedFee>\s*<Fee type="Late">\s*<Name>Efteranmälningsavgift<\/Name>\s*<Amount currency="SEK">180<\/Amount>/
+    );
+    assert.match(
+      anna,
+      /<ServiceRequest>\s*<Service type="RentalCard">\s*<Name>Hyrbricka<\/Name>\s*<\/Service>\s*<RequestedQuantity>1<\/RequestedQuantity>\s*<AssignedFee>\s*<Fee>\s*<Name>Brickhyra<\/Name>\s*<Amount currency="SEK">30<\/Amount>/
+    );
+    // A pre-entry with a hired card: only the rental, no entry fee.
+    const bo = person('Berg');
+    assert.doesNotMatch(bo, /<AssignedFee>\s*<Fee type=/);
+    assert.match(bo, /<Service type="RentalCard">/);
+    // No surcharge, no Late fee; own card, no ServiceRequest.
+    const cia = person('Carlsson');
+    assert.equal(cia.match(/<AssignedFee>/g)?.length, 1);
+    assert.doesNotMatch(cia, /ServiceRequest/);
+  });
+
   test('test 8: round-trip parse confirms structural fields', () => {
     const { xml } = buildResultListXml(makeInput());
     const parser = new XMLParser({
