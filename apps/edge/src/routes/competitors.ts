@@ -91,8 +91,8 @@ const PatchConsentSchema = z.object({
 
 // PATCH /api/competitors/:id/profile body schema (this session, not a plan).
 // Operator-driven edits to an existing competitor row — name, club, class
-// assignment, or card number. Each field is optional; an empty body is a
-// 200 no-op. Card-number changes emit a card_bound event so the projection
+// assignment, card number or bib (SOFT TR 7.5.4; '' or null clears it). Each
+// field is optional; an empty body is a 200 no-op. Card-number changes emit a card_bound event so the projection
 // can re-match pending reads to the corrected card.
 const PatchProfileSchema = z
   .object({
@@ -100,6 +100,7 @@ const PatchProfileSchema = z
     club: z.string().trim().max(120).nullable().optional(),
     class_id: z.string().uuid().optional(),
     card_number: z.number().int().positive().nullable().optional(),
+    bib: z.string().trim().max(16).nullable().optional(),
   })
   .strict();
 
@@ -142,6 +143,7 @@ function competitorRowToDTO(row: Competitor): CompetitorDTO {
     consent_status: row.consentStatus,
     scrubbed_at_ms: row.scrubbedAtMs,
     start_time_ms: row.startTimeMs ?? null,
+    bib: row.bib,
   };
 }
 
@@ -355,6 +357,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         consent_status: target.consentStatus,
         scrubbed_at_ms: target.scrubbedAtMs,
         start_time_ms: target.startTimeMs ?? null,
+        bib: target.bib,
       };
       // card_event: the logged change, for POST .../card-binds/undo.
       return reply.code(200).send({
@@ -556,6 +559,7 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       consent_status: 'explicit',
       scrubbed_at_ms: null,
       start_time_ms: null,
+      bib: null,
     };
     return reply.code(201).send(dto);
   });
@@ -672,6 +676,18 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         }
       }
       update.cardNumber = candidate;
+    }
+    if (parsed.data.bib !== undefined) {
+      const bib = parsed.data.bib === '' ? null : parsed.data.bib;
+      if (bib !== null && bib !== row.bib) {
+        const clash = app.fartolaDb.db
+          .select({ id: competitors.id })
+          .from(competitors)
+          .where(and(eq(competitors.competitionId, row.competitionId), eq(competitors.bib, bib)))
+          .get();
+        if (clash) return reply.code(409).send({ error: 'bib_taken', bib });
+      }
+      update.bib = bib;
     }
 
     if (Object.keys(update).length === 0) {

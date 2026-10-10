@@ -1259,3 +1259,45 @@ describe('PATCH /api/competitions/:id/competitors/:competitorId/start-time', () 
     assert.equal(cross.statusCode, 404);
   });
 });
+
+describe('PATCH /api/competitors/:id/profile — bib (SOFT TR 7.5.4)', () => {
+  let ctx: Ctx;
+
+  beforeEach(async () => {
+    ctx = await boot();
+  });
+
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  test('sets a bib by hand, refuses one another runner has (409), and empty clears it', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const add = async (name: string) =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: '/api/competitors',
+            payload: { competition_id: competitionId, name, class_id: classId, consent: true },
+          })
+        ).json() as { id: string }
+      ).id;
+    const anna = await add('Anna');
+    const bo = await add('Bo');
+    const patch = (id: string, bib: string | null) =>
+      ctx.app.inject({ method: 'PATCH', url: `/api/competitors/${id}/profile`, payload: { bib } });
+
+    let res = await patch(anna, ' 101 ');
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal((res.json() as { competitor: { bib: string } }).competitor.bib, '101');
+    res = await patch(bo, '101');
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.json(), { error: 'bib_taken', bib: '101' });
+    assert.equal((await patch(anna, '101')).statusCode, 200, 'keeping its own bib is fine');
+    res = await patch(anna, '');
+    assert.equal((res.json() as { competitor: { bib: string | null } }).competitor.bib, null);
+    assert.equal((await patch(bo, '101')).statusCode, 200);
+  });
+});
