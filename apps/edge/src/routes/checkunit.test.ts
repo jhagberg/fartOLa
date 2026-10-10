@@ -308,4 +308,28 @@ describe('checkunit', () => {
     assert.equal(body.error, 'station_asleep');
     assert.match(body.message, /wake|asleep|dip/i);
   });
+
+  test('SOFT TR 4.22.1: a snapshot is stored and feeds GET in-forest with no reader', async () => {
+    ctx.app.bridgeLifecycles = [makeLifecycle(makeStationWithCards(1428824, 7501853))];
+    const snap = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/checkunit/snapshot`,
+    });
+    assert.equal(snap.statusCode, 200);
+    const body = JSON.parse(snap.body) as { checkunit: string; sources: Record<string, unknown> };
+    assert.equal(body.checkunit, 'read');
+    assert.deepEqual(body.sources['1428824'], [{ kind: 'checkunit' }]);
+
+    ctx.app.bridgeLifecycles = [];
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${ctx.competitionId}/in-forest`,
+    });
+    const list = JSON.parse(res.body) as {
+      runners: Array<{ card_number: number }>;
+      updated: { checkunit_read_at_ms: number | null };
+    };
+    assert.deepEqual(list.runners.map((r) => r.card_number).sort(), [1428824, 7501853]);
+    assert.ok(list.updated.checkunit_read_at_ms !== null);
+  });
 });

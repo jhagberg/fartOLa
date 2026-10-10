@@ -406,6 +406,11 @@ export const competitions = sqliteTable('competitions', {
   rocFinishCodes: text('roc_finish_codes'),
   /** SOFT TR 4.12.4 — card rental fee in kronor; NULL = none. Migration 0025. */
   cardFee: integer('card_fee'),
+  /** Latest check-unit (BSF8) read: JSON array of card numbers; NULL = never
+   * read. Migration 0026. */
+  checkunitCards: text('checkunit_cards'),
+  checkunitOverflow: integer('checkunit_overflow', { mode: 'boolean' }),
+  checkunitReadAtMs: integer('checkunit_read_at_ms'),
 });
 
 // ---------------------------------------------------------------------------
