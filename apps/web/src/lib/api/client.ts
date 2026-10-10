@@ -478,6 +478,8 @@ export interface CompetitorProfilePatch {
   club?: string | null;
   class_id?: string;
   card_number?: number | null;
+  /** SOFT TR 7.5.4: '' or null clears it. */
+  bib?: string | null;
 }
 
 export function editCompetitorProfile(
@@ -1152,6 +1154,8 @@ export interface StartListEntry {
   start_time_ms: number | null;
   /** Seeding group (1 = strongest, SOFT TR 7.4.5); null = unseeded. */
   seed_group: number | null;
+  /** Bib (startnummer, SOFT TR 7.5.4); null = none. */
+  bib: string | null;
 }
 
 export interface LottningResponse {
@@ -1170,6 +1174,11 @@ export interface LottningResponse {
     free_start_banned?: boolean | null;
     /** Named runners of the class without a start time. */
     without_start_time?: number;
+    /** SOFT TR 7.5.4: bib numbering, start place and course length. */
+    bib_prefix: string | null;
+    bib_base: number | null;
+    start_name: string | null;
+    course_length_m: number | null;
   };
   start_list: StartListEntry[];
   /** Stored seeding groups of every runner in the class, drawn or not. */
@@ -1204,6 +1213,20 @@ export function putSeeding(
   );
 }
 
+/** POST …/lottning/:classId/bibs — number the class's bibs from the base in
+ * start order and store the numbering on the class (SOFT TR 7.5.4). 409
+ * bib_taken when a bib belongs to a runner in another class. */
+export function postBibs(
+  competitionId: string,
+  classId: string,
+  body: { bib_prefix: string | null; bib_base: number }
+): Promise<{ numbered: number }> {
+  return apiFetch(
+    `/api/competitions/${encodeURIComponent(competitionId)}/lottning/${encodeURIComponent(classId)}/bibs`,
+    { method: 'POST', body }
+  );
+}
+
 /** GET /api/competitions/:id/lottning/:classId — fetch the current start list
  * for a class, sorted by start_time_ms ascending. */
 export function getLottning(competitionId: string, classId: string): Promise<LottningResponse> {
@@ -1217,7 +1240,12 @@ export function getLottning(competitionId: string, classId: string): Promise<Lot
 export function patchClass(
   competitionId: string,
   classId: string,
-  body: { maxTimeSec?: number | null; no_timing?: boolean; start_method?: StartMethod }
+  body: {
+    maxTimeSec?: number | null;
+    no_timing?: boolean;
+    start_method?: StartMethod;
+    start_name?: string | null;
+  }
 ): Promise<{ ok: true }> {
   return apiFetch(
     `/api/competitions/${encodeURIComponent(competitionId)}/classes/${encodeURIComponent(classId)}`,

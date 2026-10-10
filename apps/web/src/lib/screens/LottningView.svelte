@@ -14,6 +14,10 @@
   After drawing, shows the sorted start list with assigned start times.
   Re-lotta asks for confirmation before clearing and redrawing.
   Per-runner inline start-time edit is via PATCH competitor start_time_ms.
+  SOFT TR 7.5.4: the start list shows the class's start place and course
+  length, and a bib column once the class has bibs; bibs are numbered in
+  start order (again after every whole-class draw) and can be changed per
+  runner in the same inline edit.
 
   Locked by:
   - 02.1-05-PLAN.md task 1
@@ -31,6 +35,8 @@
     patchClass,
     patchCompetitorStartTime,
     putSeeding,
+    postBibs,
+    editCompetitorProfile,
     type DrawMode,
     type DrawType,
     type LottningResponse,
@@ -62,6 +68,7 @@
     DRAW_MODES,
     DRAW_TYPES,
     VACANT_POSITIONS,
+    bibTakenOf,
     buildLottningBody,
     closingMoved,
     lateEntrantsAllowed,
@@ -142,7 +149,13 @@
   let historyKey = $state(0);
 
   /** Start list after a draw or on initial load. */
-  let startList: Array<{ id: string; name: string; club: string | null; card_number: number | null; start_time_ms: number | null; seed_group: number | null }> = $state([]);
+  let startList: LottningResponse['start_list'] = $state([]);
+  /** The class fields of the last load (SOFT TR 7.5.4). */
+  let classInfo = $state<LottningResponse['class'] | null>(null);
+  /** Bib numbering form; filled from the class on load. */
+  let bibPrefix = $state('');
+  let bibBaseInput = $state('');
+  let startNameInput = $state('');
   let startListLoaded = $state(false);
 
   /** Re-lotta confirmation dialog state. */
@@ -150,6 +163,8 @@
 
   /** Per-runner inline edit state. Key = competitor id, value = HH:MM:SS string. */
   let editingStartTime: Record<string, string> = $state({});
+  /** The bib typed in the same inline edit. */
+  let editingBib: Record<string, string> = $state({});
   let savingStartTime: Record<string, boolean> = $state({});
 
   // --- lifecycle ------------------------------------------------------------
@@ -197,6 +212,10 @@
       }
       lottClass = res.class;
       startList = res.start_list;
+      classInfo = res.class;
+      bibPrefix = res.class.bib_prefix ?? '';
+      bibBaseInput = res.class.bib_base === null ? '' : String(res.class.bib_base);
+      startNameInput = res.class.start_name ?? '';
       previousResults = { classId, ...res.previous_results };
       // A late-entrant choice only means something next to an existing list.
       if (startList.length === 0) drawType = 'All';
@@ -213,6 +232,7 @@
     } catch {
       if (mine !== loadGeneration) return;
       startList = [];
+      classInfo = null;
       classRunners = [];
       previousResults = null;
       lottClass = null;
@@ -223,6 +243,7 @@
   async function onClassChange(): Promise<void> {
     startListLoaded = false;
     startList = [];
+    classInfo = null;
     previousResults = null;
     lottClass = null;
     refusal = null;
@@ -322,6 +343,8 @@
     const classId = selectedClassId;
     const className = selectedClassName;
     const mode = drawMode;
+    // The class's bib numbering, renumbered after a whole-class draw.
+    const bibs = classInfo?.id === classId && classInfo.bib_base != null ? classInfo : null;
     const settings = {
       drawType: effectiveDrawType,
       firstStartHHMM,
@@ -365,6 +388,19 @@
       const res = await postLottning(competitionId, classId, body);
       done = summaryOf(res, className);
       closingMove = closingMoved(res);
+      // A whole-class draw changes the start order: the class's bibs follow it.
+      if (settings.drawType === 'All' && bibs !== null) {
+        try {
+          await postBibs(competitionId, classId, {
+            bib_prefix: bibs.bib_prefix,
+            bib_base: bibs.bib_base!,
+          });
+        } catch (e) {
+          const bib = bibTakenOf(e);
+          error =
+            bib !== null ? t('lottning.bibs.err.taken', { bib }) : (e as Error).message;
+        }
+      }
       await loadStartList();
     } catch (e) {
       refusal = refusalOf(e, className);
@@ -419,16 +455,66 @@
     }
   }
 
+  // --- SOFT TR 7.5.4: start place and bibs ---------------------------------
+
+  async function saveStartName(): Promise<void> {
+    if (!selectedClassId) return;
+    try {
+      await patchClass(competitionId, selectedClassId, {
+        start_name: startNameInput.trim() || null,
+      });
+      await loadStartList();
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
+  let numbering = $state(false);
+  async function assignBibs(): Promise<void> {
+    if (!selectedClassId) return;
+    const bibBase = Number(bibBaseInput.trim());
+    if (!/^\d+$/.test(bibBaseInput.trim()) || bibBase > 99999) {
+      error = t('lottning.bibs.err.base');
+      return;
+    }
+    const prefix = bibPrefix.trim() || null;
+    numbering = true;
+    error = null;
+    done = null;
+    try {
+      const res = await postBibs(competitionId, selectedClassId, {
+        bib_prefix: prefix,
+        bib_base: bibBase,
+      });
+      done = t('lottning.bibs.done', { count: res.numbered, first: `${prefix ?? ''}${bibBase}` });
+      await loadStartList();
+    } catch (e) {
+      const bib = bibTakenOf(e);
+      error = bib !== null ? t('lottning.bibs.err.taken', { bib }) : (e as Error).message;
+    } finally {
+      numbering = false;
+    }
+  }
+
+  /** The bib column shows once the class is numbered or a runner has one. */
+  const showBibs = $derived(
+    classInfo?.bib_base != null || startList.some((r) => r.bib !== null)
+  );
+
   // --- per-runner start-time inline edit -----------------------------------
 
-  function startEditTime(id: string, currentMs: number | null): void {
+  function startEditTime(id: string, currentMs: number | null, bib: string | null): void {
     editingStartTime = { ...editingStartTime, [id]: msToHHMMSS(currentMs) };
+    editingBib = { ...editingBib, [id]: bib ?? '' };
   }
 
   function cancelEditTime(id: string): void {
     const next = { ...editingStartTime };
     delete next[id];
     editingStartTime = next;
+    const nextBib = { ...editingBib };
+    delete nextBib[id];
+    editingBib = nextBib;
   }
 
   async function saveEditTime(id: string): Promise<void> {
@@ -446,8 +532,19 @@
       newSec = h * 3600 + m * 60 + s;
     }
     if (newSec === null) { cancelEditTime(id); return; }
+    const runner = startList.find((r) => r.id === id);
+    const bib = (editingBib[id] ?? '').trim();
     savingStartTime = { ...savingStartTime, [id]: true };
     try {
+      if (runner !== undefined && bib !== (runner.bib ?? '')) {
+        try {
+          await editCompetitorProfile(id, { bib: bib || null });
+        } catch (e) {
+          const taken = bibTakenOf(e);
+          error = taken !== null ? t('lottning.bibs.err.takenOne', { bib: taken }) : (e as Error).message;
+          return;
+        }
+      }
       const { date, offsetMin } = await fetchCompetitionClock(competitionId);
       const newMs = clockToEpochMs(date, newSec, offsetMin);
       await patchCompetitorStartTime(competitionId, id, newMs);
@@ -771,6 +868,46 @@
       </Select>
     </Field>
 
+    <!-- SOFT TR 7.5.4: start place and bibs -->
+    <Field label={t('lottning.startName')} hint={t('lottning.startNameHint')} htmlFor="lottning-start-name">
+      <div class="max-time-row">
+        <Input
+          id="lottning-start-name"
+          type="text"
+          placeholder="Start 1"
+          bind:value={startNameInput}
+          disabled={!selectedClassId}
+          data-testid="lottning-start-name"
+        />
+        <Button variant="secondary" onclick={saveStartName} disabled={!selectedClassId} data-testid="lottning-start-name-save">
+          {t('info.save')}
+        </Button>
+      </div>
+    </Field>
+
+    <fieldset class="group" data-testid="lottning-bibs">
+      <legend>{t('lottning.bibs.legend')}</legend>
+      <p class="hint">{t('lottning.bibs.hint')}</p>
+      <div class="bib-row">
+        <Field label={t('lottning.bibs.prefix')} htmlFor="lottning-bib-prefix">
+          <Input id="lottning-bib-prefix" type="text" maxlength={8} bind:value={bibPrefix} data-testid="lottning-bib-prefix" />
+        </Field>
+        <Field label={t('lottning.bibs.base')} htmlFor="lottning-bib-base">
+          <Input id="lottning-bib-base" type="text" inputmode="numeric" placeholder="101" bind:value={bibBaseInput} data-testid="lottning-bib-base" />
+        </Field>
+      </div>
+      <div class="draw-btn-row">
+        <Button
+          variant="secondary"
+          onclick={() => void assignBibs()}
+          disabled={numbering || !selectedClassId || startList.length === 0}
+          data-testid="lottning-bibs-assign"
+        >
+          {t('lottning.bibs.assign')}
+        </Button>
+      </div>
+    </fieldset>
+
     {#if error}
       <p class="err" role="alert">{error}</p>
     {/if}
@@ -861,10 +998,25 @@
       <h2 class="start-list-heading">
         {t('lottning.drawn', { count: startList.length })}
       </h2>
+      {#if classInfo?.start_name || classInfo?.course_length_m != null}
+        <p class="class-info" data-testid="lottning-class-info">
+          {[
+            classInfo?.start_name ? t('lottning.classInfo.startName', { name: classInfo.start_name }) : null,
+            classInfo?.course_length_m != null
+              ? t('lottning.classInfo.length', { length: classInfo.course_length_m })
+              : null,
+          ]
+            .filter((x) => x !== null)
+            .join(' · ')}
+        </p>
+      {/if}
       <table class="start-table" data-testid="lottning-table">
         <thead>
           <tr>
             <th class="col-pos">#</th>
+            {#if showBibs}
+              <th class="col-bib">{t('lottning.bibs.col')}</th>
+            {/if}
             <th class="col-name">{t('runners.addSheet.nameLabel')}</th>
             <th class="col-club">{t('runners.addSheet.clubLabel')}</th>
             <th class="col-start">{t('common.startTime')}</th>
@@ -875,6 +1027,23 @@
           {#each startList as runner, i (runner.id)}
             <tr data-testid="lottning-row">
               <td class="col-pos mono">{i + 1}</td>
+              {#if showBibs}
+                <td class="col-bib mono" data-testid="lottning-bib">
+                  {#if editingBib[runner.id] !== undefined}
+                    <input
+                      type="text"
+                      class="bib-edit-input"
+                      maxlength="16"
+                      aria-label={t('lottning.bibs.col')}
+                      value={editingBib[runner.id]}
+                      oninput={(e) => { editingBib = { ...editingBib, [runner.id]: (e.currentTarget as HTMLInputElement).value }; }}
+                      data-testid="lottning-edit-bib-input"
+                    />
+                  {:else}
+                    {runner.bib ?? '—'}
+                  {/if}
+                </td>
+              {/if}
               <td class="col-name">{runner.name}</td>
               <td class="col-club">{runner.club ?? '—'}</td>
               <td class="col-start mono">
@@ -912,7 +1081,7 @@
                   <button
                     type="button"
                     class="edit-btn"
-                    onclick={() => startEditTime(runner.id, runner.start_time_ms)}
+                    onclick={() => startEditTime(runner.id, runner.start_time_ms, runner.bib)}
                     data-testid="lottning-edit-time-btn"
                   >{t('runners.row.edit')}</button>
                 {/if}
@@ -1111,6 +1280,23 @@
   }
   .col-name {
     min-width: 8rem;
+  }
+  .col-bib {
+    width: 4.5rem;
+    white-space: nowrap;
+  }
+  .bib-edit-input {
+    width: 4.5rem;
+    font-family: var(--font-mono);
+  }
+  .bib-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+  }
+  .class-info {
+    margin: 0;
+    font-size: var(--fs-body);
   }
   .col-club {
     color: var(--fg-muted);

@@ -685,4 +685,88 @@ describe('LottningView (mounted)', () => {
     expect($('lottning-redraw-confirm')).toBeNull();
     expect(posts[0]!.body).toEqual({ mode: 'SOFT', drawType: 'RemainingAfter', intervalSec: 120 });
   });
+
+  // ---- SOFT TR 7.5.4: start place, course length and bibs ------------------
+  const drawnRunner = (bib: string | null) => ({
+    id: 'r1',
+    name: 'Anna',
+    club: 'OK A',
+    card_number: null,
+    start_time_ms: 1,
+    seed_group: null,
+    bib,
+  });
+  const typeInto = async (id: string, value: string) => {
+    const el = $(id) as HTMLInputElement;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+  };
+
+  it('SOFT TR 7.5.4: the start list shows start place, course length and the bib column', async () => {
+    startList = [drawnRunner('A101')];
+    h12Class = { start_name: 'Start 1', course_length_m: 5400, bib_prefix: 'A', bib_base: 101 };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    expect($('lottning-class-info')!.textContent!.trim()).toBe(
+      'Startplats: Start 1 · Banlängd: 5400 m'
+    );
+    expect($('lottning-bib')!.textContent!.trim()).toBe('A101');
+    expect(($('lottning-bib-base') as HTMLInputElement).value).toBe('101');
+  });
+
+  it('SOFT TR 7.5.4: no bib column while the class has no bibs', async () => {
+    startList = [drawnRunner(null)];
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    expect($('lottning-bib')).toBeNull();
+    expect($('lottning-class-info')).toBeNull();
+  });
+
+  it('SOFT TR 7.5.4: Numrera sends the prefix and first number and says what it did', async () => {
+    startList = [drawnRunner(null)];
+    drawAnswer = { status: 200, body: { numbered: 1 } };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await typeInto('lottning-bib-prefix', 'A');
+    await typeInto('lottning-bib-base', '101');
+    ($('lottning-bibs-assign') as HTMLButtonElement).click();
+    await settle();
+    expect(posts[0]!.url).toContain('/lottning/h12/bibs');
+    expect(posts[0]!.body).toEqual({ bib_prefix: 'A', bib_base: 101 });
+    expect($('lottning-done')!.textContent).toBe(
+      'Klart: 1 löpare fick startnummer, A101 och uppåt.'
+    );
+  });
+
+  it('SOFT TR 7.5.4: a bib used in another class is refused with the number', async () => {
+    startList = [drawnRunner(null)];
+    drawAnswer = { status: 409, body: { error: 'bib_taken', bib: '103' } };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    await typeInto('lottning-bib-base', '101');
+    ($('lottning-bibs-assign') as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector('.err')!.textContent).toBe(
+      'Startnummer 103 finns redan i en annan klass. Välj ett annat första nummer.'
+    );
+  });
+
+  it('SOFT TR 7.5.4: a whole-class redraw renumbers the bibs in the new start order', async () => {
+    startList = [drawnRunner('7')];
+    h12Class = { bib_prefix: null, bib_base: 7 };
+    const { default: LottningView } = await import('./LottningView.svelte');
+    component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    ($('lottning-redraw-yes') as HTMLButtonElement).click();
+    await settle();
+    expect(posts.map((p) => p.url.split('/lottning/')[1])).toEqual(['h12', 'h12/bibs']);
+    expect(posts[1]!.body).toEqual({ bib_prefix: null, bib_base: 7 });
+  });
 });
