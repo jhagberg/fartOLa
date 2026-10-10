@@ -18,8 +18,8 @@ test('the pre-race check lists problems, a fix clears them, and the card registe
   page,
   request,
 }) => {
-  // H21 runs 35 controls: more than an SI5 holds.
-  const { competitionId: id } = await seedCompetition(request, { controls: 35 });
+  // H21 runs 37 controls: more than an SI5 holds.
+  const { competitionId: id } = await seedCompetition(request, { controls: 37 });
   const classes = (await (await request.get(`${BASE}/api/competitions/${id}/classes`)).json()) as {
     classes: Array<{ id: string; name: string }>;
   };
@@ -43,7 +43,7 @@ test('the pre-race check lists problems, a fix clears them, and the card registe
   await expect(noCard).toContainText('Bo Berg');
   const small = page.getByTestId('prerace-section-cardTooSmall');
   await expect(small).toContainText('Eva Femma');
-  await expect(small).toContainText('30 platser, banan har 35 kontroller');
+  await expect(small).toContainText('36 platser, banan har 37 kontroller');
   await expect(page.getByTestId('prerace-section-noClub')).toContainText('Eva Femma');
   await expect(
     page.getByTestId('prerace-section-noCourse').getByTestId('prerace-count')

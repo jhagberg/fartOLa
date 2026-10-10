@@ -12,7 +12,10 @@
 //   - no_name: a name under two characters (TR 7.5.1, an entry without a
 //     name is not drawn); entry refuses it, an imported row may not.
 //   - card_too_small: the class course has more controls than the card has
-//     punch slots (si/cardCapacity.ts), e.g. an SI5 on a long course.
+//     punch slots (si/cardCapacity.ts), e.g. an SI5 on a course over 36.
+//   - splits_missing: a soft warning, not a fault: the course fits on the
+//     card but has more controls than the card stores with time (an SI5
+//     over 30), so the course is checked but splits after 30 are missing.
 //   - classes_without_course: a class with runners but no course.
 //
 // MeOS's "Löpare utan klass" and "SI-dubbletter" cannot happen here:
@@ -44,6 +47,7 @@ export interface PreRaceCheck {
   no_club: PreRaceRunner[];
   no_name: PreRaceRunner[];
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
+  splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
@@ -108,6 +112,7 @@ export function preRaceCheck(
     no_club: [],
     no_name: [],
     card_too_small: [],
+    splits_missing: [],
     classes_without_course: [],
   };
   const runnersPerClass = new Map<string, number>();
@@ -126,8 +131,10 @@ export function preRaceCheck(
     if (v.name.trim().length < 2) out.no_name.push(row(v));
     const controls = controlsByClass.get(v.class_id);
     const capacity = v.card_number === null ? null : cardPunchCapacity(v.card_number);
-    if (controls !== undefined && capacity !== null && controls > capacity) {
-      out.card_too_small.push({ ...row(v), capacity, controls });
+    if (controls !== undefined && capacity !== null && controls > capacity.punches) {
+      out.card_too_small.push({ ...row(v), capacity: capacity.punches, controls });
+    } else if (controls !== undefined && capacity !== null && controls > capacity.timed) {
+      out.splits_missing.push({ ...row(v), timed: capacity.timed, controls });
     }
   }
   for (const cls of [...input.classes].sort((a, b) => a.name.localeCompare(b.name, 'sv'))) {

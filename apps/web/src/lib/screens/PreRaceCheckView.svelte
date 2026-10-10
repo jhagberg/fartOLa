@@ -101,6 +101,8 @@
     title: string;
     rule: string;
     rows: Row[];
+    /** A warning, not a fault: shown with the info icon, not counted. */
+    soft?: boolean;
     action?: { label: string; href: string };
   }
 
@@ -147,6 +149,18 @@
         ),
       },
       {
+        key: 'splitsMissing',
+        title: t('prerace.splitsMissing.title'),
+        rule: t('prerace.splitsMissing.rule'),
+        rows: runnerRows(check.splits_missing, (i) =>
+          t('prerace.splitsMissing.detail', {
+            timed: check!.splits_missing[i]!.timed,
+            controls: check!.splits_missing[i]!.controls,
+          })
+        ),
+        soft: true,
+      },
+      {
         key: 'noCourse',
         title: t('prerace.noCourse.title'),
         rule: t('prerace.noCourse.rule'),
@@ -175,7 +189,7 @@
     ];
   });
 
-  const issueCount = $derived(sections.reduce((n, s) => n + s.rows.length, 0));
+  const issueCount = $derived(sections.reduce((n, s) => n + (s.soft ? 0 : s.rows.length), 0));
   const visibleCards = $derived(filterCardRows(cardRows, query));
 
   function toggleAll(key: string): void {
@@ -240,8 +254,15 @@
     {#each sections as s (s.key)}
       {@const shown = expanded.has(s.key) ? s.rows : s.rows.slice(0, SHOW)}
       <section class="card" data-testid={`prerace-section-${s.key}`}>
-        <header class="section-head" class:clear={s.rows.length === 0}>
-          <Icon name={s.rows.length === 0 ? 'check' : 'alert-triangle'} size={20} />
+        <header
+          class="section-head"
+          class:clear={s.rows.length === 0}
+          class:soft={s.soft && s.rows.length > 0}
+        >
+          <Icon
+            name={s.rows.length === 0 ? 'check' : s.soft ? 'info' : 'alert-triangle'}
+            size={20}
+          />
           <h2>{s.title}: <span class="mono" data-testid="prerace-count">{s.rows.length}</span></h2>
         </header>
         {#if s.rows.length > 0}
@@ -438,6 +459,9 @@
   }
   .section-head.clear {
     color: var(--ok);
+  }
+  .section-head.soft {
+    color: var(--fg-muted);
   }
   .section-head h2 {
     margin: 0;

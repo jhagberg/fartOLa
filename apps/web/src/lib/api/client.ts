@@ -1167,6 +1167,8 @@ export interface PreRaceCheck {
   no_club: PreRaceRunner[];
   no_name: PreRaceRunner[];
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
+  /** Soft warning: the course fits, but splits after `timed` are missing. */
+  splits_missing: Array<PreRaceRunner & { timed: number; controls: number }>;
   classes_without_course: Array<{ class_id: string; class_name: string; runners: number }>;
 }
 
