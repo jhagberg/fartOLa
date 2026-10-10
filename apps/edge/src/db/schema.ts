@@ -477,7 +477,7 @@ export const classes = sqliteTable(
      * charged (shared-types fees.ts); NULL = none. Migration 0025. */
     lateFeePct: integer('late_fee_pct'),
     /** Eventor's EntryFeeId of the class fee, youth fee and late fee,
-     * written back as Fee/Id; NULL = not from Eventor. Migration 0023. */
+     * written back as Fee/Id; NULL = not from Eventor. Migration 0025. */
     eventorEntryFeeId: integer('eventor_entry_fee_id'),
     eventorYouthFeeId: integer('eventor_youth_fee_id'),
     eventorLateFeeId: integer('eventor_late_fee_id'),
@@ -607,14 +607,14 @@ export const competitors = sqliteTable(
     lateFee: integer('late_fee'),
     /** Birth year (Eventor entry or cache, or the desk); in an open class it
      * decides youth (TR 4.12.6). NULL = unknown. PII (REQ-PRIV-002).
-     * Migration 0023. */
+     * Migration 0025. */
     birthYear: integer('birth_year'),
     /** The Eventor fee ids behind entry_fee / late_fee, fixed at
-     * registration; NULL = not from Eventor. Migration 0023. */
+     * registration; NULL = not from Eventor. Migration 0025. */
     eventorEntryFeeId: integer('eventor_entry_fee_id'),
     eventorLateFeeId: integer('eventor_late_fee_id'),
     /** SOFT TR 4.12.4 — rental fee charged to this runner, fixed when their
-     * rental opens; NULL = no hired card. Migration 0023. */
+     * rental opens; NULL = no hired card. Migration 0025. */
     cardFee: integer('card_fee'),
   },
   (t) => [
