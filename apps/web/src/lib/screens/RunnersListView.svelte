@@ -107,6 +107,8 @@
       competitors = compRes.competitors;
       classes = classRes.classes;
       hiredCardSet = new Set(hiredRes.open.map((c) => c.card_number));
+      // Paint the first rows, then add the rest a chunk per frame.
+      requestAnimationFrame(growRows);
     } catch (e) {
       loadError = (e as Error).message || t('runners.loadError');
     } finally {
@@ -140,10 +142,26 @@
   });
 
   /** Stable alphabetical sort for the visible slice — operators scan the
-   * list by name when checking who's in or not. */
-  const sortedVisible = $derived(
-    [...visible].sort((a, b) => a.name.localeCompare(b.name, 'sv'))
-  );
+   * list by name when checking who's in or not. One collator: localeCompare
+   * with a locale builds a new one per comparison. */
+  const collator = new Intl.Collator('sv');
+  const sortedVisible = $derived([...visible].sort((a, b) => collator.compare(a.name, b.name)));
+
+  /** Rows drawn per frame. Drawing all of a 634-runner list at once took
+   * 1-4 s after the data had arrived and blocked the page (DM lång 2026
+   * dag 1); a chunk per frame shows the first rows at once and keeps the
+   * page responsive while the rest are added. */
+  const ROWS_PER_FRAME = 100;
+  let rowLimit = $state(ROWS_PER_FRAME);
+  const shownRows = $derived(sortedVisible.slice(0, rowLimit));
+  function growRows(): void {
+    if (rowLimit >= competitors.length) {
+      rowLimit = Infinity; // a runner added later shows too
+      return;
+    }
+    rowLimit += ROWS_PER_FRAME;
+    requestAnimationFrame(growRows);
+  }
 
   const statusCounts = $derived(
     new Map(
@@ -360,7 +378,7 @@
       </div>
     {:else}
       <ul class="list" data-testid="runners-list">
-        {#each sortedVisible as c (c.id)}
+        {#each shownRows as c (c.id)}
           {@const klass = c.class_id ? classById.get(c.class_id) : null}
           {@const isHire = c.card_number !== null && hiredCardSet.has(c.card_number)}
           {@const st = statusById.get(c.id)}
@@ -598,6 +616,11 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  /* Rows off screen skip layout and paint until scrolled to. */
+  .list > li {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 64px;
   }
   .row {
     width: 100%;
