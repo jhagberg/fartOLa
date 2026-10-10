@@ -44,10 +44,10 @@ test('no new contrast or target-size violations', async ({ page, request }) => {
       await expect(ready(page)).toBeVisible();
       if (url.endsWith('/registration')) await prepareRegistration(page, regId, request);
       if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
-      const result = await new AxeBuilder({ page })
-        .withRules(['color-contrast', 'target-size'])
-        .exclude('[data-testid=walkup-modal]')
-        .analyze();
+      const axe = new AxeBuilder({ page }).withRules(['color-contrast', 'target-size']);
+      // The walk-up modal over registration belongs to another screen pass.
+      if (url.endsWith('/registration')) axe.exclude('[data-testid=walkup-modal]');
+      const result = await axe.analyze();
       for (const v of result.violations) {
         for (const n of v.nodes) {
           const key = `${v.id} ${n.target.join(' ')}`;
