@@ -33,11 +33,11 @@
   }
   label {
     font-size: var(--fs-label);
-    color: var(--fg-muted);
+    color: var(--fg);
     font-weight: 500;
   }
   .hint {
     font-size: var(--fs-caption);
-    color: var(--fg-faint);
+    color: var(--fg-muted);
   }
 </style>
