@@ -12,7 +12,7 @@
   offers the confirmation right there (ADR-0016 rules 1 and 6). Form logic
   lives in screens/lottning.ts.
   After drawing, shows the sorted start list with assigned start times.
-  Re-lotta asks for confirmation before clearing and redrawing.
+  Re-lotta draws at once; the history below offers Ångra (ADR-0016 rule 2).
   Per-runner inline start-time edit is via PATCH competitor start_time_ms.
   SOFT TR 7.5.4: the start list shows the class's start place and course
   length, and a bib column once the class has bibs; bibs are numbered in
@@ -27,6 +27,7 @@
   import { onMount } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
+    ApiError,
     getCompetition,
     listClasses,
     listCompetitors,
@@ -47,6 +48,9 @@
   import Select from '#lib/ui/Select.svelte';
   import Input from '#lib/ui/Input.svelte';
   import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
+  import SavedNote from '#lib/ui/SavedNote.svelte';
+  import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import StartTimeHistory from '#lib/components/StartTimeHistory.svelte';
   import PreviousResultsUpload from '#lib/components/PreviousResultsUpload.svelte';
@@ -117,6 +121,11 @@
 
   /** Max time in seconds for the class (mm:ss input). Null = not set. */
   let maxTimeInput: string = $state('');
+  /** The class's stored max time (null = none, undefined = not loaded). */
+  let maxTimeStored: number | null | undefined = $state(undefined);
+  const maxSave = createSaveState();
+  /** The save was refused because the first start has passed (SOFT TR 4.21.2). */
+  let maxLocked = $state(false);
 
   let submitting = $state(false);
   let error: string | null = $state(null);
@@ -163,11 +172,18 @@
   let startNameInput = $state('');
   let startListLoaded = $state(false);
 
-  /** Re-lotta confirmation dialog state. */
-  let redrawConfirmOpen = $state(false);
+  /** The last draw replaced an existing list: point at the undo. */
+  let redrawn = $state(false);
+  let historyEl: HTMLElement | undefined = $state();
+  /** A failed load of the classes or the class's draw, with a retry. */
+  let loadError = $state(false);
+  /** "Fler val" opens by itself for the modes that need its fields. */
+  let moreOpen = $state(false);
 
   /** Per-runner inline edit state. Key = competitor id, value = HH:MM:SS string. */
   let editingStartTime: Record<string, string> = $state({});
+  /** Why a row's save failed, shown in that row. */
+  let rowError: Record<string, string> = $state({});
   /** The bib typed in the same inline edit. */
   let editingBib: Record<string, string> = $state({});
   let savingStartTime: Record<string, boolean> = $state({});
@@ -179,6 +195,7 @@
   });
 
   async function loadClasses(): Promise<void> {
+    loadError = false;
     try {
       const res = await listClasses(competitionId);
       classes = res.classes;
@@ -187,8 +204,13 @@
         await loadStartList();
       }
     } catch {
-      // Soft fail — operator sees empty class list
+      loadError = true;
     }
+  }
+
+  function retryLoad(): void {
+    if (classes.length === 0) void loadClasses();
+    else void loadStartList();
   }
 
   /** Loads overlap (an upload refresh, a class switch, a draw); only the
@@ -198,6 +220,7 @@
   async function loadStartList(): Promise<void> {
     if (!selectedClassId) return;
     const mine = ++loadGeneration;
+    loadError = false;
     try {
       // The clock with the list it formats: both reflect the server now.
       const classId = selectedClassId;
@@ -223,6 +246,8 @@
         bibPrefix = res.class.bib_prefix ?? '';
         bibBaseInput = res.class.bib_base === null ? '' : String(res.class.bib_base);
         startNameInput = res.class.start_name ?? '';
+        maxTimeInput = formatMaxTime(res.class.max_time_sec);
+        maxTimeStored = res.class.max_time_sec;
       }
       classInfo = res.class;
       previousResults = { classId, ...res.previous_results };
@@ -245,7 +270,8 @@
       classRunners = [];
       previousResults = null;
       lottClass = null;
-      startListLoaded = true;
+      startListLoaded = false;
+      loadError = true;
     }
   }
 
@@ -261,7 +287,12 @@
     firstControl = null;
     clashReason = '';
     error = null;
-    redrawConfirmOpen = false;
+    redrawn = false;
+    rowError = {};
+    maxTimeInput = '';
+    maxTimeStored = undefined;
+    maxSave.reset();
+    maxLocked = false;
     drawType = 'All';
     intervalTouched = false;
     await loadStartList();
@@ -292,6 +323,12 @@
   function msToHHMMSS(ms: number | null): string {
     if (ms === null || clock === null) return '—';
     return formatClockTime(ms, clock.offsetMin);
+  }
+
+  /** Seconds as the mm:ss the field takes; '' = none. */
+  function formatMaxTime(sec: number | null | undefined): string {
+    if (sec == null) return '';
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   }
 
   /** Parse mm:ss maxTime input to seconds. Returns null on empty/invalid. */
@@ -339,19 +376,11 @@
    * already confirmed before the clash was refused). */
   async function submitDraw(override?: string): Promise<void> {
     if (!selectedClassId || resultsBusy) return;
-    if (
-      override === undefined &&
-      effectiveDrawType === 'All' &&
-      startList.length > 0 &&
-      !redrawConfirmOpen
-    ) {
-      // Existing start list — ask for confirmation
-      redrawConfirmOpen = true;
-      return;
-    }
-    redrawConfirmOpen = false;
+    // No confirmation: the draw is undone from the history (ADR-0016 rule 2).
+    const hadList = startList.length > 0;
     submitting = true;
     error = null;
+    redrawn = false;
     refusal = null;
     done = null;
     closingMove = null;
@@ -412,6 +441,7 @@
           : { ...body, allowStartClash: true, startClashReason: override }
       );
       done = summaryOf(res, className);
+      redrawn = hadList;
       closingMove = closingMoved(res);
       firstControl = firstControlWarning(res);
       clashReason = '';
@@ -446,13 +476,24 @@
   });
 
   async function saveMaxTime(): Promise<void> {
-    if (!selectedClassId) return;
+    if (!classLoaded) return;
+    const classId = selectedClassId;
     const sec = parseMaxTime(maxTimeInput);
-    try {
-      await patchClass(competitionId, selectedClassId, { maxTimeSec: sec });
-    } catch (e) {
-      error = (e as Error).message;
-    }
+    maxLocked = false;
+    await maxSave.run(
+      patchClass(competitionId, classId, { maxTimeSec: sec }).then(
+        () => {
+          if (classId === selectedClassId) maxTimeStored = sec;
+        },
+        (e: unknown) => {
+          maxLocked =
+            e instanceof ApiError &&
+            (e.body as { error?: string } | null)?.error === 'max_time_locked';
+          throw e;
+        }
+      ),
+      { error: t('lottning.maxTimeFailed') }
+    );
   }
 
   /** 02.1-14 Task 9: the selected class has no timing (no times/places shown). */
@@ -537,6 +578,23 @@
   function startEditTime(id: string, currentMs: number | null, bib: string | null): void {
     editingStartTime = { ...editingStartTime, [id]: msToHHMMSS(currentMs) };
     editingBib = { ...editingBib, [id]: bib ?? '' };
+    clearRowError(id);
+  }
+
+  function clearRowError(id: string): void {
+    const next = { ...rowError };
+    delete next[id];
+    rowError = next;
+  }
+
+  /** Enter saves and Escape cancels, in either input of the row. */
+  function onRowKey(e: KeyboardEvent, id: string): void {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!savingStartTime[id]) void saveEditTime(id);
+    } else if (e.key === 'Escape') {
+      cancelEditTime(id);
+    }
   }
 
   function cancelEditTime(id: string): void {
@@ -546,10 +604,12 @@
     const nextBib = { ...editingBib };
     delete nextBib[id];
     editingBib = nextBib;
+    clearRowError(id);
   }
 
   async function saveEditTime(id: string): Promise<void> {
     const raw = editingStartTime[id] ?? '';
+    clearRowError(id);
     const parts = raw.split(':').map(Number);
     let newSec: number | null = null;
     if (parts.length >= 2) {
@@ -557,7 +617,7 @@
       const m = parts[1] ?? 0;
       const s = parts[2] ?? 0;
       if (Number.isNaN(h) || Number.isNaN(m) || Number.isNaN(s)) {
-        error = t('lottning.invalidTime');
+        rowError = { ...rowError, [id]: t('lottning.invalidTime') };
         return;
       }
       newSec = h * 3600 + m * 60 + s;
@@ -572,7 +632,10 @@
           await editCompetitorProfile(id, { bib: bib || null });
         } catch (e) {
           const taken = bibTakenOf(e);
-          error = taken !== null ? t('lottning.bibs.err.takenOne', { bib: taken }) : (e as Error).message;
+          rowError = {
+            ...rowError,
+            [id]: taken !== null ? t('lottning.bibs.err.takenOne', { bib: taken }) : (e as Error).message,
+          };
           return;
         }
       }
@@ -587,7 +650,7 @@
       await loadStartList();
       cancelEditTime(id);
     } catch (e) {
-      error = (e as Error).message;
+      rowError = { ...rowError, [id]: (e as Error).message };
     } finally {
       const next = { ...savingStartTime };
       delete next[id];
@@ -617,6 +680,18 @@
     ReversePursuit: 'lottning.reversePursuit',
   };
   const classNames = $derived(Object.fromEntries(classes.map((c) => [c.id, c.name])));
+  $effect(() => {
+    if (fields.seeding || fields.pursuit) moreOpen = true;
+  });
+
+  /** The link after a draw: scroll to the history's newest entry. */
+  function showHistory(e: MouseEvent): void {
+    e.preventDefault();
+    historyEl?.focus({ preventScroll: true });
+    const row = historyEl?.querySelector('[data-testid="history-row"]') ?? historyEl;
+    row?.scrollIntoView({ block: 'center' });
+  }
+
   const infoHref = $derived(`/competition/${encodeURIComponent(competitionId)}/info`);
 </script>
 
@@ -625,11 +700,16 @@
     <h1>{t('lottning.title')}</h1>
   </header>
 
+  {#if loadError}
+    <LoadError message={t('lottning.loadError')} onretry={retryLoad} />
+  {/if}
+
+  <div class="lottning-body">
   <div class="lottning-form">
     <!-- The draw's settings, locked while a draw runs -->
     <fieldset
       class="draw-settings"
-      disabled={submitting || resultsBusy}
+      disabled={submitting}
       data-testid="lottning-settings"
     >
       <!-- Class selector -->
@@ -649,17 +729,24 @@
       <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
       {#if selectedClass !== null && selectedKindStatus !== null}
         <div class="context">
-          <p data-testid="lottning-class-kind" data-status={selectedKindStatus}>
-            {t('classKinds.kind')}:
-            <strong
-              >{selectedClass.class_kind
-                ? t(`classKinds.kind.${selectedClass.class_kind}`)
-                : '–'}</strong
+          <p class="kind" data-testid="lottning-class-kind" data-status={selectedKindStatus}>
+            <span class="kind-line"
+              >{t('lottning.kindLine', {
+                kind: selectedClass.class_kind
+                  ? t(`classKinds.kind.${selectedClass.class_kind}`)
+                  : '–',
+              })}</span
             >
-            ({t(`classKinds.status.${selectedKindStatus}`)})
-            {#if selectedKindStatus !== 'eventor' && selectedKindStatus !== 'operator'}
-              <a href={`${infoHref}#klasser`}>{t('lottning.confirmKindLink')}</a>
-            {/if}
+            <span>
+              {t(`classKinds.status.${selectedKindStatus}`)} ·
+              <a href={`${infoHref}#klasser`}
+                >{t(
+                  selectedKindStatus === 'eventor' || selectedKindStatus === 'operator'
+                    ? 'lottning.changeKindLink'
+                    : 'lottning.confirmKindLink'
+                )}</a
+              >
+            </span>
           </p>
           <p data-testid="lottning-level">
             {t('info.level.label')}:
@@ -764,6 +851,76 @@
         {/if}
       {/if}
 
+    </fieldset>
+
+    <!-- Max time -->
+    <Field
+      label={t('lottning.maxTime')}
+      hint={t('lottning.maxTimeHint')}
+      htmlFor="lottning-max-time"
+    >
+      <div class="max-time-row">
+        <Input
+          id="lottning-max-time"
+          type="text"
+          placeholder="60:00"
+          bind:value={maxTimeInput}
+          disabled={!classLoaded}
+          data-testid="lottning-max-time"
+        />
+        <Button
+          variant="secondary"
+          onclick={saveMaxTime}
+          disabled={!classLoaded}
+          data-testid="lottning-max-time-save"
+        >
+          {t('info.save')}
+        </Button>
+      </div>
+      <div class="max-time-state">
+        <SavedNote
+          state={maxSave.state}
+          error={maxLocked ? t('lottning.maxTimeLocked') : maxSave.error}
+        />
+        {#if maxTimeStored === null && maxSave.state !== 'error'}
+          <span class="muted">{t('lottning.maxTimeNone')}</span>
+        {/if}
+      </div>
+    </Field>
+
+    <!-- Class without timing (02.1-14 Task 9) -->
+    <label class="check-row">
+      <input
+        type="checkbox"
+        checked={selectedNoTiming}
+        disabled={!selectedClassId}
+        onchange={(e) => void saveClassFlag({ no_timing: e.currentTarget.checked })}
+        data-testid="lottning-no-timing"
+      />
+      <span>{t('lottning.noTiming')}</span>
+    </label>
+
+    <!-- Which start the class's times run from (02.1-14 Task 14) -->
+    <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
+      <Select
+        id="lottning-start-method"
+        value={selectedStartMethod}
+        disabled={!selectedClassId}
+        onchange={(e) =>
+          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
+        data-testid="lottning-start-method"
+      >
+        {#each START_METHODS as m (m)}
+          <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
+        {/each}
+      </Select>
+    </Field>
+
+    <!-- The rarely used fields: seeding, pursuit, start place and bibs -->
+    <details class="more" bind:open={moreOpen}>
+      <summary>{t('lottning.moreOptions')}</summary>
+      <div class="more-body">
+      <fieldset class="draw-settings" disabled={submitting}>
       <!-- Seeding groups (SOFT TR 7.4.5) -->
       {#if fields.seeding}
         <fieldset class="group" data-testid="lottning-seeding">
@@ -853,55 +1010,7 @@
         </fieldset>
       {/if}
 
-    </fieldset>
-
-    <!-- Max time -->
-    <Field
-      label={t('lottning.maxTime')}
-      hint={t('lottning.maxTimeHint')}
-      htmlFor="lottning-max-time"
-    >
-      <div class="max-time-row">
-        <Input
-          id="lottning-max-time"
-          type="text"
-          placeholder="60:00"
-          bind:value={maxTimeInput}
-          data-testid="lottning-max-time"
-        />
-        <Button variant="secondary" onclick={saveMaxTime} data-testid="lottning-max-time-save">
-          {t('info.save')}
-        </Button>
-      </div>
-    </Field>
-
-    <!-- Class without timing (02.1-14 Task 9) -->
-    <label class="check-row">
-      <input
-        type="checkbox"
-        checked={selectedNoTiming}
-        disabled={!selectedClassId}
-        onchange={(e) => void saveClassFlag({ no_timing: e.currentTarget.checked })}
-        data-testid="lottning-no-timing"
-      />
-      <span>{t('lottning.noTiming')}</span>
-    </label>
-
-    <!-- Which start the class's times run from (02.1-14 Task 14) -->
-    <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
-      <Select
-        id="lottning-start-method"
-        value={selectedStartMethod}
-        disabled={!selectedClassId}
-        onchange={(e) =>
-          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
-        data-testid="lottning-start-method"
-      >
-        {#each START_METHODS as m (m)}
-          <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
-        {/each}
-      </Select>
-    </Field>
+      </fieldset>
 
     <!-- SOFT TR 7.5.4: start place and bibs -->
     <Field label={t('lottning.startName')} hint={t('lottning.startNameHint')} htmlFor="lottning-start-name">
@@ -931,7 +1040,7 @@
           <Input id="lottning-bib-base" type="text" inputmode="numeric" placeholder="101" bind:value={bibBaseInput} disabled={!classLoaded} data-testid="lottning-bib-base" />
         </Field>
       </div>
-      <div class="draw-btn-row">
+      <div class="bib-btn-row">
         <Button
           variant="secondary"
           onclick={() => void assignBibs()}
@@ -942,6 +1051,8 @@
         </Button>
       </div>
     </fieldset>
+      </div>
+    </details>
 
     {#if error}
       <p class="err" role="alert">{error}</p>
@@ -983,6 +1094,12 @@
     {#if done !== null}
       <p class="done" role="status" data-testid="lottning-done">{done}</p>
     {/if}
+    {#if redrawn}
+      <p class="done" data-testid="lottning-redrawn">
+        {t('lottning.redrawn')}
+        <a href="#lottning-history" onclick={showHistory}>{t('lottning.redrawnUndo')}</a>
+      </p>
+    {/if}
     {#if firstControl !== null}
       <p class="warn" role="status" data-testid="lottning-first-control">
         {t('lottning.firstControlWarning', { clashes: firstControl })}
@@ -1002,18 +1119,13 @@
       <p class="preview" data-testid="lottning-preview">{preview}</p>
     {/if}
 
-    {#if resultsBusy}
-      <p class="preview" role="status" data-testid="lottning-wait-results">
-        {t('lottning.waitResults')}
-      </p>
-    {/if}
-
     <!-- Draw button — label changes based on whether a start list exists -->
     <div class="draw-btn-row">
       <Button
         variant="primary"
         onclick={() => void submitDraw()}
         disabled={submitting || resultsBusy || !selectedClassId || !startListLoaded}
+        {...resultsBusy ? { disabledHint: t('lottning.waitResults') } : {}}
         data-testid="lottning-draw-btn"
       >
         {submitting
@@ -1025,30 +1137,18 @@
               : t('lottning.draw')}
       </Button>
     </div>
-
-    <!-- Re-draw confirmation inline dialog (T-02.1-10 mitigation) -->
-    {#if redrawConfirmOpen}
-      <div class="redraw-confirm" role="alertdialog" aria-live="assertive" data-testid="lottning-redraw-confirm">
-        <p>{t('lottning.redrawConfirm', { class: selectedClassName })}</p>
-        <div class="redraw-actions">
-          <Button variant="primary" onclick={() => void submitDraw()} disabled={submitting} data-testid="lottning-redraw-yes">
-            {t('lottning.redraw')}
-          </Button>
-          <Button variant="secondary" onclick={() => (redrawConfirmOpen = false)} data-testid="lottning-redraw-cancel">
-            {t('race.confirm.cancel')}
-          </Button>
-        </div>
-      </div>
-    {/if}
   </div>
 
+  <div class="lottning-side">
   <!-- Recent start-time changes with undo (ADR-0016 rule 2) -->
-  <StartTimeHistory
-    {competitionId}
-    {classNames}
-    refreshKey={historyKey}
-    onUndone={() => void loadStartList()}
-  />
+  <div id="lottning-history" class="history-anchor" tabindex="-1" bind:this={historyEl}>
+    <StartTimeHistory
+      {competitionId}
+      {classNames}
+      refreshKey={historyKey}
+      onUndone={() => void loadStartList()}
+    />
+  </div>
 
   <!-- Start list result table -->
   {#if startListLoaded && startList.length > 0}
@@ -1095,6 +1195,7 @@
                       aria-label={t('lottning.bibs.col')}
                       value={editingBib[runner.id]}
                       oninput={(e) => { editingBib = { ...editingBib, [runner.id]: (e.currentTarget as HTMLInputElement).value }; }}
+                      onkeydown={(e) => onRowKey(e, runner.id)}
                       data-testid="lottning-edit-bib-input"
                     />
                   {:else}
@@ -1126,6 +1227,8 @@
                     class="time-edit-input"
                     value={editVal}
                     oninput={(e) => { editingStartTime = { ...editingStartTime, [runner.id]: (e.currentTarget as HTMLInputElement).value }; }}
+                    onkeydown={(e) => onRowKey(e, runner.id)}
+                    aria-label={t('common.startTime')}
                     data-testid="lottning-edit-time-input"
                   />
                 {:else}
@@ -1159,13 +1262,22 @@
                 {/if}
               </td>
             </tr>
+            {#if rowError[runner.id] !== undefined}
+              <tr class="row-error" data-testid="lottning-row-error-row">
+                <td colspan={showBibs ? 6 : 5}>
+                  <p class="err" role="alert" data-testid="lottning-row-error">{rowError[runner.id]}</p>
+                </td>
+              </tr>
+            {/if}
           {/each}
         </tbody>
       </table>
     </section>
   {:else if startListLoaded && startList.length === 0}
-    <p class="empty-hint" data-testid="lottning-empty">{t('lottning.draw')} → {t('lottning.drawn', { count: 0 })}</p>
+    <p class="empty-hint" data-testid="lottning-empty">{t('lottning.emptyHint')}</p>
   {/if}
+  </div>
+  </div>
 </div>
 
 <style>
@@ -1174,7 +1286,28 @@
     flex-direction: column;
     gap: var(--space-lg);
     padding: var(--space-lg);
-    max-width: 600px;
+    max-width: 960px;
+  }
+  .lottning-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+  .lottning-side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    min-width: 0;
+  }
+  .history-anchor:focus {
+    outline: none;
+  }
+  @media (min-width: 1200px) {
+    .lottning-body {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      align-items: start;
+    }
   }
   .lottning-head h1 {
     margin: 0;
@@ -1199,9 +1332,38 @@
   .max-time-row :global(input) {
     flex: 1;
   }
+  .max-time-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+    min-height: 20px;
+  }
+  .muted {
+    font-size: var(--fs-label);
+    color: var(--fg-muted);
+  }
+  .more summary {
+    cursor: pointer;
+    min-height: var(--hit);
+    display: flex;
+    align-items: center;
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
+  .more-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+  .kind-line {
+    display: block;
+    font-weight: 600;
+  }
   .check-row {
     display: flex;
     align-items: center;
+    min-height: var(--hit);
     gap: var(--space-xs);
   }
   .draw-settings {
@@ -1244,7 +1406,7 @@
   }
   .radio-group legend,
   .group legend {
-    font-size: 13px;
+    font-size: var(--fs-label);
     font-weight: 500;
     color: var(--fg-muted);
     padding: 0 4px;
@@ -1287,30 +1449,28 @@
     font-weight: 600;
   }
   .draw-btn-row {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    margin-top: var(--space-xs);
+    padding: var(--space-sm) 0;
+    background: var(--bg-elev);
+  }
+  .bib-btn-row {
     display: flex;
     justify-content: flex-end;
-    margin-top: var(--space-xs);
   }
   .err {
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
-  .redraw-confirm {
-    background: var(--bg-sunken);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    padding: var(--space-md);
-    display: grid;
-    gap: var(--space-sm);
-  }
-  .redraw-confirm p {
-    margin: 0;
-    font-size: var(--fs-body);
-  }
-  .redraw-actions {
-    display: flex;
-    gap: var(--space-sm);
+  .done a {
+    color: var(--accent);
   }
   .start-list {
     display: flex;
@@ -1335,7 +1495,7 @@
     border-bottom: 1px solid var(--border);
   }
   .start-table th {
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg-muted);
     background: var(--bg-elev);
@@ -1363,6 +1523,7 @@
     white-space: nowrap;
   }
   .bib-edit-input {
+    min-height: var(--hit);
     width: 4.5rem;
     font-family: var(--font-mono);
   }
@@ -1397,9 +1558,14 @@
     font-size: var(--fs-label);
     cursor: pointer;
     min-height: var(--hit);
+    min-width: var(--hit);
     padding: 0 var(--space-xs);
   }
+  .row-error td {
+    padding-top: 0;
+  }
   .time-edit-input {
+    min-height: var(--hit);
     width: 8rem;
     font-family: var(--font-mono);
   }

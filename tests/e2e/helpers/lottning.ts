@@ -1,0 +1,101 @@
+// tests/e2e/helpers/lottning.ts
+// Authored for fartola. Not ported from upstream.
+//
+// Floor/a11y states for the draw screen. Mocks go in before the page
+// loads or the action that reads them; every changed element is asserted
+// visible at the end of its state.
+import { expect, type Page } from '@playwright/test';
+
+const LOTTNING = '**/api/competitions/*/lottning/*';
+
+async function chooseClass(page: Page, name: string): Promise<void> {
+  await page.getByTestId('lottning-class-select').selectOption({ label: name });
+}
+
+/** A drawn and redrawn class: the form, kind lines, "Fler val" with the seeding
+ * fields and bibs, the start list with a row error, the undo link and the
+ * saved max time. The max time goes last: its "Sparat" fades after 3 s. */
+export async function prepareLottningFull(page: Page): Promise<void> {
+  await chooseClass(page, 'H21');
+  await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+  await page.getByTestId('lottning-draw-btn').click();
+  await expect(page.getByTestId('lottning-row').first()).toBeVisible();
+  await expect(page.getByTestId('lottning-draw-btn')).toHaveText('Lotta om');
+  await page.getByTestId('lottning-draw-btn').click();
+  await expect(page.getByTestId('lottning-redrawn')).toBeVisible();
+  await expect(page.getByTestId('lottning-class-kind')).toBeVisible();
+  await expect(page.getByTestId('lottning-preview')).toBeVisible();
+  await expect(page.locator('.start-table th').first()).toBeVisible();
+
+  await page.getByTestId('lottning-mode-select').selectOption('Seeded');
+  await expect(page.getByTestId('lottning-seeding')).toBeVisible();
+  await expect(page.locator('.seed-table th').first()).toBeVisible();
+  await expect(page.getByTestId('lottning-bibs')).toBeVisible();
+  await expect(page.locator('.group legend').first()).toBeVisible();
+
+  await page.getByTestId('lottning-edit-time-btn').first().click();
+  await page.getByTestId('lottning-edit-time-input').fill('xx:yy');
+  await page.getByTestId('lottning-edit-time-input').press('Enter');
+  await expect(page.getByTestId('lottning-row-error')).toBeVisible();
+
+  // The seeded race has started, so the real save is refused: mock the save.
+  await page.route('**/api/competitions/*/classes/*', (route) =>
+    route.request().method() === 'PATCH' ? route.fulfill({ json: { ok: true } }) : route.continue()
+  );
+  await page.getByTestId('lottning-max-time').fill('60:00');
+  await page.getByTestId('lottning-max-time-save').click();
+  await expect(page.getByText('Sparat')).toBeVisible();
+}
+
+/** The max time that did not save, with the note in its error colour. */
+export async function prepareLottningMaxTimeError(page: Page): Promise<void> {
+  await chooseClass(page, 'H21');
+  await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+  await page.route('**/api/competitions/*/classes/*', (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 500, json: { error: 'boom' } })
+      : route.continue()
+  );
+  await page.getByTestId('lottning-max-time').fill('45:00');
+  await page.getByTestId('lottning-max-time-save').click();
+  await expect(page.getByText('Maxtiden sparades inte. Försök igen.')).toBeVisible();
+}
+
+/** A pursuit file chosen and being read: Lotta waits with its hint. */
+export async function prepareLottningPursuitReading(page: Page): Promise<void> {
+  await chooseClass(page, 'H21');
+  await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+  await page.route('**/import/previous-results', () => new Promise(() => {}));
+  await page.getByTestId('lottning-mode-select').selectOption('Pursuit');
+  await expect(page.getByTestId('lottning-pursuit')).toBeVisible();
+  await page.getByTestId('pursuit-results-file').setInputFiles({
+    name: 'dag1.xml',
+    mimeType: 'application/xml',
+    buffer: Buffer.from('<ResultList/>'),
+  });
+  await expect(page.getByText('Resultatlistan läses in', { exact: true })).toBeVisible();
+  await page.getByTestId('pursuit-results-upload').click();
+  await expect(page.getByTestId('pursuit-results-upload')).toHaveText('Läser in filen…');
+  await expect(page.locator('.file-label')).toBeVisible();
+}
+
+/** A class without a start list: the empty hint. */
+export async function prepareLottningEmpty(page: Page): Promise<void> {
+  await chooseClass(page, 'D21');
+  await expect(page.getByTestId('lottning-empty')).toHaveText(
+    'Inga starttider ännu. Välj klass och tryck Lotta.'
+  );
+}
+
+/** The failed load with its retry. */
+export async function prepareLottningLoadError(page: Page): Promise<void> {
+  await page.route(LOTTNING, (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, json: { error: 'boom' } })
+      : route.continue()
+  );
+  await page.reload();
+  const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta lottningen.' });
+  await expect(alert).toBeVisible();
+  await expect(alert.getByRole('button', { name: 'Försök igen' })).toBeVisible();
+}

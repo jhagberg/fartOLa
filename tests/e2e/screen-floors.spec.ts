@@ -45,6 +45,13 @@ import {
   prepareResultsError,
   prepareResultsEmpty,
 } from './helpers/results.ts';
+import {
+  prepareLottningFull,
+  prepareLottningMaxTimeError,
+  prepareLottningPursuitReading,
+  prepareLottningEmpty,
+  prepareLottningLoadError,
+} from './helpers/lottning.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -295,6 +302,36 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('results-view'),
     root: '[data-testid=missing-starts-error]',
     prepare: async (page) => prepareMissingStartsError(page),
+  },
+  {
+    name: 'Lottning, utlottad klass med omlottning, fler val och sparad maxtid',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page) => prepareLottningFull(page),
+  },
+  {
+    name: 'Lottning, maxtid som inte sparades',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page) => prepareLottningMaxTimeError(page),
+  },
+  {
+    name: 'Lottning, jaktstart med fil som läses in',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page) => prepareLottningPursuitReading(page),
+  },
+  {
+    name: 'Lottning, klass utan starttider',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page) => prepareLottningEmpty(page),
+  },
+  {
+    name: 'Lottning, laddningsfel',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page) => prepareLottningLoadError(page),
   },
 ];
 

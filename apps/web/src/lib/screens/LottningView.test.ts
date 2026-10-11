@@ -705,7 +705,7 @@ describe('LottningView (mounted)', () => {
     await settle();
     const draw = $('lottning-draw-btn') as HTMLButtonElement;
     expect(draw.disabled).toBe(true);
-    expect($('lottning-wait-results')).not.toBeNull();
+    expect(document.body.textContent).toContain('Resultatlistan läses in');
     draw.click();
     await settle();
     expect(posts).toEqual([]);
@@ -713,7 +713,7 @@ describe('LottningView (mounted)', () => {
     release();
     await settle();
     expect(draw.disabled).toBe(false);
-    expect($('lottning-wait-results')).toBeNull();
+    expect(document.body.textContent).not.toContain('Resultatlistan läses in');
   });
 
   it('SOFT TR 7.4.5: groups stored for runners not yet drawn are shown and sent again, not erased', async () => {
@@ -838,8 +838,6 @@ describe('LottningView (mounted)', () => {
     component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
     await settle();
     ($('lottning-draw-btn') as HTMLButtonElement).click();
-    await settle();
-    ($('lottning-redraw-yes') as HTMLButtonElement).click();
     await settle();
     expect(posts.map((p) => p.url.split('/lottning/')[1])).toEqual(['h12', 'h12/bibs']);
     expect(posts[1]!.body).toEqual({ bib_prefix: null, bib_base: 7 });

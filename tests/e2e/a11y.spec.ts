@@ -11,6 +11,13 @@ import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
 import {
+  prepareLottningFull,
+  prepareLottningMaxTimeError,
+  prepareLottningPursuitReading,
+  prepareLottningEmpty,
+  prepareLottningLoadError,
+} from './helpers/lottning.ts';
+import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
   prepareWalkupNetworkError,
@@ -186,7 +193,36 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       (p) => prepareWalkupNoMatch(p, String(id)),
     ],
     ['results', `/competition/${id}/results`, (p) => p.getByTestId('results-view')],
-    ['lottning', `/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
+    [
+      'lottning',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      prepareLottningFull,
+    ],
+    [
+      'lottning max time error',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      prepareLottningMaxTimeError,
+    ],
+    [
+      'lottning pursuit reading',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      prepareLottningPursuitReading,
+    ],
+    [
+      'lottning empty',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      prepareLottningEmpty,
+    ],
+    [
+      'lottning load error',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      prepareLottningLoadError,
+    ],
     [
       'registration',
       `/competition/${regId}/registration`,
