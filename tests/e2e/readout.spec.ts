@@ -35,6 +35,7 @@ import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { readoutSubscribed } from './helpers/readout.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COURSEDATA_FIXTURE = path.resolve(
@@ -162,8 +163,10 @@ test('card_read updates LatestReadCard via WS', async ({ page, request }) => {
   const { competitionId, annaId } = await setup(request);
   expect(annaId).not.toBeNull();
 
+  const subscribed = readoutSubscribed(page);
   await page.goto(`/competition/${competitionId}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
+  await subscribed;
 
   await simulateRead(request, competitionId, 7_501_853);
 
@@ -177,8 +180,10 @@ test('card_read updates LatestReadCard via WS', async ({ page, request }) => {
 test('history click re-renders LatestReadCard', async ({ page, request }) => {
   const { competitionId } = await setup(request);
 
+  const subscribed = readoutSubscribed(page);
   await page.goto(`/competition/${competitionId}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
+  await subscribed;
 
   await simulateRead(request, competitionId, 7_501_853);
   await expect(page.getByTestId('card-number').first()).toHaveText('7501853', { timeout: 5_000 });
@@ -186,7 +191,15 @@ test('history click re-renders LatestReadCard', async ({ page, request }) => {
   // Second read with another known card (Cia Carlsson). Two known cards
   // keep both history rows free of the walk-up auto-redirect side path,
   // so the click assertion stays clean.
+  // The page takes a new read over (and drops a pin) only after it has
+  // refetched the competitors, a moment after the history already shows it.
+  // A click in between would be undone by that takeover, so wait for it.
+  const handled = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'GET' && /\/api\/competitions\/[^/]+\/competitors$/.test(r.url())
+  );
   await simulateRead(request, competitionId, 1_428_824);
+  await (await handled).finished();
   await expect(page.getByTestId('card-number').first()).toHaveText('1428824', { timeout: 5_000 });
 
   // Click the older history row (Anna's) → LatestReadCard re-renders.
@@ -198,8 +211,10 @@ test('history click re-renders LatestReadCard', async ({ page, request }) => {
 test('manual DNF flow flips StatusPill in-place', async ({ page, request }) => {
   const { competitionId } = await setup(request);
 
+  const subscribed = readoutSubscribed(page);
   await page.goto(`/competition/${competitionId}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
+  await subscribed;
 
   // WR-005: the synthetic read must carry start + finish so the reducer's
   // projected status is NOT already DNF (finish=null → DNF). Without
@@ -229,8 +244,10 @@ test('unknown card triggers ?walkup=<n> on the readout URL (C-M3 LOCKED)', async
 }) => {
   const { competitionId } = await setup(request);
 
+  const subscribed = readoutSubscribed(page);
   await page.goto(`/competition/${competitionId}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
+  await subscribed;
 
   // 1. Simulate-read with an unknown card number.
   await simulateRead(request, competitionId, 9_999_999);
