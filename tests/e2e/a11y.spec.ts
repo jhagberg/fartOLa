@@ -41,6 +41,12 @@ import {
   prepareWizardDiscard,
 } from './helpers/wizard.ts';
 import { prepareMissingStarts, prepareMissingStartsError } from './helpers/missing-starts.ts';
+import {
+  prepareResultsFull,
+  prepareResultsFullscreen,
+  prepareResultsError,
+  prepareResultsEmpty,
+} from './helpers/results.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 // Buttons fade their colours (0.12 s): switch transitions off so axe never
@@ -113,6 +119,30 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/readout`,
       (p) => p.getByTestId('readout-view'),
       (p) => prepareReadoutFrame(p, request),
+    ],
+    [
+      'results full',
+      `/competition/${id}/results`,
+      (p) => p.getByTestId('results-view'),
+      prepareResultsFull,
+    ],
+    [
+      'results fullscreen',
+      `/competition/${id}/results`,
+      (p) => p.getByTestId('results-view'),
+      prepareResultsFullscreen,
+    ],
+    [
+      'results load error',
+      `/competition/${id}/results`,
+      (p) => p.getByTestId('results-view'),
+      prepareResultsError,
+    ],
+    [
+      'results empty class',
+      `/competition/${id}/results`,
+      (p) => p.getByTestId('results-view'),
+      prepareResultsEmpty,
     ],
     [
       'results missing starts',
