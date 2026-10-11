@@ -199,12 +199,10 @@
         if (body?.error === 'card_taken') {
           error = t('runners.addSheet.err.cardTaken', { card: cardNumber });
         } else {
-          error = (e as Error).message ?? t('err.network');
+          error = t('common.unknownError');
         }
-      } else if (e instanceof ApiError) {
-        error = (e as Error).message ?? t('err.network');
       } else {
-        error = t('err.network');
+        error = t('common.unknownError');
       }
     } finally {
       saving = false;
@@ -397,8 +395,8 @@
   .sheet-close {
     background: transparent;
     border: 0;
-    width: 36px;
-    height: 36px;
+    width: var(--hit);
+    height: var(--hit);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -426,11 +424,9 @@
   }
   .block-heading {
     margin: 4px 0 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .input {
     height: var(--hit);
@@ -444,8 +440,6 @@
     color: var(--fg);
   }
   .input:focus {
-    outline: 2px solid var(--fg);
-    outline-offset: 2px;
     border-color: var(--accent);
   }
   .mono {
@@ -456,19 +450,20 @@
   }
   .toggle {
     display: grid;
-    grid-template-columns: 22px 1fr;
+    grid-template-columns: 24px 1fr;
     grid-template-rows: auto auto;
-    column-gap: 8px;
+    column-gap: 12px;
     align-items: start;
     cursor: pointer;
-    padding: 4px 0;
+    min-height: var(--hit);
+    padding: 10px 0;
   }
   .toggle input {
     grid-row: 1 / span 2;
     grid-column: 1;
-    width: 18px;
-    height: 18px;
-    margin-top: 2px;
+    width: 24px;
+    height: 24px;
+    margin: 0;
   }
   .toggle-label {
     grid-column: 2;
@@ -478,12 +473,12 @@
   .toggle-hint {
     grid-column: 2;
     grid-row: 2;
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
   .hint {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
   .hired-fields {
@@ -497,19 +492,19 @@
   .ok-note {
     margin: 0;
     padding: 8px 12px;
-    background: var(--ok-soft, rgba(16, 122, 87, 0.12));
-    border: 1px solid var(--ok, #107a57);
-    color: var(--ok, #107a57);
+    background: var(--ok-soft);
+    border: 1px solid var(--ok);
+    color: var(--ok);
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .err {
     margin: 0;
     padding: 8px 12px;
-    background: rgba(190, 47, 47, 0.08);
+    background: var(--dnf-soft);
     border: 1px solid var(--dnf);
     color: var(--dnf);
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
 </style>
