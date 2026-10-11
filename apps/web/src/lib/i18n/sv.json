@@ -536,7 +536,6 @@
   "walk.err.hyrbrickaContact": "Ange minst telefon eller e-post för hyrbrickan.",
   "walk.err.cardTaken": "Brickan {{card}} används redan i tävlingen.",
   "walk.err.cardTakenBy": "Brickan {{card}} används av {{name}} ({{class}})",
-  "walk.err.conflict": "Kunde inte spara: {{reason}}",
   "walk.saved": "{{name}} anmäld i {{class}}",
   "walk.err.replaceCard": "Korrigera bricka",
   "walk.discard.msg": "Vill du verkligen avbryta? Det du har skrivit försvinner.",
