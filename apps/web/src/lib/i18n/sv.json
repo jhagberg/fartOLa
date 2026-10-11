@@ -670,6 +670,8 @@
 
   "common.class": "Klass",
   "common.retry": "Försök igen",
+  "common.saving": "Sparar…",
+  "common.saved": "Sparat",
   "common.unknownError": "Något gick fel",
   "common.startTime": "Starttid",
 

@@ -670,6 +670,8 @@
 
   "common.class": "Class",
   "common.retry": "Try again",
+  "common.saving": "Saving…",
+  "common.saved": "Saved",
   "common.unknownError": "Something went wrong",
   "common.startTime": "Start time",
 
