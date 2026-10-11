@@ -6,25 +6,76 @@
 // Synthetic data only (seed.ts plus a hire-card runner).
 
 import { test, expect } from '@playwright/test';
-import { openRunners, seedRunners } from './helpers/runners.ts';
+import { addRunners, openRunners, seedRunners } from './helpers/runners.ts';
 
-test('saving an edit closes the dialog, shows a toast and highlights the row', async ({
+test('saving an edit closes the dialog, shows a toast, scrolls to and highlights the row', async ({
   page,
   request,
 }) => {
-  const { id } = await seedRunners(request);
-  await openRunners(page, id);
-  await page.getByTestId('runners-row').filter({ hasText: 'Cia' }).click();
+  const seed = await seedRunners(request);
+  await addRunners(
+    request,
+    seed,
+    Array.from({ length: 40 }, (_, i) => `Zorro ${String(i + 1).padStart(2, '0')}`)
+  );
+  await openRunners(page, seed.id);
+  const row = page.getByTestId('runners-row').filter({ hasText: 'Zorro 40' });
+  await row.click();
   await page.getByTestId('edit-club').fill('Ny Klubb OK');
+  // Back to the top behind the dialog: the edited row starts out of view.
+  await page
+    .getByTestId('runners-row')
+    .first()
+    .evaluate((e) => e.scrollIntoView({ block: 'start' }));
+  await expect(row).not.toBeInViewport();
   await page.getByTestId('edit-save-btn').click();
   await expect(page.getByTestId('edit-name')).toHaveCount(0);
-  await expect(page.getByTestId('runners-toast')).toHaveText('Cia Carlsson sparad');
-  const row = page.getByTestId('runners-row').filter({ hasText: 'Cia' });
+  await expect(page.getByTestId('runners-toast')).toHaveText('Zorro 40 sparad');
   await expect(row).toHaveAttribute('data-highlight', 'true');
   await expect(row).toBeInViewport();
   await expect(row).toContainText('Ny Klubb OK');
   await expect(row).not.toHaveAttribute('data-highlight', 'true', { timeout: 5_000 });
   await expect(page.getByTestId('runners-toast')).toHaveCount(0, { timeout: 5_000 });
+});
+
+test('a stored one-letter name does not block a card-only edit', async ({ page, request }) => {
+  const seed = await seedRunners(request);
+  // The API refuses one-letter names; an import can leave one. Show Cia as "Q".
+  await page.route('**/api/competitions/*/competitors', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const body = (await res.json()) as { competitors: Array<{ name: string }> };
+    for (const c of body.competitors) if (c.name.startsWith('Cia')) c.name = 'Q';
+    await route.fulfill({ response: res, json: body });
+  });
+  await openRunners(page, seed.id);
+  await page.getByTestId('runners-row').filter({ hasText: /^Q/ }).click();
+  await page.getByTestId('edit-card').fill('9123456');
+  await page.getByTestId('edit-save-btn').click();
+  await expect(page.getByTestId('edit-name')).toHaveCount(0);
+  await expect(page.getByTestId('runners-toast')).toContainText('sparad');
+  await expect(page.getByTestId('edit-name-error')).toHaveCount(0);
+});
+
+test('status, search and class all reach the URL when changed in quick succession', async ({
+  page,
+  request,
+}) => {
+  const { id, h21 } = await seedRunners(request);
+  await openRunners(page, id);
+  await page.getByTestId('runners-status-notRead').click();
+  await page.getByTestId('runners-search').fill('r');
+  await page.getByTestId('runners-class-chip').filter({ hasText: 'H21' }).click();
+  await expect(page).toHaveURL(/status=notRead/);
+  await expect(page).toHaveURL(/q=r/);
+  await expect(page).toHaveURL(new RegExp(`klass=${h21}`));
+  await page.reload();
+  await expect(page.getByTestId('runners-status-notRead')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('runners-search')).toHaveValue('r');
+  await expect(page.getByTestId('runners-class-chip').filter({ hasText: 'H21' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
 });
 
 test('a withdrawal mutes the row and shows Återbud on it', async ({ page, request }) => {
