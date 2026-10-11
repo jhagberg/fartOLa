@@ -107,6 +107,22 @@ async function mockHiredCard(page: Page): Promise<void> {
 }
 
 /**
+ * Resolves when live reads will reach the page. Call it before `page.goto`.
+ * A read simulated earlier reaches the page only through the server's replay
+ * (or not before the test looks), which is not what a test of a live read
+ * means. The readout hello also subscribes results:<id>, which the server
+ * answers with results_full after it has subscribed the readout channel; that
+ * first frame on /ws (not Vite's socket) says the subscription is in place.
+ */
+export function readoutSubscribed(page: Page): Promise<void> {
+  return new Promise<void>((resolve) =>
+    page.on('websocket', (ws) => {
+      if (new URL(ws.url()).pathname === '/ws') ws.on('framereceived', () => resolve());
+    })
+  );
+}
+
+/**
  * The whole readout page with a read, a card read twice (a group), and the
  * consent and hire-card toasts together. Cia is read first (raises the consent
  * toast), then Anna twice (raises the hire-card toast).
@@ -116,14 +132,7 @@ export async function prepareReadoutFrame(page: Page, request: APIRequestContext
   await mockHiredCard(page);
   // Live reads only: a read that reaches the page through the server's replay
   // after the first load is already in its history and raises no prompts.
-  // The readout hello also subscribes results:<id>, which the server answers
-  // with results_full after it has subscribed the readout channel; that first
-  // frame on /ws (not Vite's socket) says live reads will reach the page.
-  const subscribed = new Promise<void>((resolve) =>
-    page.on('websocket', (ws) => {
-      if (new URL(ws.url()).pathname === '/ws') ws.on('framereceived', () => resolve());
-    })
-  );
+  const subscribed = readoutSubscribed(page);
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
   await subscribed;
