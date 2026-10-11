@@ -955,7 +955,7 @@
     gap: 4px;
   }
   .net-err-title {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 700;
     letter-spacing: 0.02em;
   }
