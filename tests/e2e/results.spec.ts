@@ -204,6 +204,26 @@ test('the class tab is kept in the url and survives a reload', async ({ page, re
   });
 });
 
+test('Ctrl+F is left to the browser; F alone still toggles fullscreen', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setup(request);
+  await page.goto(`/competition/${competitionId}/results`);
+  const view = page.getByTestId('results-view');
+  await expect(page.getByTestId('class-tab').first()).toBeVisible({ timeout: 20_000 });
+  const prevented = await page.evaluate(() => {
+    const ev = new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, cancelable: true });
+    window.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  });
+  expect(prevented).toBe(false);
+  await expect(view).not.toHaveAttribute('data-fullscreen', 'true');
+  await page.locator('body').focus();
+  await page.keyboard.press('f');
+  await expect(view).toHaveAttribute('data-fullscreen', 'true', { timeout: 2_000 });
+});
+
 test('in fullscreen the status pill is at least 18 px', async ({ page, request }) => {
   const { competitionId } = await setup(request);
   await page.goto(`/competition/${competitionId}/results`);
