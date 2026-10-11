@@ -25,6 +25,8 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
+  import { replaceState } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
   import {
     ApiError,
@@ -214,8 +216,11 @@
       const res = await listClasses(competitionId);
       classes = res.classes;
       if (classes.length > 0 && !selectedClassId) {
-        selectedClassId = classes[0]!.id;
-        await loadStartList();
+        // The class in the URL (Kontroll links here); an unknown id falls
+        // back to the first class. Same path as a pick in the select.
+        const wanted = page.url.searchParams.get('klass');
+        selectedClassId = classes.find((c) => c.id === wanted)?.id ?? classes[0]!.id;
+        await onClassChange();
       }
     } catch {
       loadError = true;
@@ -314,6 +319,14 @@
     drawType = 'All';
     intervalTouched = false;
     await loadStartList();
+  }
+
+  /** A pick in the select: the class goes in the URL, so a reload keeps it. */
+  function onClassSelect(): Promise<void> {
+    const url = new URL(page.url.href);
+    url.searchParams.set('klass', selectedClassId);
+    replaceState(url, page.state);
+    return onClassChange();
   }
 
   /** The class kind was confirmed from the refusal: refresh the kind line. */
@@ -775,7 +788,7 @@
         <Select
           id="lottning-class"
           bind:value={selectedClassId}
-          onchange={onClassChange}
+          onchange={onClassSelect}
           data-testid="lottning-class-select"
         >
           {#each classes as klass (klass.id)}

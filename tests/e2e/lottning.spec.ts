@@ -530,3 +530,26 @@ test('a failed load says so and can be retried (LO-5)', async ({ page, request }
   await expect(alert).toHaveCount(0);
   await expect(page.getByTestId('lottning-empty')).toBeVisible();
 });
+
+test.describe('?klass= preselect (Task 8)', () => {
+  test('?klass= opens that class, an unknown id falls back, a pick updates the URL', async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    const ids = await classIds(page, id);
+    const select = page.getByTestId('lottning-class-select');
+
+    await page.goto(`/competition/${id}/lottning?klass=${ids['H21']}`);
+    await expect(select).toHaveValue(ids['H21']!, { timeout: 20_000 });
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+
+    await page.goto(`/competition/${id}/lottning?klass=finns-inte`);
+    await expect(select).not.toHaveValue('finns-inte', { timeout: 20_000 });
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+
+    await select.selectOption({ label: 'D21' });
+    await expect(page).toHaveURL(new RegExp(`klass=${ids['D21']}`));
+    await expect(select).toHaveValue(ids['D21']!);
+  });
+});
