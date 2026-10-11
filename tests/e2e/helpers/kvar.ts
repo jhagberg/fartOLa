@@ -17,11 +17,43 @@ export type Snapshot = {
   returnedCardNumbers: number[];
   overflow: boolean;
   readCount: number;
+  // Added by the in-forest list (#109); absent from an older edge.
+  sources?: Record<
+    string,
+    Array<{ kind: 'checkunit' } | { kind: 'radio'; code: number } | { kind: 'read' }>
+  >;
+  noCheckCardNumbers?: number[];
+  outCardNumbers?: number[];
+  checkunit?: 'read' | 'stored' | 'unavailable';
+  updated?: {
+    checkunit_read_at_ms: number | null;
+    radio_enabled: boolean;
+    radio_last_punch_at_ms: number | null;
+    roc_last_success_at: number | null;
+  };
 };
 
-export function snap(cards: number[], returned: number[] = [], overflow = false): Snapshot {
-  return { cardNumbers: cards, returnedCardNumbers: returned, overflow, readCount: cards.length };
+export function snap(
+  cards: number[],
+  returned: number[] = [],
+  overflow = false,
+  extra: Partial<Snapshot> = {}
+): Snapshot {
+  return {
+    cardNumbers: cards,
+    returnedCardNumbers: returned,
+    overflow,
+    readCount: cards.length,
+    ...extra,
+  };
 }
+
+export const UPDATED = {
+  checkunit_read_at_ms: Date.UTC(2026, 5, 6, 10, 15),
+  radio_enabled: true,
+  radio_last_punch_at_ms: Date.UTC(2026, 5, 6, 10, 20),
+  roc_last_success_at: null,
+};
 
 export async function mockSnapshot(page: Page, body: Snapshot): Promise<void> {
   await page.unroute(PATTERN).catch(() => {});
@@ -39,9 +71,28 @@ export async function prepareKvar(page: Page): Promise<void> {
   await page.evaluate(() => sessionStorage.clear());
   await page.reload();
   await expect(page.getByTestId('kvariskov-view')).toBeVisible();
-  await fetchSnapshot(page, snap([ANNA, CIA, 9_999_001], [], true));
+  await fetchSnapshot(
+    page,
+    snap([ANNA, CIA, 9_999_001], [], true, {
+      sources: {
+        [ANNA]: [{ kind: 'checkunit' }],
+        [CIA]: [{ kind: 'radio', code: 53 }],
+        9999001: [{ kind: 'read' }],
+      },
+      noCheckCardNumbers: [CIA, 9_999_001],
+      outCardNumbers: [ANNA],
+      checkunit: 'stored',
+      updated: UPDATED,
+    })
+  );
   await expect(page.getByTestId('kvariskov-row')).toHaveCount(2);
   await expect(page.getByTestId('kvariskov-unknown')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-seen').first()).toBeVisible();
+  await expect(page.getByTestId('kvariskov-no-check').first()).toBeVisible();
+  await expect(page.getByTestId('kvariskov-hand-set').first()).toBeVisible();
+  await expect(page.getByTestId('kvariskov-stored')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-checkunit-read-at')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-radio-last')).toBeVisible();
   await expect(page.getByTestId('kvariskov-overflow')).toBeVisible();
   await page.getByTestId('kvariskov-mark-safe').first().click();
   await expect(page.getByTestId('kvariskov-marked')).toBeVisible();
