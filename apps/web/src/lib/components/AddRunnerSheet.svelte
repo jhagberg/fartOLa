@@ -199,10 +199,12 @@
         if (body?.error === 'card_taken') {
           error = t('runners.addSheet.err.cardTaken', { card: cardNumber });
         } else {
+          console.error('add failed:', e);
           error = t('common.unknownError');
         }
       } else {
-        error = t('common.unknownError');
+        console.error('add failed:', e);
+        error = e instanceof ApiError ? t('common.unknownError') : t('err.network');
       }
     } finally {
       saving = false;
