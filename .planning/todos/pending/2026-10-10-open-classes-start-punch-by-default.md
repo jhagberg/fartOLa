@@ -26,9 +26,12 @@ where: the field sits far down in Lottning, after the draw controls.
   first start set (drawn on purpose).
 - Kontroll: in the "utan starttid" list, per class, a button "Fri start
   (startstämpling)" that sets the start method, and a link to Lottning
-  for classes that should be drawn.
+  for classes that should be drawn. **Part 2, done in design-lab plan 3:**
+  the link to Lottning per class. **Still open:** the "Fri start" button (a
+  write that changes which start a result runs from; needs a replay).
 - Lottning: move "Starttid räknas från" next to the class header, before
   the draw controls, and say what it means for this class kind.
+  **Part 3, done in design-lab plan 3.**
 
 Test: a confirmed open class with a few imported start times and the
 rest without is not listed in Kontroll; a confirmed age class at nivå 1-3

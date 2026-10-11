@@ -35,6 +35,8 @@ is not repeated as rows.
 
 **Plan 2:** frame done (14 px menu text, full competition name, drawer closes on pick, Eventor status refresh). The readout rows are left for plan 3 and sekretariat.
 
+**Plan 3:** done (a new read takes over the card, toasts stack and identical re-reads are grouped, print and status feedback per read, no device paths, safe keyboard shortcuts, an older answer never replaces a newer one). Not done: first-load refetches (todo), unknown card in a merged refetch (todo).
+
 Solved by plan 1: X1 (sidebar scroll), X2 (drawer at 1024 px, readout stacking), X3 and X4 (status words, pill contrast, 14 px sans), X6 for `.btn.sm`, `.status-chip`, `.kbd`, `.faint`, the 36 px inputs, `.reset-btn`, the confirm buttons and `.reconnect-btn`, punch tiles (colour-blind safe), readout action bar, icons (Lucide at the Task 4 sites), card number / active nav / selected history row go ink, flat cards, token contrast, focus ring (including station card and competition pill), wording `ro.feed.live`, `race.reset.body`, status words.
 
 | ID    | Sev    | Rule                               | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Fix (plan 2)                                                                                                                                                                                                                                                                                                                          |
@@ -71,6 +73,8 @@ Solved by plan 1: X1 (sidebar scroll), X2 (drawer at 1024 px, readout stacking),
 
 **Plan 2:** not touched (m2-fees owns WalkupModal). Left for plan 3.
 
+**Plan 3:** done (plain conflict messages, named card conflicts, a saved toast, 44 px targets, measured empty search, 14 px chip, `--scrim`).
+
 Solved by plan 1: X10 wording for `walk.title`, `walk.desc`, `walk.bana`, `walk.banaPlaceholder`, `walk.save` ("Spara anmälan"), `runners.addSheet.namePlaceholder`, `ro.register`; token contrast (labels, borders); global focus ring; Button and Input 44 px; flat look.
 
 | ID    | Sev    | Rule                               | Finding                                                                                                                                                                                                                                                                                                                         | Fix (plan 2)                                                                                                                                                                              |
@@ -91,6 +95,8 @@ Solved by plan 1: X10 wording for `walk.title`, `walk.desc`, `walk.bana`, `walk.
 
 **Plan 2:** not touched. Left for plan 3.
 
+**Plan 3:** done (load errors with retry, class in the url, readable fullscreen, flash bar, live pushes win over a stale retry, F keys left to the browser).
+
 Solved by plan 1: X3 and X4 for the status pill (14 px, SOFT words, contrast), `--fg-faint` contrast, flat table (shadow becomes border), `ro.feed.live` becomes "direkt", focus ring, `--fg-muted` contrast.
 
 | ID   | Sev    | Rule                            | Finding                                                                                                                                                                                                                                                                           | Fix (plan 2)                                                                                                           |
@@ -107,6 +113,8 @@ Solved by plan 1: X3 and X4 for the status pill (14 px, SOFT words, contrast), `
 ## Lottning (`screens/LottningView.svelte`, `components/PreviousResultsUpload.svelte`, `components/StartTimeHistory.svelte`)
 
 **Plan 2:** not touched. Left for plan 3.
+
+**Plan 3:** done (start method next to the class with an explanation, the stored max time shown, undo instead of confirm, class settings save one at a time, a link from Kontroll per class without start times). Not done: max-time format (todo), class switch during a save (todo).
 
 Solved by plan 1: X6 for `.edit-btn` and `.edit-action-btn` (44 px, 14 px), flat cards, token contrast, focus ring.
 
@@ -127,6 +135,8 @@ Solved by plan 1: X6 for `.edit-btn` and `.edit-action-btn` (44 px, 14 px), flat
 
 **Plan 2:** not touched. Left for plan 3 (see the one-save-model todo).
 
+**Plan 3:** done (save on change with "Sparat" or the error at each field, one max-time save at a time, no Eventor fetch over a pending fee save, fees locked until the post-import reload). Not done: FeesPanel remount, two writers of `competition` (todos).
+
 Solved by plan 1: X6 for `.ctrl-chip` (44 px, 14 px), flat cards, token contrast (`--fg-muted` labels), focus ring on inputs.
 
 | ID   | Sev    | Rule                            | Finding                                                                                                                                                                                                                                                                                                              | Fix (plan 2)                                                                                                                                                                                                               |
@@ -142,6 +152,8 @@ Solved by plan 1: X6 for `.ctrl-chip` (44 px, 14 px), flat cards, token contrast
 ## Anmälda (`screens/RunnersListView.svelte`, `components/AddRunnerSheet.svelte`, `components/EditCompetitorModal.svelte`)
 
 **Plan 2:** only the import sheet (see Importera löpare). Rest left for plan 3.
+
+**Plan 3:** done (filters in the url, per-field errors, results after edits, token colours, the edit dialog shows start, punches and splits, a half-typed edit is kept, plain network errors).
 
 Solved by plan 1: X10 wording (`runners.addSheet.namePlaceholder`, `edit.withdraw.confirmBody`, `edit.withdraw.confirm`, `registration.cancelToast`), Button size-sm 44 px, token contrast, flat cards, focus ring on Input and Select.
 
@@ -246,6 +258,8 @@ Solved by plan 1: X6 `.btn.xs` (44 px, 14 px), icons, token contrast, flat boxes
 ## Hyrbrickor (`screens/ActiveHyrbrickorView.svelte`)
 
 **Plan 2:** not touched (m2-fees owns it). Left for plan 3.
+
+**Plan 3:** done (HY-1 to HY-5: "Markera återlämnad" with a result line, a load error per list, a fuller empty state, 14 px text, neutral count; separate load errors, a result on return).
 
 Solved by plan 1: X6 for the "Returnerad" `size-sm` button (44 px), token contrast, flat cards.
 
