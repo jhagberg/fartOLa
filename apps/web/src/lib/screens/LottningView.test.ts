@@ -1084,7 +1084,7 @@ describe('LottningView (mounted)', () => {
     expect(text('lottning-max-time-note')).toBe('');
   });
 
-  it('Utan tidtagning: one save at a time; a failed newest save unticks the box and says so', async () => {
+  it('Utan tidtagning: one save at a time; a failed newest save keeps what the server holds and says so', async () => {
     await mountView();
     holdClassPatch = true;
     const box = $('lottning-no-timing') as HTMLInputElement;
