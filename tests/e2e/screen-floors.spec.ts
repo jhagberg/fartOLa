@@ -53,7 +53,7 @@ import {
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
-import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
+import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import {
   prepareEditReadError,
@@ -358,6 +358,12 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/info`,
     ready: (p) => p.getByTestId('competition-info'),
     prepare: async (page) => prepareInfoLocked(page),
+  },
+  {
+    name: 'Tävlingsinfo, avgifter låsta när de inte gick att läsa igen',
+    url: (id) => `/competition/${id}/info`,
+    ready: (p) => p.getByTestId('competition-info'),
+    prepare: async (page, _id, request) => prepareInfoFeesReloadError(page, request),
   },
   {
     name: 'Anmälda, lista med återbud, bricka, hyrbricka, starttid och filtrerat antal',

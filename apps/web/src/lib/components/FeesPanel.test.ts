@@ -18,15 +18,27 @@ let puts: Array<Record<string, unknown>>;
 let holdPut: { release: () => void } | null;
 /** The next PUT answers 500 (once). */
 let failPut: boolean;
+/** H21's entry fee as the server has it ("Hämta från Eventor" changes it). */
+let entryFee: number;
+/** The next GET of the fees answers 500 (once). */
+let failGet: boolean;
 
 function installFetch(): void {
   puts = [];
-  global.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+  global.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
       });
+    if (String(url).endsWith('/fees/from-eventor')) {
+      entryFee = 250;
+      return json({ updated: 1 });
+    }
+    if ((init?.method ?? 'GET') === 'GET' && failGet) {
+      failGet = false;
+      return json({ error: 'boom' }, 500);
+    }
     if (init?.method === 'PUT') {
       const body = JSON.parse(String(init.body)) as { card_fee?: number | null };
       puts.push(body);
@@ -46,7 +58,7 @@ function installFetch(): void {
           class_id: 'h21',
           name: 'H21',
           class_kind: 'senior',
-          entry_fee: 180,
+          entry_fee: entryFee,
           youth_entry_fee: null,
           late_fee_pct: 50,
         },
@@ -85,6 +97,8 @@ describe('FeesPanel', () => {
     cardFee = 30;
     holdPut = null;
     failPut = false;
+    entryFee = 180;
+    failGet = false;
     installFetch();
     component = mount(FeesPanel, {
       target: document.body,
@@ -193,5 +207,43 @@ describe('FeesPanel', () => {
     await settle();
     expect(puts).toHaveLength(2);
     expect(fetchButton().disabled).toBe(false);
+  });
+
+  it('a value typed wrong keeps its error at the row while another field of the row saves', async () => {
+    change(entry(), 'abc');
+    await settle();
+    expect(rowNote()).toBe('Ange beloppet i hela kronor.');
+    change(late(), '60');
+    await settle();
+    expect(puts).toEqual([{ classes: [{ ...H21, late_fee_pct: 60 }] }]);
+    expect(entry().value).toBe('abc');
+    expect(rowNote()).toBe('Ange beloppet i hela kronor.');
+    change(entry(), '190');
+    await settle();
+    expect(rowNote()).toBe('Sparat');
+  });
+
+  it('after an Eventor fetch whose reload fails, the fees stay locked until a retry reads them', async () => {
+    const fetchButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="fees-from-eventor"]'
+    )!;
+    failGet = true;
+    fetchButton.click();
+    await settle();
+    // The rows on screen are from before the fetch: editing one would save
+    // the old entry fee back over the fetched one.
+    expect(entry().value).toBe('180');
+    expect(late().disabled).toBe(true);
+    const retry = document.querySelector('[data-testid="fees-reload-error"]')!;
+    expect(retry.textContent).toContain('Det gick inte att läsa avgifterna igen.');
+    expect(retry.textContent).not.toContain('boom');
+    retry.querySelector('button')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid="fees-reload-error"]')).toBeNull();
+    expect(entry().value).toBe('250');
+    expect(late().disabled).toBe(false);
+    change(late(), '60');
+    await settle();
+    expect(puts).toEqual([{ classes: [{ ...H21, entry_fee: 250, late_fee_pct: 60 }] }]);
   });
 });

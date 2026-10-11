@@ -1111,6 +1111,7 @@
   "fees.eventor.no_key": "Ingen Eventor-nyckel. Lägg in den under Inställningar.",
   "fees.eventor.failed": "Det gick inte att hämta avgifterna från Eventor.",
   "fees.err.loadFailed": "Det gick inte att läsa avgifterna: {{error}}",
+  "fees.err.reloadFailed": "Det gick inte att läsa avgifterna igen. Fälten är låsta tills de har lästs in.",
   "fees.err.saveFailed": "Det gick inte att spara avgiften.",
   "fees.err.kronor": "Ange beloppet i hela kronor.",
   "fees.err.percent": "Ange tillägget i hela procent, 0–100.",
