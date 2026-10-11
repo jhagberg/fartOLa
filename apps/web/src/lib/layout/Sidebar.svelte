@@ -1,7 +1,7 @@
 <!--
   Authored for fartola. Not ported from upstream.
 
-  Left sidebar — brand + nav + station card + version footer. Per
+  Left sidebar — brand + nav + station card. Per
   01-UI-SPEC.md §"Layout shell" / sketches/app.jsx lines 102-141.
 
   The active route prop is opaque (string) so we don't bake the route
@@ -181,7 +181,6 @@
 
   <div class="sidebar-footer">
     <StationCard status={stationStatus} serial={stationSerial} />
-    <div class="version">v0.1.0-phase1 · localhost</div>
   </div>
 </aside>
 
@@ -214,11 +213,5 @@
     font-size: var(--fs-caption);
     color: var(--fg-faint);
     border-top: 1px solid var(--border);
-  }
-  .version {
-    font-size: var(--fs-label);
-    color: var(--fg-faint);
-    font-family: var(--font-mono);
-    padding-top: var(--space-xs);
   }
 </style>

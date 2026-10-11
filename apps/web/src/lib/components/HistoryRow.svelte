@@ -74,12 +74,12 @@
 <style>
   .hist-row {
     display: grid;
-    grid-template-columns: 60px 1fr auto;
+    grid-template-columns: 76px 1fr auto;
     gap: 10px;
     padding: 10px 14px;
     border-top: 1px solid var(--border);
     align-items: center;
-    font-size: 13px;
+    font-size: var(--fs-label);
     background: transparent;
     width: 100%;
     text-align: left;
@@ -117,15 +117,17 @@
   }
   @keyframes flashIn {
     0% {
-      background: var(--accent-soft);
+      background: var(--bg-sunken);
+      box-shadow: inset 3px 0 0 var(--fg);
     }
     100% {
       background: transparent;
+      box-shadow: inset 0 0 0 var(--fg);
     }
   }
   .h-card {
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .h-mid {
     min-width: 0;
@@ -142,7 +144,7 @@
   }
   .h-class {
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .h-right {
     text-align: right;

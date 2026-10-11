@@ -21,8 +21,8 @@
 //      A second simulate-read of the same card does NOT re-pop the
 //      toast (the row is now confirmed).
 //
-//   5. **C-M4 Avfärda does not flip**: EntryList-imported Cia (1428824)
-//      → simulate-read → toast visible → click Avfärda → competitor's
+//   5. **C-M4 Senare does not flip**: EntryList-imported Cia (1428824)
+//      → simulate-read → toast visible → click Senare → competitor's
 //      consent_status STILL 'pending_first_read'. A second simulate-read
 //      of the same card does NOT re-pop the toast (session-local
 //      dismissedConsentForCompetitorIds suppresses).
@@ -361,7 +361,7 @@ test('C-M4 consent toast on first card_read for pending competitor', async ({ pa
   await expect(toast).not.toBeVisible();
 });
 
-test('C-M4 Avfärda does not flip consent_status; toast does not re-pop in same session', async ({
+test('C-M4 Senare does not flip consent_status; toast does not re-pop in same session', async ({
   page,
   request,
 }) => {

@@ -14,6 +14,7 @@
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import HistoryRow from './HistoryRow.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
 
   interface Row {
     cardNumber: number;
@@ -36,6 +37,18 @@
   }
 
   let { rows, activeKey = null, flashKey = null, onSelect }: Props = $props();
+
+  /** Consecutive reads of the same card: newest first, earlier reads after. */
+  const groups = $derived.by(() => {
+    const out: Row[][] = [];
+    for (const r of rows) {
+      const last = out[out.length - 1];
+      if (last && last[0]!.cardNumber === r.cardNumber) last.push(r);
+      else out.push([r]);
+    }
+    return out;
+  });
+  let open: Record<string, boolean> = $state({});
 </script>
 
 <section class="card history-card">
@@ -47,13 +60,46 @@
     {#if rows.length === 0}
       <div class="empty">—</div>
     {:else}
-      {#each rows as r (r.key)}
-        <HistoryRow
-          row={r}
-          active={r.key === activeKey}
-          flash={r.key === flashKey}
-          onclick={(row) => onSelect?.(row)}
-        />
+      {#each groups as g (g[0]!.key)}
+        {@const top = g[0]!}
+        {#if g.length === 1}
+          <HistoryRow
+            row={top}
+            active={top.key === activeKey}
+            flash={top.key === flashKey}
+            onclick={(row) => onSelect?.(row)}
+          />
+        {:else}
+          <div class="group" data-testid="history-group">
+            <HistoryRow
+              row={top}
+              active={top.key === activeKey}
+              flash={top.key === flashKey}
+              onclick={(row) => onSelect?.(row)}
+            />
+            <button
+              type="button"
+              class="toggle"
+              data-testid="history-group-toggle"
+              aria-expanded={open[top.key] === true}
+              aria-label={`${t('ro.history.reads', { n: g.length })}: ${t(open[top.key] ? 'ro.history.hideReads' : 'ro.history.showReads')}`}
+              onclick={() => (open[top.key] = !open[top.key])}
+            >
+              <Icon name={open[top.key] ? 'chevron-up' : 'chevron-down'} size={16} />
+              {t('ro.history.reads', { n: g.length })}
+            </button>
+            {#if open[top.key]}
+              {#each g.slice(1) as r (r.key)}
+                <HistoryRow
+                  row={r}
+                  active={r.key === activeKey}
+                  flash={r.key === flashKey}
+                  onclick={(row) => onSelect?.(row)}
+                />
+              {/each}
+            {/if}
+          </div>
+        {/if}
       {/each}
     {/if}
   </div>
@@ -80,12 +126,37 @@
   }
   .badge {
     margin-left: auto;
-    font-size: 11px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
   .history-list {
     display: flex;
     flex-direction: column;
+  }
+  .group {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border);
+  }
+  .group > :global(.hist-row:first-child) {
+    border-top: 0;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--hit);
+    padding: 0 14px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--fs-label);
+    cursor: pointer;
+    text-align: left;
+  }
+  .toggle:hover {
+    background: var(--bg-sunken);
   }
   .empty {
     padding: 24px;

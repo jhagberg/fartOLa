@@ -86,3 +86,44 @@ export async function prepareReadoutPrinted(page: Page, request: APIRequestConte
   await expect(page.locator('.receipt-mirror .head h3')).toHaveText('Kvitto utskrivet');
   await expect(page.getByText('Auto', { exact: true })).toHaveCount(0);
 }
+
+/** Anna's rows carry an open hired card, so a read of her raises that toast. */
+async function mockHiredCard(page: Page): Promise<void> {
+  await page.route('**/api/competitions/*/readout', async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as { history: Array<Record<string, unknown>> };
+    for (const row of body.history) {
+      if (row.card_number === ANNA) {
+        row.hired_card_open = {
+          contact_name: 'Hyr Hyrsson',
+          contact_phone: '0701234567',
+          contact_email: 'hyr@example.test',
+          note: 'Lämnas i kassan',
+        };
+      }
+    }
+    await route.fulfill({ response: res, json: body });
+  });
+}
+
+/**
+ * The whole readout page with a read, a card read twice (a group), and the
+ * consent and hire-card toasts together. Cia is read first (raises the consent
+ * toast), then Anna twice (raises the hire-card toast).
+ */
+export async function prepareReadoutFrame(page: Page, request: APIRequestContext): Promise<void> {
+  const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+  await mockHiredCard(page);
+  await page.goto(`/competition/${id}/readout`);
+  await expect(page.getByTestId('readout-view')).toBeVisible();
+  await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+  await expect(page.getByTestId('consent-confirmation-toast')).toBeVisible();
+  await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+  await simulateRead(request, id, ANNA, [31, 32, 33, 34], { start: 11 * 3600 });
+  await expect(page.getByTestId('hyrbricka-toast')).toBeVisible();
+  await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+  const group = page.getByTestId('history-group').filter({ hasText: String(ANNA) });
+  await expect(group.getByTestId('history-group-toggle')).toHaveText(/2 avläsningar/);
+  await group.getByTestId('history-group-toggle').click();
+  await expect(group.getByTestId('history-row')).toHaveCount(2);
+}
