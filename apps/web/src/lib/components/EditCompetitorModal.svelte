@@ -96,7 +96,10 @@
     const patch: CompetitorProfilePatch = {};
     const trimmedName = name.trim();
     const trimmedClub = club.trim();
-    if (trimmedName.length < 2) errors.name = t('edit.err.name');
+    // A stored short name (an import) must not block other edits: the
+    // length is checked only when the name changes.
+    if (trimmedName.length === 0 || (trimmedName !== competitor.name && trimmedName.length < 2))
+      errors.name = t('edit.err.name');
     else if (trimmedName !== competitor.name) patch.name = trimmedName;
     if (trimmedClub !== (competitor.club ?? '')) {
       patch.club = trimmedClub.length === 0 ? null : trimmedClub;
