@@ -82,7 +82,7 @@ export async function prepareLottningMaxTimeError(
   await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
   await page.getByTestId('lottning-start-method').selectOption('start_punch');
   await expect(page.getByTestId('lottning-start-method-note')).toContainText(
-    'Starttid räknas från sparades inte. Försök igen.'
+    'Valet sparades inte. Försök igen.'
   );
 }
 
