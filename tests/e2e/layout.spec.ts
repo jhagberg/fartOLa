@@ -25,10 +25,14 @@ test('hamburger only at ≤1024 px', async ({ page }) => {
   }
 });
 
-test('closed drawer takes no Tab stops at 820 px', async ({ page }) => {
+test('closed drawer takes no Tab stops at 820 px', async ({ page, request }) => {
+  // The page needs enough Tab stops of its own: wait for the competition
+  // cards, not only the shell (a slow list load left focus on the body).
+  await seedCompetition(request, { controls: 3 });
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto('/');
   await expect(page.getByTestId('topbar-menu')).toBeVisible();
+  await expect(page.getByTestId('comp-grid')).toBeVisible({ timeout: 20_000 });
   for (let i = 0; i < 6; i++) {
     await page.keyboard.press('Tab');
     const where = await page.evaluate(() => {
