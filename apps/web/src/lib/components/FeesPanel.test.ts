@@ -246,4 +246,24 @@ describe('FeesPanel', () => {
     await settle();
     expect(puts).toEqual([{ classes: [{ ...H21, entry_fee: 250, late_fee_pct: 60 }] }]);
   });
+
+  it('a failed first load says so in plain words, logs the raw error and retries', async () => {
+    void unmount(component!);
+    document.body.innerHTML = '';
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    failGet = true;
+    component = mount(FeesPanel, {
+      target: document.body,
+      props: { competitionId: COMP, eventorLinked: true },
+    });
+    await settle();
+    const alert = document.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('Det gick inte att läsa avgifterna.');
+    expect(alert.textContent).not.toMatch(/boom|500|HTTP/);
+    expect(log).toHaveBeenCalled();
+    alert.querySelector('button')!.click();
+    await settle();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(entry().value).toBe('180');
+  });
 });

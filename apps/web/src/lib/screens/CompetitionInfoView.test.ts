@@ -556,3 +556,75 @@ describe('saves that overlap: max time and the date', () => {
     expect($('info-date-note').textContent).not.toContain('Sparat');
   });
 });
+
+describe('a failed load', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('says so in plain words, logs the raw error and retries', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let fail = true;
+    const competition = {
+      id: 'c1',
+      name: 'Krocktest',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+      distance: null,
+      max_time_sec: 9000,
+      race_started_at_ms: null,
+      clock_offset_min: 120,
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      if (url.endsWith('/classes/kinds')) return json({ eventor: 'not_linked', items: [] });
+      if (url.endsWith('/fees')) return json({ date: '2026-10-08', card_fee: null, classes: [] });
+      if (fail) {
+        fail = false;
+        return json({ error: 'boom' }, 500);
+      }
+      return json({
+        competition,
+        classes: [],
+        courses: [],
+        closing: { last_start_ms: null, closing_time_ms: null },
+      });
+    }) as unknown as typeof fetch;
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+    const alert = document.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('Kunde inte hämta tävlingen.');
+    expect(alert.textContent).not.toMatch(/boom|500|HTTP/);
+    expect(log).toHaveBeenCalled();
+    alert.querySelector('button')!.click();
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+    expect(document.querySelector('[data-testid="competition-info"] [role="alert"]')).toBeNull();
+    expect(document.querySelector('[data-testid="info-date"]')).not.toBeNull();
+  });
+});

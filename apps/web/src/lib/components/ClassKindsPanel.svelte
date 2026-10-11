@@ -17,6 +17,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { getClassKinds, putClassKinds, type ClassKindsResponse } from '#lib/api/client.ts';
   import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
@@ -75,7 +76,8 @@
       data = next;
       loadError = null;
     } catch (e) {
-      if (gen === loadGen) loadError = (e as Error).message;
+      console.error('class kinds load failed:', e);
+      if (gen === loadGen) loadError = t('classKinds.err.loadFailed');
     }
   }
 
@@ -220,7 +222,7 @@
 
 <div class="kinds" data-testid="class-kinds">
   {#if loadError}
-    <p class="err" role="alert">{t('classKinds.err.loadFailed', { error: loadError })}</p>
+    <LoadError message={loadError} onretry={() => void load()} />
   {:else if data !== null}
     {#if onlyClassId === null}
       <div class="summary" aria-live="polite">
