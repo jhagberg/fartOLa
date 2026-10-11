@@ -5,7 +5,7 @@
 // failed print (message, details, retry) and the status popover with a
 // failed save. Each asserts every element it adds is visible.
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { seedCompetition, simulateRead } from './seed.ts';
+import { BASE, seedCompetition, simulateRead } from './seed.ts';
 
 const CIA = 1_428_824;
 const ANNA = 7_501_853;
@@ -17,17 +17,12 @@ async function pinnedOlder(page: Page, request: APIRequestContext): Promise<void
   await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
-  // A replayed read right after load clears a pin, so click until it holds.
-  await expect(async () => {
-    await page
-      .getByTestId('history-row')
-      .filter({ hasText: String(CIA) })
-      .first()
-      .click();
-    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA), {
-      timeout: 1_000,
-    });
-  }).toPass();
+  await page
+    .getByTestId('history-row')
+    .filter({ hasText: String(CIA) })
+    .first()
+    .click();
+  await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
 }
 
 /** Pinned older read, cue bar, simulate button and a failed print. */
@@ -119,8 +114,15 @@ async function mockHiredCard(page: Page): Promise<void> {
 export async function prepareReadoutFrame(page: Page, request: APIRequestContext): Promise<void> {
   const { competitionId: id } = await seedCompetition(request, { controls: 4 });
   await mockHiredCard(page);
+  // Live reads only: a read that reaches the page through the server's replay
+  // after the first load is already in its history and raises no prompts.
+  const subscribed = new Promise<void>((resolve) =>
+    page.on('websocket', (ws) => ws.on('framesent', () => resolve()))
+  );
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
+  await subscribed;
+  await request.get(`${BASE}/api/health`);
   await simulateRead(request, id, CIA, [31, 32, 33, 34]);
   await expect(page.getByTestId('consent-confirmation-toast')).toBeVisible();
   await simulateRead(request, id, ANNA, [31, 32, 33, 34]);

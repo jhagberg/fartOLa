@@ -37,16 +37,11 @@ test('two notices and the consent toast show at once, without overlapping', asyn
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
   const pinAnna = async () => {
-    // A late read event can still clear a pin: click until it holds.
-    await expect(async () => {
-      await page
-        .getByTestId('history-row')
-        .filter({ hasText: String(ANNA) })
-        .click();
-      await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible({
-        timeout: 1_000,
-      });
-    }).toPass();
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(ANNA) })
+      .click();
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
   };
   const notices = page.getByTestId('toast').filter({ hasText: 'Ny avläsning' });
   await pinAnna();
