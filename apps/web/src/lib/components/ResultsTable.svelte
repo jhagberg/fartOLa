@@ -127,15 +127,14 @@
   .res-table tr.new td {
     animation: flashRow 4s ease-out;
   }
-  .res-table tr.new td:first-child {
-    box-shadow: inset 3px 0 0 var(--fg);
-  }
   @keyframes flashRow {
     0% {
       background: var(--bg-sunken);
+      box-shadow: inset 3px 0 0 var(--fg);
     }
     100% {
       background: var(--bg-elev);
+      box-shadow: inset 0 0 0 var(--fg);
     }
   }
   .empty {

@@ -158,6 +158,7 @@ test('F key toggles fullscreen / projector mode', async ({ page, request }) => {
 test('a failed results load shows the error and a retry that loads', async ({ page, request }) => {
   const { competitionId } = await setup(request);
   let failing = true;
+  await page.routeWebSocket(/\/ws/, () => {}); // a live push would clear the error itself
   await page.route('**/api/competitions/*/results', (route) =>
     failing ? route.fulfill({ status: 500, json: { error: 'boom' } }) : route.fallback()
   );
@@ -208,6 +209,7 @@ test('in fullscreen the status pill is at least 18 px', async ({ page, request }
   await page.goto(`/competition/${competitionId}/results`);
   const view = page.getByTestId('results-view');
   await expect(view).toBeVisible();
+  await expect(page.getByTestId('class-tab').first()).toBeVisible({ timeout: 20_000 });
   await page.locator('body').focus();
   await page.keyboard.press('f');
   await expect(view).toHaveAttribute('data-fullscreen', 'true', { timeout: 2_000 });
@@ -216,4 +218,20 @@ test('in fullscreen the status pill is at least 18 px', async ({ page, request }
   const px = await pill.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
   expect(px).toBeGreaterThanOrEqual(18);
   await expect(page.getByTestId('results-fullscreen-toggle')).toHaveText(/Avsluta helskärm/);
+});
+
+test('a live push after a failed load clears the error and shows the rows', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setup(request);
+  await page.route('**/api/competitions/*/results', (route) =>
+    route.fulfill({ status: 500, json: { error: 'boom' } })
+  );
+  await page.goto(`/competition/${competitionId}/results`);
+  // The socket's first message (results_full) arrives after the failed load.
+  await expect(page.getByTestId('results-row').first()).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Kunde inte hämta resultaten.' })
+  ).toHaveCount(0);
 });
