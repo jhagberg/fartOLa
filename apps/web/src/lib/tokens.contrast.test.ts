@@ -73,6 +73,7 @@ const PAIRS: Array<[string, string, number]> = [
   ['--fg-faint', '--bg-sunken', 4.5],
   ['--fg-faint', '--pend-soft', 4.5],
   ['--fg-muted', '--bg-elev', 7],
+  ['--fg-muted', '--ok-soft', 4.5],
   ['--ok', '--bg', 4.5],
   ['--mp-fg', '--bg', 4.5],
   ['--dnf', '--bg', 4.5],

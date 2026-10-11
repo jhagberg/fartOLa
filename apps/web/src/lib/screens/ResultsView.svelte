@@ -86,7 +86,6 @@
   let activeId = $state('ALL');
   let fullscreen = $state(false);
   let loadError = $state(false);
-  let loaded = $state(false);
   let loadSeq = 0;
   let updatedAtMs = $state<number | null>(null);
   /** competitor_ids whose row should flash. Cleared after 4s by per-id
@@ -144,35 +143,43 @@
     connectWs();
   }
 
-  /** Resets the error/loaded flags first; a superseded load (an older
-   * retry finishing late) must not overwrite a newer one. */
+  /** Resets the error flag first. A live push (WS) or a newer load
+   * supersedes this one: its results must not overwrite newer data. */
   async function load(): Promise<void> {
     const seq = ++loadSeq;
     loadError = false;
-    loaded = false;
-    try {
-      const [compRes, resultsRes] = await Promise.all([
-        getCompetition(competitionId),
-        getResults(competitionId) as Promise<{
-          competition_id: string;
-          classes: ResultsClass[];
-        }>,
-      ]);
-      if (seq !== loadSeq) return;
-      competition = compRes.competition;
-      classesMeta = compRes.classes;
-      courses = compRes.courses;
-      const next = new Map<string, ResultRow[]>();
-      for (const c of resultsRes.classes) next.set(c.class_id, c.rows);
-      classRows = next;
-      updatedAtMs = Date.now();
+    const [comp, res] = await Promise.allSettled([
+      getCompetition(competitionId),
+      getResults(competitionId) as Promise<{
+        competition_id: string;
+        classes: ResultsClass[];
+      }>,
+    ]);
+    // The class list does not change with live pushes: keep it either way.
+    if (comp.status === 'fulfilled') {
+      competition = comp.value.competition;
+      classesMeta = comp.value.classes;
+      courses = comp.value.courses;
       // The class in the URL; an unknown id falls back to "all classes".
       const wanted = page.url.searchParams.get('klass');
       activeId = classesMeta.some((c) => c.id === wanted) ? wanted! : 'ALL';
-      loaded = true;
-    } catch {
-      if (seq === loadSeq) loadError = true;
     }
+    if (seq !== loadSeq) return;
+    if (comp.status === 'rejected' || res.status === 'rejected') {
+      loadError = true;
+      return;
+    }
+    const next = new Map<string, ResultRow[]>();
+    for (const c of res.value.classes) next.set(c.class_id, c.rows);
+    classRows = next;
+    updatedAtMs = Date.now();
+  }
+
+  /** A live push is newer than any load in flight, and proves the
+   * results can be shown once the classes are known. */
+  function livePush(): void {
+    loadSeq++;
+    if (classesMeta.length > 0) loadError = false;
   }
 
   function connectWs(): void {
@@ -195,6 +202,7 @@
   }
 
   function onResultsFull(payload: ResultsFullPayload): void {
+    livePush();
     const next = new Map<string, ResultRow[]>();
     for (const c of payload.classes) next.set(c.class_id, c.rows);
     classRows = next;
@@ -202,6 +210,7 @@
   }
 
   function onResultsUpdate(payload: ResultsUpdatePayload): void {
+    livePush();
     const prev = classRows.get(payload.class_id) ?? [];
     const prevIds = new Set(prev.map((r) => r.competitor_id));
     // Identify newly-introduced competitor_ids — these get the .new flash.
@@ -307,7 +316,7 @@
     <LoadError message={t('res.loadError')} onretry={() => void load()} />
   {/if}
 
-  {#each groups as g (g.classId)}
+  {#each loadError ? [] : groups as g (g.classId)}
     <h2 class="class-course" data-testid="results-class-course">{g.heading}</h2>
     <div class="table-wrap">
       <ResultsTable rows={g.rows} {flashIds} />
