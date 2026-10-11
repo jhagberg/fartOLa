@@ -9,7 +9,8 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 vi.mock('$app/state', () => ({
   page: { url: new URL('http://localhost/competition/c1/readout') },
 }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn(async () => {}) }));
+const { goto } = vi.hoisted(() => ({ goto: vi.fn(async () => {}) }));
+vi.mock('$app/navigation', () => ({ goto }));
 
 const { default: ReadoutView } = await import('./ReadoutView.svelte');
 
@@ -156,5 +157,38 @@ describe('ReadoutView — overlapping readout refetches', () => {
     await settle();
     expect(document.body.textContent).toContain('Ny Löpare');
     expect(document.body.textContent).not.toContain('Gammal Löpare');
+  });
+
+  it('a card read waits for the newest refetch before it looks at the history', async () => {
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    mounted = true;
+    const send = (type: string, payload: unknown): void =>
+      sockets[0]!.onmessage!({ data: JSON.stringify({ type, payload }) });
+    // The card read's own refetch (#1) is overtaken by a live update's (#2).
+    send('card_read', { card_number: 1007 });
+    await settle();
+    send('results_update', {});
+    await settle();
+    expect(held).toHaveLength(2);
+    const unknown = { ...readoutBody('Okänd', 7), current_read: null };
+    unknown.history = [
+      {
+        ...row('', 7),
+        competitor_id: null,
+        competitor_name: null,
+        unmatched: true,
+        card_number: 1007,
+      },
+    ];
+    // The overtaken one answers first; the card read must still wait for #2.
+    held[0]!(readoutBody('Första Löpare', 1));
+    await settle();
+    held[1]!(unknown);
+    await settle();
+    // The unknown card was seen in the newest history: the walk-up opens.
+    await vi.waitFor(() =>
+      expect(goto).toHaveBeenCalledWith('/competition/c1/readout?walkup=1007')
+    );
   });
 });
