@@ -179,7 +179,7 @@ describe('ReadoutView — overlapping readout refetches', () => {
         competitor_name: null,
         unmatched: true,
         card_number: 1007,
-      },
+      } as unknown as ReturnType<typeof row>,
     ];
     // The overtaken one answers first; the card read must still wait for #2.
     held[0]!(readoutBody('Första Löpare', 1));
