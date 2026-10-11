@@ -42,6 +42,7 @@
   import FeesPanel from '#lib/components/FeesPanel.svelte';
   import Button from '#lib/ui/Button.svelte';
   import Icon from '#lib/ui/Icon.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
@@ -233,7 +234,8 @@
       details = createSaveQueue(detailsOf(detail.competition), sendDetails);
       formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
-      loadError = (e as Error).message ?? 'load failed';
+      console.error('competition load failed:', e);
+      loadError = t('info.loadError');
     } finally {
       loading = false;
     }
@@ -352,7 +354,7 @@
   {#if loading}
     <p class="muted">{t('info.loading')}</p>
   {:else if loadError}
-    <p class="err" role="alert">{loadError}</p>
+    <LoadError message={loadError} onretry={() => void loadAll()} />
   {:else if competition !== null}
     <header class="info-head">
       <h1>{t('info.title')}</h1>

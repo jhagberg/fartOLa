@@ -491,8 +491,7 @@
           });
         } catch (e) {
           const bib = bibTakenOf(e);
-          error =
-            bib !== null ? t('lottning.bibs.err.taken', { bib }) : (e as Error).message;
+          error = bib !== null ? t('lottning.bibs.err.taken', { bib }) : plainError(e);
         }
       }
       await loadStartList();
@@ -662,7 +661,7 @@
       });
       await loadStartList();
     } catch (e) {
-      error = (e as Error).message;
+      error = plainError(e);
     }
   }
 
@@ -687,7 +686,7 @@
       await loadStartList();
     } catch (e) {
       const bib = bibTakenOf(e);
-      error = bib !== null ? t('lottning.bibs.err.taken', { bib }) : (e as Error).message;
+      error = bib !== null ? t('lottning.bibs.err.taken', { bib }) : plainError(e);
     } finally {
       numbering = false;
     }
