@@ -19,7 +19,8 @@
 //
 // Additive fields (SOFT TR 4.22.1, in-forest from every source; the fields
 // above keep their meaning, cardNumbers now also holds the cards seen by
-// radio or a start-punch read that are not out):
+// radio or a start-punch read that are not out, and the cards with a
+// hand-set status that some source has seen — a status is not a return):
 //   sources: Record<card, InForestSource[]>   — checkunit / radio Kxx / read
 //   noCheckCardNumbers: number[]              — "ingen checkstämpling"
 //   outCardNumbers: number[]                  — out by a hand-set status
@@ -34,7 +35,8 @@
 // check unit having been read.
 //
 // GET /api/competitions/:id/in-forest returns the same list from stored data
-// only (no reader), per runner with name/club/class.
+// only (no reader), per runner with name/club/class; runners out only by a
+// hand-set status but seen by a source are listed with hand_set_status: true.
 //
 // Error responses:
 //   404  { error: 'competition_not_found' }
@@ -96,7 +98,10 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
       competitors.filter((c) => c.card_number !== null).map((c) => [c.card_number, c])
     );
     return reply.code(200).send({
-      runners: data.cards.map((c) => {
+      runners: [
+        ...data.cards.map((c) => ({ ...c, hand_set_status: false })),
+        ...data.status_seen.map((c) => ({ ...c, hand_set_status: true })),
+      ].map((c) => {
         const r = byCard.get(c.card_number);
         return {
           ...c,
@@ -158,7 +163,7 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
         // No reader: answer from radio, reads and the stored check-unit read
         // when that lists someone still in the forest (TR 4.22.1).
         const data = loadInForest(app.fartolaDb, id, competitorsOf(id));
-        if (data && data.cards.length > 0) {
+        if (data && data.cards.length + data.status_seen.length > 0) {
           return reply
             .code(200)
             .send(
@@ -242,14 +247,17 @@ export default async function registerCheckunitRoutes(app: FastifyInstance): Pro
     overflow: boolean,
     mode: 'read' | 'stored'
   ) {
-    const cardNumbers = [...new Set([...checkunitCards, ...data.cards.map((c) => c.card_number)])];
+    // Hand-set-status runners seen by a source stay in cardNumbers (and are in
+    // outCardNumbers): a status is not a physical return.
+    const listed = [...data.cards, ...data.status_seen];
+    const cardNumbers = [...new Set([...checkunitCards, ...listed.map((c) => c.card_number)])];
     return {
       cardNumbers,
       returnedCardNumbers: data.out.filter((o) => o.reason !== 'status').map((o) => o.card_number),
       overflow,
       readCount: cardNumbers.length,
-      sources: Object.fromEntries(data.cards.map((c) => [c.card_number, c.sources])),
-      noCheckCardNumbers: data.cards.filter((c) => c.no_check).map((c) => c.card_number),
+      sources: Object.fromEntries(listed.map((c) => [c.card_number, c.sources])),
+      noCheckCardNumbers: listed.filter((c) => c.no_check).map((c) => c.card_number),
       outCardNumbers: data.out.filter((o) => o.reason === 'status').map((o) => o.card_number),
       checkunit: data.checkunit === null ? 'unavailable' : mode,
       updated: updatedOf(id, data),
