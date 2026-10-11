@@ -10,6 +10,7 @@ afterEach(() => {
   instance = null;
   document.body.innerHTML = '';
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 function render(props: { state: 'idle' | 'saving' | 'saved' | 'error'; error?: string }) {
@@ -24,13 +25,13 @@ describe('SavedNote', () => {
   });
   it('says Sparar… as a status while saving', () => {
     render({ state: 'saving' });
-    const el = document.querySelector('[role="status"]')!;
+    const el = document.querySelector('[aria-live="polite"]')!;
     expect(el.textContent).toContain('Sparar…');
   });
   it('says Sparat with an icon as a status, then fades after 3 s', () => {
     vi.useFakeTimers();
     render({ state: 'saved' });
-    const el = document.querySelector('[role="status"]')!;
+    const el = document.querySelector('[aria-live="polite"]')!;
     expect(el.textContent).toContain('Sparat');
     expect(el.querySelector('svg')).not.toBeNull();
     vi.advanceTimersByTime(3100);
@@ -42,7 +43,7 @@ describe('SavedNote', () => {
     render({ state: 'error', error: 'Kunde inte spara.' });
     vi.advanceTimersByTime(10000);
     flushSync();
-    const el = document.querySelector('[role="alert"]')!;
+    const el = document.querySelector('[aria-live="assertive"]')!;
     expect(el.textContent).toContain('Kunde inte spara.');
     expect(el.querySelector('svg')).not.toBeNull();
   });
@@ -59,9 +60,31 @@ describe('createSaveState', () => {
   });
   it('goes to error with the message on rejection, never saved', async () => {
     const s = createSaveState();
-    await s.run(Promise.reject(new Error('boom')));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await s.run(Promise.reject(new Error('HTTP 500')), { error: 'Kunde inte spara.' });
     expect(s.state).toBe('error');
-    expect(s.error).toBe('boom');
+    expect(s.error).toBe('Kunde inte spara.');
+    expect(s.details).toBe('HTTP 500');
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    await s.run(Promise.reject(new Error('x')));
+    expect(s.error).toBe('Något gick fel');
+  });
+  it('ends saved after a failed run then a successful run', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = createSaveState();
+    await s.run(Promise.reject(new Error('x')));
+    await s.run(Promise.resolve());
+    expect(s.state).toBe('saved');
+    expect(s.error).toBe('');
+  });
+  it('ends idle after a failed run then reset', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = createSaveState();
+    await s.run(Promise.reject(new Error('x')));
+    s.reset();
+    expect(s.state).toBe('idle');
+    expect(s.error).toBe('');
   });
   it('lets a newer success win over an older slow failure', async () => {
     const s = createSaveState();
