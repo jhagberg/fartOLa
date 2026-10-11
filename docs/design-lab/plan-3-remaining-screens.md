@@ -83,11 +83,11 @@ approximate, so find selectors by name.
   - results logic, statuses, timing, the event log;
   - receipt templates (`components/receipt-templates/`), `docs/demo`,
     `packages/sportident`;
-  - `apps/edge`, unless a task says so (none does).
+  - `apps/edge`, except the additive read-only fields in Task 11.
 
-  A screen may use an existing API in a new way, for example the
-  Kontroll button in Task 8 sets a class's start method through the
-  existing endpoint.
+  A screen must not write a setting that changes how results are
+  computed. That is why plan 3 has no "Fri start" button on Kontroll;
+  see "Not in this plan".
 
 - **Before starting a task,** ask the coordinator session
   (`meos-capture-windows-build`) whether a live track is editing that
@@ -187,16 +187,20 @@ done first because it can save into the wrong competition.
 **Files:** `apps/web/src/lib/screens/SettingsView.svelte`,
 `tests/e2e/settings-nav.spec.ts`.
 
-- [ ] **Step 1 (RED):** add an e2e test.
-  1. Pin competition A as active.
+- [ ] **Step 1 (RED):** add an e2e test that switches the mounted store
+      for real.
+  1. Seed competitions A and B, and open `/installningar` with A active.
   2. Delay A's Liveresultat GET by 1.5 s.
-  3. Switch the active competition to B (route the active-competition
-     GET to B) before A's response arrives.
+  3. Before A's response arrives, switch to B with the competition picker
+     in the sidebar (`ActiveCompetitionPill`). This is how a volunteer
+     switches, and it drives `activeCompetition.set`. Rerouting the
+     active-competition GET does not switch an initialised store.
   4. Assert that the Liveresultat id field and the helper-code list show
      B's data, not A's.
-  5. Type an id for A, switch to B, click "Spara och starta". Assert
-     that the PUT goes to B's URL with B's draft, and that A's typed id
-     is not sent.
+  5. Type an id and password while A is active, switch to B, then fill
+     B's id and password and click "Spara och starta". Assert that the
+     **PATCH** (`setLiveresultatCredentials`, client.ts ~1645) goes to
+     B's URL with B's values only.
 
   Run it and see it fail.
 
@@ -284,10 +288,16 @@ Andersson H21) and 1428824 (Cia Carlsson D21).
   "Skriver ut…" shows, then "Kvittot skrivs ut". With it mocked failing:
   "Utskriften misslyckades" plus a retry button, and no "Kvitto
   utskrivet". With no read: "Skriv ut kvitto" is disabled with a hint.
-- **Shortcuts.** P inside a focused `<select>`, inside an open dialog,
-  and with Ctrl or Meta does not print.
-- **DNF.** Choosing Utgått closes the popover, and a toast says "{namn}:
-  Utgått". The button reads "Utgått…".
+- **Shortcuts.** P does not print inside a focused `<select>`, with
+  Ctrl or Meta, or while any dialog is open. Test the dialog case with
+  focus left outside it (`ui/Modal` does not move focus).
+- **Status change.**
+  - The button reads "Ändra status…"; the popover offers six statuses
+    (LatestReadCard ~132).
+  - Choosing one awaits the save. On success the popover closes and a
+    toast names the chosen status: "{{name}}: {{status}}".
+  - On failure (mock 500) the popover stays open with the reason and
+    the chosen status still selected.
 - **A new read while pinned.** When an older read is pinned and a new
   read arrives, the cue bar "Du tittar på en äldre avläsning. Visa
   senaste" shows. The simulate button does not render unless the edge
@@ -298,10 +308,10 @@ Andersson H21) and 1428824 (Cia Carlsson D21).
 | Row          | Change                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | RO-1         | Print states. Keys: `ro.print.busy` "Skriver ut…", `ro.print.ok` "Kvittot skrivs ut", `ro.print.failed` "Utskriften misslyckades" with the raw reason in `<details>`, and a retry button. The ReceiptMirror head shows "Kvitto" (not "Kvitto utskrivet") until a print succeeded. Remove the hard-coded failure string.                                                                     |
-| RO-2         | `onKeydown` ignores `select`, `[contenteditable]`, anything inside `[aria-modal="true"]` and any event with Ctrl, Meta or Alt.                                                                                                                                                                                                                                                              |
+| RO-2         | `onKeydown` ignores `select`, `[contenteditable]` and any event with Ctrl, Meta or Alt, and does nothing while any `[aria-modal="true"]` element exists in the document (wherever focus is).                                                                                                                                                                                                |
 | RO-3         | Drop "Star TSP143 · /dev/usb/lp0" and "80mm thermal · ESC/POS". Show the printer's name from settings if one exists, otherwise nothing. `.faint` and `.meta` become 14 px.                                                                                                                                                                                                                  |
 | RO-4         | Render the simulate button only when the edge says dev mode. Use the existing `fartola_dev` flag the Eventor status already carries; read how SettingsView gets it.                                                                                                                                                                                                                         |
-| RO-6         | `ro.dnf` "Utgått…" (en "Did not finish…"). After `confirmDnf`, show a toast "{{name}}: Utgått" (`ro.dnf.done`). The "Bröt loppet" tooltip becomes "Utgått" (one word per concept).                                                                                                                                                                                                          |
+| RO-6         | `ro.dnf` "Ändra status…" / "Change status…". `confirmDnf` keeps the draft (reason, chosen status) until the save resolves; on success it closes and shows `ro.status.done` "{{name}}: {{status}}" with the status word; on failure it stays open with the error. The "Bröt loppet" tooltip becomes "Utgått" (one word per concept).                                                         |
 | RO-9         | Cue bar when pinned: `ro.pinned` "Du tittar på en äldre avläsning." with a button `ro.pinned.latest` "Visa senaste".                                                                                                                                                                                                                                                                        |
 | RO-12        | `.empty-sub` and `.place` 14 px.                                                                                                                                                                                                                                                                                                                                                            |
 | RO-13        | `.mono` 14 px, `.auto-toggle .lbl` 14 px, `.faint` 14 px, `.pending-card .badge` 14 px. The pending count uses `--fg` with the words, not `--dnf` red (a count of waiting items is not an error).                                                                                                                                                                                           |
@@ -310,7 +320,16 @@ Andersson H21) and 1428824 (Cia Carlsson D21).
 | RO-27        | The flash on new reads uses a neutral highlight (`--bg-sunken` plus a 3 px `--fg` left edge), not the green `--accent-soft`. The same applies in `HistoryRow` (Task 3 covers that file; leave a note).                                                                                                                                                                                      |
 | Leftovers    | Remove the `LatestReadCard .dnf-pop` double edge (border plus a `--shadow-md` ring; keep one), `.blink mono` and the `.btn.lg` 13–17 px rules. Move LatestReadCard's hand-rolled `.btn` to `<Button>`, keeping the existing `data-testid`s. `ro.missingStart.hint` in sv: "Check {{check}} + {{offset}} → {{suggested}}" becomes "Checkstämpling {{check}} + {{offset}} ger {{suggested}}". |
 
-**Commit:** `fix(readout): clear print and dnf feedback, safe shortcuts, no device paths`
+**Floor scope:** history (`HistoryRow` 12–13 px) is Task 3's. In this
+task, measure the readout card and the receipt head only:
+`root: '[data-testid=latest-read]'`, plus a second entry with the
+ReceiptMirror head as root. Task 3 adds the whole-page readout entry.
+Also narrow the floor helper's `.receipt-mirror` skip to the paper
+preview only (`.receipt-wrap .paper`, ReceiptPaper's printed text, whose
+small sizes are deliberate). Then the mirror's head and tabs are
+measured.
+
+**Commit:** `fix(readout): clear print and status feedback, safe shortcuts, no device paths`
 
 ---
 
@@ -354,6 +373,10 @@ Andersson H21) and 1428824 (Cia Carlsson D21).
 | RO-27   | HistoryRow flash: the neutral highlight from Task 2.                                                                                                                                                                                                                                                                                                                                                                                           |
 | Wording | `tw.contrast` sv "Hög kontrast (bright sun)" becomes "Stark kontrast för solljus".                                                                                                                                                                                                                                                                                                                                                             |
 
+**Floor scope:** add the whole-page readout entry (no root), with a
+prepare that shows a read, the history with a re-read group, the
+missing-starts panel with its error, and both toasts.
+
 **Commit:** `fix(readout): stacked toasts, grouped re-reads and a plainer frame`
 
 ---
@@ -362,17 +385,23 @@ Andersson H21) and 1428824 (Cia Carlsson D21).
 
 **Files:** `screens/WalkupModal.svelte` (and `EnteredRunnerStep.svelte`
 if a row lands there), i18n, `walkup.spec.ts`, `registration-queue.spec.ts`,
-floors and a11y (the walk-up modal entry on the readout, and on
-Registrering, where Task 4 of plan 2 made it inert for the registration
-floor; give it its own entry here).
+floors and a11y. The walk-up modal needs its own entries, with the modal
+as `root`. Plan 2 excluded the modal on every `/registration` URL in
+`a11y.spec.ts` (~206) and made it inert in the registration floor
+entry. Keep that exclusion only for the registration screen entry, and
+add modal entries that are not excluded.
 
 **Behaviour tests:**
 
 - **Save gives a result.** After "Spara anmälan" the modal closes and a
   toast says "{{name}} anmäld i {{class}}" (`walk.saved`).
-- **A taken card.** It names the holder: "Brickan {{card}} används av
-  {{name}} ({{class}})". A non-card 409 shows its own message, not
-  "Nätverksfel".
+- **A taken card.**
+  - The 409 body carries `existing_competitor_id` only (competitors.ts
+    ~497). Fetch the holder with the existing `getCompetitor` and show
+    "Brickan {{card}} används av {{name}} ({{class}})".
+  - If that lookup fails, show "Brickan {{card}} används redan i
+    tävlingen."
+  - A non-card 409 shows its own message, not "Nätverksfel".
 - **Consent row.** It is 44 px high with a 24 px box. Clicking the text
   ticks it.
 
@@ -381,7 +410,7 @@ floor; give it its own entry here).
 | Row         | Change                                                                                                                                                                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | WA-1        | A toast after a successful save, in ReadoutView and RegistrationView (they own the modal's `onClose(saved)`). Pass the saved name and class, or read them back.                                                                                                |
-| WA-3        | `walk.err.cardTaken` names the holder (the 409 body carries the competitor; check the edge response). Other 409 codes map to `walk.err.conflict` "Kunde inte spara: {{reason}}".                                                                               |
+| WA-3        | New key `walk.err.cardTakenBy` for the named message. Keep `walk.err.cardTaken`, which EditCompetitorModal interpolates with only the card (~116). Other 409 codes map to `walk.err.conflict` "Kunde inte spara: {{reason}}".                                  |
 | WA-4        | Consent: a 24 px checkbox, a 44 px label row, text 16 px.                                                                                                                                                                                                      |
 | WA-5        | `.desc`, `.consent-row`, `.err`, `.info`, `.banner`, `.net-err-body`, `.alternatives-chip`, `.alternatives-picker-title`, `.alt-name` and `.alt-club` become 14 px (16 px where the text is body copy: `.desc`, `.consent-row`). `.discard-msg` becomes 16 px. |
 | WA-6        | The alternatives chip and candidates are 44 px targets. `walk.alternatives.chip` "+{{n}} andra" becomes "{{n}} andra förslag".                                                                                                                                 |
@@ -405,21 +434,22 @@ floor; give it its own entry here).
   "Inga löpare i klassen ännu."
 - **Class in the URL.** `?klass=<id>` opens that class tab, and choosing
   a tab updates the URL (`replaceState`), so a reload keeps the class.
-- **Status in fullscreen.** The status column in full-screen mode still
-  shows the published status word.
+- **Status in fullscreen.** In full-screen mode the status pill's text
+  is at least 18 px. It already shows the word, so the defect is its
+  size; assert the computed font size.
 
 **Edits:**
 
-| Row  | Change                                                                                                                                                               |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RE-1 | As in the tests. Drop the hard-coded "Inga deltagare ännu.".                                                                                                         |
-| RE-2 | As in the tests.                                                                                                                                                     |
-| RE-3 | `th` 14 px sentence case without tracking. Pending rows use `--fg-muted`, not `--fg-faint`, and say "Ej i mål" in the status cell.                                   |
-| RE-4 | `.live`, `.mono`, `.updated`, `.finished` and `.comp-meta` 14 px, `--fg-muted`.                                                                                      |
-| RE-5 | ClassTabs `.count` 14 px, `--fg-muted`.                                                                                                                              |
-| RE-6 | Add a `.res-fs .status` rule so the status shows in fullscreen. A new row's highlight is neutral (as RO-27), not green.                                              |
-| RE-7 | ResultsTable on narrow screens (≤ 1024 px): name and club wrap (`overflow-wrap: anywhere`); time and place stay `nowrap`; padding 10 px 12 px.                       |
-| RE-8 | The fullscreen button becomes `<Button variant="secondary">` with Lucide `maximize`/`minimize` and the words "Helskärm" / "Avsluta helskärm". The `⤢`/`⤓` glyphs go. |
+| Row  | Change                                                                                                                                                                                                                          |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RE-1 | As in the tests. Drop the hard-coded "Inga deltagare ännu.".                                                                                                                                                                    |
+| RE-2 | As in the tests.                                                                                                                                                                                                                |
+| RE-3 | `th` 14 px sentence case without tracking. Pending rows use `--fg-muted`, not `--fg-faint`. Keep the published status word "Ej utläst" (`PEND → EJ_UTLAST`, shared-types resultStatus.ts): no read-out does not mean no finish. |
+| RE-4 | `.live`, `.mono`, `.updated`, `.finished` and `.comp-meta` 14 px, `--fg-muted`.                                                                                                                                                 |
+| RE-5 | ClassTabs `.count` 14 px, `--fg-muted`.                                                                                                                                                                                         |
+| RE-6 | `.res-fs :global(.status)` sets the pill to 18 px in fullscreen (a scoped rule cannot reach StatusPill). A new row's highlight is neutral (as RO-27), not green.                                                                |
+| RE-7 | ResultsTable on narrow screens (≤ 1024 px): name and club wrap (`overflow-wrap: anywhere`); time and place stay `nowrap`; padding 10 px 12 px.                                                                                  |
+| RE-8 | The fullscreen button becomes `<Button variant="secondary">` with Lucide `maximize`/`minimize` and the words "Helskärm" / "Avsluta helskärm". The `⤢`/`⤓` glyphs go.                                                            |
 
 **Commit:** `fix(results): load errors, class in the url and readable fullscreen`
 
@@ -488,34 +518,39 @@ is not in this plan.
 - Add `lottning.startMethod.help.open`, `.help.ranked` and
   `.help.default` (sv and en). Choose one by the class kind and level
   the view already has.
-- Wrap `saveClassFlag` for the start method in `createSaveState`.
+- `saveClassFlag` (~472) catches errors and resolves normally, so
+  wrapping it would show "Sparat" after a failed PATCH. Make it rethrow
+  (or return an explicit result), then wrap the call in
+  `createSaveState`. Add a test: PATCH mocked 500 → the error at the
+  field, never "Sparat".
 
 **Commit:** `feat(lottning): put the start method next to the class and explain it`
 
 ---
 
-### Task 8: Kontroll, free start for open classes
+### Task 8: Kontroll, a way to the class in Lottning
 
-Todo `2026-10-10-open-classes-start-punch-by-default.md`, part 2.
+Todo `2026-10-10-open-classes-start-punch-by-default.md`, the read-only
+half of part 2. The "Fri start" button is not in plan 3: switching a
+partly drawn class to `start_punch` changes which start a result runs
+from (`dnfMp.ts` ~224), so it belongs with part 1 and a replay.
 
-**Files:** `screens/PreRaceCheckView.svelte`, i18n, `prerace.spec.ts`,
+**Files:** `screens/PreRaceCheckView.svelte`, `screens/LottningView.svelte`
+(`?klass=` preselect only), i18n, `prerace.spec.ts`, `lottning.spec.ts`,
 floors and a11y (Kontroll has no entry yet).
 
 **Behaviour tests:**
 
-- **Free start button.** On Kontroll, a class of kind `oppen` or
-  `inskolning` listed under "utan starttid" has a button "Fri start
-  (startstämpling)". Clicking it sets the class start method to
-  `start_punch` through the existing class-flag endpoint (find the call
-  LottningView uses), and the class leaves the list on reload.
-- **Lottning link.** Each listed class has a link "Lotta klassen" to
-  `/competition/<id>/lottning?klass=<classId>`. LottningView reads
-  `?klass=` to preselect; add that if it is missing.
+- **Link to the class.** Each class listed under "utan starttid" has a
+  link "Öppna i Lottning" to `/competition/<id>/lottning?klass=<classId>`.
+- **Preselect.** Opening Lottning with `?klass=<classId>` preselects
+  that class. Choosing another class updates the URL with
+  `replaceState`.
+- **Explanation.** For a listed class of kind `oppen` or `inskolning`,
+  the row says "Öppen klass: välj Startstämpling i Lottning om klassen
+  inte ska lottas." No button changes the class from here.
 
-**Edits:** as in the tests. The button is `<Button variant="secondary">`.
-The result shows with `SavedNote`.
-
-**Commit:** `feat(prerace): set free start for open classes from the check page`
+**Commit:** `feat(prerace): link each class without start times to lottning`
 
 ---
 
@@ -542,6 +577,13 @@ floors, a11y.
   - A failed save (mock 500) shows the error at that row, and the
     control shows the server's last saved value again, not the failed
     edit.
+- **Rapid edits are not lost.**
+  - Change nivå and then distance within 200 ms, with the first PATCH
+    held. After both settle, reload and assert that both values
+    persisted.
+  - Do the same for two fee fields in one row.
+  - Assert that each request carries only the changed field (details),
+    or the row's last saved values plus the changed one (fees).
 - **Maxtid.** Before the first start, the field reads "Låses när
   tävlingen startar (TR 4.21.2)." After the start it is read-only, with
   "Låst sedan första start." It keeps its Spara.
@@ -554,16 +596,16 @@ floors, a11y.
 
 **Edits:**
 
-| Row         | Change                                                                                                                                                                                                                                                                     |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TI-1        | As in the tests. Errors no longer go to `loadError`.                                                                                                                                                                                                                       |
-| TI-2 / todo | Details card: save on change per field with `createSaveState` + `SavedNote`, and drop the card's Spara and the `dirty` logic. ClassKindsPanel and FeesPanel: each row's save goes through a save state with `SavedNote`, and a failure rolls back to the last saved value. |
-| TI-3        | The max time rule text becomes a 14 px `--fg-muted` hint. The long rule goes in `<details>` "Visa regeltext".                                                                                                                                                              |
-| TI-4        | The date field becomes the text input with the ISO pattern the wizard uses (`wizardDate.ts` `validDate`), so it shows 2026-10-09, not the browser's locale format.                                                                                                         |
-| TI-5        | `.info-head .hint`, `.err`, `.badge`, `.ctrl-idx` and `.toast` 14 px; remove the toast, since `SavedNote` replaces it.                                                                                                                                                     |
-| TI-6        | `.head-btn` becomes `<Button size="sm">` (44 px). Checkboxes 24 px in 44 px rows.                                                                                                                                                                                          |
-| TI-7        | Auto-print: the checkbox before its label, in its own full-width row.                                                                                                                                                                                                      |
-| `.btn`      | The page's hand-rolled `.btn` becomes `<Button>`.                                                                                                                                                                                                                          |
+| Row         | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TI-1        | As in the tests. Errors no longer go to `loadError`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| TI-2 / todo | Details card: save on change per field. Each save is a **field-only patch** (`patchCompetition` with that one field, not the whole draft). Saves go through a small per-card queue: one request in flight, and later edits wait and coalesce into the next patch. `createSaveState` + `SavedNote` per field. Drop the card's Spara and the `dirty` logic. ClassKindsPanel and FeesPanel: the same queue per row. FeesPanel keeps its busy-through-reload guard (~82), and the row it sends is the last saved row plus the changed field. A failure rolls back to the last saved value. |
+| TI-3        | The max time rule text becomes a 14 px `--fg-muted` hint. The long rule goes in `<details>` "Visa regeltext".                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| TI-4        | The date field becomes the text input with the ISO pattern the wizard uses (`wizardDate.ts` `validDate`), so it shows 2026-10-09, not the browser's locale format.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| TI-5        | `.info-head .hint`, `.err`, `.badge`, `.ctrl-idx` and `.toast` 14 px; remove the toast, since `SavedNote` replaces it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| TI-6        | `.head-btn` becomes `<Button size="sm">` (44 px). Checkboxes 24 px in 44 px rows.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| TI-7        | Auto-print: the checkbox before its label, in its own full-width row.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `.btn`      | The page's hand-rolled `.btn` becomes `<Button>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 **Commit:** `feat(info): save on change with the result at each field`
 
@@ -590,19 +632,19 @@ runners specs, floors, a11y (Anmälda has no entry yet).
 
 **Edits:**
 
-| Row                | Change                                                                                                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AN-1               | List rows lose the per-row box: a divider line between rows, 44 px min height.                                                                                                                                     |
-| AN-2, AN-4         | As in the tests.                                                                                                                                                                                                   |
-| AN-3               | EditCompetitorModal buttons become `<Button>`: ghost Avbryt, primary Spara, danger Återbud. Add a close button (×, `aria-label` "Stäng") in the head. Drop the orphan `.btn.*` rules.                              |
-| AN-5               | Per-field errors with `aria-describedby`; `err.required` per field ("Fyll i namn", "Välj klass").                                                                                                                  |
-| AN-6               | As in the tests.                                                                                                                                                                                                   |
-| AN-7               | `.search-clear` 44 × 44; AddRunnerSheet `.sheet-close` 44 px; the checkbox 24 px in a 44 px row.                                                                                                                   |
-| AN-8               | RunnersListView `.club`, `.chip-data` and `.chip-data.start-time` 14 px. AddRunnerSheet `.block-heading` 14 px sentence case; `.toggle-hint`, `.hint`, `.ok-note` and `.err` 14 px.                                |
-| AN-9, AN-10, AN-11 | The chip colours become tokens: owned card `--ok-soft`/`--ok`, hire card `--bg-sunken` + `--fg` + the key icon (blue is not a status colour), start-time chip `--mp-soft`/`--mp-fg`. No literals or fallbacks.     |
-| AN-12, AN-13       | AddRunnerSheet and EditCompetitorModal colour literals become tokens (`--ok`, `--dnf-soft`, `--accent-fg`).                                                                                                        |
-| AN-14              | EditCompetitorModal inputs use `ui/Input` and `ui/Select` with `var(--radius)`.                                                                                                                                    |
-| Leftovers          | AddRunnerSheet's redundant `:focus` outline and the walk-up search components' `:focus` outlines (ClubAutocomplete, SmartClubSearch, SmartRunnerSearch, EventorAutocomplete) are deleted; the global ring applies. |
+| Row                | Change                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AN-1               | List rows lose the per-row box: a divider line between rows, 44 px min height.                                                                                                                                                                                                                                                                              |
+| AN-2, AN-4         | As in the tests.                                                                                                                                                                                                                                                                                                                                            |
+| AN-3               | EditCompetitorModal buttons become `<Button>`: ghost Avbryt, primary Spara, danger Återbud. Add a close button (×, `aria-label` "Stäng") in the head. Drop the orphan `.btn.*` rules.                                                                                                                                                                       |
+| AN-5               | Per-field errors with `aria-describedby`; `err.required` per field ("Fyll i namn", "Välj klass").                                                                                                                                                                                                                                                           |
+| AN-6               | As in the tests.                                                                                                                                                                                                                                                                                                                                            |
+| AN-7               | `.search-clear` 44 × 44; AddRunnerSheet `.sheet-close` 44 px; the checkbox 24 px in a 44 px row.                                                                                                                                                                                                                                                            |
+| AN-8               | RunnersListView `.club`, `.chip-data` and `.chip-data.start-time` 14 px. AddRunnerSheet `.block-heading` 14 px sentence case; `.toggle-hint`, `.hint`, `.ok-note` and `.err` 14 px.                                                                                                                                                                         |
+| AN-9, AN-10, AN-11 | The chip colours become tokens. The owned card is neutral (`--bg-sunken`, `--fg`), per the spec's rule that card chips carry no status colour; it is not green. The hire card is neutral too, with the key icon and the word "Hyrbricka" (blue is not a status colour). The start-time chip is a warning (`--mp-soft`/`--mp-fg`). No literals or fallbacks. |
+| AN-12, AN-13       | AddRunnerSheet and EditCompetitorModal colour literals become tokens (`--ok`, `--dnf-soft`, `--accent-fg`).                                                                                                                                                                                                                                                 |
+| AN-14              | EditCompetitorModal inputs use `ui/Input` and `ui/Select` with `var(--radius)`.                                                                                                                                                                                                                                                                             |
+| Leftovers          | AddRunnerSheet's redundant `:focus` outline and the walk-up search components' `:focus` outlines (ClubAutocomplete, SmartClubSearch, SmartRunnerSearch, EventorAutocomplete) are deleted; the global ring applies.                                                                                                                                          |
 
 **Commit:** `fix(runners): results after edits, per-field errors and token colours`
 
@@ -612,39 +654,62 @@ runners specs, floors, a11y (Anmälda has no entry yet).
 
 Todo `2026-10-10-edit-runner-shows-start-and-punches.md`.
 
-**Files:** `components/EditCompetitorModal.svelte`, a small helper
-`components/edit-runner-read.ts` (+ test), i18n, a new
+**Files:** `components/EditCompetitorModal.svelte`, a helper
+`components/edit-runner-read.ts` (+ test), `apps/edge/src/routes/manual.ts`
+(additive fields) and its test, `api/client.ts` (types), i18n, a new
 `tests/e2e/edit-runner.spec.ts`, floors and a11y (an opened dialog
 entry).
 
 **Data:**
 
-- Use the readout payload (`getReadout`, typed in
-  `screens/readout-types.ts`). It already holds each card's latest read
-  with punches, start, finish and check.
-- Pick the runner's latest read by card number. Read the types first;
-  if the payload lacks something the todo asks for, show what exists
-  and list the gap in the report. Do not change the edge.
+- **Not the readout payload.** It holds only the competition's last 12
+  read events (`readout.ts` ~200), so an older read would look like
+  "never read".
+- **Use the corrections endpoint** `GET …/competitors/:id/corrections`
+  (`manual.ts` ~531), which CorrectionsPanel already calls. It has
+  `status`, `elapsed_time_ms`, `start_ms` (the effective start),
+  `read_at_ms`, `missing_codes` and `manual_punches`.
+- **Additive, read-only edge fields** (the only edge change in plan 3):
+  - `latest_read`: `{ punches, start, finish, check, card_type }`, from
+    `view.card_read_history.at(-1)`, or `null`;
+  - `read_count`: the length of `card_read_history`;
+  - `late_start_ms`: from the projection, if it is on the view; read
+    `dnfMp.ts` ~240 for the rule (more than 60 s, none for
+    `start_punch` classes).
+
+  No result logic changes. Add an edge test for the new fields.
 
 **Behaviour tests:**
 
 - **Mispunch.** A runner read with control 35 missing shows the course
   check with 35 as "saknas" (`PunchGrid`, verdict on) and the splits
   table (`SplitsTable`).
-- **Start and times.** Start shows the drawn time and, when present,
-  the start punch, saying which one the time runs from. Finish and read
-  time show. If the start punch is later than the drawn start, it shows
-  "Sen start".
-- **Manual punch.** After a manual punch (CorrectionsPanel), the punch
-  shows as "för hand" and the status follows.
-- **Never read.** A runner who has not been read shows "Inte avläst
-  ännu". Card number and hire status still show.
+- **Start and times.**
+  - Start shows the drawn time and, when present, the start punch, and
+    says which one the time runs from (`start_ms`).
+  - Finish and read time show.
+  - "Sen start" shows only when `late_start_ms` is set. Test both sides
+    of the 60 s threshold, and that a `start_punch` class shows none.
+- **Manual punch.** After a manual punch in CorrectionsPanel, the block
+  refetches: wire CorrectionsPanel's `onChanged` (~105), which
+  EditCompetitorModal does not pass today. The punch then shows as "för
+  hand" and the status follows. Scope the assertions to the new block.
+- **Never read vs unavailable.**
+  - `read_at_ms` null and `read_count` 0 shows "Inte avläst ännu".
+  - A fetch failure shows "Kunde inte hämta stämplingarna" with a retry,
+    never "Inte avläst".
+  - Card number and hire status show in both cases.
 
 **Edits:**
 
 - A block above the form, collapsible with `<details open>` "Start och
   stämplingar".
-- The helper `latestReadFor(readout, cardNumber)` is unit-tested.
+- A helper in `components/edit-runner-read.ts` turns the corrections
+  payload into the view model (start source, late start, punch list
+  with manual flags). It is unit-tested.
+- If the todo asks for something the payload still lacks after the
+  additive fields, keep that line in the todo and name it in the
+  report.
 
 **Commit:** `feat(runners): show start, punches and splits in the edit dialog`
 
@@ -659,9 +724,15 @@ entry).
 
 - **Return gives a result.** "Markera återlämnad" moves the card to
   Återlämnade and shows "Bricka {{card}} återlämnad".
-- **Separate load errors.** A failed load of the open list shows its
-  error with "Försök igen" inside that card, while the returned list
-  still renders (HY-2).
+- **Load errors.**
+  - Open and returned cards arrive in one response (`hiredCards.ts`
+    ~139). A failed first load shows one `LoadError` with "Försök igen".
+  - A failed reload after data was shown keeps the cached lists on
+    screen, with a line "Kunde inte uppdatera listan. Visar senast
+    hämtade." and a retry.
+- **Return errors.** A failed "Markera återlämnad" shows its error on
+  that row; the lists stay. Do not mock separate open and returned
+  endpoints; there is one.
 - **Empty state.** The empty state reads "Inga hyrbrickor ute just nu.
   Hyrbrickor som lånas ut vid direktanmälan visas här tills de lämnas
   tillbaka."
@@ -671,7 +742,7 @@ entry).
 | Row  | Change                                                                                                                                                            |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | HY-1 | `hyrbrickor.returnedBtn` "Markera återlämnad"; the result toast.                                                                                                  |
-| HY-2 | Each list keeps its own state and `LoadError`.                                                                                                                    |
+| HY-2 | As in the tests: one fetch state, cached lists kept on a failed reload, and return-action errors per row.                                                         |
 | HY-3 | As in the tests.                                                                                                                                                  |
 | HY-4 | `.small`, `.badge` and `.contact-line` 14 px.                                                                                                                     |
 | HY-5 | No `opacity` on returned rows (`--fg-muted` text). The open-list count badge becomes neutral (`--bg-sunken`, `--fg`), since a count of cards out is not an error. |
@@ -709,19 +780,21 @@ Opened only when Jonas says so; merge bottom-up with rebase-merge:
 
 1. Tasks 0–3: settings guard, `SavedNote`, Avläsning.
 2. Tasks 4–5: Direktanmälan, Resultat.
-3. Tasks 6–9: Lottning, Kontroll, Tävlingsinfo.
+3. Tasks 6–9: Lottning, Kontroll (link only), Tävlingsinfo.
 4. Tasks 10–13: Anmälda, the Ändra dialog, Hyrbrickor, README, plus the
    fixes from the final reviews.
 
-Each PR text says whether it needs the two-day replay (ADR-0014). None
-should, because no task changes results, statuses or timing. Say so
-explicitly.
+Each PR text says whether it needs the two-day replay (ADR-0014). No
+task writes a setting that changes how results are computed, and Task
+11's edge change adds read-only fields only. Say so explicitly, and name
+Task 11's edge fields in PR 4.
 
 ## Not in this plan
 
-- **The open-class start-punch default** (todo part 1). It changes
-  which time a result runs from, so it needs its own change and a
-  replay.
+- **The open-class start-punch default** (todo part 1) and the "Fri
+  start" button on Kontroll (part 2's write action). Both change which
+  start a result runs from, even for a partly drawn class, so they need
+  their own change and a replay.
 - **The punch log view** (`2026-10-11-punch-log-view.md`). It is a new
   screen backed by a new edge route; it is a feature, not a design
   pass.
@@ -730,3 +803,29 @@ explicitly.
 - **Plan 1 leftover code items:** `readout-long-course.spec.ts` noise,
   PunchGrid `verdict=false` tests, `StatusLabel.test.ts`, and
   `check-icons.mjs`. They stay in the leftovers todo.
+
+## Review log
+
+- 2026-10-11, Codex (gpt-6.1-sol, xhigh), read-only review of this plan:
+  16 findings, all taken.
+  - **Scope:** the Kontroll free-start write is out (it can recompute
+    results), and "Ej utläst" stays.
+  - **Data and API mismatches:**
+    - the Ändra dialog uses corrections data, plus additive read-only
+      fields, not the 12-read readout payload;
+    - the taken-card holder is looked up with `getCompetitor`, under a
+      split key;
+    - the settings test does a real store switch and asserts PATCH;
+    - `saveClassFlag` swallows errors;
+    - hire cards come in one response;
+    - the late start follows `late_start_ms`.
+  - **Behaviour:**
+    - field-only patches with queued writes, and the fees busy guard kept;
+    - "Ändra status…" for six statuses, with the draft kept on failure;
+    - no printing while any dialog is open;
+    - CorrectionsPanel's `onChanged` wired.
+  - **Tests:**
+    - the modal and receipt-head exclusions are narrowed;
+    - the Task 2 floor is scoped to the card until Task 3;
+    - the fullscreen status is asserted at 18 px with `:global`;
+    - owned-card chips are neutral.
