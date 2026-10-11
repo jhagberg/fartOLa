@@ -53,7 +53,9 @@
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import StartTimeHistory from '#lib/components/StartTimeHistory.svelte';
-  import PreviousResultsUpload from '#lib/components/PreviousResultsUpload.svelte';
+  import PreviousResultsUpload, {
+    type UploadStatus,
+  } from '#lib/components/PreviousResultsUpload.svelte';
   import type {
     ClassDTO,
     CompetitionDistance,
@@ -126,6 +128,10 @@
   const maxSave = createSaveState();
   /** The save was refused because the first start has passed (SOFT TR 4.21.2). */
   let maxLocked = $state(false);
+  /** The typed max time is not a well-formed one: nothing is sent. */
+  let maxInvalid = $state(false);
+  /** Only the newest save may set the locked flag or the stored hint. */
+  let maxSaveGen = 0;
 
   let submitting = $state(false);
   let error: string | null = $state(null);
@@ -158,7 +164,11 @@
   let previousResults: { classId: string; results: number; ok: number } | null = $state(null);
   /** A previous-stage result list is being read in: a pursuit drawn now
    * would use the old input times, so the draw waits. */
-  let resultsBusy = $state(false);
+  let resultsStatus = $state<UploadStatus>('none');
+  /** The draw waits while a chosen file is unread, being read or failed. */
+  const resultsHold = $derived(resultsStatus !== 'none');
+  /** The read is in flight: the form's class and mode stay put. */
+  const uploading = $derived(resultsStatus === 'reading');
   /** Bumped whenever start times may have changed: the history refetches. */
   let historyKey = $state(0);
 
@@ -293,6 +303,8 @@
     maxTimeStored = undefined;
     maxSave.reset();
     maxLocked = false;
+    maxInvalid = false;
+    maxSaveGen++;
     drawType = 'All';
     intervalTouched = false;
     await loadStartList();
@@ -331,18 +343,24 @@
     return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   }
 
-  /** Parse mm:ss maxTime input to seconds. Returns null on empty/invalid. */
-  function parseMaxTime(raw: string): number | null {
-    if (!raw.trim()) return null;
-    const parts = raw.trim().split(':');
-    if (parts.length === 2) {
-      const mm = Number(parts[0]);
-      const ss = Number(parts[1]);
-      if (!isNaN(mm) && !isNaN(ss)) return mm * 60 + ss;
-    }
-    const n = Number(raw);
-    if (!isNaN(n) && n > 0) return n;
-    return null;
+  /** Parse a max time: empty = clear (null), mm:ss or h:mm:ss = seconds
+   * (> 0), anything else is 'invalid' and must never be saved. */
+  function parseMaxTime(raw: string): number | null | 'invalid' {
+    const v = raw.trim();
+    if (v === '') return null;
+    const m = /^(?:(\d{1,3}):([0-5]\d)|(\d{1,3}):([0-5]\d):([0-5]\d))$/.exec(v);
+    if (m === null) return 'invalid';
+    const sec =
+      m[1] !== undefined
+        ? Number(m[1]) * 60 + Number(m[2])
+        : Number(m[3]) * 3600 + Number(m[4]) * 60 + Number(m[5]);
+    return sec > 0 ? sec : 'invalid';
+  }
+
+  /** A plain message for a failed row save; the raw error goes to the console. */
+  function plainError(e: unknown): string {
+    console.error('save failed:', e);
+    return t('common.unknownError');
   }
 
   // --- draw -----------------------------------------------------------------
@@ -372,10 +390,9 @@
     })}`;
   }
 
-  /** override: the reason to draw despite a start clash (the redraw was
-   * already confirmed before the clash was refused). */
+  /** override: the reason to draw despite a start clash. */
   async function submitDraw(override?: string): Promise<void> {
-    if (!selectedClassId || resultsBusy) return;
+    if (!selectedClassId || resultsHold) return;
     // No confirmation: the draw is undone from the history (ADR-0016 rule 2).
     const hadList = startList.length > 0;
     submitting = true;
@@ -441,7 +458,7 @@
           : { ...body, allowStartClash: true, startClashReason: override }
       );
       done = summaryOf(res, className);
-      redrawn = hadList;
+      redrawn = hadList && settings.drawType === 'All';
       closingMove = closingMoved(res);
       firstControl = firstControlWarning(res);
       clashReason = '';
@@ -479,16 +496,23 @@
     if (!classLoaded) return;
     const classId = selectedClassId;
     const sec = parseMaxTime(maxTimeInput);
+    if (sec === 'invalid') {
+      maxInvalid = true;
+      return;
+    }
+    maxInvalid = false;
     maxLocked = false;
+    const mine = ++maxSaveGen;
     await maxSave.run(
       patchClass(competitionId, classId, { maxTimeSec: sec }).then(
         () => {
-          if (classId === selectedClassId) maxTimeStored = sec;
+          if (mine === maxSaveGen && classId === selectedClassId) maxTimeStored = sec;
         },
         (e: unknown) => {
-          maxLocked =
-            e instanceof ApiError &&
-            (e.body as { error?: string } | null)?.error === 'max_time_locked';
+          if (mine === maxSaveGen)
+            maxLocked =
+              e instanceof ApiError &&
+              (e.body as { error?: string } | null)?.error === 'max_time_locked';
           throw e;
         }
       ),
@@ -634,7 +658,7 @@
           const taken = bibTakenOf(e);
           rowError = {
             ...rowError,
-            [id]: taken !== null ? t('lottning.bibs.err.takenOne', { bib: taken }) : (e as Error).message,
+            [id]: taken !== null ? t('lottning.bibs.err.takenOne', { bib: taken }) : plainError(e),
           };
           return;
         }
@@ -650,7 +674,7 @@
       await loadStartList();
       cancelEditTime(id);
     } catch (e) {
-      rowError = { ...rowError, [id]: (e as Error).message };
+      rowError = { ...rowError, [id]: plainError(e) };
     } finally {
       const next = { ...savingStartTime };
       delete next[id];
@@ -709,7 +733,7 @@
     <!-- The draw's settings, locked while a draw runs -->
     <fieldset
       class="draw-settings"
-      disabled={submitting}
+      disabled={submitting || uploading}
       data-testid="lottning-settings"
     >
       <!-- Class selector -->
@@ -866,6 +890,9 @@
           placeholder="60:00"
           bind:value={maxTimeInput}
           disabled={!classLoaded}
+          oninput={() => (maxInvalid = false)}
+          aria-invalid={maxInvalid ? 'true' : undefined}
+          aria-describedby={maxInvalid ? 'lottning-max-time-error' : undefined}
           data-testid="lottning-max-time"
         />
         <Button
@@ -877,6 +904,11 @@
           {t('info.save')}
         </Button>
       </div>
+      {#if maxInvalid}
+        <p class="err" role="alert" id="lottning-max-time-error" data-testid="lottning-max-time-error">
+          {t('lottning.maxTimeInvalid')}
+        </p>
+      {/if}
       <div class="max-time-state">
         <SavedNote
           state={maxSave.state}
@@ -976,7 +1008,7 @@
           {competitionId}
           className={selectedClassName}
           loaded={previousResults?.classId === selectedClassId ? previousResults : null}
-          onbusy={(b) => (resultsBusy = b)}
+          onstatus={(st) => (resultsStatus = st)}
           onuploaded={() => loadStartList()}
         />
           <Field label={t('lottning.restart')} htmlFor="lottning-restart">
@@ -1095,7 +1127,7 @@
       <p class="done" role="status" data-testid="lottning-done">{done}</p>
     {/if}
     {#if redrawn}
-      <p class="done" data-testid="lottning-redrawn">
+      <p class="done" role="status" data-testid="lottning-redrawn">
         {t('lottning.redrawn')}
         <a href="#lottning-history" onclick={showHistory}>{t('lottning.redrawnUndo')}</a>
       </p>
@@ -1124,8 +1156,14 @@
       <Button
         variant="primary"
         onclick={() => void submitDraw()}
-        disabled={submitting || resultsBusy || !selectedClassId || !startListLoaded}
-        {...resultsBusy ? { disabledHint: t('lottning.waitResults') } : {}}
+        disabled={submitting || resultsHold || !selectedClassId || !startListLoaded}
+        {...resultsHold
+          ? {
+              disabledHint: t(
+                resultsStatus === 'failed' ? 'lottning.resultsFailed' : 'lottning.waitResults'
+              ),
+            }
+          : {}}
         data-testid="lottning-draw-btn"
       >
         {submitting
@@ -1146,7 +1184,10 @@
       {competitionId}
       {classNames}
       refreshKey={historyKey}
-      onUndone={() => void loadStartList()}
+      onUndone={() => {
+        redrawn = false;
+        void loadStartList();
+      }}
     />
   </div>
 

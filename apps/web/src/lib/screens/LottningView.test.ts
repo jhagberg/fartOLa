@@ -756,8 +756,8 @@ describe('LottningView (mounted)', () => {
     expect($('lottning-preview')!.textContent).toContain('Efteranmälda i H12 som får starttid: 1.');
     ($('lottning-draw-btn') as HTMLButtonElement).click();
     await settle();
-    // No redraw confirmation: nobody already drawn moves.
-    expect($('lottning-redraw-confirm')).toBeNull();
+    // Nobody already drawn moves: no redraw note either.
+    expect($('lottning-redrawn')).toBeNull();
     expect(posts[0]!.body).toEqual({ mode: 'SOFT', drawType: 'RemainingAfter', intervalSec: 120 });
   });
 
