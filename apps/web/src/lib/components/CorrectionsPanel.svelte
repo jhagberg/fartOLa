@@ -414,6 +414,9 @@
     font-size: var(--fs-body);
     color: var(--fg-muted);
   }
+  .missing :global(.btn) {
+    min-width: var(--hit);
+  }
   .field {
     display: grid;
     gap: 4px;

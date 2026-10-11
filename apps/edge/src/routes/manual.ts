@@ -561,6 +561,22 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
           startMethod: cls?.startMethod ?? 'auto',
         }),
         read_at_ms: view.card_read_history.at(-1)?.event_time_ms ?? null,
+        // Read-only, for the edit dialog (start, punches and splits): the
+        // drawn start, the late-start warning the projection already holds
+        // (none for start_punch classes), and the latest read as the card
+        // gave it. `check` is not kept on the view, so it is not here.
+        drawn_start_ms: view.start_time_ms,
+        late_start_ms: view.late_start_ms,
+        read_count: view.card_read_history.length,
+        latest_read:
+          read === undefined
+            ? null
+            : {
+                punches: read.punches,
+                start: read.start,
+                finish: read.finish,
+                card_type: read.card_type,
+              },
         missing_codes: view.missing_codes,
         manual_finish_ms: view.manual_finish_ms,
         manual_finish_reason: view.manual_finish_reason,

@@ -50,7 +50,7 @@
     width: 100%;
     border-collapse: collapse;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .splits-table th,
   .splits-table td {
@@ -61,7 +61,7 @@
   .splits-table th {
     font-weight: 500;
     color: var(--fg-muted);
-    font-size: 11px;
+    font-size: var(--fs-label);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     text-align: right;
