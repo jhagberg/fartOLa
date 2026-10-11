@@ -178,6 +178,8 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
     expect(sv['ms.title']).toBe('Saknade starttider');
     expect(sv['ms.setAll']).toBe('Sätt alla ({{n}})');
     expect(sv['ms.stats']).toBe('median {{median}}, medel {{mean}} ({{n}} löpare)');
+    expect(sv['ms.done_one']).toBe('1 starttid satt.');
+    expect(sv['ms.done_other']).toBe('{{count}} starttider satta.');
     expect(sv['ms.startAfterFinish']).toBe('Starttiden är efter målgången.');
     for (const key of [
       'ms.title',
@@ -190,6 +192,8 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
       'ms.result',
       'ms.set',
       'ms.setAll',
+      'ms.done_one',
+      'ms.done_other',
       'ms.startAfterFinish',
     ]) {
       expect(sv[key], `missing sv key ${key}`).toBeTruthy();

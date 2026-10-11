@@ -1,8 +1,8 @@
 // Authored for fartola. Not ported from upstream.
 //
 // Plan 02-05 — Hyrbricka end-to-end. Covers the walkup → readout →
-// Returnerad happy path that ties Plan 02-02 (walk-up hired_card writer)
-// to Plan 02-05 (finish-readout toast + Returnerad button + admin view).
+// Markera återlämnad happy path that ties Plan 02-02 (walk-up hired_card writer)
+// to Plan 02-05 (finish-readout toast + Markera återlämnad button + admin view).
 //
 // Flow (single test — the 9 steps live as one continuous Playwright
 // spec because they depend on each other's state):
@@ -16,10 +16,10 @@
 //   7. Trigger card_read for 88888 via POST /api/__dev/simulate-read.
 //   8. Assert [data-testid="hyrbricka-return"] is visible AND contains
 //      the contact phone.
-//   9. Click Returnerad → toast disappears AND GET /hired-cards shows
+//   9. Click Markera återlämnad → toast disappears AND GET /hired-cards shows
 //      88888 with returned_at_ms set.
 //   10. Trigger ANOTHER simulate-read for 88888 → toast does NOT
-//       re-pop (the Set-based dismissal honors the prior Returnerad).
+//       re-pop (the Set-based dismissal honors the prior Markera återlämnad).
 //   11. Navigate to /competition/:id/hyrbrickor → 88888 visible in the
 //       Returned section.
 //
@@ -117,7 +117,7 @@ async function simulateRead(
   expect(res.status(), `simulate-read: ${await res.text()}`).toBe(201);
 }
 
-test('hyrbricka full flow: walkup → readout toast → Returnerad → no re-pop → admin view', async ({
+test('hyrbricka full flow: walkup → readout toast → Markera återlämnad → no re-pop → admin view', async ({
   page,
   request,
 }) => {
@@ -173,7 +173,7 @@ test('hyrbricka full flow: walkup → readout toast → Returnerad → no re-pop
   await expect(page.getByTestId('hyrbricka-return')).toBeVisible();
 
   // ------------------------------------------------------------------------
-  // Step 9: click Returnerad → toast disappears AND server has returned_at_ms.
+  // Step 9: click Markera återlämnad → toast disappears AND server has returned_at_ms.
   // ------------------------------------------------------------------------
   await page.getByTestId('hyrbricka-return').click();
   await expect(page.getByTestId('hyrbricka-toast')).not.toBeVisible({ timeout: 5_000 });

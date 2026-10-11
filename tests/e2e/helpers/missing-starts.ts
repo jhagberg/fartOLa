@@ -35,15 +35,21 @@ const listBody = (items: typeof ITEMS) => ({
   items,
 });
 
-/** The panel with two runners; Sätt alla answers after `delayMs`, then the list is empty. */
-export async function mockMissingStarts(page: Page, delayMs = 0): Promise<void> {
+/**
+ * The panel with two runners; after Sätt alla the list is empty. With `hold`,
+ * the apply request waits until the returned function is called.
+ */
+export async function mockMissingStarts(page: Page, hold = false): Promise<() => void> {
   let applied = false;
+  let release!: () => void;
+  const gate = hold ? new Promise<void>((r) => (release = r)) : Promise.resolve();
   await page.route(PATTERN, (route) => route.fulfill({ json: listBody(applied ? [] : ITEMS) }));
   await page.route(APPLY, async (route) => {
-    await new Promise((r) => setTimeout(r, delayMs));
+    await gate;
     applied = true;
     await route.fulfill({ status: 201, json: { updated: 2 } });
   });
+  return () => release?.();
 }
 
 /** Every load fails until the returned function is called, then the list loads. */

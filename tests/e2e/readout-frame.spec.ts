@@ -27,7 +27,7 @@ test('the consent and hire-card toasts stack without overlapping', async ({ page
   await expect(page.getByRole('button', { name: 'Markera återlämnad' })).toBeVisible();
 });
 
-test('a new read that replaces a pinned read shows its notice with the consent toast', async ({
+test('two notices and the consent toast show at once, without overlapping', async ({
   page,
   request,
 }) => {
@@ -36,24 +36,48 @@ test('a new read that replaces a pinned read shows its notice with the consent t
   await simulateRead(request, id, CIA, CODES);
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
-  await page
-    .getByTestId('history-row')
-    .filter({ hasText: String(ANNA) })
-    .click();
-  await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+  const pinAnna = async () => {
+    // A late read event can still clear a pin: click until it holds.
+    await expect(async () => {
+      await page
+        .getByTestId('history-row')
+        .filter({ hasText: String(ANNA) })
+        .click();
+      await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible({
+        timeout: 1_000,
+      });
+    }).toPass();
+  };
+  const notices = page.getByTestId('toast').filter({ hasText: 'Ny avläsning' });
+  await pinAnna();
   await simulateRead(request, id, CIA, CODES, { start: 11 * 3600 });
-  await expect(page.getByTestId('toast').filter({ hasText: 'Ny avläsning' })).toBeVisible();
+  await expect(notices).toHaveCount(1);
   await expect(page.getByTestId('consent-confirmation-toast')).toBeVisible();
-  await expect(page.getByTestId('toast').filter({ hasText: 'Ny avläsning' })).toBeVisible();
+  // A second pinned-replaced notice while the first is still up: both stay.
+  await pinAnna();
+  await simulateRead(request, id, CIA, CODES, { start: 12 * 3600 });
+  await expect(notices).toHaveCount(2);
+  const boxes = [...(await notices.all()), page.getByTestId('consent-confirmation-toast')];
+  const rects = await Promise.all(boxes.map((b) => b.boundingBox()));
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i]!;
+      const b = rects[j]!;
+      expect(
+        a.y + a.height <= b.y || b.y + b.height <= a.y,
+        `${JSON.stringify(a)} overlaps ${JSON.stringify(b)}`
+      ).toBe(true);
+    }
+  }
 });
 
 test('a card read twice is one history row, expanding shows both', async ({ page, request }) => {
   const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+  await simulateRead(request, id, CIA, CODES);
   await simulateRead(request, id, ANNA, CODES);
   await simulateRead(request, id, ANNA, CODES, { start: 11 * 3600 });
-  await simulateRead(request, id, CIA, CODES);
   await page.goto(`/competition/${id}/readout`);
-  await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+  await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
   const rows = page.getByTestId('history-row');
   await expect(rows).toHaveCount(2);
   const toggle = page.getByTestId('history-group-toggle');
@@ -61,14 +85,43 @@ test('a card read twice is one history row, expanding shows both', async ({ page
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(rows.filter({ hasText: String(ANNA) })).toHaveCount(2);
-  // Selecting an earlier read of the group pins it.
-  await rows
-    .filter({ hasText: String(ANNA) })
-    .nth(1)
-    .click();
-  await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+  const anna = rows.filter({ hasText: String(ANNA) });
+  await expect(anna).toHaveCount(2);
+  const cue = page.getByText('Du tittar på en äldre avläsning.');
+  await expect(cue).toHaveCount(0);
+  // The earlier read pins (the cue shows); the group stays open around it.
+  await anna.nth(1).click();
+  await expect(cue).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(anna).toHaveCount(2);
+  // The newest read clears the pin.
+  await anna.nth(0).click();
+  await expect(cue).toHaveCount(0);
 });
+
+for (const [what, patch] of [
+  ['status', { status: 'MP' }],
+  ['runner', { competitor_name: 'Någon Annan' }],
+] as const) {
+  test(`a re-read with another ${what} for the same card is its own row`, async ({
+    page,
+    request,
+  }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, ANNA, CODES);
+    await simulateRead(request, id, ANNA, CODES, { start: 11 * 3600 });
+    // The newest of the two reads carries another result.
+    await page.route('**/api/competitions/*/readout', async (route) => {
+      const res = await route.fetch();
+      const body = (await res.json()) as { history: Array<Record<string, unknown>> };
+      Object.assign(body.history[0]!, patch);
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto(`/competition/${id}/readout`);
+    await expect(page.getByTestId('history-row')).toHaveCount(2);
+    await expect(page.getByTestId('history-group')).toHaveCount(0);
+  });
+}
 
 test('reader status names its subject', async ({ page, request }) => {
   const { competitionId: id } = await seedCompetition(request, { controls: 4 });
@@ -114,7 +167,7 @@ test.describe('missing starts', () => {
     request,
   }) => {
     const { competitionId: id } = await seedCompetition(request, { controls: 4 });
-    await mockMissingStarts(page, 600);
+    const release = await mockMissingStarts(page, true);
     await page.goto(`/competition/${id}/results`);
     const all = page.getByTestId('missing-starts-set-all');
     await expect(all).toHaveText('Sätt alla (2)');
@@ -123,6 +176,7 @@ test.describe('missing starts', () => {
     );
     await all.click();
     await expect(all).toHaveText('Sätter…');
+    release();
     await expect(page.getByTestId('missing-starts-done')).toHaveText('2 starttider satta.');
   });
 });

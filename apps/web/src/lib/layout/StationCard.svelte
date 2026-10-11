@@ -5,7 +5,7 @@
   this lives at the bottom of the sidebar showing reader state. Three
   status modes:
     - 'online' → green PulseDot + "Ansluten"
-    - 'connecting' → amber PulseDot + "Söker läsare…"
+    - 'connecting' → amber PulseDot + "Söker…"
     - 'offline' → red PulseDot + "Frånkopplad"
 
   Props are minimal — the WS client wired from +layout.svelte feeds

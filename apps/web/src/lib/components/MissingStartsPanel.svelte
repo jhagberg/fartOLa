@@ -38,16 +38,14 @@
   let error = $state<string | null>(null);
   /** The first or a refresh load failed. */
   let loadFailed = $state(false);
-  let loaded = $state(false);
   let busy = $state(false);
   /** How many start times the last apply set. */
   let done = $state<number | null>(null);
   let loadSeq = 0;
 
-  async function load(): Promise<void> {
+  async function load(clearDone = true): Promise<void> {
     const seq = ++loadSeq;
     loadFailed = false;
-    loaded = false;
     try {
       const next = await listMissingStarts(competitionId);
       // Keep what the operator typed for runners still listed.
@@ -59,11 +57,11 @@
       if (seq !== loadSeq) return;
       texts = nextTexts;
       data = next;
+      // A later load with runners listed is a new situation: the old result line goes.
+      if (clearDone && next.items.length > 0) done = null;
     } catch {
       if (seq !== loadSeq) return;
       loadFailed = true;
-    } finally {
-      if (seq === loadSeq) loaded = true;
     }
   }
 
@@ -88,7 +86,7 @@
         return;
       }
       done = res.updated;
-      await load();
+      await load(false);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -105,7 +103,7 @@
   </div>
 {/if}
 {#if done !== null}
-  <p class="done" role="status" data-testid="missing-starts-done">{t('ms.done', { n: done })}</p>
+  <p class="done" role="status" data-testid="missing-starts-done">{t('ms.done', { count: done })}</p>
 {/if}
 {#if data && data.items.length > 0}
   <section class="ms" data-testid="missing-starts">
