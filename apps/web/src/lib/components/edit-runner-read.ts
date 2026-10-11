@@ -10,10 +10,8 @@ import type { CorrectionsDTO } from '#lib/api/client.ts';
 import { classifyPunches, formatElapsed, rawPunchesToReceipt } from '#lib/screens/readout-types.ts';
 import type { ReceiptPunch } from './receipt-templates/types.ts';
 
-export type CardClock = { seconds_in_half_day: number; half_day: number };
-
 export interface EditRunnerRead {
-  /** No read in this competition: say so, never "unavailable". */
+  /** No read-out in this competition: say so, never "unavailable". */
   neverRead: boolean;
   readAt: string | null;
   readCount: number;
@@ -50,13 +48,6 @@ export function courseCodes(
   return [...course.controls].sort((a, b) => a.order_idx - b.order_idx).map((c) => c.control_code);
 }
 
-/** HH:MM:SS of a card clock (seconds into its half day). */
-export function cardClockText(c: CardClock): string {
-  const secs = c.seconds_in_half_day + c.half_day * 43_200;
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${pad(Math.floor(secs / 3600) % 24)}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)}`;
-}
-
 export function toEditRunnerRead(
   c: CorrectionsDTO,
   ctx: {
@@ -82,20 +73,20 @@ export function toEditRunnerRead(
       )
     : [];
   return {
-    neverRead: read === null && c.read_count === 0 && c.read_at_ms === null,
-    readAt: c.read_at_ms === null ? null : clock(c.read_at_ms),
+    neverRead: read === null && c.read_count === 0,
+    readAt: read === null ? null : clock(read.read_at_ms),
     readCount: c.read_count,
     start: {
       drawn: c.drawn_start_ms === null ? null : clock(c.drawn_start_ms),
-      punch: read?.start ? cardClockText(read.start) : null,
-      from: c.start_ms === null ? null : c.start_ms === c.drawn_start_ms ? 'drawn' : 'punch',
+      punch: read?.start_ms == null ? null : clock(read.start_ms),
+      from: c.start_source,
     },
     lateStart: c.late_start_ms === null ? null : formatElapsed(c.late_start_ms),
     finish:
       c.manual_finish_ms !== null
         ? { time: clock(c.manual_finish_ms), byHand: true }
-        : read?.finish
-          ? { time: cardClockText(read.finish), byHand: false }
+        : read?.finish_ms != null
+          ? { time: clock(read.finish_ms), byHand: false }
           : null,
     status: c.status,
     elapsed: ctx.noTiming

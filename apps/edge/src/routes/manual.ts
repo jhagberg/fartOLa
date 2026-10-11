@@ -69,8 +69,9 @@ import {
   competitors as competitorsTable,
   type EventPayload,
 } from '../db/schema.ts';
-import { startMs } from '../projection/dnfMp.ts';
+import { startMs, startSource } from '../projection/dnfMp.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
+import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
 import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -539,7 +540,11 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
       const view = app.projectionStore.recomputeNow(competitionId)?.competitors.get(competitorId);
       if (view === undefined) return reply.code(404).send({ error: 'competitor_not_found' });
       const comp = app.fartolaDb.db
-        .select({ date: competitions.date, clockOffsetMin: competitions.clockOffsetMin })
+        .select({
+          date: competitions.date,
+          clockOffsetMin: competitions.clockOffsetMin,
+          raceStartedAtMs: competitions.raceStartedAtMs,
+        })
         .from(competitions)
         .where(eq(competitions.id, competitionId))
         .get()!;
@@ -549,6 +554,14 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         .where(eq(classes.id, view.class_id))
         .get();
       const read = view.card_read_history.at(-1);
+      const offsetMin = competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
+      // Read-outs only, as the projection scores them: a read before the
+      // race started is an identity scan (it stays in the history but is not
+      // a read-out; see enteredRunners.readOut).
+      const readOuts = view.card_read_history.filter(
+        (r) => comp.raceStartedAtMs !== null && r.event_time_ms >= comp.raceStartedAtMs
+      );
+      const scored = readOuts.at(-1);
       return reply.send({
         status: view.status,
         elapsed_time_ms: view.elapsed_time_ms,
@@ -557,7 +570,7 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
           cardType: read?.card_type ?? '',
           readAtMs: read?.event_time_ms ?? 0,
           drawnStartMs: view.start_time_ms,
-          clockOffsetMin: competitionClockOffsetMin(comp.date, comp.clockOffsetMin),
+          clockOffsetMin: offsetMin,
           startMethod: cls?.startMethod ?? 'auto',
         }),
         read_at_ms: view.card_read_history.at(-1)?.event_time_ms ?? null,
@@ -567,15 +580,43 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
         // gave it. `check` is not kept on the view, so it is not here.
         drawn_start_ms: view.start_time_ms,
         late_start_ms: view.late_start_ms,
-        read_count: view.card_read_history.length,
+        read_count: readOuts.length,
+        start_source: startSource({
+          start: scored?.start ?? null,
+          cardType: scored?.card_type ?? '',
+          readAtMs: scored?.event_time_ms ?? 0,
+          drawnStartMs: view.start_time_ms,
+          clockOffsetMin: offsetMin,
+          startMethod: cls?.startMethod ?? 'auto',
+        }),
         latest_read:
-          read === undefined
+          scored === undefined
             ? null
             : {
-                punches: read.punches,
-                start: read.start,
-                finish: read.finish,
-                card_type: read.card_type,
+                punches: scored.punches,
+                start: scored.start,
+                finish: scored.finish,
+                card_type: scored.card_type,
+                read_at_ms: scored.event_time_ms,
+                // Placed like the projection places them (SI5 has no PM bit).
+                start_ms:
+                  scored.start === null
+                    ? null
+                    : cardClockToEpochMs(
+                        scored.start,
+                        scored.card_type,
+                        scored.event_time_ms,
+                        offsetMin
+                      ),
+                finish_ms:
+                  scored.finish === null
+                    ? null
+                    : cardClockToEpochMs(
+                        scored.finish,
+                        scored.card_type,
+                        scored.event_time_ms,
+                        offsetMin
+                      ),
               },
         missing_codes: view.missing_codes,
         manual_finish_ms: view.manual_finish_ms,
