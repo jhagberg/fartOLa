@@ -13,7 +13,10 @@
      control codes)
    - GET /api/competitions/:id/competitors (count per class)
    - PATCH /api/competitions/:id (name / date / receipt_template /
-     auto_print)
+     auto_print / timing_format / level / distance), one field per
+     request: each field saves on change and says "Sparat" or the error
+     next to it (ADR-0016 rule 3). Max time keeps its Spara: it locks at
+     the first start (SOFT TR 4.21.2).
 
   No course/control mutation surface here — XML re-import via /import is
   the canonical path for that. We just *show* what's there. Exception
@@ -37,6 +40,11 @@
   import { goto } from '$app/navigation';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import FeesPanel from '#lib/components/FeesPanel.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
+  import SavedNote from '#lib/ui/SavedNote.svelte';
+  import { createSaveState } from '#lib/ui/saveState.svelte.ts';
+  import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
   import type {
     CompetitionDTO,
     ClassDTO,
@@ -46,6 +54,7 @@
     CompetitionDistance,
   } from '@fartola/shared-types';
   import { clockHmLabel } from './competition-clock.ts';
+  import { validDate } from './wizardDate.ts';
 
   interface Props {
     competitionId: string;
@@ -63,39 +72,77 @@
   let loading = $state(true);
   let loadError: string | null = $state(null);
 
-  // Edit form state — initialised once data loads. We keep a "dirty"
-  // shadow so the Save button only enables when something actually
-  // changed.
-  let formName = $state('');
-  let formDate = $state('');
-  let formTemplate: CompetitionDTO['receipt_template'] = $state('classic');
-  let formAutoPrint = $state(false);
-  let formTimingFormat: 'seconds' | 'tenths' = $state('seconds');
-  // SOFT TR 3.3.1: nivå 1–4 or träning; '' = not set (null on the wire).
-  let formLevel: CompetitionLevel | '' = $state('');
-  // SOFT TA till TR 7.4.4: the distance gives the normal start interval.
-  let formDistance: CompetitionDistance | '' = $state('');
+  /** The details card as the form shows it. SOFT TR 3.3.1 level and TA till
+   * TR 7.4.4 distance: '' = not set (null on the wire). */
+  type Details = {
+    name: string;
+    date: string;
+    receipt_template: CompetitionDTO['receipt_template'];
+    auto_print: boolean;
+    timing_format: CompetitionDTO['timing_format'];
+    level: CompetitionLevel | '';
+    distance: CompetitionDistance | '';
+  };
+  type Key = keyof Details;
+  const KEYS: Key[] = [
+    'name',
+    'date',
+    'receipt_template',
+    'auto_print',
+    'timing_format',
+    'level',
+    'distance',
+  ];
+  const NOTE_ID: Record<Key, string> = {
+    name: 'info-name-note',
+    date: 'info-date-note',
+    receipt_template: 'info-receipt-note',
+    auto_print: 'info-auto-print-note',
+    timing_format: 'info-timing-format-note',
+    level: 'info-level-note',
+    distance: 'info-distance-note',
+  };
+
+  let form: Details = $state({
+    name: '',
+    date: '',
+    receipt_template: 'classic',
+    auto_print: false,
+    timing_format: 'seconds',
+    level: '',
+    distance: '',
+  });
+  /** One save at a time for the card; edits made meanwhile wait for it. */
+  let details: SaveQueue<Details> | null = null;
+  const notes = Object.fromEntries(KEYS.map((k) => [k, createSaveState()])) as Record<
+    Key,
+    ReturnType<typeof createSaveState>
+  >;
+  /** Only a field's newest edit may put its saved value back. */
+  const fieldGen = Object.fromEntries(KEYS.map((k) => [k, 0])) as Record<Key, number>;
+  let dateInvalid = $state(false);
   // SOFT TR 4.16.3: the closing time for the PM.
   let closing: ClosingTime | null = $state(null);
-  let saving = $state(false);
-  let saveErr: string | null = $state(null);
-  let savedToast: string | null = $state(null);
-  let savedTimer: ReturnType<typeof setTimeout> | null = null;
+  let closingGen = 0;
   // SOFT TR 4.21.1: one max time for the competition, in whole minutes.
   let formMaxTimeMin = $state('');
-  let maxTimeErr: string | null = $state(null);
+  let maxInvalid = $state(false);
+  /** The edge refused the max time: the first start has passed (TR 4.21.2). */
+  let maxRefused = $state(false);
+  const maxSave = createSaveState();
+  /** The last void or undo, shown under the course it was made in. */
+  let voidLine: { courseId: string; code: number; voided: boolean; failed: boolean } | null =
+    $state(null);
+  let voidGen = 0;
 
-  const dirty = $derived.by(() => {
-    const c = competition;
-    if (c === null) return false;
+  /** SOFT TR 4.21.2, as the edge decides it: the race has started or a
+   * start time has passed. A refused save says so too. */
+  const maxLocked = $derived.by(() => {
+    const c: CompetitionDTO | null = competition;
     return (
-      formName.trim() !== c.name ||
-      formDate !== c.date ||
-      formTemplate !== c.receipt_template ||
-      formAutoPrint !== c.auto_print ||
-      formTimingFormat !== c.timing_format ||
-      formLevel !== (c.level ?? '') ||
-      formDistance !== (c.distance ?? '')
+      maxRefused ||
+      (c !== null && c.race_started_at_ms != null) ||
+      competitors.some((r) => r.start_time_ms !== null && r.start_time_ms <= Date.now())
     );
   });
 
@@ -143,6 +190,18 @@
     void loadAll();
   });
 
+  function detailsOf(c: CompetitionDTO): Details {
+    return {
+      name: c.name,
+      date: c.date,
+      receipt_template: c.receipt_template,
+      auto_print: c.auto_print,
+      timing_format: c.timing_format,
+      level: c.level ?? '',
+      distance: c.distance ?? '',
+    };
+  }
+
   async function loadAll(): Promise<void> {
     loading = true;
     loadError = null;
@@ -158,13 +217,8 @@
       closing = detail.closing;
       competitors = compsRes.competitors;
       voidedCodes = voidedRes.control_codes;
-      formName = detail.competition.name;
-      formDate = detail.competition.date;
-      formTemplate = detail.competition.receipt_template;
-      formAutoPrint = detail.competition.auto_print;
-      formTimingFormat = detail.competition.timing_format;
-      formLevel = detail.competition.level ?? '';
-      formDistance = detail.competition.distance ?? '';
+      form = detailsOf(detail.competition);
+      details = createSaveQueue(detailsOf(detail.competition), sendDetails);
       formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
     } catch (e) {
       loadError = (e as Error).message ?? 'load failed';
@@ -173,39 +227,65 @@
     }
   }
 
-  async function toggleVoided(code: number): Promise<void> {
-    const voided = !voidedCodes.includes(code);
+  /** A field-only patch. The form is not reassigned from the reply: an edit
+   * waiting in the queue would be overwritten. */
+  async function sendDetails(change: Partial<Details>): Promise<void> {
+    const { level, distance, ...rest } = change;
+    competition = await patchCompetition(competitionId, {
+      ...rest,
+      ...(level === undefined ? {} : { level: level === '' ? null : level }),
+      ...(distance === undefined ? {} : { distance: distance === '' ? null : distance }),
+    });
+    // A new date can move the clock offset; the server shifts the starts,
+    // so the closing time is fetched again (ADR-0017).
+    void refreshClosing();
+  }
+
+  async function refreshClosing(): Promise<void> {
+    const mine = ++closingGen;
     try {
-      await setControlVoided(competitionId, code, voided);
-      voidedCodes = voided ? [...voidedCodes, code] : voidedCodes.filter((c) => c !== code);
+      const { closing: next } = await getCompetition(competitionId);
+      if (mine === closingGen) closing = next;
     } catch (e) {
-      loadError = (e as Error).message ?? 'void failed';
+      console.error('closing time reload failed:', e);
     }
   }
 
-  async function saveEdits(): Promise<void> {
-    if (!competition || saving || !dirty) return;
-    saving = true;
-    saveErr = null;
+  /** Save one field as it was changed. A failure puts the saved value
+   * back, unless a newer edit of the same field is already waiting. */
+  function saveField<K extends Key>(key: K, value: Details[K]): void {
+    const queue = details;
+    if (queue === null) return;
+    form[key] = value;
+    if (key === 'date') {
+      dateInvalid = !validDate(form.date);
+      if (dateInvalid) return;
+    }
+    const mine = ++fieldGen[key];
+    void notes[key].run(
+      queue.save({ [key]: value } as Partial<Details>).catch((e: unknown) => {
+        if (mine === fieldGen[key]) form[key] = queue.saved[key];
+        throw e;
+      }),
+      { error: t('info.fields.saveFailed') }
+    );
+  }
+
+  function blurOnEnter(e: KeyboardEvent & { currentTarget: HTMLInputElement }): void {
+    if (e.key === 'Enter') e.currentTarget.blur();
+  }
+
+  async function toggleVoided(courseId: string, code: number): Promise<void> {
+    const voided = !voidedCodes.includes(code);
+    const mine = ++voidGen;
     try {
-      const updated = await patchCompetition(competitionId, {
-        name: formName.trim(),
-        date: formDate,
-        receipt_template: formTemplate,
-        auto_print: formAutoPrint,
-        timing_format: formTimingFormat,
-        level: formLevel === '' ? null : formLevel,
-        distance: formDistance === '' ? null : formDistance,
-      });
-      competition = updated;
-      // A new date can move the clock offset; the server shifts the starts,
-      // so the closing time is fetched again with it (ADR-0017).
-      closing = (await getCompetition(competitionId)).closing;
-      flashSaved();
+      await setControlVoided(competitionId, code, voided);
+      const rest = voidedCodes.filter((c) => c !== code);
+      voidedCodes = voided ? [...rest, code] : rest;
+      if (mine === voidGen) voidLine = { courseId, code, voided, failed: false };
     } catch (e) {
-      saveErr = (e as Error).message ?? 'save failed';
-    } finally {
-      saving = false;
+      console.error('void failed:', e);
+      if (mine === voidGen) voidLine = { courseId, code, voided, failed: true };
     }
   }
 
@@ -214,36 +294,40 @@
   }
 
   async function saveMaxTime(): Promise<void> {
-    maxTimeErr = null;
     const sec = maxTimeMinutesToSec(formMaxTimeMin);
-    if (sec === undefined) {
-      maxTimeErr = t('info.maxTime.invalid');
-      return;
-    }
-    try {
-      competition = await setCompetitionMaxTime(competitionId, sec);
-      closing = (await getCompetition(competitionId)).closing;
-      flashSaved();
-    } catch (e) {
-      maxTimeErr =
-        e instanceof ApiError && e.status === 409
-          ? t('info.maxTime.locked')
-          : ((e as Error).message ?? 'save failed');
-    }
-  }
-
-  function flashSaved(): void {
-    savedToast = t('info.savedToast');
-    if (savedTimer) clearTimeout(savedTimer);
-    savedTimer = setTimeout(() => {
-      savedToast = null;
-    }, 2200);
+    maxInvalid = sec === undefined;
+    if (sec === undefined) return;
+    await maxSave.run(
+      setCompetitionMaxTime(competitionId, sec).then(
+        (updated) => {
+          competition = updated;
+          void refreshClosing();
+        },
+        (e: unknown) => {
+          if (
+            e instanceof ApiError &&
+            (e.body as { error?: string } | null)?.error === 'max_time_locked'
+          ) {
+            maxRefused = true;
+            formMaxTimeMin = maxTimeToMinutes(competition?.max_time_sec);
+          }
+          throw e;
+        }
+      ),
+      { error: t('info.maxTime.failed') }
+    );
   }
 
   function goImport(): void {
     void goto(`/competition/${competitionId}/import`);
   }
 </script>
+
+{#snippet note(key: Key)}
+  <span class="note" data-testid={NOTE_ID[key]}>
+    <SavedNote state={notes[key].state} error={notes[key].error} />
+  </span>
+{/snippet}
 
 <section class="info-view" data-testid="competition-info">
   {#if loading}
@@ -256,57 +340,91 @@
       <p class="hint">{t('info.hint')}</p>
     </header>
 
-    <!-- Editable fields -->
-    <section class="card">
+    <!-- Editable fields: each saves on change (ADR-0016 rule 3) -->
+    <section class="card" data-testid="info-fields">
       <header class="card-head">
         <h2>{t('info.fields.heading')}</h2>
       </header>
       <div class="card-body grid">
-        <label class="field">
-          <span>{t('info.fields.name')}</span>
+        <div class="field">
+          <label for="info-name">{t('info.fields.name')}</label>
           <input
+            id="info-name"
             type="text"
-            bind:value={formName}
+            bind:value={form.name}
+            onchange={(e) => saveField('name', e.currentTarget.value.trim())}
+            onkeydown={blurOnEnter}
             data-testid="info-name"
             maxlength="200"
           />
-        </label>
-        <label class="field">
-          <span>{t('info.fields.date')}</span>
+          {@render note('name')}
+        </div>
+        <div class="field">
+          <label for="info-date">{t('info.fields.date')}</label>
+          <!-- ISO text like the wizard's, not type="date" (TI-4). -->
           <input
-            type="date"
-            bind:value={formDate}
+            id="info-date"
+            class="mono"
+            type="text"
+            bind:value={form.date}
+            placeholder={t('wiz.date.placeholder')}
+            pattern={'\\d{4}-\\d{2}-\\d{2}'}
+            maxlength={10}
+            autocomplete="off"
+            spellcheck="false"
+            aria-invalid={dateInvalid ? 'true' : undefined}
+            aria-describedby={dateInvalid ? 'info-date-error' : undefined}
+            oninput={() => (dateInvalid = false)}
+            onchange={(e) => saveField('date', e.currentTarget.value.trim())}
+            onkeydown={blurOnEnter}
             data-testid="info-date"
           />
-        </label>
-        <label class="field">
-          <span>{t('info.fields.receipt')}</span>
-          <select bind:value={formTemplate} data-testid="info-receipt">
+          {#if dateInvalid}
+            <p class="err" role="alert" id="info-date-error" data-testid="info-date-error">
+              {t('wiz.date.invalid')}
+            </p>
+          {/if}
+          {@render note('date')}
+        </div>
+        <div class="field">
+          <label for="info-receipt">{t('info.fields.receipt')}</label>
+          <select
+            id="info-receipt"
+            bind:value={form.receipt_template}
+            onchange={(e) =>
+              saveField(
+                'receipt_template',
+                e.currentTarget.value as CompetitionDTO['receipt_template']
+              )}
+            data-testid="info-receipt"
+          >
             {#each RECEIPT_OPTIONS as opt (opt)}
               <option value={opt}>{t(`info.receipt.${opt}`)}</option>
             {/each}
           </select>
-        </label>
-        <label class="field check-row">
-          <input
-            type="checkbox"
-            bind:checked={formAutoPrint}
-            data-testid="info-auto-print"
-          />
-          <span>{t('info.fields.autoPrint')}</span>
-        </label>
-        <label class="field">
-          <span>{t('settings.timing.label')}</span>
-          <select bind:value={formTimingFormat} data-testid="info-timing-format">
+          {@render note('receipt_template')}
+        </div>
+        <div class="field">
+          <label for="info-timing-format">{t('settings.timing.label')}</label>
+          <select
+            id="info-timing-format"
+            bind:value={form.timing_format}
+            onchange={(e) =>
+              saveField('timing_format', e.currentTarget.value as Details['timing_format'])}
+            data-testid="info-timing-format"
+          >
             <option value="seconds">{t('settings.timing.seconds')}</option>
             <option value="tenths">{t('settings.timing.tenths')}</option>
           </select>
-        </label>
-        <label class="field">
-          <span>{t('info.level.label')}</span>
+          {@render note('timing_format')}
+        </div>
+        <div class="field">
+          <label for="info-level">{t('info.level.label')}</label>
           <select
-            bind:value={formLevel}
+            id="info-level"
+            bind:value={form.level}
             aria-describedby="info-level-hint"
+            onchange={(e) => saveField('level', e.currentTarget.value as Details['level'])}
             data-testid="info-level"
           >
             <option value="">{t('info.level.none')}</option>
@@ -314,13 +432,16 @@
               <option value={lvl}>{t(`info.level.${lvl}`)}</option>
             {/each}
           </select>
+          {@render note('level')}
           <small class="field-hint" id="info-level-hint">{t('info.level.hint')}</small>
-        </label>
-        <label class="field">
-          <span>{t('info.distance.label')}</span>
+        </div>
+        <div class="field">
+          <label for="info-distance">{t('info.distance.label')}</label>
           <select
-            bind:value={formDistance}
+            id="info-distance"
+            bind:value={form.distance}
             aria-describedby="info-distance-hint"
+            onchange={(e) => saveField('distance', e.currentTarget.value as Details['distance'])}
             data-testid="info-distance"
           >
             <option value="">{t('info.distance.none')}</option>
@@ -328,42 +449,58 @@
               <option value={d}>{t(`info.distance.${d}`)}</option>
             {/each}
           </select>
+          {@render note('distance')}
           <small class="field-hint" id="info-distance-hint">{t('info.distance.hint')}</small>
-        </label>
-      </div>
-      <div class="card-foot">
-        {#if saveErr}
-          <p class="err" role="alert">{saveErr}</p>
-        {/if}
-        <button
-          type="button"
-          class="btn primary"
-          onclick={() => void saveEdits()}
-          disabled={!dirty || saving}
-          data-testid="info-save"
-        >
-          {saving ? t('info.saving') : t('info.save')}
-        </button>
+        </div>
+        <!-- TI-7: the checkbox before its label, in a row of its own. -->
+        <div class="field check-field">
+          <label class="check-row">
+            <input
+              type="checkbox"
+              bind:checked={form.auto_print}
+              onchange={(e) => saveField('auto_print', e.currentTarget.checked)}
+              data-testid="info-auto-print"
+            />
+            <span>{t('info.fields.autoPrint')}</span>
+          </label>
+          {@render note('auto_print')}
+        </div>
       </div>
     </section>
 
-    <!-- Max time (SOFT TR 4.21.1–4.21.2) -->
+    <!-- Max time (SOFT TR 4.21.1–4.21.2): an explicit Spara, it locks at the first start -->
     <section class="card">
       <header class="card-head">
         <h2>{t('info.maxTime.heading')}</h2>
       </header>
       <div class="card-body">
-        <label class="field">
-          <span>{t('info.maxTime.label')}</span>
+        <div class="field">
+          <label for="info-max-time">{t('info.maxTime.label')}</label>
           <input
+            id="info-max-time"
             type="text"
             inputmode="numeric"
             placeholder="150"
             bind:value={formMaxTimeMin}
+            readonly={maxLocked}
+            oninput={() => (maxInvalid = false)}
+            aria-invalid={maxInvalid ? 'true' : undefined}
+            aria-describedby={maxInvalid
+              ? 'info-max-time-lock info-max-time-error'
+              : 'info-max-time-lock'}
             data-testid="info-max-time"
           />
-        </label>
-        <p class="hint">{t('info.maxTime.hint')}</p>
+          <p class="field-hint" id="info-max-time-lock" data-testid="info-max-time-lock">
+            {maxLocked ? t('info.maxTime.lockedNote') : t('info.maxTime.lockNote')}
+          </p>
+          {#if maxInvalid}
+            <p class="err" role="alert" id="info-max-time-error">{t('info.maxTime.invalid')}</p>
+          {/if}
+        </div>
+        <details class="rule" data-testid="info-max-time-rule">
+          <summary>{t('info.maxTime.showRule')}</summary>
+          <p>{t('info.maxTime.hint')}</p>
+        </details>
         <!-- SOFT TR 4.16.3, TR 4.22.1: last start + max time, for the PM -->
         <dl class="closing" data-testid="info-closing">
           <dt>{t('info.closing.lastStart')}</dt>
@@ -380,18 +517,19 @@
         <p class="hint">{t('info.closing.hint')}</p>
       </div>
       <div class="card-foot">
-        {#if maxTimeErr}
-          <p class="err" role="alert">{maxTimeErr}</p>
-        {/if}
-        <button
-          type="button"
-          class="btn primary"
-          onclick={() => void saveMaxTime()}
-          disabled={formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
+        <span class="note" data-testid="info-max-time-note">
+          <SavedNote
+            state={maxSave.state}
+            error={maxRefused ? t('info.maxTime.locked') : maxSave.error}
+          />
+        </span>
+        <Button
+          onclick={saveMaxTime}
+          disabled={maxLocked || formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
           data-testid="info-max-time-save"
         >
           {t('info.save')}
-        </button>
+        </Button>
       </div>
     </section>
 
@@ -425,14 +563,11 @@
       <header class="card-head">
         <h2>{t('info.courses.heading')}</h2>
         <span class="badge mono">{courses.length}</span>
-        <button
-          type="button"
-          class="btn ghost head-btn"
-          onclick={goImport}
-          data-testid="info-reimport"
-        >
-          {t('info.courses.reimport')}
-        </button>
+        <span class="head-act">
+          <Button variant="secondary" size="sm" onclick={goImport} data-testid="info-reimport">
+            {t('info.courses.reimport')}
+          </Button>
+        </span>
       </header>
       {#if courses.length === 0}
         <p class="empty">{t('info.courses.empty')}</p>
@@ -466,26 +601,59 @@
                         class="ctrl-chip mono"
                         class:voided
                         aria-pressed={voided}
-                        title={t(voided ? 'info.courses.unvoidControl' : 'info.courses.voidControl')}
-                        onclick={() => toggleVoided(ctrl.control_code)}
+                        title={t(voided ? 'info.courses.unvoidControl' : 'info.courses.voidControl', {
+                          code: ctrl.control_code,
+                        })}
+                        onclick={() => void toggleVoided(crs.id, ctrl.control_code)}
                         data-testid="info-ctrl-chip"
+                        data-code={ctrl.control_code}
                       >
                         <span class="ctrl-idx">{ctrl.order_idx + 1}</span>
                         <span class="ctrl-code">{ctrl.control_code}</span>
+                        {#if voided}
+                          <Icon name="strikethrough" size={16} />
+                          <span>{t('info.courses.voided')}</span>
+                        {/if}
                       </button>
                     </li>
                   {/each}
                 </ol>
+                <!-- TI-1: the result of a void, or its error, at the chips. -->
+                <div class="void-live" aria-live="polite">
+                  {#if voidLine !== null && voidLine.courseId === crs.id}
+                    {@const line = voidLine}
+                    <div class="void-line" data-testid="info-void-result">
+                      {#if line.failed}
+                        <span class="err">
+                          <Icon name="alert-triangle" size={16} />
+                          {t(line.voided ? 'info.courses.voidFailed' : 'info.courses.unvoidFailed', {
+                            code: line.code,
+                          })}
+                        </span>
+                      {:else}
+                        <span>
+                          {t(line.voided ? 'info.courses.voidedLine' : 'info.courses.unvoidedLine', {
+                            code: line.code,
+                          })}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onclick={() => void toggleVoided(crs.id, line.code)}
+                          data-testid="info-void-undo"
+                        >
+                          {t('info.courses.undo')}
+                        </Button>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
               {/if}
             </li>
           {/each}
         </ul>
       {/if}
     </section>
-  {/if}
-
-  {#if savedToast}
-    <div class="toast" role="status" data-testid="info-saved-toast">{savedToast}</div>
   {/if}
 </section>
 
@@ -506,7 +674,7 @@
   .info-head .hint {
     margin: 4px 0 0;
     color: var(--fg-muted);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .closing {
     display: grid;
@@ -533,7 +701,7 @@
   .err {
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .card {
     background: var(--bg-elev);
@@ -560,14 +728,10 @@
     border: 1px solid var(--border);
     padding: 2px 8px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
-  .head-btn {
+  .head-act {
     margin-left: auto;
-    height: 32px;
-    min-height: 32px;
-    padding: 0 var(--space-sm);
-    font-size: var(--fs-caption);
   }
   .card-body {
     padding: var(--space-md);
@@ -579,6 +743,7 @@
   }
   .card-foot {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-sm);
@@ -591,7 +756,7 @@
     flex-direction: column;
     gap: 4px;
   }
-  .field span {
+  .field > label {
     font-size: var(--fs-caption);
     color: var(--fg-muted);
   }
@@ -606,50 +771,44 @@
     font: inherit;
   }
   .field .field-hint {
+    margin: 0;
     font-size: var(--fs-caption);
     color: var(--fg-muted);
   }
-  .field.check-row {
-    flex-direction: row-reverse;
-    justify-content: flex-end;
+  .field input[readonly] {
+    background: var(--bg-sunken);
+  }
+  /* TI-7: the checkbox before its label, in a row of its own. */
+  .check-field {
+    grid-column: 1 / -1;
+  }
+  .check-row {
+    display: flex;
     align-items: center;
     gap: var(--space-xs);
-  }
-  .field.check-row input {
-    width: 18px;
-    height: 18px;
-    margin: 0;
-  }
-  .btn {
-    height: var(--hit);
     min-height: var(--hit);
-    padding: 0 var(--space-md);
-    border-radius: var(--radius);
-    border: 1px solid transparent;
-    font: inherit;
-    font-size: var(--fs-label);
-    font-weight: 600;
     cursor: pointer;
   }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
+  .field .check-row input {
+    width: 24px;
+    height: 24px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
   }
-  .btn.primary:hover:not(:disabled) {
-    background: var(--accent-strong);
+  .rule {
+    margin: var(--space-sm) 0 0;
   }
-  .btn.primary:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+  .rule summary {
+    display: flex;
+    align-items: center;
+    min-height: var(--hit);
+    cursor: pointer;
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
   }
-  .btn.ghost {
-    background: transparent;
-    border: 1px solid var(--border-strong);
-    color: var(--fg);
-  }
-  .btn.ghost:hover {
-    background: var(--bg-sunken);
+  .rule p {
+    margin: 0;
   }
   .empty {
     margin: 0;
@@ -706,27 +865,28 @@
     cursor: pointer;
   }
   .ctrl-chip.voided {
+    background: var(--bg-sunken);
+    border-color: var(--border-strong);
+  }
+  .ctrl-chip.voided .ctrl-code {
     text-decoration: line-through;
-    opacity: 0.6;
   }
   .ctrl-idx {
     color: var(--fg-muted);
-    font-size: 10px;
+    font-size: var(--fs-label);
   }
   .ctrl-code {
     font-weight: 600;
   }
-  .toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--fg);
-    color: var(--bg-elev);
-    padding: 10px 18px;
-    border-radius: var(--radius);
-    font-size: 13px;
-    box-shadow: var(--shadow-lg);
-    z-index: 100;
+  .void-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+  .void-line .err {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 </style>
