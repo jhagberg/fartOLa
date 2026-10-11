@@ -240,7 +240,12 @@
   }
 
   function sourceLabels(cn: number): string[] {
-    return (sources[String(cn)] ?? []).map((src) =>
+    const list = sources[String(cn)];
+    // No entry: the card is only in the check-unit read (the edge lists
+    // sources for every card seen by radio, a start read or the check unit
+    // in the same list, but an older edge sends none).
+    if (list === undefined) return [t('kvariskov.seenCheckunit')];
+    return list.map((src) =>
       src.kind === 'radio'
         ? t('kvariskov.seenRadio', { code: src.code })
         : src.kind === 'read'
@@ -255,8 +260,17 @@
   }
 
   const checkunitReadAtMs = $derived(updated?.checkunit_read_at_ms ?? null);
-  /** With a stored or missing check-unit read, zero missing is never an all-clear. */
-  const softClear = $derived(checkunitMode !== 'read');
+  /** With a stored, missing or wrapped check-unit read, zero missing is never an all-clear. */
+  const softClear = $derived(checkunitMode !== 'read' || overflow);
+
+  /** The empty-read hint is about a fresh check-unit read only. */
+  const showEmptyRead = $derived(startedCards.length === 0 && checkunitMode === 'read');
+  const showCount = $derived(
+    startedCards.length > 0 &&
+      !loading &&
+      !lastFetchFailed &&
+      !(softClear && missingCards.length === 0)
+  );
 
   function startText(ms: number | null): string {
     return ms == null || clockOffsetMin === null ? '—' : formatClockTime(ms, clockOffsetMin);
@@ -298,7 +312,7 @@
 
 {#snippet seenTags(cn: number)}
   <span class="tags">
-    {#each sourceLabels(cn) as label (label)}
+    {#each sourceLabels(cn) as label, i (i)}
       <span class="tag" data-testid="kvariskov-seen">{label}</span>
     {/each}
     {#if noCheckCards.has(cn)}
@@ -367,13 +381,14 @@
     {/if}
 
     <!-- Summary banner -->
+    {#if showEmptyRead || showCount}
     <section class="sec summary-banner" data-testid="kvariskov-summary">
-      {#if startedCards.length === 0}
+      {#if showEmptyRead}
         <div class="box warn" data-testid="kvariskov-empty-read">
           <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
           {t('kvariskov.emptyRead')}
         </div>
-      {:else if !loading && !lastFetchFailed && !(softClear && missingCards.length === 0)}
+      {:else}
         <div class="count-badge" class:urgent={missingCards.length > 0}>
           {t('kvariskov.result', { count: missingCards.length })}
         </div>
@@ -391,6 +406,7 @@
         {/if}
       {/if}
     </section>
+    {/if}
 
     <!-- Table heading with fetch time -->
     <div class="fetch-row">

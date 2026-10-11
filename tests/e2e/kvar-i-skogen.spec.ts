@@ -73,6 +73,7 @@ test('wrapped memory is never all clear', async ({ page }) => {
   await fetchSnapshot(page, snap([ANNA], [ANNA], true));
   await expect(view(page)).not.toContainText('Alla löpare har återkommit');
   await expect(view(page)).not.toContainText('Ingen saknas:');
+  await expect(page.locator('.count-badge')).toHaveCount(0);
   await expect(view(page)).toContainText(
     'Ingen saknas bland de lästa brickorna, men minnet har runnit runt. Kontrollera startlistan för tidiga starter.'
   );
@@ -209,6 +210,8 @@ test('a stored check-unit read is never all clear', async ({ page }) => {
     'Läs dosan igen för att vara säker.'
   );
   await expect(page.getByTestId('kvariskov-stored')).toContainText('(sparad avläsning)');
+  await expect(page.locator('.count-badge')).toHaveCount(0);
+  await expect(page.getByTestId('kvariskov-summary-text')).toHaveCount(0);
 });
 
 test('an unavailable check unit warns and is never all clear', async ({ page }) => {
@@ -225,6 +228,8 @@ test('an unavailable check unit warns and is never all clear', async ({ page }) 
   await expect(view(page)).not.toContainText('Alla löpare har återkommit');
   await expect(page.getByTestId('kvariskov-none-missing')).toHaveCount(0);
   await expect(page.getByTestId('kvariskov-stored-none-missing')).toHaveCount(0);
+  await expect(page.locator('.count-badge')).toHaveCount(0);
+  await expect(page.getByTestId('kvariskov-summary-text')).toHaveCount(0);
 });
 
 test('shows when the check unit was read and the last radio punch', async ({ page }) => {
@@ -257,4 +262,31 @@ test('radio off: no radio line', async ({ page }) => {
   );
   await expect(page.getByTestId('kvariskov-checkunit-read-at')).toBeVisible();
   await expect(page.getByTestId('kvariskov-radio-last')).toHaveCount(0);
+});
+
+test('a runner with a hand-set status seen by radio is still missing (real edge shape)', async ({
+  page,
+}) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA, CIA], [ANNA], false, {
+      sources: { [ANNA]: [{ kind: 'checkunit' }], [CIA]: [{ kind: 'radio', code: 53 }] },
+      outCardNumbers: [CIA],
+      checkunit: 'read',
+    })
+  );
+  await expect(row(page, 'Cia Carlsson')).toContainText('Handsatt status');
+  await expect(row(page, 'Cia Carlsson')).toContainText('Radio K53');
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+});
+
+test('a check-unit card without a sources entry is labelled Dosa', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [], false, { sources: {}, checkunit: 'read' }));
+  await expect(row(page, 'Anna Andersson')).toContainText('Dosa');
+});
+
+test('a stored read with an empty list does not show the empty-read hint', async ({ page }) => {
+  await fetchSnapshot(page, snap([], [], false, { checkunit: 'stored', updated: UPDATED }));
+  await expect(view(page)).not.toContainText('Inga stämplingar lästes från dosan');
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
 });
