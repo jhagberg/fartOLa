@@ -819,6 +819,7 @@
   "lottning.startMethod.help.ranked": "Lottad start enligt tävlingsregler (starttid).",
   "lottning.startMethod.help.default": "Automatiskt räknar från löparens starttid om den finns, annars från startstämplingen.",
   "lottning.startMethod.failed": "Valet sparades inte. Försök igen.",
+  "lottning.noTimingFailed": "Valet sparades inte. Försök igen.",
   "lottning.maxTimeFailed": "Maxtiden sparades inte. Försök igen.",
   "lottning.maxTimeInvalid": "Ogiltig maxtid. Skriv mm:ss, till exempel 60:00.",
   "lottning.resultsFailed": "Resultatlistan kunde inte läsas in",

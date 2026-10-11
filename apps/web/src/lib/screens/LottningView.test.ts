@@ -230,6 +230,9 @@ describe('LottningView (mounted)', () => {
   /** Extra fields on GET lottning's class for H12, and the distance. */
   let h12Class: Record<string, unknown>;
   let distance: string | null;
+  /** When set, every class PATCH waits until the test answers it. */
+  let holdClassPatch: boolean;
+  let heldPatches: Array<{ body: unknown; answer: (status?: number) => void }>;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -253,6 +256,8 @@ describe('LottningView (mounted)', () => {
     classKindSource = 'name';
     h12Class = {};
     distance = null;
+    holdClassPatch = false;
+    heldPatches = [];
     drawAnswer = { status: 201, body: { drawn: 2 } };
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -272,6 +277,12 @@ describe('LottningView (mounted)', () => {
       }
       if (init?.method === 'PATCH') {
         patches.push({ url, body });
+        if (holdClassPatch && url.includes('/classes/')) {
+          const status = await new Promise<number>((r) =>
+            heldPatches.push({ body, answer: (s = 200) => r(s) })
+          );
+          return status === 200 ? json({ ok: true }) : json({ error: 'x' }, status);
+        }
         return json({ ok: true, competitor: {} });
       }
       if (init?.method === 'PUT') {
@@ -912,5 +923,127 @@ describe('LottningView (mounted)', () => {
     await settle();
     expect(posts[0]!.url).toContain('/bibs');
     expect(($('lottning-start-name') as HTMLInputElement).value).toBe('Start 2');
+  });
+
+  // Class settings that decide how the class is scored: one save at a time
+  // per class, and only the newest choice decides what the screen shows.
+  const classPatches = () => patches.filter((p) => p.url.includes('/classes/'));
+  const text = (id: string) => ($(id)?.textContent ?? '').trim();
+
+  it('a second start method chosen while the first saves waits for it and stays chosen', async () => {
+    await mountView();
+    holdClassPatch = true;
+    await choose('lottning-start-method', 'start_punch');
+    await choose('lottning-start-method', 'start_time');
+    // One request at a time: the edge cannot apply them in the wrong order.
+    expect(classPatches()).toHaveLength(1);
+    heldPatches[0]!.answer();
+    await settle();
+    // The older answer does not bring the older method back.
+    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_time');
+    expect(text('lottning-start-method-note')).not.toContain('Sparat');
+    expect(classPatches().map((p) => p.body)).toEqual([
+      { start_method: 'start_punch' },
+      { start_method: 'start_time' },
+    ]);
+    heldPatches[1]!.answer();
+    await settle();
+    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_time');
+    expect(text('lottning-start-method-note')).toContain('Sparat');
+  });
+
+  it('a failed newest start method shows the one last saved, with the error', async () => {
+    await mountView();
+    holdClassPatch = true;
+    await choose('lottning-start-method', 'start_punch');
+    await choose('lottning-start-method', 'start_time');
+    heldPatches[0]!.answer();
+    await settle();
+    heldPatches[1]!.answer(500);
+    await settle();
+    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_punch');
+    expect(text('lottning-start-method-note')).toBe('Valet sparades inte. Försök igen.');
+  });
+
+  it('two max-time saves go out one after the other; the note follows the newest', async () => {
+    await mountView();
+    holdClassPatch = true;
+    await typeInto('lottning-max-time', '90:00');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    await typeInto('lottning-max-time', '120:00');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    expect(classPatches()).toHaveLength(1);
+    heldPatches[0]!.answer();
+    await settle();
+    expect(classPatches().map((p) => p.body)).toEqual([{ maxTimeSec: 5400 }, { maxTimeSec: 7200 }]);
+    expect(text('lottning-max-time-note')).not.toContain('Sparat');
+    heldPatches[1]!.answer();
+    await settle();
+    expect(text('lottning-max-time-note')).toContain('Sparat');
+  });
+
+  it('a max time typed wrong after a failed save shows only the field error', async () => {
+    await mountView();
+    holdClassPatch = true;
+    await typeInto('lottning-max-time', '90:00');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    heldPatches[0]!.answer(500);
+    await settle();
+    expect(text('lottning-max-time-note')).toBe('Maxtiden sparades inte. Försök igen.');
+    await typeInto('lottning-max-time', '9x');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    expect($('lottning-max-time-error')).not.toBeNull();
+    expect(text('lottning-max-time-note')).not.toContain('sparades inte');
+  });
+
+  it('a max-time failure that lands after a class switch is not shown on the new class', async () => {
+    await mountView();
+    holdClassPatch = true;
+    await typeInto('lottning-max-time', '90:00');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    await choose('lottning-class-select', 'd10');
+    heldPatches[0]!.answer(500);
+    await settle();
+    expect(text('lottning-max-time-note')).toBe('');
+  });
+
+  it('Utan tidtagning: one save at a time; a failed newest save unticks the box and says so', async () => {
+    await mountView();
+    holdClassPatch = true;
+    const box = $('lottning-no-timing') as HTMLInputElement;
+    box.click();
+    await settle();
+    box.click();
+    await settle();
+    box.click();
+    await settle();
+    expect(classPatches()).toHaveLength(1);
+    heldPatches[0]!.answer();
+    await settle();
+    // The two later clicks went out as one, on the newest value.
+    expect(classPatches().map((p) => p.body)).toEqual([{ no_timing: true }, { no_timing: true }]);
+    expect(box.checked).toBe(true);
+    heldPatches[1]!.answer(500);
+    await settle();
+    // What the server holds: the first save went through.
+    expect(box.checked).toBe(true);
+    expect(text('lottning-no-timing-note')).toBe('Valet sparades inte. Försök igen.');
+  });
+
+  it('Utan tidtagning: a failed save puts the box back as it was', async () => {
+    await mountView();
+    holdClassPatch = true;
+    const box = $('lottning-no-timing') as HTMLInputElement;
+    box.click();
+    await settle();
+    heldPatches[0]!.answer(500);
+    await settle();
+    expect(box.checked).toBe(false);
+    expect(text('lottning-no-timing-note')).toBe('Valet sparades inte. Försök igen.');
   });
 });

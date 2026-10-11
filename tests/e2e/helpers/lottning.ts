@@ -60,7 +60,8 @@ export async function prepareLottningFull(page: Page, request: APIRequestContext
   await expect(page.getByText('Sparat')).toHaveCount(2);
 }
 
-/** The max time that did not save, with the note in its error colour. */
+/** Class settings that did not save, with their notes in the error colour,
+ * and a max time typed wrong (its field error replaces the max-time note). */
 export async function prepareLottningMaxTimeError(
   page: Page,
   request: APIRequestContext
@@ -82,6 +83,11 @@ export async function prepareLottningMaxTimeError(
   await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
   await page.getByTestId('lottning-start-method').selectOption('start_punch');
   await expect(page.getByTestId('lottning-start-method-note')).toContainText(
+    'Valet sparades inte. Försök igen.'
+  );
+  // A failed save unticks the box again, so click rather than check().
+  await page.getByTestId('lottning-no-timing').click();
+  await expect(page.getByTestId('lottning-no-timing-note')).toContainText(
     'Valet sparades inte. Försök igen.'
   );
 }
