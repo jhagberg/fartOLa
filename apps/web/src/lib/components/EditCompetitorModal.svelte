@@ -18,6 +18,7 @@
   gap noticed during live training-event testing.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Modal from '#lib/ui/Modal.svelte';
   import Button from '#lib/ui/Button.svelte';
   import Field from '#lib/ui/Field.svelte';
@@ -68,17 +69,22 @@
   // Re-seed the form whenever the parent passes a different competitor
   // (or the modal toggles open). Track `competitor?.id` so the effect
   // doesn't fire on unrelated field mutations.
+  const competitorId = $derived(competitor?.id);
   $effect(() => {
     if (!open) return;
-    void competitor?.id;
-    name = competitor?.name ?? '';
-    club = competitor?.club ?? '';
-    classId = competitor?.class_id ?? '';
-    cardNumber = competitor?.card_number == null ? '' : String(competitor.card_number);
-    paid = String(competitor?.paid_amount ?? 0);
-    fieldErrors = {};
-    error = null;
-    confirmingWithdraw = false;
+    void competitorId;
+    // Only the id (and open) re-seed: a card read on /readout hands in a
+    // new competitor object, which must not wipe a half-typed edit.
+    untrack(() => {
+      name = competitor?.name ?? '';
+      club = competitor?.club ?? '';
+      classId = competitor?.class_id ?? '';
+      cardNumber = competitor?.card_number == null ? '' : String(competitor.card_number);
+      paid = String(competitor?.paid_amount ?? 0);
+      fieldErrors = {};
+      error = null;
+      confirmingWithdraw = false;
+    });
   });
 
   function clearError(field: FieldName): void {
@@ -136,7 +142,8 @@
       } else if (code === 'class_not_in_competition') {
         fieldErrors = { class: t('edit.err.class') };
       } else {
-        error = t('common.unknownError');
+        console.error('save failed:', e);
+        error = e instanceof ApiError ? t('common.unknownError') : t('err.network');
       }
     } finally {
       saving = false;
@@ -161,8 +168,9 @@
       // refetch keeps it in sync.
       (onWithdrawn ?? onSaved)(competitor);
       onClose();
-    } catch {
-      error = t('common.unknownError');
+    } catch (e) {
+      console.error('withdraw failed:', e);
+      error = e instanceof ApiError ? t('common.unknownError') : t('err.network');
     } finally {
       withdrawing = false;
       confirmingWithdraw = false;
