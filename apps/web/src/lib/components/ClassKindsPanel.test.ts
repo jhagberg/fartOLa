@@ -96,6 +96,8 @@ describe('ClassKindsPanel (mounted)', () => {
   let items: ClassKindItem[];
   /** When set, the next GET waits until the test releases it. */
   let holdGet: { release: () => void } | null;
+  /** When set, every PUT waits until the test releases it. */
+  let holdPut: { release: () => void } | null;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 6; i++) {
@@ -108,6 +110,7 @@ describe('ClassKindsPanel (mounted)', () => {
   beforeEach(() => {
     puts = [];
     holdGet = null;
+    holdPut = null;
     items = [H21, D45, OPEN];
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const json = (body: unknown, status = 200) =>
@@ -120,6 +123,7 @@ describe('ClassKindsPanel (mounted)', () => {
           items: Array<{ class_id: string; class_kind: string; age_class: number | null }>;
         };
         puts.push(body);
+        if (holdPut) await new Promise<void>((r) => (holdPut!.release = r));
         const missingAge = body.items.find(
           (i) => i.class_kind === 'veteran' && i.age_class === null
         );
@@ -287,5 +291,59 @@ describe('ClassKindsPanel (mounted)', () => {
     await settle();
     expect(document.querySelectorAll('[data-testid="class-kind-row"]')).toHaveLength(1);
     expect(document.querySelector('[data-testid="class-kinds-unconfirmed"]')).toBeNull();
+  });
+
+  const rowEl = (id: string, testid: string) =>
+    document.querySelector(`[data-class-id="${id}"] [data-testid="${testid}"]`);
+  const choose = async (id: string, kind: string) => {
+    const select = rowEl(id, 'class-kind-select') as HTMLSelectElement;
+    select.value = kind;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+  };
+  const release = async () => {
+    const held = holdPut!;
+    holdPut = null;
+    held.release();
+    await settle();
+  };
+
+  it('a kind chosen without its age while a save is in flight is kept, not dropped as saved', async () => {
+    component = mount(ClassKindsPanel, {
+      target: document.body,
+      props: { competitionId: 'comp-1' },
+    });
+    await settle();
+    holdPut = { release: () => {} };
+    await choose('x', 'inskolning');
+    await choose('x', 'veteran');
+    expect(rowEl('x', 'class-kind-error')!.textContent).toContain('Ange ålder');
+    await release();
+    expect(puts).toEqual([
+      { items: [{ class_id: 'x', class_kind: 'inskolning', age_class: null }] },
+    ]);
+    expect((rowEl('x', 'class-kind-select') as HTMLSelectElement).value).toBe('veteran');
+    expect(rowEl('x', 'class-kind-age')).not.toBeNull();
+    expect(rowEl('x', 'class-kind-error')!.textContent).toContain('Ange ålder');
+    expect(rowEl('x', 'class-kind-note')!.textContent).not.toContain('Sparat');
+  });
+
+  it('an age cleared while a save is in flight stays cleared, with its message', async () => {
+    component = mount(ClassKindsPanel, {
+      target: document.body,
+      props: { competitionId: 'comp-1' },
+    });
+    await settle();
+    holdPut = { release: () => {} };
+    await choose('h21', 'elit');
+    const age = rowEl('h21', 'class-kind-age') as HTMLInputElement;
+    age.value = '';
+    age.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await release();
+    expect(puts).toHaveLength(1);
+    expect((rowEl('h21', 'class-kind-age') as HTMLInputElement).value).toBe('');
+    expect(rowEl('h21', 'class-kind-error')!.textContent).toContain('Ange ålder');
+    expect(rowEl('h21', 'class-kind-note')!.textContent).not.toContain('Sparat');
   });
 });
