@@ -16,6 +16,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { feesFromEventor, getFees, putFees, type FeesResponse } from '#lib/api/client.ts';
   import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
@@ -42,6 +43,9 @@
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let busy = $state(false);
+  /** The reload after "Hämta från Eventor" failed: the rows on screen are
+   * old, so editing stays off until a retry reads them. */
+  let reloadFailed = $state(false);
 
   type Field = 'entry_fee' | 'youth_entry_fee' | 'late_fee_pct';
   type Fees = Pick<ClassFeeItem, Field>;
@@ -51,7 +55,7 @@
   /** One save at a time per row (class id, or CARD). */
   const queues = new Map<string, SaveQueue<Fees> | SaveQueue<{ card_fee: number | null }>>();
   let notes = $state.raw<Record<string, ReturnType<typeof createSaveState>>>({});
-  /** A value that is not one: nothing was sent. */
+  /** A value that is not one, per `${row}:${field}`: nothing was sent. */
   let invalid = $state<Record<string, string>>({});
   /** Only a field's newest edit may put its saved value back. */
   const fieldGen: Record<string, number> = {};
@@ -86,12 +90,16 @@
     return note;
   }
 
-  function setInvalid(row: string, message: string | null): void {
+  function setInvalid(row: string, field: string, message: string | null): void {
     const next = { ...invalid };
-    if (message === null) delete next[row];
-    else next[row] = message;
+    if (message === null) delete next[`${row}:${field}`];
+    else next[`${row}:${field}`] = message;
     invalid = next;
   }
+
+  /** The row's error while any of its fields holds a value that is not one. */
+  const invalidOf = (row: string): string | undefined =>
+    Object.entries(invalid).find(([key]) => key.startsWith(`${row}:`))?.[1];
 
   /** Queue a change; the row's note says "Sparat" or the error. The shown
    * data follows the saved values; a failure also resets the field. */
@@ -103,7 +111,7 @@
     input: HTMLInputElement,
     show: (saved: T) => void
   ): void {
-    setInvalid(row, null);
+    setInvalid(row, field, null);
     markFailed(row, field, false);
     const gen = `${row}:${field}`;
     const mine = (fieldGen[gen] = (fieldGen[gen] ?? 0) + 1);
@@ -131,7 +139,7 @@
   function onCardFee(input: HTMLInputElement): void {
     if (data === null) return;
     const fee = parseWhole(input.value);
-    if (fee === undefined) return setInvalid(CARD, t('fees.err.kronor'));
+    if (fee === undefined) return setInvalid(CARD, 'card_fee', t('fees.err.kronor'));
     let queue = queues.get(CARD) as SaveQueue<{ card_fee: number | null }> | undefined;
     if (queue === undefined) {
       queue = createSaveQueue({ card_fee: data.card_fee }, (change) =>
@@ -148,7 +156,11 @@
     const fee = parseWhole(input.value, field === 'late_fee_pct' ? 100 : undefined);
     const row = item.class_id;
     if (fee === undefined)
-      return setInvalid(row, t(field === 'late_fee_pct' ? 'fees.err.percent' : 'fees.err.kronor'));
+      return setInvalid(
+        row,
+        field,
+        t(field === 'late_fee_pct' ? 'fees.err.percent' : 'fees.err.kronor')
+      );
     let queue = queues.get(row) as SaveQueue<Fees> | undefined;
     if (queue === undefined) {
       const { entry_fee, youth_entry_fee, late_fee_pct } = item;
@@ -173,13 +185,25 @@
       notice = t('fees.eventor.done', { count: updated });
     } catch (e) {
       error = t(eventorErrorKey(e));
-    } finally {
-      // Stay disabled until the reload lands: the next edit builds on it.
-      await load();
-      queues.clear();
-      failed = {};
-      busy = false;
     }
+    await reload();
+  }
+
+  /** Stay disabled until the fees are read again: the next edit builds its
+   * row on them, and an old row would save the old fees back. */
+  async function reload(): Promise<void> {
+    busy = true;
+    reloadFailed = false;
+    try {
+      data = await getFees(competitionId);
+    } catch (e) {
+      console.error('fees reload failed:', e);
+      reloadFailed = true;
+      return;
+    }
+    queues.clear();
+    failed = {};
+    busy = false;
   }
 
   const value = (n: number | null) => (n === null ? '' : String(n));
@@ -188,8 +212,8 @@
 {#snippet note(row: string, testid: string)}
   <span class="row-note" data-testid={testid}>
     <SavedNote
-      state={invalid[row] || failed[row]?.length ? 'error' : (notes[row]?.state ?? 'idle')}
-      error={invalid[row] ??
+      state={invalidOf(row) || failed[row]?.length ? 'error' : (notes[row]?.state ?? 'idle')}
+      error={invalidOf(row) ??
         (failed[row]?.length ? t('fees.err.saveFailed') : notes[row]?.error) ??
         ''}
     />
@@ -231,6 +255,11 @@
   {/if}
   {#if notice}
     <p aria-live="polite" data-testid="fees-notice">{notice}</p>
+  {/if}
+  {#if reloadFailed}
+    <div class="reload" data-testid="fees-reload-error">
+      <LoadError message={t('fees.err.reloadFailed')} onretry={() => void reload()} />
+    </div>
   {/if}
 
   {#if data !== null && data.classes.length > 0}
@@ -308,6 +337,7 @@
   }
   .hint,
   .top,
+  .reload,
   .fees > p {
     margin: 0;
     padding: 0 var(--space-md);

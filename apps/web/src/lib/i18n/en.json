@@ -1111,6 +1111,7 @@
   "fees.eventor.no_key": "No Eventor key. Add it under Settings.",
   "fees.eventor.failed": "Could not get the fees from Eventor.",
   "fees.err.loadFailed": "Could not read the fees: {{error}}",
+  "fees.err.reloadFailed": "Could not read the fees again. The fields stay locked until they are read.",
   "fees.err.saveFailed": "Could not save the fee.",
   "fees.err.kronor": "Enter the amount in whole kronor.",
   "fees.err.percent": "Enter the surcharge in whole percent, 0–100.",
