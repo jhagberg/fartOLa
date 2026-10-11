@@ -137,7 +137,7 @@ test('the clock has no TID caption and the version is not in the sidebar', async
 }) => {
   const { competitionId: id } = await seedCompetition(request, { controls: 4 });
   await page.goto(`/competition/${id}/readout`);
-  await expect(page.getByLabel('Tävlingstid')).toBeVisible();
+  await expect(page.getByLabel('Klocka', { exact: true })).toBeVisible();
   await expect(page.locator('.topbar')).not.toContainText('TID');
   await expect(page.locator('.sidebar')).not.toContainText('v0.1.0');
   await page.goto('/installningar');
