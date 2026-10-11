@@ -7,7 +7,13 @@
 import { test, expect } from '@playwright/test';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { seedRunners } from './helpers/runners.ts';
-import { openEditFor, seedAnnaMispunch } from './helpers/edit-runner.ts';
+import {
+  expectPanelLoaded,
+  failBlockCorrections,
+  openEditFor,
+  prepareEditReadNeverRead,
+  seedAnnaMispunch,
+} from './helpers/edit-runner.ts';
 
 test('a mispunched read shows 35 as saknas and the splits', async ({ page, request }) => {
   const { id } = await seedAnnaMispunch(request, null);
@@ -83,17 +89,23 @@ test('never read says so, with the card and the rental', async ({ page, request 
   await expect(block.getByTestId('edit-read-error')).toHaveCount(0);
 });
 
+test('a lost card with a finish by hand still shows the finish, status and time', async ({
+  page,
+  request,
+}) => {
+  await prepareEditReadNeverRead(page, request);
+  const block = page.getByTestId('edit-read');
+  await expect(block.getByTestId('edit-read-readat')).toHaveCount(0);
+  // Scored from the finish alone, against the course: no punches, so MP.
+  await expect(block.getByTestId('edit-read-status')).toContainText('Felstämplad');
+});
+
 test('a failed fetch is not "never read": message, retry, card and rental stay', async ({
   page,
   request,
 }) => {
   const seed = await seedRunners(request);
-  let failed = false;
-  await page.route('**/corrections', async (route) => {
-    if (failed) return route.continue();
-    failed = true;
-    await route.fulfill({ status: 500, json: { error: 'boom' } });
-  });
+  await failBlockCorrections(page);
   await openEditFor(page, seed.id, 'Hyra');
   const block = page.getByTestId('edit-read');
   await expect(block.getByTestId('edit-read-error')).toContainText(
@@ -101,6 +113,7 @@ test('a failed fetch is not "never read": message, retry, card and rental stay',
     { timeout: 20_000 }
   );
   await expect(block.getByTestId('edit-read-never')).toHaveCount(0);
+  await expectPanelLoaded(page);
   await expect(block.getByTestId('edit-read-card')).toContainText('88001');
   await expect(block.getByTestId('edit-read-hire')).toBeVisible();
   await block.getByRole('button', { name: 'Försök igen' }).click();

@@ -38,6 +38,13 @@
 
   let { competitionId, competitorId, classId, cardNumber, reloadKey = 0 }: Props = $props();
 
+  // Props from a parent that rebuilds its object on every refetch (the
+  // readout after each card read) are new getters each time; reading them
+  // through $derived keeps the effects below to real changes.
+  const compId = $derived(competitorId);
+  const classKey = $derived(classId);
+  const cardKey = $derived(cardNumber);
+
   let view = $state<EditRunnerRead | null>(null);
   let failed = $state(false);
   let hired = $state(false);
@@ -48,12 +55,12 @@
     failed = false;
     try {
       const [corrections, comp, voided] = await Promise.all([
-        getCorrections(competitionId, competitorId),
+        getCorrections(competitionId, compId),
         getCompetition(competitionId),
         listVoidedControls(competitionId),
       ]);
       if (mine !== generation) return;
-      const cls = comp.classes.find((c) => c.id === classId);
+      const cls = comp.classes.find((c) => c.id === classKey);
       view = toEditRunnerRead(corrections, {
         clockOffsetMin: comp.competition.clock_offset_min,
         expectedCodes: courseCodes(cls, comp.courses),
@@ -74,12 +81,12 @@
   }
 
   async function loadHired(): Promise<void> {
-    const card = cardNumber;
+    const card = cardKey;
     hired = false;
     if (card === null) return;
     try {
       const res = await listHiredCards(competitionId);
-      if (card === cardNumber) hired = res.open.some((c) => c.card_number === card);
+      if (card === cardKey) hired = res.open.some((c) => c.card_number === card);
     } catch {
       // The card number still shows; only the rental line is left out.
     }
@@ -88,13 +95,14 @@
   // A different runner starts blank; the same runner refetched keeps what it
   // shows until the new answer arrives.
   $effect(() => {
-    void competitorId;
-    void classId;
+    void compId;
+    void classKey;
     view = null;
     void loadHired();
   });
   $effect(() => {
-    void competitorId;
+    void compId;
+    void classKey;
     void reloadKey;
     void load();
   });
@@ -105,7 +113,7 @@
   <div class="read-body">
     <p class="card" data-testid="edit-read-card">
       <span class="mono"
-        >{cardNumber === null ? t('edit.read.noCard') : t('edit.read.card', { card: cardNumber })}</span
+        >{cardKey === null ? t('edit.read.noCard') : t('edit.read.card', { card: cardKey })}</span
       >
       {#if hired}
         <span class="tag" data-testid="edit-read-hire">{t('edit.read.hire')}</span>
@@ -149,16 +157,6 @@
         {#if view.neverRead}
           <p class="muted" data-testid="edit-read-never">{t('edit.read.never')}</p>
         {:else}
-          {#if view.finish !== null}
-            <div>
-              <span class="label">{t('edit.read.finish')}</span>
-              <div class="value mono" data-testid="edit-read-finish">
-                {view.finish.byHand
-                  ? t('edit.read.finishByHand', { time: view.finish.time })
-                  : view.finish.time}
-              </div>
-            </div>
-          {/if}
           <div>
             <span class="label">{t('edit.read.readAt')}</span>
             <div class="value" data-testid="edit-read-readat">
@@ -166,34 +164,46 @@
               <span>{t('edit.read.reads', { count: view.readCount })}</span>
             </div>
           </div>
+        {/if}
+        {#if view.finish !== null}
           <div>
-            <span class="label">{t('ro.status')}</span>
-            <div class="value" data-testid="edit-read-status">
-              <StatusPill status={view.status} />
-              {#if view.elapsed !== null}<b class="mono">{view.elapsed}</b>{/if}
+            <span class="label">{t('edit.read.finish')}</span>
+            <div class="value mono" data-testid="edit-read-finish">
+              {view.finish.byHand
+                ? t('edit.read.finishByHand', { time: view.finish.time })
+                : view.finish.time}
             </div>
           </div>
-          {#if view.timeAddition !== null}
-            <p class="from" data-testid="edit-read-addition">
-              {t('corr.line.addition', {
-                minutes: view.timeAddition.min,
-                reason: view.timeAddition.reason,
-              })}
-            </p>
-          {/if}
+        {/if}
+        <div>
+          <span class="label">{t('ro.status')}</span>
+          <div class="value" data-testid="edit-read-status">
+            <StatusPill status={view.status} />
+            {#if view.elapsed !== null}<b class="mono">{view.elapsed}</b>{/if}
+          </div>
+        </div>
+        {#if view.timeAddition !== null}
+          <p class="from" data-testid="edit-read-addition">
+            {t('corr.line.addition', {
+              minutes: view.timeAddition.min,
+              reason: view.timeAddition.reason,
+            })}
+          </p>
         {/if}
       </div>
 
       {#if view.punches.length > 0}
         <h3>{t('edit.read.punches')}</h3>
         <PunchGrid punches={view.punches} verdict={view.verdict} />
-        {#if view.manualPunches.length > 0}
-          <ul class="by-hand" data-testid="edit-read-by-hand">
-            {#each view.manualPunches as p (p.code)}
-              <li><Icon name="edit" size={16} /> {t('corr.line.punch', { code: p.code, reason: p.reason })}</li>
-            {/each}
-          </ul>
-        {/if}
+      {/if}
+      {#if view.manualPunches.length > 0}
+        <ul class="by-hand" data-testid="edit-read-by-hand">
+          {#each view.manualPunches as p (p.code)}
+            <li><Icon name="edit" size={16} /> {t('corr.line.punch', { code: p.code, reason: p.reason })}</li>
+          {/each}
+        </ul>
+      {/if}
+      {#if view.punches.length > 0}
         <h3>{t('edit.read.splits')}</h3>
         <SplitsTable punches={view.punches} />
       {/if}

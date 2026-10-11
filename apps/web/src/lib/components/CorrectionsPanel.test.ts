@@ -46,6 +46,7 @@ describe('CorrectionsPanel (mounted)', () => {
       drawn_start_ms: null,
       late_start_ms: null,
       read_count: 0,
+      start_source: null,
       latest_read: null,
       missing_codes: [],
       manual_finish_ms: null,

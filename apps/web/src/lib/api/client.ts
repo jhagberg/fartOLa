@@ -648,14 +648,22 @@ export interface CorrectionsDTO {
   /** Start punch more than 60 s after the drawn start (ms); null when not
    * late, and always null in a class timed from the start punch. */
   late_start_ms: number | null;
-  /** Reads the card has made in this competition. */
+  /** Read-outs the card has made in this competition (a scan before the race
+   * started is not one). */
   read_count: number;
-  /** The latest read as the card gave it; null when never read. */
+  /** Which start `start_ms` is: the drawn time or the start punch. */
+  start_source: 'drawn' | 'punch' | null;
+  /** The latest read-out as the card gave it; null when none. */
   latest_read: {
     punches: Array<{ code: number; seconds_in_half_day: number; half_day: number }>;
     start: { seconds_in_half_day: number; half_day: number } | null;
     finish: { seconds_in_half_day: number; half_day: number } | null;
     card_type: string;
+    /** When it was read (epoch ms). */
+    read_at_ms: number;
+    /** The card's start and finish clocks as epoch ms (null when absent). */
+    start_ms: number | null;
+    finish_ms: number | null;
   } | null;
   missing_codes: number[];
   manual_finish_ms: number | null;
