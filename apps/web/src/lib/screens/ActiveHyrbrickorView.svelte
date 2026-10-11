@@ -20,11 +20,12 @@
   - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-HB-2
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
-  import { listHiredCards, returnHiredCard } from '#lib/api/client.ts';
+  import { ApiError, listHiredCards, returnHiredCard } from '#lib/api/client.ts';
   import type { HiredCardRow, HiredCardsListResponse } from '@fartola/shared-types';
   import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
 
   interface Props {
     competitionId: string;
@@ -35,30 +36,46 @@
   let open: HiredCardRow[] = $state([]);
   let returned: HiredCardRow[] = $state([]);
   let paid: HiredCardsListResponse['paid_on_site'] = $state(undefined);
-  let loading = $state(true);
-  let error: string | null = $state(null);
+  /** One state for the single response that carries both lists. A failed
+   * reload after data was shown keeps the cached lists ('stale'). */
+  let load: 'loading' | 'loaded' | 'error' | 'stale' = $state('loading');
   /** Set of card_numbers currently being PATCHed — disables the row's
-   * Returnerad button so a double-tap can't double-PATCH (idempotent
-   * server-side, but the UI feedback is cleaner). */
+   * button so a double-tap can't double-PATCH. */
   let pendingCards: Set<number> = $state(new Set());
+  let rowErrors: Record<number, string> = $state({});
+  let toastMessage: string | null = $state(null);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped by every load and every return: a response that is no longer
+   * the latest must not overwrite newer data. */
+  let seq = 0;
 
   onMount(() => {
     void fetchAll();
   });
+  onDestroy(() => {
+    if (toastTimer) clearTimeout(toastTimer);
+  });
 
   async function fetchAll(): Promise<void> {
-    loading = true;
-    error = null;
+    const mine = ++seq;
+    if (load !== 'stale' && load !== 'loaded') load = 'loading';
     try {
       const r = await listHiredCards(competitionId);
+      if (mine !== seq) return;
       open = r.open;
       returned = r.returned;
       paid = r.paid_on_site;
-    } catch (e) {
-      error = (e as Error).message || t('hyrbrickor.loadError');
-    } finally {
-      loading = false;
+      load = 'loaded';
+    } catch {
+      if (mine !== seq) return;
+      load = load === 'loaded' || load === 'stale' ? 'stale' : 'error';
     }
+  }
+
+  function toast(msg: string): void {
+    toastMessage = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toastMessage = null), 3000);
   }
 
   /** Format an epoch-ms timestamp as HH:MM in the local timezone. */
@@ -70,17 +87,25 @@
   async function onReturn(cardNumber: number): Promise<void> {
     // Set replacement form — Assumption A8 (Svelte 5 reactivity).
     pendingCards = new Set([...pendingCards, cardNumber]);
+    const { [cardNumber]: _gone, ...rest } = rowErrors;
+    rowErrors = rest;
     try {
       const r = await returnHiredCard(competitionId, cardNumber);
-      // Optimistic local update: move the row from open → returned
-      // with the timestamp the server returned. Avoids a full refetch.
+      // Move the row from open → returned with the server's timestamp, then
+      // reload to reconcile. Bumping seq drops any older load still in flight.
       const moved = open.find((row) => row.card_number === cardNumber);
       if (moved) {
         open = open.filter((row) => row.card_number !== cardNumber);
         returned = [{ ...moved, returned_at_ms: r.returned_at_ms }, ...returned];
       }
+      toast(t('hyrbrickor.returnedToast', { card: cardNumber }));
+      seq++;
+      void fetchAll();
     } catch (e) {
-      error = (e as Error).message || t('hyrbrickor.loadError');
+      rowErrors = {
+        ...rowErrors,
+        [cardNumber]: e instanceof ApiError ? t('hyrbrickor.returnError') : t('common.unknownError'),
+      };
     } finally {
       const next = new Set(pendingCards);
       next.delete(cardNumber);
@@ -100,13 +125,21 @@
     </p>
   {/if}
 
-  {#if loading}
+  {#if load === 'loading'}
     <p class="muted" data-testid="hyrbrickor-loading">{t('hyrbrickor.loading')}</p>
-  {:else if error}
-    <p class="err" data-testid="hyrbrickor-error">{error}</p>
-  {:else if open.length === 0 && returned.length === 0}
-    <p class="muted" data-testid="hyrbrickor-empty">{t('hyrbrickor.empty')}</p>
+  {:else if load === 'error'}
+    <div data-testid="hyrbrickor-error">
+      <LoadError message={t('hyrbrickor.loadError')} onretry={() => void fetchAll()} />
+    </div>
   {:else}
+    {#if load === 'stale'}
+      <div data-testid="hyrbrickor-reload-error">
+        <LoadError message={t('hyrbrickor.reloadError')} onretry={() => void fetchAll()} />
+      </div>
+    {/if}
+    {#if open.length === 0 && returned.length === 0}
+      <p class="muted" data-testid="hyrbrickor-empty">{t('hyrbrickor.empty')}</p>
+    {/if}
     {#if open.length > 0}
       <section class="card open-card">
         <header class="section-head">
@@ -148,6 +181,11 @@
               {#if row.note}
                 <p class="note muted small" data-testid="hyrbrickor-row-note">{row.note}</p>
               {/if}
+              {#if rowErrors[row.card_number]}
+                <p class="row-error" role="alert" data-testid="hyrbrickor-row-error">
+                  {rowErrors[row.card_number]}
+                </p>
+              {/if}
               <div class="actions">
                 <Button
                   variant="primary"
@@ -169,7 +207,7 @@
       <section class="card returned-card">
         <header class="section-head">
           <h2>{t('hyrbrickor.returnedSection')}</h2>
-          <span class="badge muted-badge">{returned.length}</span>
+          <span class="badge">{returned.length}</span>
         </header>
         <ul class="row-list">
           {#each returned as row (row.card_number)}
@@ -197,6 +235,10 @@
   {/if}
 </section>
 
+{#if toastMessage !== null}
+  <div class="toast" role="status" data-testid="hyrbrickor-toast">{toastMessage}</div>
+{/if}
+
 <style>
   .hyrbrickor-view {
     display: flex;
@@ -219,10 +261,24 @@
     color: var(--fg-muted);
   }
   .small {
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
-  .err {
+  .row-error {
+    margin: 0;
     color: var(--dnf);
+  }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg-elev);
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    font-size: var(--fs-label);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
   }
   .card {
     background: var(--bg-elev);
@@ -245,15 +301,11 @@
   .badge {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 11px;
-    background: var(--dnf-soft);
-    color: var(--dnf);
+    font-size: var(--fs-label);
+    background: var(--bg-sunken);
+    color: var(--fg);
     padding: 2px 8px;
     border-radius: 999px;
-  }
-  .muted-badge {
-    background: var(--bg-sunken);
-    color: var(--fg-muted);
   }
   .row-list {
     list-style: none;
@@ -268,7 +320,7 @@
     border-top: 1px solid var(--border);
   }
   .row.returned {
-    opacity: 0.75;
+    color: var(--fg-muted);
   }
   .card-line {
     display: flex;
@@ -292,7 +344,7 @@
   .contact-line {
     display: flex;
     gap: 8px;
-    font-size: 13px;
+    font-size: var(--fs-label);
     flex-wrap: wrap;
     align-items: center;
   }

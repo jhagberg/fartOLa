@@ -18,6 +18,7 @@
 // - .planning/phases/02-4-klubbs-mvp/02-CONTEXT.md D-HB-2 (admin backstop view)
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flushSync, mount, tick, unmount } from 'svelte';
 
 // Warm the i18n modules during collection. The first dynamic import inside a
 // test pays the cold Vite transform (index.ts, tweaks store, i18next, both
@@ -28,6 +29,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 await import('../i18n/index.ts');
 await import('../i18n/sv.json');
 await import('../i18n/en.json');
+await import('./ActiveHyrbrickorView.svelte');
 
 describe('Plan 02-05 — i18n keys for ActiveHyrbrickorView + Sidebar', () => {
   it('sv.json has all hyrbrickor.* + nav.hyrbrickor keys', async () => {
@@ -45,7 +47,9 @@ describe('Plan 02-05 — i18n keys for ActiveHyrbrickorView + Sidebar', () => {
     }
     expect(sv['nav.hyrbrickor']).toBe('Hyrbrickor');
     expect(sv['hyrbrickor.title']).toBe('Aktiva hyrbrickor');
-    expect(sv['hyrbrickor.empty']).toBe('Inga öppna hyrbrickor');
+    expect(sv['hyrbrickor.empty']).toBe(
+      'Inga hyrbrickor ute just nu. Hyrbrickor som lånas ut vid direktanmälan visas här tills de lämnas tillbaka.'
+    );
   });
 
   it('en.json mirrors all hyrbrickor.* + nav.hyrbrickor keys', async () => {
@@ -220,5 +224,194 @@ describe('Plan 02-05 — applyLocalReturn (per-row local update after PATCH)', (
     expect(after.open.length).toBe(1);
     expect(after.returned.length).toBe(1);
     expect(after.returned[0]?.returned_at_ms).toBe(5_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mounted view: return result, load errors, return errors, empty state.
+// Synthetic cards only. One endpoint returns both lists.
+// ---------------------------------------------------------------------------
+describe('ActiveHyrbrickorView mounted', () => {
+  const ROW = {
+    competition_id: '00000000-0000-4000-8000-000000000001',
+    marked_at_ms: 1_000,
+    returned_at_ms: null,
+    contact_name: 'Anna Andersson',
+    contact_phone: '0701234567',
+    contact_email: null,
+    note: null,
+  };
+  const open = [
+    { ...ROW, card_number: 7501853 },
+    { ...ROW, card_number: 1428824, contact_name: 'Cia Carlsson' },
+  ];
+  const json = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  type Handler = (url: string, init?: RequestInit) => Promise<Response>;
+  let target: HTMLElement;
+  let handle: Handler;
+  let view: ReturnType<typeof mount> | undefined;
+
+  async function show(): Promise<void> {
+    const mod = await import('./ActiveHyrbrickorView.svelte');
+    view = mount(mod.default, { target, props: { competitionId: 'c1' } });
+    await settle();
+  }
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+      await tick();
+      flushSync();
+    }
+  }
+  const q = (id: string): HTMLElement | null => target.querySelector(`[data-testid="${id}"]`);
+  const text = (): string => target.textContent ?? '';
+
+  beforeEach(() => {
+    target = document.createElement('div');
+    document.body.appendChild(target);
+    global.fetch = vi.fn(async (u: RequestInfo | URL, init?: RequestInit) =>
+      handle(String(u), init)
+    ) as unknown as typeof fetch;
+  });
+  afterEach(async () => {
+    if (view) await unmount(view);
+    view = undefined;
+    target.remove();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('return moves the card to Återlämnade and shows the result', async () => {
+    let done = false;
+    handle = async (url, init) => {
+      if (init?.method === 'PATCH') {
+        done = true;
+        return json({ ok: true, returned_at_ms: 5_000 });
+      }
+      return done
+        ? json({ open: [open[1]], returned: [{ ...open[0], returned_at_ms: 5_000 }] })
+        : json({ open, returned: [] });
+    };
+    await show();
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-open-row]').length).toBe(2);
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(q('hyrbrickor-toast')?.textContent).toBe('Bricka 7501853 återlämnad');
+    expect(q('hyrbrickor-toast')?.getAttribute('role')).toBe('status');
+    expect(q('hyrbrickor-returned-row')?.textContent).toContain('7501853');
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-open-row]').length).toBe(1);
+  });
+
+  it('the toast goes away after 3 s', async () => {
+    vi.useFakeTimers();
+    handle = async (url, init) =>
+      init?.method === 'PATCH'
+        ? json({ ok: true, returned_at_ms: 5_000 })
+        : json({ open, returned: [] });
+    await show();
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(q('hyrbrickor-toast')).not.toBeNull();
+    vi.advanceTimersByTime(3_000);
+    await settle();
+    expect(q('hyrbrickor-toast')).toBeNull();
+  });
+
+  it('a failed first load shows one LoadError with a retry that loads the lists', async () => {
+    let fail = true;
+    handle = async () => (fail ? json({ error: 'boom' }, 500) : json({ open, returned: [] }));
+    await show();
+    expect(target.querySelectorAll('[role=alert]').length).toBe(1);
+    expect(text()).toContain('Kunde inte hämta hyrbrickor.');
+    expect(text()).not.toContain('boom');
+    fail = false;
+    const retry = [...target.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Försök igen')
+    );
+    retry!.click();
+    await settle();
+    expect(q('hyrbrickor-error')).toBeNull();
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-open-row]').length).toBe(2);
+  });
+
+  it('a failed reload keeps the cached lists, says so, and retries', async () => {
+    let fail = false;
+    handle = async (url, init) =>
+      init?.method === 'PATCH'
+        ? json({ ok: true, returned_at_ms: 5_000 })
+        : fail
+          ? json({ error: 'boom' }, 500)
+          : json({ open, returned: [] });
+    await show();
+    fail = true;
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(text()).toContain('Kunde inte uppdatera listan. Visar senast hämtade.');
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-open-row]').length).toBe(1);
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-returned-row]').length).toBe(1);
+    fail = false;
+    handle = async () =>
+      json({ open: [open[1]], returned: [{ ...open[0], returned_at_ms: 5_000 }] });
+    const retry = [...q('hyrbrickor-reload-error')!.querySelectorAll('button')][0]!;
+    retry.click();
+    await settle();
+    expect(q('hyrbrickor-reload-error')).toBeNull();
+  });
+
+  it('an older load does not overwrite newer data', async () => {
+    const resolvers: Array<(r: Response) => void> = [];
+    let n = 0;
+    handle = (url, init) => {
+      if (init?.method === 'PATCH')
+        return Promise.resolve(json({ ok: true, returned_at_ms: 5_000 }));
+      n++;
+      if (n === 1) return Promise.resolve(json({ open, returned: [] }));
+      return new Promise((res) => resolvers.push(res));
+    };
+    await show();
+    // Return a card: its reload (#2) hangs. Retry-style second load (#3) hangs too.
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(resolvers.length).toBe(1);
+    // Newest response arrives first, the older one afterwards.
+    const after = { open: [open[1]], returned: [{ ...open[0], returned_at_ms: 5_000 }] };
+    // trigger a manual second load via a fresh return of the other card
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(resolvers.length).toBe(2);
+    resolvers[1]!(
+      json({ open: [], returned: [{ ...open[1], returned_at_ms: 6_000 }, after.returned[0]] })
+    );
+    await settle();
+    resolvers[0]!(json(after));
+    await settle();
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-returned-row]').length).toBe(2);
+    expect(target.querySelectorAll('[data-testid=hyrbrickor-open-row]').length).toBe(0);
+  });
+
+  it('a failed return shows the error on that row and keeps the lists', async () => {
+    handle = async (url, init) =>
+      init?.method === 'PATCH' ? json({ error: 'sqlite_busy' }, 500) : json({ open, returned: [] });
+    await show();
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    const rows = target.querySelectorAll('[data-testid=hyrbrickor-open-row]');
+    expect(rows.length).toBe(2);
+    expect(rows[0]!.querySelector('[data-testid=hyrbrickor-row-error]')?.textContent).toContain(
+      'Kunde inte markera brickan som återlämnad'
+    );
+    expect(rows[1]!.querySelector('[data-testid=hyrbrickor-row-error]')).toBeNull();
+    expect(text()).not.toContain('sqlite_busy');
+    expect(q('hyrbrickor-error')).toBeNull();
+  });
+
+  it('shows the empty state when there are no cards', async () => {
+    handle = async () => json({ open: [], returned: [] });
+    await show();
+    expect(q('hyrbrickor-empty')?.textContent).toBe(
+      'Inga hyrbrickor ute just nu. Hyrbrickor som lånas ut vid direktanmälan visas här tills de lämnas tillbaka.'
+    );
   });
 });
