@@ -68,11 +68,16 @@
     failed = { ...failed, [row]: on ? [...rest, field] : rest };
   }
 
+  /** The first read failed: nothing to show, a retry reads it again. */
+  let loadFailed = $state(false);
+
   async function load(): Promise<void> {
+    loadFailed = false;
     try {
       data = await getFees(competitionId);
     } catch (e) {
-      error = t('fees.err.loadFailed', { error: (e as Error).message });
+      console.error('fees load failed:', e);
+      loadFailed = true;
     }
   }
 
@@ -255,6 +260,9 @@
   {/if}
   {#if notice}
     <p aria-live="polite" data-testid="fees-notice">{notice}</p>
+  {/if}
+  {#if loadFailed}
+    <LoadError message={t('fees.err.loadFailed')} onretry={() => void load()} />
   {/if}
   {#if reloadFailed}
     <div class="reload" data-testid="fees-reload-error">
