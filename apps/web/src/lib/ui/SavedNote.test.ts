@@ -97,6 +97,17 @@ describe('createSaveState', () => {
     expect(s.state).toBe('saved');
     expect(s.error).toBe('');
   });
+  it('a superseded failure is still logged, without touching the note', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = createSaveState();
+    let rejectA!: (e: Error) => void;
+    const a = s.run(new Promise<void>((_, rej) => (rejectA = rej)));
+    s.reset();
+    rejectA(new Error('late'));
+    await a;
+    expect(s.state).toBe('idle');
+    expect(spy).toHaveBeenCalledWith('save failed:', expect.any(Error));
+  });
   it('reset returns to idle and ignores an in-flight run', async () => {
     const s = createSaveState();
     let resolveA!: () => void;

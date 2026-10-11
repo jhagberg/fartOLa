@@ -20,9 +20,9 @@ export function createSaveState() {
       await promise;
       if (mine === generation) state = 'saved';
     } catch (e) {
+      console.error('save failed:', e);
       if (mine !== generation) return;
       details = e instanceof Error ? e.message : String(e);
-      console.error('save failed:', e);
       error = opts?.error ?? t('common.unknownError');
       state = 'error';
     }
