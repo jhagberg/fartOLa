@@ -432,7 +432,14 @@
           cardTakenMsg = msg;
           cardTakenExistingId = holderId;
         } else {
-          fieldError = t('walk.err.conflict', { reason: body?.error ?? e.message });
+          // card_taken without a holder to name: the plain card message.
+          // Any other code is the server's, not for the secretary.
+          if (body?.error === 'card_taken') {
+            fieldError = t('walk.err.cardTaken', { card: String(cardNumberLocal) });
+          } else {
+            console.warn('walk-up save: unmapped 409', body?.error);
+            fieldError = t('common.unknownError');
+          }
         }
       } else if (e instanceof ApiError && e.status === 400) {
         const body = e.body as { error?: string } | undefined;

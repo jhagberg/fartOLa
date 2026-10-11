@@ -435,15 +435,33 @@ test('a card in use still says so when the holder cannot be fetched', async ({ p
   );
 });
 
-test('another conflict shows its own reason, not a network error', async ({ page, request }) => {
+test('a card conflict without a holder says the card is in use', async ({ page, request }) => {
+  const { competitionId, h21Id } = await setup(request);
+  await page.route('**/api/competitors', (r) =>
+    r.request().method() === 'POST'
+      ? r.fulfill({ status: 409, json: { error: 'card_taken', existing_competitor_id: null } })
+      : r.continue()
+  );
+  await walkupSave(page, competitionId, h21Id, 9_999_995, 'Erik Eriksson');
+  await expect(page.getByTestId('walkup-error')).toHaveText(
+    'Brickan 9999995 används redan i tävlingen.'
+  );
+});
+
+test('an unmapped conflict shows the plain unknown error, not its code', async ({
+  page,
+  request,
+}) => {
   const { competitionId, h21Id } = await setup(request);
   await page.route('**/api/competitors', (r) =>
     r.request().method() === 'POST'
       ? r.fulfill({ status: 409, json: { error: 'class_closed' } })
       : r.continue()
   );
-  await walkupSave(page, competitionId, h21Id, 9_999_995, 'Erik Eriksson');
-  await expect(page.getByTestId('walkup-error')).toHaveText('Kunde inte spara: class_closed');
+  await walkupSave(page, competitionId, h21Id, 9_999_998, 'Erik Eriksson');
+  const err = page.getByTestId('walkup-error');
+  await expect(err).toHaveText('Något gick fel');
+  await expect(err).not.toContainText('class_closed');
 });
 
 test('the consent row is 44 px high with a 24 px box, and its text ticks it', async ({

@@ -337,7 +337,7 @@
     padding: 12px 14px;
     color: var(--fg-muted);
     font-style: italic;
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .opt {
     display: flex;

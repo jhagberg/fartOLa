@@ -14,6 +14,7 @@ import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
   prepareWalkupNetworkError,
+  prepareWalkupNoMatch,
 } from './helpers/walkup.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
@@ -147,6 +148,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/readout`,
       (p) => p.getByTestId('readout-view'),
       (p) => prepareWalkupNetworkError(p, String(id)),
+    ],
+    [
+      'walkup search no match',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareWalkupNoMatch(p, String(id)),
     ],
     ['results', `/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     ['lottning', `/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],
