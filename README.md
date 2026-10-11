@@ -36,8 +36,9 @@ pnpm install
 pnpm dev          # edge + web in watch mode
 ```
 
-No SI reader? Start the edge with `FARTOLA_DEV=1` (as `pnpm dev:tabs` and
-`scripts/run-local.sh` do) and the readout screen can simulate cards. With
+No SI reader? Start the edge with `FARTOLA_DEV=1` (as `pnpm dev:tabs` does;
+`FARTOLA_DEV=1 bash scripts/run-local.sh` for the built stack) and the
+readout screen can simulate cards. With
 a BSM7/8-USB reader and a receipt printer, see
 [apps/edge/README.md](apps/edge/README.md) for hardware setup and running
 the built `fartola` binary.
