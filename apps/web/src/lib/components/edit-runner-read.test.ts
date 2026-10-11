@@ -118,6 +118,11 @@ describe('toEditRunnerRead', () => {
     expect(toEditRunnerRead(read({ late_start_ms: 192_000 }), ctx).lateStart).toBe('3:12');
   });
 
+  it('hides the late start when there is no read-out (a pre-race scan is not one)', () => {
+    const v = toEditRunnerRead(read({ late_start_ms: 192_000, latest_read: null }), ctx);
+    expect(v.lateStart).toBeNull();
+  });
+
   it('is never read only with no read and a zero count', () => {
     const none = { latest_read: null, read_count: 0 };
     expect(toEditRunnerRead(read(none), ctx).neverRead).toBe(true);
