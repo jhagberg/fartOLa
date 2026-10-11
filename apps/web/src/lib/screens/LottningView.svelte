@@ -583,9 +583,11 @@
     const k = `${id}:${key}`;
     let s = settingSaves.get(k);
     if (s === undefined) {
+      // The competition is taken now, not when a queued save goes out.
+      const comp = competitionId;
       s = {
         queue: createSaveQueue<Partial<ClassSettings>>({ [key]: stored }, (change) =>
-          patchClass(competitionId, id, change)
+          patchClass(comp, id, change)
         ),
         newest: 0,
         pending: 0,
