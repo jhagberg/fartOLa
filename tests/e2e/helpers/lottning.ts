@@ -52,9 +52,12 @@ export async function prepareLottningFull(page: Page, request: APIRequestContext
   await page.route('**/api/competitions/*/classes/*', (route) =>
     route.request().method() === 'PATCH' ? route.fulfill({ json: { ok: true } }) : route.continue()
   );
+  await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
+  await page.getByTestId('lottning-start-method').selectOption('start_punch');
   await page.getByTestId('lottning-max-time').fill('60:00');
   await page.getByTestId('lottning-max-time-save').click();
-  await expect(page.getByText('Sparat')).toBeVisible();
+  await expect(page.getByTestId('lottning-start-method-note')).toContainText('Sparat');
+  await expect(page.getByText('Sparat')).toHaveCount(2);
 }
 
 /** The max time that did not save, with the note in its error colour. */
@@ -76,6 +79,11 @@ export async function prepareLottningMaxTimeError(
   await page.getByTestId('lottning-max-time').fill('abc');
   await page.getByTestId('lottning-max-time-save').click();
   await expect(page.getByTestId('lottning-max-time-error')).toBeVisible();
+  await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
+  await page.getByTestId('lottning-start-method').selectOption('start_punch');
+  await expect(page.getByTestId('lottning-start-method-note')).toContainText(
+    'Starttid räknas från sparades inte. Försök igen.'
+  );
 }
 
 /** A pursuit file chosen and being read: Lotta waits with its hint. */

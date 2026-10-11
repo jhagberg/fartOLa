@@ -133,6 +133,10 @@
   /** Only the newest save may set the locked flag or the stored hint. */
   let maxSaveGen = 0;
 
+  /** The start-method save: only the newest may revert the select. */
+  const startSave = createSaveState();
+  let startSaveGen = 0;
+
   let submitting = $state(false);
   let error: string | null = $state(null);
   /** A refused draw, with its confirm path (ADR-0016 rule 6). */
@@ -305,6 +309,8 @@
     maxLocked = false;
     maxInvalid = false;
     maxSaveGen++;
+    startSave.reset();
+    startSaveGen++;
     drawType = 'All';
     intervalTouched = false;
     await loadStartList();
@@ -534,18 +540,46 @@
     return c === null ? null : startOrderNote(c);
   });
 
-  async function saveClassFlag(
-    flag: { no_timing: boolean } | { start_method: StartMethod }
-  ): Promise<void> {
+  async function saveNoTiming(noTiming: boolean): Promise<void> {
     if (!selectedClassId) return;
     const id = selectedClassId;
     try {
-      await patchClass(competitionId, id, flag);
-      classes = classes.map((c) => (c.id === id ? { ...c, ...flag } : c));
+      await patchClass(competitionId, id, { no_timing: noTiming });
+      classes = classes.map((c) => (c.id === id ? { ...c, no_timing: noTiming } : c));
     } catch (e) {
-      error = (e as Error).message;
+      error = plainError(e);
     }
   }
+
+  /** The select keeps the user's choice in the DOM, so a failed save puts
+   * the stored value back (unless a newer save or another class took over). */
+  async function saveStartMethod(select: HTMLSelectElement): Promise<void> {
+    if (!selectedClassId) return;
+    const id = selectedClassId;
+    const method = select.value as StartMethod;
+    const mine = ++startSaveGen;
+    await startSave.run(
+      patchClass(competitionId, id, { start_method: method }).then(
+        () => {
+          classes = classes.map((c) => (c.id === id ? { ...c, start_method: method } : c));
+        },
+        (e: unknown) => {
+          if (mine === startSaveGen && id === selectedClassId) select.value = selectedStartMethod;
+          throw e;
+        }
+      ),
+      { error: t('lottning.startMethod.failed') }
+    );
+  }
+
+  /** What the start method means for this class (SOFT TR 3.3.1: nivå 1–3). */
+  const startMethodHelp = $derived.by(() => {
+    const kind = selectedClass?.class_kind;
+    if (kind === 'oppen' || kind === 'inskolning') return 'lottning.startMethod.help.open';
+    if (kind && (level === 'niva1' || level === 'niva2' || level === 'niva3'))
+      return 'lottning.startMethod.help.ranked';
+    return 'lottning.startMethod.help.default';
+  });
 
   // --- SOFT TR 7.5.4: start place and bibs ---------------------------------
 
@@ -750,6 +784,28 @@
         </Select>
       </Field>
 
+      <!-- Which start the class's times run from (02.1-14 Task 14) -->
+      <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
+        <Select
+          id="lottning-start-method"
+          value={selectedStartMethod}
+          disabled={!selectedClassId}
+          onchange={(e) => void saveStartMethod(e.currentTarget)}
+          aria-describedby="lottning-start-method-help"
+          data-testid="lottning-start-method"
+        >
+          {#each START_METHODS as m (m)}
+            <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
+          {/each}
+        </Select>
+        <p class="hint" id="lottning-start-method-help" data-testid="lottning-start-method-help">
+          {t(startMethodHelp)}
+        </p>
+        <div class="max-time-state" data-testid="lottning-start-method-note">
+          <SavedNote state={startSave.state} error={startSave.error} />
+        </div>
+      </Field>
+
       <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
       {#if selectedClass !== null && selectedKindStatus !== null}
         <div class="context">
@@ -926,27 +982,11 @@
         type="checkbox"
         checked={selectedNoTiming}
         disabled={!selectedClassId}
-        onchange={(e) => void saveClassFlag({ no_timing: e.currentTarget.checked })}
+        onchange={(e) => void saveNoTiming(e.currentTarget.checked)}
         data-testid="lottning-no-timing"
       />
       <span>{t('lottning.noTiming')}</span>
     </label>
-
-    <!-- Which start the class's times run from (02.1-14 Task 14) -->
-    <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
-      <Select
-        id="lottning-start-method"
-        value={selectedStartMethod}
-        disabled={!selectedClassId}
-        onchange={(e) =>
-          void saveClassFlag({ start_method: e.currentTarget.value as StartMethod })}
-        data-testid="lottning-start-method"
-      >
-        {#each START_METHODS as m (m)}
-          <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
-        {/each}
-      </Select>
-    </Field>
 
     <!-- The rarely used fields: seeding, pursuit, start place and bibs -->
     <details class="more" bind:open={moreOpen}>

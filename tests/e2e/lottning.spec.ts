@@ -392,6 +392,110 @@ test.describe('row edit (LO-6)', () => {
   });
 });
 
+test.describe('start method next to the class (Task 7)', () => {
+  const OPEN_HELP =
+    'Öppen klass: löparna startar när de vill och stämplar start. Välj Startstämpling om klassen inte ska lottas.';
+
+  async function setKind(
+    request: APIRequestContext,
+    id: string,
+    classId: string,
+    kind: string
+  ): Promise<void> {
+    const res = await request.put(`${BASE}/api/competitions/${id}/classes/kinds`, {
+      data: { items: [{ class_id: classId, class_kind: kind, age_class: null }] },
+    });
+    expect(res.status(), await res.text()).toBeLessThan(300);
+  }
+
+  test('it is the first control after the class select, before the draw mode', async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    const order = await page
+      .getByTestId('lottning-settings')
+      .locator('select, input, textarea, button')
+      .evaluateAll((els) => els.slice(0, 3).map((e) => e.getAttribute('data-testid')));
+    expect(order).toEqual([
+      'lottning-class-select',
+      'lottning-start-method',
+      'lottning-mode-select',
+    ]);
+  });
+
+  test('an open class says it starts at will, an age class at level 1 says it is drawn', async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    const ids = await classIds(page, id);
+    await setKind(request, id, ids['D21']!, 'oppen');
+    await setKind(request, id, ids['H21']!, 'senior');
+    const lvl = await request.patch(`${BASE}/api/competitions/${id}`, { data: { level: 'niva1' } });
+    expect(lvl.status()).toBe(200);
+    await page.goto(`/competition/${id}/lottning`);
+    const help = page.getByTestId('lottning-start-method-help');
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'D21' });
+    await expect(help).toHaveText(OPEN_HELP);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(help).toHaveText('Lottad start enligt tävlingsregler (starttid).');
+  });
+
+  test('changing it says Sparat, and the choice is stored', async ({ page, request }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await page.getByTestId('lottning-start-method').selectOption('start_punch');
+    await expect(page.getByTestId('lottning-start-method-note')).toContainText('Sparat');
+    const ids = await classIds(page, id);
+    const res = await request.get(`${BASE}/api/competitions/${id}/classes`);
+    const { classes } = (await res.json()) as {
+      classes: Array<{ id: string; start_method: string }>;
+    };
+    expect(classes.find((c) => c.id === ids['H21'])?.start_method).toBe('start_punch');
+  });
+
+  test('a failed save shows the error at the field, never Sparat, and the stored value again', async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+    await page.route(`**/api/competitions/${id}/classes/*`, (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'boom' } })
+        : route.continue()
+    );
+    const select = page.getByTestId('lottning-start-method');
+    const before = await select.inputValue();
+    await select.selectOption('start_punch');
+    const note = page.getByTestId('lottning-start-method-note');
+    await expect(note).toContainText('Starttid räknas från sparades inte. Försök igen.');
+    await expect(note).not.toContainText('Sparat');
+    await expect(select).toHaveValue(before);
+  });
+
+  test('a failed no-timing save is still shown, in plain words', async ({ page, request }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+    await page.route(`**/api/competitions/${id}/classes/*`, (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'boom' } })
+        : route.continue()
+    );
+    await page.getByTestId('lottning-no-timing').check();
+    await expect(page.getByText('Något gick fel')).toBeVisible();
+    await expect(page.getByText('boom')).toHaveCount(0);
+  });
+});
+
 test('a class without a list says so plainly, and the kind is two short lines (LO-5, LO-10)', async ({
   page,
   request,
