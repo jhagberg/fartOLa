@@ -276,16 +276,22 @@
 
   const currentCompId = $derived(activeCompetition.id);
 
+  /** One token per competition switch: a list that arrives for the
+   * competition the operator has left is dropped. */
+  const codesRequest = latestOnly();
+
   async function loadHelperCodes(): Promise<void> {
-    if (!currentCompId) return;
+    const id = currentCompId;
+    if (!id) return;
+    const isCurrent = codesRequest();
     helperCodesLoading = true;
     try {
-      const r = await listEventCodes(currentCompId);
-      helperCodes = r.codes;
+      const r = await listEventCodes(id);
+      if (isCurrent()) helperCodes = r.codes;
     } catch {
       // soft fail — list stays stale
     } finally {
-      helperCodesLoading = false;
+      if (isCurrent()) helperCodesLoading = false;
     }
   }
 
@@ -333,8 +339,11 @@
   }
 
   $effect(() => {
-    // Reload helper codes whenever the active competition changes.
+    // Reload helper codes whenever the active competition changes, and show
+    // nothing of the previous competition meanwhile.
     void currentCompId;
+    helperCodes = [];
+    codeErr = null;
     void loadHelperCodes();
   });
 
@@ -347,15 +356,24 @@
   let liveErr: string | null = $state(null);
   let liveMsg: string | null = $state(null);
 
+  /** One token per competition switch: a load that answers for the competition
+   * the operator has left must not fill the form. */
+  const liveRequest = latestOnly();
+
   async function loadLive(): Promise<void> {
+    const isCurrent = liveRequest();
     live = null;
     liveErr = null;
     liveMsg = null;
+    // Nothing typed for the previous competition may be saved into this one.
+    liveId = '';
+    livePwd = '';
     if (!currentCompId) return;
     try {
-      live = await getLiveresultatCredentials(currentCompId);
-      liveId = live.liveresultat_id ?? '';
-      livePwd = '';
+      const r = await getLiveresultatCredentials(currentCompId);
+      if (!isCurrent()) return;
+      live = r;
+      liveId = r.liveresultat_id ?? '';
     } catch {
       // soft fail — section shows "not configured"
     }

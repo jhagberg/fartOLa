@@ -5,7 +5,7 @@
 // links land on the right section, and a missing Eventor key is one
 // click from the place that fixes it (ADR-0016 rule 4).
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { seedCompetition, BASE } from './helpers/seed.ts';
 import { pinActive } from './helpers/settings.ts';
 
@@ -300,4 +300,151 @@ test('saving the Eventor key updates the status line at once', async ({ page }) 
   await row.getByTestId('settings-row-input').fill('test-key-123');
   await row.getByTestId('settings-row-save').click();
   await expect(label).toHaveText('Eventor: cache OK (0 dagar gammal)');
+});
+
+// Switching competition through the sidebar picker (activeCompetition.set)
+// while the settings page is open. The picker also navigates to the new
+// competition's readout; that route is held back so the settings page stays
+// mounted, as it does for the moment a slow load takes to land.
+async function twoCompetitions(
+  page: Page,
+  request: APIRequestContext
+): Promise<{ a: string; b: string; nameB: string }> {
+  const { competitionId: a } = await seedCompetition(request, { controls: 3 });
+  const { competitionId: b } = await seedCompetition(request, { controls: 3 });
+  const listed = (await (await request.get(`${BASE}/api/competitions`)).json()) as {
+    competitions: Array<{ id: string; name: string }>;
+  };
+  const nameB = listed.competitions.find((c) => c.id === b)?.name ?? '';
+  await request.post(`${BASE}/api/sessions/active-competition`, { data: { competition_id: a } });
+  await page.route('**/src/routes/competition/**', () => {
+    /* never answered: the readout does not open */
+  });
+  return { a, b, nameB };
+}
+
+async function switchTo(page: Page, name: string): Promise<void> {
+  await page.getByTestId('active-comp-pill').click();
+  await page.getByTestId('active-comp-panel').getByRole('option', { name }).click();
+  await expect(page.getByTestId('active-comp-pill')).toContainText(name);
+}
+
+test('a late Liveresultat and helper-code load for the old competition is ignored', async ({
+  page,
+  request,
+}) => {
+  const { a, b, nameB } = await twoCompetitions(page, request);
+  let releaseA!: () => void;
+  const gateA = new Promise<void>((r) => (releaseA = r));
+  let liveDone!: () => void;
+  let codesDone!: () => void;
+  const liveSent = new Promise<void>((r) => (liveDone = r));
+  const codesSent = new Promise<void>((r) => (codesDone = r));
+  await page.route(`**/api/competitions/${a}/liveresultat/credentials`, async (r) => {
+    await gateA;
+    await r.fulfill({ json: { liveresultat_id: '111', has_password: true } });
+    liveDone();
+  });
+  await page.route(`**/api/competitions/${a}/event-codes`, async (r) => {
+    await gateA;
+    await r.fulfill({
+      json: {
+        codes: [
+          {
+            id: 'a1',
+            masked_code: 'aaa****11',
+            expires_at_ms: Date.now() + 86_400_000,
+            revoked_at_ms: null,
+          },
+        ],
+      },
+    });
+    codesDone();
+  });
+  await page.route(`**/api/competitions/${b}/liveresultat/credentials`, (r) =>
+    r.fulfill({ json: { liveresultat_id: '222', has_password: false } })
+  );
+  await page.route(`**/api/competitions/${b}/event-codes`, (r) =>
+    r.fulfill({
+      json: {
+        codes: [
+          {
+            id: 'b1',
+            masked_code: 'bbb****22',
+            expires_at_ms: Date.now() + 86_400_000,
+            revoked_at_ms: null,
+          },
+          {
+            id: 'b2',
+            masked_code: 'bbb****33',
+            expires_at_ms: Date.now() + 86_400_000,
+            revoked_at_ms: null,
+          },
+        ],
+      },
+    })
+  );
+  await page.goto('/installningar');
+  await expect(page.getByTestId('settings-view')).toBeVisible({ timeout: 20_000 });
+  await switchTo(page, nameB);
+  const live = page.locator('#liveresultat');
+  await expect(live.getByTestId('liveresultat-id')).toHaveValue('222');
+  await expect(page.locator('#hjalpkoder').getByTestId('helper-code-row')).toHaveCount(2);
+
+  releaseA();
+  await Promise.all([liveSent, codesSent]);
+  await page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  );
+  await expect(live.getByTestId('liveresultat-id')).toHaveValue('222');
+  await expect(page.locator('#hjalpkoder').getByTestId('helper-code-row')).toHaveCount(2);
+  await expect(page.locator('#hjalpkoder')).toContainText('bbb****22');
+});
+
+test('a Liveresultat draft typed in one competition is not saved into the next', async ({
+  page,
+  request,
+}) => {
+  const { a, b, nameB } = await twoCompetitions(page, request);
+  const patches: Array<{ url: string; body: unknown }> = [];
+  await page.route(`**/api/competitions/${a}/liveresultat/credentials`, (r) => {
+    if (r.request().method() === 'PATCH') {
+      patches.push({ url: r.request().url(), body: r.request().postDataJSON() });
+      return r.fulfill({ json: { liveresultat_id: '555', has_password: true } });
+    }
+    return r.fulfill({ json: { liveresultat_id: null, has_password: false } });
+  });
+  // B's own load is held, so the form shows what the switch left in it.
+  let releaseB!: () => void;
+  const gateB = new Promise<void>((r) => (releaseB = r));
+  await page.route(`**/api/competitions/${b}/liveresultat/credentials`, async (r) => {
+    if (r.request().method() === 'PATCH') {
+      patches.push({ url: r.request().url(), body: r.request().postDataJSON() });
+      return r.fulfill({ json: { liveresultat_id: '555', has_password: true } });
+    }
+    await gateB;
+    return r.fulfill({ json: { liveresultat_id: null, has_password: false } });
+  });
+  await page.goto('/installningar');
+  const live = page.locator('#liveresultat');
+  await expect(live.getByTestId('liveresultat-id')).toBeVisible({ timeout: 20_000 });
+  await live.getByTestId('liveresultat-id').fill('111');
+  await live.getByTestId('liveresultat-password').fill('gammalt');
+  await live.getByTestId('liveresultat-save').click();
+  await expect(live.getByTestId('liveresultat-result')).toBeVisible();
+  await live.getByTestId('liveresultat-id').fill('999');
+  await live.getByTestId('liveresultat-password').fill('halvskrivet');
+  patches.length = 0;
+
+  await switchTo(page, nameB);
+  await expect(live.getByTestId('liveresultat-id')).toHaveValue('');
+  await expect(live.getByTestId('liveresultat-password')).toHaveValue('');
+  releaseB();
+  await live.getByTestId('liveresultat-id').fill('222');
+  await live.getByTestId('liveresultat-password').fill('nytt');
+  await live.getByTestId('liveresultat-save').click();
+  await expect(live.getByTestId('liveresultat-result')).toBeVisible();
+  expect(patches).toHaveLength(1);
+  expect(patches[0]?.url).toContain(`/api/competitions/${b}/liveresultat/credentials`);
+  expect(patches[0]?.body).toEqual({ liveresultat_id: '222', liveresultat_pwd: 'nytt' });
 });
