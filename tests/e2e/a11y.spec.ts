@@ -20,7 +20,11 @@ import {
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
-import { prepareEditReadError, prepareEditReadMispunch } from './helpers/edit-runner.ts';
+import {
+  prepareEditReadError,
+  prepareEditReadMispunch,
+  prepareEditReadNeverRead,
+} from './helpers/edit-runner.ts';
 import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
@@ -256,6 +260,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/runners`,
       (p) => p.getByTestId('runners-view'),
       (p) => prepareEditReadError(p, request),
+    ],
+    [
+      'runners edit of a runner never read, finish by hand',
+      `/competition/${id}/runners`,
+      (p) => p.getByTestId('runners-view'),
+      (p) => prepareEditReadNeverRead(p, request),
     ],
     [
       'runners add sheet',

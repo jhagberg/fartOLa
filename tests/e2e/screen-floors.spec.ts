@@ -55,7 +55,11 @@ import {
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
-import { prepareEditReadError, prepareEditReadMispunch } from './helpers/edit-runner.ts';
+import {
+  prepareEditReadError,
+  prepareEditReadMispunch,
+  prepareEditReadNeverRead,
+} from './helpers/edit-runner.ts';
 import {
   prepareHyrbrickorEmpty,
   prepareHyrbrickorFull,
@@ -381,6 +385,13 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('runners-view'),
     root: '[role="dialog"]',
     prepare: async (page, _id, request) => prepareEditReadError(page, request),
+  },
+  {
+    name: 'Anmälda, ändra en aldrig avläst med tid för hand',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareEditReadNeverRead(page, request),
   },
   {
     name: 'Anmälda, lägg till',

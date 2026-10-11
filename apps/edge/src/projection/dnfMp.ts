@@ -219,15 +219,22 @@ function startPunchMs(input: StartInput): number | null {
  *                  punch (fri starttid in open classes, SOFT TR 7.4.3
  *                  (2026-07-01)). */
 export function startMs(input: StartInput): number | null {
+  const source = startSource(input);
+  return source === 'drawn' ? input.drawnStartMs : source === 'punch' ? startPunchMs(input) : null;
+}
+
+/** Which start startMs takes (the rule above): the drawn start time, the
+ * start punch, or none. Shown to the secretariat; the time is unchanged. */
+export function startSource(input: StartInput): 'drawn' | 'punch' | null {
   const punch = startPunchMs(input);
   const drawn = input.drawnStartMs;
   switch (input.startMethod) {
     case 'start_time':
-      return drawn;
+      return drawn !== null ? 'drawn' : null;
     case 'start_punch':
-      return punch ?? drawn;
+      return punch !== null ? 'punch' : drawn !== null ? 'drawn' : null;
     case 'auto':
-      return drawn ?? punch;
+      return drawn !== null ? 'drawn' : punch !== null ? 'punch' : null;
   }
 }
 

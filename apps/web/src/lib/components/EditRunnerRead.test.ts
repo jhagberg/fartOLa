@@ -21,6 +21,7 @@ const base: CorrectionsDTO = {
   drawn_start_ms: null,
   late_start_ms: null,
   read_count: 0,
+  start_source: null,
   latest_read: null,
   missing_codes: [],
   manual_finish_ms: null,
@@ -34,8 +35,12 @@ const readOf = (status: CorrectionsDTO['status'], punches: number[]): Correction
   status,
   read_count: 1,
   read_at_ms: Date.UTC(2026, 9, 9, 8, 20),
+  start_source: 'drawn',
   latest_read: {
     card_type: 'SI10',
+    read_at_ms: Date.UTC(2026, 9, 9, 8, 20),
+    start_ms: Date.UTC(2026, 9, 9, 8, 0),
+    finish_ms: Date.UTC(2026, 9, 9, 8, 12),
     start: clk(36000),
     finish: clk(36720),
     punches: punches.map((code, i) => ({ code, ...clk(36000 + 120 * (i + 1)) })),
@@ -102,7 +107,7 @@ describe('EditRunnerRead (mounted)', () => {
         })
       );
     }) as typeof fetch;
-    readProps.competitorId = 'r1';
+    readProps.obj = { id: 'r1' };
     readProps.reloadKey = 0;
   });
   const mountIt = (): void => {
@@ -111,7 +116,7 @@ describe('EditRunnerRead (mounted)', () => {
       props: {
         competitionId: 'c1',
         get competitorId() {
-          return readProps.competitorId;
+          return readProps.obj.id;
         },
         classId: 'k1',
         cardNumber: 7501853,
@@ -169,7 +174,7 @@ describe('EditRunnerRead (mounted)', () => {
   it('a slow answer for the previous runner never lands on the next', async () => {
     mountIt();
     await settle();
-    readProps.competitorId = 'r2';
+    readProps.obj = { id: 'r2' };
     await settle();
     answer('r2', 0, readOf('OK', [31, 32, 33]));
     await settle();
@@ -203,5 +208,42 @@ describe('EditRunnerRead (mounted)', () => {
     answer('r1', 1, readOf('OK', [31, 32, 33]));
     await settle();
     expect($('edit-read-late')).toBeNull();
+  });
+
+  it('a lost card with a finish by hand still shows the finish, status and time', async () => {
+    mountIt();
+    await settle();
+    answer('r1', 0, {
+      ...base,
+      status: 'OK',
+      elapsed_time_ms: 725_000,
+      start_ms: Date.UTC(2026, 9, 9, 8, 0),
+      drawn_start_ms: Date.UTC(2026, 9, 9, 8, 0),
+      start_source: 'drawn',
+      manual_finish_ms: Date.UTC(2026, 9, 9, 8, 12, 5),
+      manual_punches: [{ control_code: 32, reason: 'Stiftklämma' }],
+      time_addition_min: 1,
+      time_addition_reason: 'Tjuvstart',
+    });
+    await settle();
+    expect($('edit-read-never')!.textContent).toBe('Inte avläst ännu');
+    expect($('edit-read-readat')).toBeNull();
+    expect($('edit-read-finish')!.textContent).toContain('för hand');
+    expect($('edit-read-status')!.textContent).toContain('Godkänd');
+    expect($('edit-read-status')!.textContent).toContain('12:05');
+    expect($('edit-read-addition')!.textContent).toContain('Tjuvstart');
+    expect($('edit-read-by-hand')!.textContent).toContain('Stiftklämma');
+  });
+
+  it('a parent that rebuilds the competitor after another runner reads does not refetch', async () => {
+    mountIt();
+    await settle();
+    answer('r1', 0, readOf('OK', [31, 32, 33]));
+    await settle();
+    readProps.obj = { id: 'r1' };
+    await settle();
+    expect(corrections.get('r1')!.length).toBe(1);
+    expect($('edit-read-loading')).toBeNull();
+    expect($('edit-read-status')!.textContent).toContain('Godkänd');
   });
 });
