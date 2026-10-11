@@ -17,12 +17,17 @@ async function pinnedOlder(page: Page, request: APIRequestContext): Promise<void
   await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
-  await page
-    .getByTestId('history-row')
-    .filter({ hasText: String(CIA) })
-    .first()
-    .click();
-  await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+  // A replayed read right after load clears a pin, so click until it holds.
+  await expect(async () => {
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(CIA) })
+      .first()
+      .click();
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA), {
+      timeout: 1_000,
+    });
+  }).toPass();
 }
 
 /** Pinned older read, cue bar, simulate button and a failed print. */

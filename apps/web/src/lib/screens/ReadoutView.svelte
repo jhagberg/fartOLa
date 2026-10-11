@@ -726,7 +726,16 @@
     reason: string
   ): Promise<void> {
     // Throws on failure: the card keeps its popover open with the reason.
-    await apiSetManualStatus(competitionId, competitorId, status, reason);
+    try {
+      await apiSetManualStatus(competitionId, competitorId, status, reason);
+    } catch (err) {
+      // The shown read changed while saving: the popover is gone, so the
+      // failure is told in a toast instead of being lost.
+      if (latestReadProp?.competitorId === competitorId) throw err;
+      const name = competitorsById.get(competitorId)?.name ?? '';
+      toast(t('ro.status.failedFor', { name }));
+      return;
+    }
     await refetchReadout();
     const name = competitorsById.get(competitorId)?.name ?? latestReadProp?.name ?? '';
     toast(t('ro.status.done', { name, status: t(`status.${status}`) }));

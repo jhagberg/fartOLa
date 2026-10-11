@@ -203,7 +203,7 @@ test('manual DNF flow flips StatusPill in-place', async ({ page, request }) => {
 
   // WR-005: the synthetic read must carry start + finish so the reducer's
   // projected status is NOT already DNF (finish=null → DNF). Without
-  // withFinish=true the LatestReadCard renders the "Ångra Utgått"
+  // withFinish=true the LatestReadCard renders the "Ångra status: …"
   // un-DNF action instead of the reason-input popover this test asserts.
   await simulateRead(request, competitionId, 7_501_853, { withFinish: true });
   await expect(page.getByTestId('runner-name').first()).toContainText('Anna Andersson', {
