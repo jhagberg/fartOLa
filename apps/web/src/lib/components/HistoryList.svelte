@@ -38,12 +38,23 @@
 
   let { rows, activeKey = null, flashKey = null, onSelect }: Props = $props();
 
-  /** Consecutive reads of the same card: newest first, earlier reads after. */
+  /** A re-read: same card, same runner and same status; anything else stays its own row. */
+  const same = (a: Row, b: Row): boolean =>
+    a.cardNumber === b.cardNumber &&
+    a.unknown === b.unknown &&
+    a.name === b.name &&
+    a.status === b.status;
+  const gkey = (r: Row): string => `${r.cardNumber}|${r.unknown ? '' : (r.name ?? '')}|${r.status}`;
+  /** Open when the operator opened it, or when the shown read is one of the earlier reads. */
+  const isOpen = (g: Row[]): boolean =>
+    open[gkey(g[0]!)] === true || g.slice(1).some((r) => r.key === activeKey);
+
+  /** Consecutive identical re-reads: newest first, earlier reads after. */
   const groups = $derived.by(() => {
     const out: Row[][] = [];
     for (const r of rows) {
       const last = out[out.length - 1];
-      if (last && last[0]!.cardNumber === r.cardNumber) last.push(r);
+      if (last && same(last[0]!, r)) last.push(r);
       else out.push([r]);
     }
     return out;
@@ -81,14 +92,14 @@
               type="button"
               class="toggle"
               data-testid="history-group-toggle"
-              aria-expanded={open[top.key] === true}
-              aria-label={`${t('ro.history.reads', { n: g.length })}: ${t(open[top.key] ? 'ro.history.hideReads' : 'ro.history.showReads')}`}
-              onclick={() => (open[top.key] = !open[top.key])}
+              aria-expanded={isOpen(g)}
+              aria-label={`${t('ro.history.reads', { n: g.length })}: ${t(isOpen(g) ? 'ro.history.hideReads' : 'ro.history.showReads')}`}
+              onclick={() => (open[gkey(top)] = !isOpen(g))}
             >
-              <Icon name={open[top.key] ? 'chevron-up' : 'chevron-down'} size={16} />
+              <Icon name={isOpen(g) ? 'chevron-up' : 'chevron-down'} size={16} />
               {t('ro.history.reads', { n: g.length })}
             </button>
-            {#if open[top.key]}
+            {#if isOpen(g)}
               {#each g.slice(1) as r (r.key)}
                 <HistoryRow
                   row={r}
