@@ -46,6 +46,11 @@ describe('parseArgs (gemini PR #1 hardening)', () => {
     assert.strictEqual(opts.includeRawPages, true);
   });
 
+  test('--pretty is off by default and toggles on', () => {
+    assert.strictEqual(parseArgs([]).pretty, false);
+    assert.strictEqual(parseArgs(['--pretty']).pretty, true);
+  });
+
   test('regression: --device followed by another flag throws (does not absorb --once)', () => {
     assert.throws(() => parseArgs(['--device', '--once']), /--device requires a value/);
   });
