@@ -248,6 +248,8 @@
 
   function onKeydown(ev: KeyboardEvent): void {
     if (ev.key !== 'F' && ev.key !== 'f') return;
+    // Ctrl+F, Cmd+F and Alt+F are the browser's, not a request for fullscreen.
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const tag = (ev.target as HTMLElement | null)?.tagName?.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
     ev.preventDefault();
