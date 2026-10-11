@@ -424,7 +424,9 @@
       </Button>
       <div class="dnf-wrap">
         <Button variant="ghost" data-testid="manual-dnf-btn" onclick={toggleDnf}>
-          {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
+          {isOverridden(read) && read.manual_status
+            ? t('ro.undnf', { status: t(`status.${read.manual_status}`) })
+            : t('ro.dnf')}
         </Button>
         {#if dnfOpen}
           <div class="dnf-pop" class:down={popDown} role="dialog" bind:this={popEl}>
@@ -450,6 +452,7 @@
               type="text"
               class="dnf-input"
               data-testid="dnf-reason-input"
+              disabled={dnfBusy}
               bind:value={dnfReason}
               maxlength="500"
             />
@@ -486,7 +489,7 @@
         {/if}
       </div>
     {/if}
-    {#if read?.competitorId}
+    {#if read?.competitorId && !autoPrint}
       <span class="autoprint-hint">
         <span class="kbd">P</span>
         <span class="faint">{t('ro.print.shortcut')}</span>

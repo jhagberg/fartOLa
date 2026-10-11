@@ -285,6 +285,30 @@ test.describe('overlapping prints and the status popover', () => {
     await expect(page.getByText('Utskriften misslyckades')).toBeVisible();
   });
 
+  test('a status save that fails after the read changed is told in a toast', async ({
+    page,
+    request,
+  }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+    let fail!: () => void;
+    const held = new Promise<void>((r) => (fail = r));
+    await page.route('**/competitors/*/status', async (route) => {
+      await held;
+      await route.fulfill({ status: 500, json: { error: 'disk_full' } });
+    });
+    await readout(page, id);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+    await page.getByTestId('manual-dnf-btn').click();
+    await page.getByTestId('status-pick-DQ').click();
+    await page.getByTestId('dnf-confirm').click();
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await expect(page.getByTestId('dnf-reason-input')).toHaveCount(0);
+    fail();
+    await expect(page.getByText('Statusen för Cia Carlsson sparades inte.')).toBeVisible();
+  });
+
   test('a new read closes an open status popover', async ({ page, request }) => {
     const { competitionId: id } = await seedCompetition(request, { controls: 4 });
     await simulateRead(request, id, CIA, [31, 32, 33, 34]);
