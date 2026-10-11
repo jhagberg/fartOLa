@@ -20,6 +20,11 @@ import {
 } from './lottning.ts';
 import { ApiError } from '../api/client.ts';
 
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/competition/c1/lottning'), state: {} },
+}));
+vi.mock('$app/navigation', () => ({ replaceState: vi.fn() }));
+
 describe('02.1-14 Task 14 — start method per class', () => {
   afterEach(() => {
     vi.restoreAllMocks();

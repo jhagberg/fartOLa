@@ -52,6 +52,7 @@ import {
   prepareLottningEmpty,
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
+import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -320,6 +321,12 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/lottning`,
     ready: (p) => p.getByTestId('lottning-view'),
     prepare: async (page, _id, request) => prepareLottningPursuitReading(page, request),
+  },
+  {
+    name: 'Kontroll, klasser utan starttid med länk till Lottning',
+    url: (id) => `/competition/${id}/kontroll`,
+    ready: (p) => p.getByTestId('prerace-view'),
+    prepare: async (page, _id, request) => prepareKontrollNoStart(page, request),
   },
   {
     name: 'Lottning, klass utan starttider',
