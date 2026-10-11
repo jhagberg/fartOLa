@@ -17,6 +17,7 @@ import {
   prepareLottningEmpty,
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
+import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
@@ -210,6 +211,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/lottning`,
       (p) => p.getByTestId('lottning-view'),
       (p) => prepareLottningPursuitReading(p, request),
+    ],
+    [
+      'kontroll classes without start times',
+      `/competition/${id}/kontroll`,
+      (p) => p.getByTestId('prerace-view'),
+      (p) => prepareKontrollNoStart(p, request),
     ],
     [
       'lottning empty',

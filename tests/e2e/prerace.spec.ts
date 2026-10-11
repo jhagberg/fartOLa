@@ -11,6 +11,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { BASE, seedCompetition, simulateRead } from './helpers/seed.ts';
+import { seedNoStartTimes } from './helpers/prerace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -92,4 +93,35 @@ test('the runners list filters on projected status and keeps the filter in the U
   await expect(page.getByTestId('runners-row')).toContainText('Felstämplad');
   await page.reload();
   await expect(page.getByTestId('runners-row')).toHaveCount(1);
+});
+
+test.describe('classes without start times (Task 8)', () => {
+  const HELP = 'Öppen klass: välj Startstämpling i Lottning om klassen inte ska lottas.';
+
+  test('each class links to its place in Lottning, and no button changes the class here', async ({
+    page,
+    request,
+  }) => {
+    const { id, ids } = await seedNoStartTimes(request);
+    await page.goto(`/competition/${id}/kontroll`);
+    const links = page.getByTestId('prerace-class-link');
+    await expect(links).toHaveCount(2, { timeout: 20_000 });
+    for (const name of ['H21', 'D21']) {
+      const link = links.filter({ hasText: name }).getByRole('link', { name: /Öppna i Lottning/ });
+      await expect(link).toHaveAttribute('href', `/competition/${id}/lottning?klass=${ids[name]}`);
+    }
+    await expect(links.getByRole('button')).toHaveCount(0);
+  });
+
+  test('an open class says to choose Startstämpling in Lottning; a timed class does not', async ({
+    page,
+    request,
+  }) => {
+    const { id } = await seedNoStartTimes(request);
+    await page.goto(`/competition/${id}/kontroll`);
+    const links = page.getByTestId('prerace-class-link');
+    await expect(links).toHaveCount(2, { timeout: 20_000 });
+    await expect(links.filter({ hasText: 'D21' })).toContainText(HELP);
+    await expect(links.filter({ hasText: 'H21' })).not.toContainText('Öppen klass');
+  });
 });

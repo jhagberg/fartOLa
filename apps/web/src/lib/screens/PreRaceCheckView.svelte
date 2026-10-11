@@ -104,6 +104,8 @@
     /** A warning, not a fault: shown with the info icon, not counted. */
     soft?: boolean;
     action?: { label: string; href: string };
+    /** The classes the rows belong to, each with its way into Lottning. */
+    classLinks?: Array<{ id: string; name: string; href: string; open: boolean }>;
   }
 
   const competitorById = $derived(new Map(competitors.map((c) => [c.id, c])));
@@ -142,6 +144,20 @@
         card: null,
         detail: null,
       }));
+    const seen = new Set<string>();
+    const noStartClasses = check.no_start_time.flatMap((r) => {
+      if (seen.has(r.class_id)) return [];
+      seen.add(r.class_id);
+      const kind = classes.find((c) => c.id === r.class_id)?.class_kind;
+      return [
+        {
+          id: r.class_id,
+          name: r.class_name,
+          href: `${base}/lottning?klass=${encodeURIComponent(r.class_id)}`,
+          open: kind === 'oppen' || kind === 'inskolning',
+        },
+      ];
+    });
     return [
       {
         key: 'noCard',
@@ -154,6 +170,7 @@
         title: t('prerace.noStart.title'),
         rule: t('prerace.noStart.rule'),
         rows: runnerRows(check.no_start_time),
+        classLinks: noStartClasses,
         action: { label: t('prerace.noStart.action'), href: `${base}/lottning` },
       },
       {
@@ -293,6 +310,26 @@
         </header>
         {#if s.rows.length > 0}
           <p class="rule">{s.rule}</p>
+          {#if s.classLinks && s.classLinks.length > 0}
+            <ul class="rows class-links">
+              {#each s.classLinks as c (c.id)}
+                <li class="class-link" data-testid="prerace-class-link">
+                  <span class="name">{c.name}</span>
+                  <a
+                    class="link"
+                    href={c.href}
+                    aria-label={t('prerace.noStart.openClass', { class: c.name })}
+                    >{t('prerace.noStart.open')}</a
+                  >
+                  {#if c.open}
+                    <p class="meta" data-testid="prerace-open-class-help">
+                      {t('prerace.noStart.openHelp')}
+                    </p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
           <ul class="rows">
             {#each shown as r (r.key)}
               <li>
@@ -580,6 +617,19 @@
     min-height: var(--hit);
     display: inline-flex;
     align-items: center;
+  }
+  .class-link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 var(--space-md);
+    padding: var(--space-xs) var(--space-md);
+  }
+  .class-link .meta {
+    flex-basis: 100%;
+    margin: 0;
+    padding-bottom: var(--space-xs);
   }
   .search-wrap {
     position: relative;
