@@ -500,6 +500,8 @@
     radioHeard = '';
     radioBaseline = null;
     radioReady = false;
+    // A save still running belongs to the competition left: it no longer locks.
+    radioBusy = false;
     const id = currentCompId;
     if (!id) return;
     try {
@@ -557,7 +559,7 @@
     } catch {
       if (isCurrent()) radioErr = t('settings.radio.saveError');
     } finally {
-      radioBusy = false;
+      if (isCurrent()) radioBusy = false;
     }
   }
 
