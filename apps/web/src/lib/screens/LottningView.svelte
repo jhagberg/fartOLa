@@ -53,6 +53,7 @@
   import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
+  import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import StartTimeHistory from '#lib/components/StartTimeHistory.svelte';
   import PreviousResultsUpload, {
@@ -135,9 +136,9 @@
   /** Only the newest save may set the locked flag or the stored hint. */
   let maxSaveGen = 0;
 
-  /** The start-method save: only the newest may revert the select. */
+  /** The start-method and "utan tidtagning" saves, as the notes show them. */
   const startSave = createSaveState();
-  let startSaveGen = 0;
+  const noTimingSave = createSaveState();
 
   let submitting = $state(false);
   let error: string | null = $state(null);
@@ -315,7 +316,7 @@
     maxInvalid = false;
     maxSaveGen++;
     startSave.reset();
-    startSaveGen++;
+    noTimingSave.reset();
     drawType = 'All';
     intervalTouched = false;
     await loadStartList();
@@ -516,25 +517,26 @@
     const classId = selectedClassId;
     const sec = parseMaxTime(maxTimeInput);
     if (sec === 'invalid') {
+      // Only the field error: no note of an older save next to it.
       maxInvalid = true;
+      maxSave.reset();
+      maxLocked = false;
+      maxSaveGen++;
       return;
     }
     maxInvalid = false;
     maxLocked = false;
     const mine = ++maxSaveGen;
     await maxSave.run(
-      patchClass(competitionId, classId, { maxTimeSec: sec }).then(
-        () => {
-          if (mine === maxSaveGen && classId === selectedClassId) maxTimeStored = sec;
-        },
-        (e: unknown) => {
-          if (mine === maxSaveGen)
-            maxLocked =
-              e instanceof ApiError &&
-              (e.body as { error?: string } | null)?.error === 'max_time_locked';
-          throw e;
-        }
-      ),
+      saveClassSetting(classId, 'maxTimeSec', sec, maxTimeStored ?? null, (saved) => {
+        if (classId === selectedClassId) maxTimeStored = saved;
+      }).catch((e: unknown) => {
+        if (mine === maxSaveGen)
+          maxLocked =
+            e instanceof ApiError &&
+            (e.body as { error?: string } | null)?.error === 'max_time_locked';
+        throw e;
+      }),
       { error: t('lottning.maxTimeFailed') }
     );
   }
@@ -553,32 +555,84 @@
     return c === null ? null : startOrderNote(c);
   });
 
-  async function saveNoTiming(noTiming: boolean): Promise<void> {
-    if (!selectedClassId) return;
-    const id = selectedClassId;
-    try {
-      await patchClass(competitionId, id, { no_timing: noTiming });
-      classes = classes.map((c) => (c.id === id ? { ...c, no_timing: noTiming } : c));
-    } catch (e) {
-      error = plainError(e);
+  /** The class settings saved from this form; each decides how the class
+   * is timed or placed. */
+  type ClassSettings = { start_method: StartMethod; no_timing: boolean; maxTimeSec: number | null };
+  /** One save at a time per class and setting (ui/saveQueue.ts): a choice
+   * made while one saves waits and goes out next, so the edge always ends on
+   * the newest. `newest` counts the saves; only the newest may change what
+   * the screen shows. Dropped when idle, so the next save starts from the
+   * stored value. */
+  const settingSaves = new Map<
+    string,
+    { queue: SaveQueue<Partial<ClassSettings>>; newest: number; pending: number }
+  >();
+
+  /** Save one setting of a class; the PATCH carries only that setting.
+   * `settled` runs for the newest save of that setting only, with the value
+   * the server last confirmed. Rejects if this save failed. */
+  function saveClassSetting<K extends keyof ClassSettings>(
+    id: string,
+    key: K,
+    value: ClassSettings[K],
+    stored: ClassSettings[K],
+    settled: (saved: ClassSettings[K], ok: boolean) => void
+  ): Promise<void> {
+    const k = `${id}:${key}`;
+    let s = settingSaves.get(k);
+    if (s === undefined) {
+      s = {
+        queue: createSaveQueue<Partial<ClassSettings>>({ [key]: stored }, (change) =>
+          patchClass(competitionId, id, change)
+        ),
+        newest: 0,
+        pending: 0,
+      };
+      settingSaves.set(k, s);
     }
+    const entry = s;
+    const mine = ++entry.newest;
+    entry.pending++;
+    const finish = (ok: boolean): void => {
+      if (--entry.pending === 0) settingSaves.delete(k);
+      if (mine === entry.newest) settled(entry.queue.saved[key] as ClassSettings[K], ok);
+    };
+    return entry.queue.save({ [key]: value }).then(
+      () => finish(true),
+      (e: unknown) => {
+        finish(false);
+        throw e;
+      }
+    );
   }
 
-  /** The select keeps the user's choice in the DOM, so a failed save puts
-   * the stored value back (unless a newer save or another class took over). */
-  async function saveStartMethod(select: HTMLSelectElement): Promise<void> {
+  /** The box and the select keep the user's choice in the DOM, so a failed
+   * newest save puts the stored value back on the class still shown. */
+  function saveNoTiming(box: HTMLInputElement): void {
     if (!selectedClassId) return;
     const id = selectedClassId;
-    const method = select.value as StartMethod;
-    const mine = ++startSaveGen;
-    await startSave.run(
-      patchClass(competitionId, id, { start_method: method }).then(
-        () => {
-          classes = classes.map((c) => (c.id === id ? { ...c, start_method: method } : c));
-        },
-        (e: unknown) => {
-          if (mine === startSaveGen && id === selectedClassId) select.value = selectedStartMethod;
-          throw e;
+    const stored = classes.find((c) => c.id === id)?.no_timing ?? false;
+    void noTimingSave.run(
+      saveClassSetting(id, 'no_timing', box.checked, stored, (saved, ok) => {
+        classes = classes.map((c) => (c.id === id ? { ...c, no_timing: saved } : c));
+        if (!ok && id === selectedClassId) box.checked = saved;
+      }),
+      { error: t('lottning.noTimingFailed') }
+    );
+  }
+
+  function saveStartMethod(select: HTMLSelectElement): void {
+    if (!selectedClassId) return;
+    const id = selectedClassId;
+    void startSave.run(
+      saveClassSetting(
+        id,
+        'start_method',
+        select.value as StartMethod,
+        selectedStartMethod,
+        (saved, ok) => {
+          classes = classes.map((c) => (c.id === id ? { ...c, start_method: saved } : c));
+          if (!ok && id === selectedClassId) select.value = saved;
         }
       ),
       { error: t('lottning.startMethod.failed') }
@@ -803,7 +857,7 @@
           id="lottning-start-method"
           value={selectedStartMethod}
           disabled={!selectedClassId}
-          onchange={(e) => void saveStartMethod(e.currentTarget)}
+          onchange={(e) => saveStartMethod(e.currentTarget)}
           aria-describedby="lottning-start-method-help"
           data-testid="lottning-start-method"
         >
@@ -978,7 +1032,7 @@
           {t('lottning.maxTimeInvalid')}
         </p>
       {/if}
-      <div class="max-time-state">
+      <div class="max-time-state" data-testid="lottning-max-time-note">
         <SavedNote
           state={maxSave.state}
           error={maxLocked ? t('lottning.maxTimeLocked') : maxSave.error}
@@ -995,11 +1049,14 @@
         type="checkbox"
         checked={selectedNoTiming}
         disabled={!selectedClassId}
-        onchange={(e) => void saveNoTiming(e.currentTarget.checked)}
+        onchange={(e) => saveNoTiming(e.currentTarget)}
         data-testid="lottning-no-timing"
       />
       <span>{t('lottning.noTiming')}</span>
     </label>
+    <div class="max-time-state" data-testid="lottning-no-timing-note">
+      <SavedNote state={noTimingSave.state} error={noTimingSave.error} />
+    </div>
 
     <!-- The rarely used fields: seeding, pursuit, start place and bibs -->
     <details class="more" bind:open={moreOpen}>
