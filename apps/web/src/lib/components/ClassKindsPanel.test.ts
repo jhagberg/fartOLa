@@ -94,6 +94,8 @@ describe('ClassKindsPanel (mounted)', () => {
   let component: ReturnType<typeof mount> | null = null;
   let puts: unknown[];
   let items: ClassKindItem[];
+  /** When set, the next GET waits until the test releases it. */
+  let holdGet: { release: () => void } | null;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 6; i++) {
@@ -105,6 +107,7 @@ describe('ClassKindsPanel (mounted)', () => {
 
   beforeEach(() => {
     puts = [];
+    holdGet = null;
     items = [H21, D45, OPEN];
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const json = (body: unknown, status = 200) =>
@@ -136,7 +139,9 @@ describe('ClassKindsPanel (mounted)', () => {
         return json({ updated: body.items.length });
       }
       expect(String(input)).toBe('/api/competitions/comp-1/classes/kinds');
-      return json({ eventor: 'not_linked', items });
+      const now = items;
+      if (holdGet) await new Promise<void>((r) => (holdGet!.release = r));
+      return json({ eventor: 'not_linked', items: now });
     }) as unknown as typeof fetch;
   });
   afterEach(() => {
@@ -246,6 +251,32 @@ describe('ClassKindsPanel (mounted)', () => {
       document.querySelector('[data-class-id="h21"] [data-testid="class-kind-error"]')!.textContent
     ).toContain('Ange ålder');
     expect(status('h21')).toBe('Förslag från klassnamnet, inte bekräftad');
+  });
+
+  it('a saved row keeps its choice, and stays out of Bekräfta alla, until the reload lands', async () => {
+    component = mount(ClassKindsPanel, {
+      target: document.body,
+      props: { competitionId: 'comp-1' },
+    });
+    await settle();
+    const select = () =>
+      document.querySelector(
+        '[data-class-id="h21"] [data-testid="class-kind-select"]'
+      ) as HTMLSelectElement;
+    holdGet = { release: () => {} };
+    select().value = 'elit';
+    select().dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(puts).toEqual([{ items: [{ class_id: 'h21', class_kind: 'elit', age_class: 21 }] }]);
+    // The PUT is done, the reload is not: still the chosen kind, not confirmable.
+    expect(select().value).toBe('elit');
+    expect(document.querySelector('[data-testid="class-kinds-confirm-all"]')).toBeNull();
+    const held = holdGet;
+    holdGet = null;
+    held.release();
+    await settle();
+    expect(select().value).toBe('elit');
+    expect(status('h21')).toBe('Bekräftad');
   });
 
   it('onlyClassId shows that class alone, without the summary', async () => {

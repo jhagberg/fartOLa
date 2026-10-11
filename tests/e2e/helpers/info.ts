@@ -23,8 +23,10 @@ export async function openInfo(
 }
 
 /** Before the first start: a voided chip with its result line, the max-time
- * hint, the opened rule text, an error note and a "Sparat" note (last: it
- * fades after 3 s). */
+ * hint, the opened rule text, an error note and a "Sparat" note that is held
+ * on screen. Its own competition, not the harness's: that one has started
+ * (no "Låses…" hint), has too few controls for 53, and voiding a control
+ * would change its results for the other screens. */
 export async function prepareInfo(page: Page, request: APIRequestContext): Promise<void> {
   const id = await openInfo(page, request);
   const chip = page.locator('[data-testid=info-ctrl-chip][data-code="53"]');
@@ -49,6 +51,13 @@ export async function prepareInfo(page: Page, request: APIRequestContext): Promi
     'Ändringen sparades inte. Försök igen.'
   );
 
+  // "Sparat" fades after 3 s; drop that one timer so the floor and a11y
+  // checks measure the note however slow the run is.
+  await page.evaluate(() => {
+    const later = window.setTimeout;
+    window.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) =>
+      ms === 3000 ? 0 : later(fn, ms, ...args)) as typeof window.setTimeout;
+  });
   await page.getByTestId('info-level').selectOption('niva2');
   await expect(page.getByTestId('info-level-note')).toHaveText('Sparat');
   await expect(page.getByTestId('info-void-undo')).toBeVisible();
