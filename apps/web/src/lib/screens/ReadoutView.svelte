@@ -141,8 +141,7 @@
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** The last print, for the read it was for; another read shows none. */
-  let printState: { key: string | null; status: 'idle' | 'busy' | 'ok' | 'failed'; error: string } =
-    $state({ key: null, status: 'idle', error: '' });
+  let prints: Record<string, { status: 'busy' | 'ok' | 'failed'; error: string }> = $state({});
   /** The dev-only simulate button shows only when the edge says dev mode. */
   const dev = $derived(getEventorStatus().fartola_dev);
 
@@ -268,9 +267,7 @@
 
   const currentKey = $derived(currentRow ? historyKey(currentRow) : null);
   const shownPrint = $derived(
-    printState.key !== null && printState.key === currentKey
-      ? printState
-      : { status: 'idle' as const, error: '' }
+    (currentKey !== null ? prints[currentKey] : undefined) ?? { status: 'idle' as const, error: '' }
   );
   /** An older read is pinned and a newer one exists: the card says so. */
   const pinnedOlder = $derived(
@@ -539,9 +536,14 @@
   // stay in-screen because they read screen-local state.
 
   function triggerCardReadSideEffects(cardNumber: number): void {
-    // A pinned older read stays pinned; the card's cue bar offers "Visa
-    // senaste" (RO-9) instead of replacing what the operator is reading.
+    // A new read takes over at once; if it replaced a pinned older read, a
+    // notice says that read is still in the history (RO-9).
     const top = history[0];
+    const replacedPin = pinnedKey !== null && top !== undefined && pinnedKey !== historyKey(top);
+    pinnedKey = null;
+    if (replacedPin) {
+      toast(t('ro.pinned.replaced', { name: top.competitor_name ?? t('ro.unknownCard') }));
+    }
     if (top) {
       const key = historyKey(top);
       flashKey = key;
@@ -681,7 +683,8 @@
   // --- handlers -------------------------------------------------------------
 
   function onSelectHistory(row: { key: string; cardNumber: number; unknown: boolean }): void {
-    pinnedKey = row.key;
+    // The newest row is the latest read: showing it is not "pinning".
+    pinnedKey = history[0] !== undefined && row.key === historyKey(history[0]) ? null : row.key;
     if (row.unknown) {
       void goto(`/competition/${competitionId}/readout?walkup=${row.cardNumber}`);
     }
@@ -820,12 +823,14 @@
       return;
     }
     if (shownPrint.status === 'busy') return;
-    printState = { key, status: 'busy', error: '' };
+    // State is kept per read: a late result only touches its own read.
+    prints = { ...prints, [key]: { status: 'busy', error: '' } };
     try {
       await apiPrintReceipt(competitionId, competitorId, selectedTemplate);
-      printState = { key, status: 'ok', error: '' };
+      prints = { ...prints, [key]: { status: 'ok', error: '' } };
     } catch (err) {
-      printState = { key, status: 'failed', error: (err as Error).message || t('common.unknownError') };
+      const error = (err as Error).message || t('common.unknownError');
+      prints = { ...prints, [key]: { status: 'failed', error } };
     }
   }
 
@@ -860,7 +865,7 @@
   <div class="ro-card">
     <LatestReadCard
       read={latestReadProp}
-      flashKey={flashKey}
+      flashKey={flashKey !== null && flashKey === currentKey ? flashKey : null}
       autoPrint={autoPrint}
       printState={shownPrint}
       {pinnedOlder}

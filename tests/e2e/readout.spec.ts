@@ -13,7 +13,7 @@
 //      row 2 → LatestReadCard reflects the second runner.
 //
 //   3. **manual DNF flow**:
-//      simulate-read OK → click "Bryt" → confirm → StatusPill becomes
+//      simulate-read OK → click "Ändra status…" → confirm → StatusPill becomes
 //      "DNF" within 500ms (WS broadcast + synchronous refetch path).
 //
 //   4. **unknown card triggers ?walkup= on the readout URL (C-M3
@@ -123,7 +123,7 @@ async function setup(request: import('@playwright/test').APIRequestContext): Pro
 interface SimulateReadOpts {
   /** When true, the synthetic read carries start + finish HalfDayClock
    * fields so the projection lands in OK/MP (not DNF). The manual-DNF
-   * spec needs this — its assertion is that clicking "Bryt" on a
+   * spec needs this — its assertion is that clicking "Ändra status…" on a
    * non-DNF row opens the reason-input popover (WR-005). */
   withFinish?: boolean;
 }
@@ -203,7 +203,7 @@ test('manual DNF flow flips StatusPill in-place', async ({ page, request }) => {
 
   // WR-005: the synthetic read must carry start + finish so the reducer's
   // projected status is NOT already DNF (finish=null → DNF). Without
-  // withFinish=true the LatestReadCard renders the "Återkalla brytning"
+  // withFinish=true the LatestReadCard renders the "Ångra Utgått"
   // un-DNF action instead of the reason-input popover this test asserts.
   await simulateRead(request, competitionId, 7_501_853, { withFinish: true });
   await expect(page.getByTestId('runner-name').first()).toContainText('Anna Andersson', {

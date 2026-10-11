@@ -164,6 +164,12 @@
   let pickedStatus = $state<ManualStatus>('DNF');
   let dnfBusy = $state(false);
   let dnfError = $state('');
+  /** The runner the open popover belongs to; a draft is never saved to another. */
+  let dnfFor = $state<string | null>(null);
+
+  $effect(() => {
+    if (dnfOpen && (read?.competitorId ?? null) !== dnfFor) cancelDnf();
+  });
 
   // True when the current row carries an OPERATOR-ASSERTED override.
   // Phase 2.1 fix: use manual_status (non-null = operator set) rather than
@@ -178,12 +184,20 @@
   // Nothing to print for an empty card or an unknown card; auto-print on
   // means the edge prints by itself. The disabled button says why.
   const printHint = $derived(
-    printBusy ? '' : !read?.competitorId ? t('ro.print.none') : autoPrint ? t('ro.print.auto') : ''
+    printBusy
+      ? ''
+      : read?.unknown
+        ? t('ro.print.unknown')
+        : !read?.competitorId
+          ? t('ro.print.none')
+          : autoPrint
+            ? t('ro.print.auto')
+            : ''
   );
   const printDisabled = $derived(printBusy || !read?.competitorId || autoPrint);
 
   function toggleDnf(): void {
-    if (!read || !read.competitorId) return;
+    if (!read || !read.competitorId || dnfBusy) return;
     if (isOverridden(read)) {
       // Single-click clear — preserves the pre-Phase-2.0 un-DNF gesture.
       if (onClearManualStatus) onClearManualStatus(read.competitorId);
@@ -192,6 +206,7 @@
     }
     dnfOpen = !dnfOpen;
     if (dnfOpen) {
+      dnfFor = read.competitorId;
       dnfError = '';
       pickedStatus = 'DNF';
       dnfReason = REASON_BY_STATUS.DNF;
@@ -224,18 +239,19 @@
   /** Awaits the save. The draft (reason, chosen status) is kept until it
    * resolves; a failure leaves the popover open with the reason why. */
   async function confirmDnf(): Promise<void> {
-    if (!read || !read.competitorId || dnfBusy) return;
+    const id = dnfFor;
+    if (!read || !id || id !== read.competitorId || dnfBusy) return;
     const reason = dnfReason.trim();
     if (reason.length === 0) return;
     dnfBusy = true;
     dnfError = '';
     try {
       if (onManualStatus) {
-        await onManualStatus(read.competitorId, pickedStatus, reason);
+        await onManualStatus(id, pickedStatus, reason);
       } else if (pickedStatus === 'DNF') {
         // Legacy single-state callback path — preserved so existing tests +
         // any pre-2.0 consumers keep working.
-        await onManualDnf?.(read.competitorId, reason);
+        await onManualDnf?.(id, reason);
       }
     } catch (e) {
       dnfError = e instanceof Error && e.message ? e.message : t('common.unknownError');
@@ -420,6 +436,7 @@
                   class:active={pickedStatus === s}
                   data-testid={`status-pick-${s}`}
                   aria-checked={pickedStatus === s}
+                  disabled={dnfBusy}
                   role="radio"
                   onclick={() => pickStatus(s)}
                 >
@@ -437,12 +454,23 @@
               maxlength="500"
             />
             {#if dnfError}
-              <p class="dnf-error" role="alert">
-                <Icon name="alert-triangle" size={16} /> {dnfError}
-              </p>
+              <div class="dnf-error" role="alert">
+                <Icon name="alert-triangle" size={16} />
+                <span>{t('ro.status.failed')}</span>
+                <details>
+                  <summary>{t('ro.print.reason')}</summary>
+                  <span class="reason">{dnfError}</span>
+                </details>
+              </div>
             {/if}
             <div class="dnf-actions">
-              <Button variant="ghost" size="sm" data-testid="dnf-cancel" onclick={cancelDnf}>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="dnf-cancel"
+                disabled={dnfBusy}
+                onclick={cancelDnf}
+              >
                 {t('wiz.cancel')}
               </Button>
               <Button
@@ -458,10 +486,12 @@
         {/if}
       </div>
     {/if}
-    <span class="autoprint-hint">
-      <span class="kbd">P</span>
-      <span class="faint">skriv ut</span>
-    </span>
+    {#if read?.competitorId}
+      <span class="autoprint-hint">
+        <span class="kbd">P</span>
+        <span class="faint">{t('ro.print.shortcut')}</span>
+      </span>
+    {/if}
     <div class="print-status" role="status">
       {#if printState.status === 'busy'}
         {t('ro.print.busy')}
@@ -723,6 +753,10 @@
     font-size: 14px;
   }
   .dnf-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
     margin: 0;
     padding: 8px 12px;
     border: 1px solid var(--dnf);
@@ -730,6 +764,16 @@
     background: var(--dnf-soft);
     color: var(--fg);
     font-size: var(--fs-label);
+  }
+  .dnf-error summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--hit);
+    cursor: pointer;
+  }
+  .dnf-error .reason {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
   }
   .pinned-bar {
     display: flex;

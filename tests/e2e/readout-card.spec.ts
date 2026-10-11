@@ -186,7 +186,11 @@ test.describe('status change', () => {
     await page.getByTestId('dnf-reason-input').fill('Hjälpte annan löpare');
     await page.getByTestId('dnf-confirm').click();
 
-    await expect(page.getByRole('alert').filter({ hasText: 'disk_full' })).toBeVisible();
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Statusen sparades inte.' })
+    ).toBeVisible();
+    await page.getByText('Visa orsak').click();
+    await expect(page.getByText('disk_full')).toBeVisible();
     await expect(page.getByTestId('dnf-reason-input')).toHaveValue('Hjälpte annan löpare');
     await expect(page.getByTestId('status-pick-DQ')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('toast')).toHaveCount(0);
@@ -194,15 +198,19 @@ test.describe('status change', () => {
 });
 
 test.describe('a pinned older read', () => {
-  test('shows a cue bar, keeps the pinned read on a new read, and returns on request', async ({
-    page,
-    request,
-  }) => {
+  test('shows a cue bar and returns to the latest on request', async ({ page, request }) => {
     const { competitionId: id } = await seedCompetition(request, { controls: 4 });
     await simulateRead(request, id, CIA, [31, 32, 33, 34]);
     await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
     await readout(page, id);
     await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toHaveCount(0);
+    // The newest row is the latest read, not an older one.
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(ANNA) })
+      .first()
+      .click();
     await expect(page.getByText('Du tittar på en äldre avläsning.')).toHaveCount(0);
 
     await page
@@ -212,14 +220,81 @@ test.describe('a pinned older read', () => {
       .click();
     await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
     await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
-
-    // A new read arrives: the pinned read stays and the bar stays.
-    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
-    await expect(page.getByTestId('history-row')).toHaveCount(3);
-    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
     await page.getByRole('button', { name: 'Visa senaste' }).click();
     await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
     await expect(page.getByText('Du tittar på en äldre avläsning.')).toHaveCount(0);
+  });
+
+  test('a new read takes over and a notice says the pinned read is in the history', async ({
+    page,
+    request,
+  }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    await readout(page, id);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(CIA) })
+      .first()
+      .click();
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await expect(page.getByTestId('toast')).toHaveText(
+      'Ny avläsning: Anna Andersson. Den valda avläsningen finns i historiken.'
+    );
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toHaveCount(0);
+  });
+});
+
+test.describe('overlapping prints and the status popover', () => {
+  test('a late print result never overwrites another read, and keeps its own failure', async ({
+    page,
+    request,
+  }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    const gates: Array<(r: { status: number; json: unknown }) => void> = [];
+    await page.route(PRINT, async (route) => {
+      const res = await new Promise<{ status: number; json: unknown }>((r) => gates.push(r));
+      await route.fulfill(res);
+    });
+    await readout(page, id);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await page.getByTestId('print-btn').click(); // print A (Anna), pending
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(CIA) })
+      .first()
+      .click();
+    await page.getByTestId('print-btn').click(); // print B (Cia), pending
+    await expect.poll(() => gates.length).toBe(2);
+    await expect(page.getByText('Skriver ut…')).toBeVisible();
+
+    gates[0]!({ status: 503, json: { error: 'printer_offline' } }); // A fails late
+    await expect(page.getByText('Skriver ut…')).toBeVisible(); // still B's state
+    await expect(page.getByText('Utskriften misslyckades')).toHaveCount(0);
+
+    gates[1]!({ status: 201, json: { queued: true, queue_position: 0 } });
+    await expect(page.getByText('Kvittot skrivs ut')).toBeVisible();
+    await page.getByRole('button', { name: 'Visa senaste' }).click();
+    await expect(page.getByText('Utskriften misslyckades')).toBeVisible();
+  });
+
+  test('a new read closes an open status popover', async ({ page, request }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+    await readout(page, id);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+    await page.getByTestId('manual-dnf-btn').click();
+    await expect(page.getByTestId('dnf-reason-input')).toBeVisible();
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await expect(page.getByTestId('dnf-reason-input')).toHaveCount(0);
   });
 });
 
