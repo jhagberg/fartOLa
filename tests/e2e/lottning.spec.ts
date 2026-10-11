@@ -242,6 +242,31 @@ test.describe('max time per class (LO-1)', () => {
   });
 });
 
+for (const bad of ['abc', '60', '0:00', '1:99', '-5:00']) {
+  test(`an entry that is not a max time ("${bad}") is refused and sends nothing (LO-1)`, async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+    let patches = 0;
+    await page.route(`**/api/competitions/${id}/classes/*`, (route) => {
+      if (route.request().method() === 'PATCH') patches++;
+      return route.continue();
+    });
+    await page.getByTestId('lottning-max-time').fill(bad);
+    await page.getByTestId('lottning-max-time-save').click();
+    await expect(page.getByTestId('lottning-max-time-error')).toHaveText(
+      'Ogiltig maxtid. Skriv mm:ss, till exempel 60:00.'
+    );
+    await expect(page.getByTestId('lottning-max-time')).toHaveAttribute('aria-invalid', 'true');
+    expect(patches).toBe(0);
+    await page.getByTestId('lottning-max-time').fill('5:00');
+    await expect(page.getByTestId('lottning-max-time-error')).toHaveCount(0);
+  });
+}
+
 test('a max time refused after the first start says why (LO-1)', async ({ page, request }) => {
   const id = await setupCompetition(request);
   await page.goto(`/competition/${id}/lottning`);
@@ -280,6 +305,33 @@ test('Lotta om draws at once, the history offers Ångra and undo restores the ol
   await page.getByTestId('history-row').first().getByTestId('history-undo').click();
   await expect(page.getByTestId('history-done')).toBeVisible();
   await expect.poll(times).toEqual(before);
+});
+
+test('the class and mode are locked while the file is read, and Lotta stays disabled after a failed read (LO-4)', async ({
+  page,
+  request,
+}) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  await page.getByTestId('lottning-mode-select').selectOption('Pursuit');
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route('**/import/previous-results', async (route) => {
+    await gate;
+    await route.fulfill({ status: 400, json: { error: 'parse_failed' } });
+  });
+  await page
+    .getByTestId('pursuit-results-file')
+    .setInputFiles(path.join(FIXTURES, 'iof30-resultlist-expected.xml'));
+  await page.getByTestId('pursuit-results-upload').click();
+  await expect(page.getByTestId('lottning-mode-select')).toBeDisabled();
+  await expect(page.getByTestId('lottning-class-select')).toBeDisabled();
+  release();
+  await expect(page.getByTestId('pursuit-results-error')).toBeVisible();
+  await expect(page.getByTestId('lottning-mode-select')).toBeEnabled();
+  await expect(page.getByTestId('lottning-draw-btn')).toBeDisabled();
+  await expect(page.getByText('Resultatlistan kunde inte läsas in', { exact: true })).toBeVisible();
 });
 
 test('a chosen pursuit file keeps Lotta disabled until it is read in (LO-4)', async ({

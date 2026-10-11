@@ -8,6 +8,12 @@
   results of the classes it contains. Shown in LottningView's pursuit
   fields.
 -->
+<script lang="ts" module>
+  /** none = nothing chosen or all read; unread = chosen, not read yet;
+   * reading = in flight (with its refresh); failed = the chosen file did not read. */
+  export type UploadStatus = 'none' | 'unread' | 'reading' | 'failed';
+</script>
+
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
   import {
@@ -26,25 +32,33 @@
     /** Called after a file was read in, so the parent refreshes `loaded`;
      * the upload counts as busy until the refresh it returns is done. */
     onuploaded?: () => void | Promise<void>;
-    /** Told whether a chosen file is still unread (chosen, being read, or
-     * its refresh pending): the parent holds the pursuit draw until the
-     * input times are in. */
-    onbusy?: (busy: boolean) => void;
+    /** Told where the chosen file stands: the parent holds the pursuit
+     * draw until the input times are in. */
+    onstatus?: (status: UploadStatus) => void;
   }
 
-  let { competitionId, className = '', loaded = null, onbusy, onuploaded }: Props = $props();
+  let { competitionId, className = '', loaded = null, onstatus, onuploaded }: Props = $props();
 
   let file = $state<File | null>(null);
   let busy = $state(false);
   /** The last upload's answer, with the name of the file it read. */
   let result = $state<(PreviousResultsImport & { file: string }) | null>(null);
   let error = $state<string | null>(null);
-  /** A file is chosen and not yet read (or failed): a draw now would use old times. */
-  const pending = $derived(busy || (file !== null && result === null && error === null));
+  const status = $derived<UploadStatus>(
+    busy
+      ? 'reading'
+      : file === null
+        ? 'none'
+        : error !== null
+          ? 'failed'
+          : result === null
+            ? 'unread'
+            : 'none'
+  );
   $effect(() => {
-    onbusy?.(pending);
+    onstatus?.(status);
     // Unmounted (another draw mode) with a file unread: nothing is held.
-    return () => onbusy?.(false);
+    return () => onstatus?.('none');
   });
 
   const ERRORS: Record<string, string> = {

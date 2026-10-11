@@ -4,9 +4,18 @@
 // Floor/a11y states for the draw screen. Mocks go in before the page
 // loads or the action that reads them; every changed element is asserted
 // visible at the end of its state.
-import { expect, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { seedCompetition } from './seed.ts';
 
 const LOTTNING = '**/api/competitions/*/lottning/*';
+
+/** Its own competition (these states
+ * draw and save, which would change what the shared one shows other screens. */
+async function ownLottning(page: Page, request: APIRequestContext): Promise<void> {
+  const { competitionId } = await seedCompetition(request, { controls: 8, start: false });
+  await page.goto(`/competition/${competitionId}/lottning`);
+  await expect(page.getByTestId('lottning-view')).toBeVisible();
+}
 
 async function chooseClass(page: Page, name: string): Promise<void> {
   await page.getByTestId('lottning-class-select').selectOption({ label: name });
@@ -15,7 +24,8 @@ async function chooseClass(page: Page, name: string): Promise<void> {
 /** A drawn and redrawn class: the form, kind lines, "Fler val" with the seeding
  * fields and bibs, the start list with a row error, the undo link and the
  * saved max time. The max time goes last: its "Sparat" fades after 3 s. */
-export async function prepareLottningFull(page: Page): Promise<void> {
+export async function prepareLottningFull(page: Page, request: APIRequestContext): Promise<void> {
+  await ownLottning(page, request);
   await chooseClass(page, 'H21');
   await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
   await page.getByTestId('lottning-draw-btn').click();
@@ -38,7 +48,7 @@ export async function prepareLottningFull(page: Page): Promise<void> {
   await page.getByTestId('lottning-edit-time-input').press('Enter');
   await expect(page.getByTestId('lottning-row-error')).toBeVisible();
 
-  // The seeded race has started, so the real save is refused: mock the save.
+  // A draw in the past locks the real max time (SOFT TR 4.21.2): mock the save.
   await page.route('**/api/competitions/*/classes/*', (route) =>
     route.request().method() === 'PATCH' ? route.fulfill({ json: { ok: true } }) : route.continue()
   );
@@ -48,7 +58,11 @@ export async function prepareLottningFull(page: Page): Promise<void> {
 }
 
 /** The max time that did not save, with the note in its error colour. */
-export async function prepareLottningMaxTimeError(page: Page): Promise<void> {
+export async function prepareLottningMaxTimeError(
+  page: Page,
+  request: APIRequestContext
+): Promise<void> {
+  await ownLottning(page, request);
   await chooseClass(page, 'H21');
   await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
   await page.route('**/api/competitions/*/classes/*', (route) =>
@@ -59,10 +73,17 @@ export async function prepareLottningMaxTimeError(page: Page): Promise<void> {
   await page.getByTestId('lottning-max-time').fill('45:00');
   await page.getByTestId('lottning-max-time-save').click();
   await expect(page.getByText('Maxtiden sparades inte. Försök igen.')).toBeVisible();
+  await page.getByTestId('lottning-max-time').fill('abc');
+  await page.getByTestId('lottning-max-time-save').click();
+  await expect(page.getByTestId('lottning-max-time-error')).toBeVisible();
 }
 
 /** A pursuit file chosen and being read: Lotta waits with its hint. */
-export async function prepareLottningPursuitReading(page: Page): Promise<void> {
+export async function prepareLottningPursuitReading(
+  page: Page,
+  request: APIRequestContext
+): Promise<void> {
+  await ownLottning(page, request);
   await chooseClass(page, 'H21');
   await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
   await page.route('**/import/previous-results', () => new Promise(() => {}));
@@ -80,7 +101,8 @@ export async function prepareLottningPursuitReading(page: Page): Promise<void> {
 }
 
 /** A class without a start list: the empty hint. */
-export async function prepareLottningEmpty(page: Page): Promise<void> {
+export async function prepareLottningEmpty(page: Page, request: APIRequestContext): Promise<void> {
+  await ownLottning(page, request);
   await chooseClass(page, 'D21');
   await expect(page.getByTestId('lottning-empty')).toHaveText(
     'Inga starttider ännu. Välj klass och tryck Lotta.'

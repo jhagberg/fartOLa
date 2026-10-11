@@ -799,6 +799,8 @@
   "lottning.redrawnUndo": "Undo it in the history below.",
   "lottning.maxTimeNone": "No separate max time",
   "lottning.maxTimeFailed": "The max time was not saved. Try again.",
+  "lottning.maxTimeInvalid": "Invalid max time. Write mm:ss, for example 60:00.",
+  "lottning.resultsFailed": "The result list could not be read",
   "lottning.maxTimeLocked": "The max time cannot be changed after the first start.",
   "lottning.moreOptions": "More options",
   "lottning.loadError": "Could not load the draw.",
