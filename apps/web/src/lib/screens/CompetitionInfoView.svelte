@@ -140,6 +140,8 @@
   /** The edge refused the max time: the first start has passed (TR 4.21.2). */
   let maxRefused = $state(false);
   const maxSave = createSaveState();
+  /** Only the newest max-time save may set the competition or roll back. */
+  let maxGen = 0;
   /** The last void or undo, shown under the course it was made in. */
   let voidLine: { courseId: string; code: number; voided: boolean; failed: boolean } | null =
     $state(null);
@@ -262,16 +264,18 @@
   }
 
   /** Save one field as it was changed. A failure puts the saved value
-   * back, unless a newer edit of the same field is already waiting. */
+   * back, unless a newer edit of the same field came after it (also one
+   * that is not valid and was not sent). */
   function saveField<K extends Key>(key: K, value: Details[K]): void {
     const queue = details;
     if (queue === null) return;
     form[key] = value;
+    const mine = ++fieldGen[key];
+    notes[key].reset();
     if (key === 'date') {
       dateInvalid = !validDate(form.date);
       if (dateInvalid) return;
     }
-    const mine = ++fieldGen[key];
     void notes[key].run(
       queue.save({ [key]: value } as Partial<Details>).catch((e: unknown) => {
         if (mine === fieldGen[key]) form[key] = queue.saved[key];
@@ -303,18 +307,23 @@
     return sec === null || sec === undefined ? '' : String(Math.round(sec / 60));
   }
 
+  /** One save at a time: Spara is off while one is in flight. */
   async function saveMaxTime(): Promise<void> {
+    if (maxSave.state === 'saving') return;
     const sec = maxTimeMinutesToSec(formMaxTimeMin);
     maxInvalid = sec === undefined;
     if (sec === undefined) return;
+    const mine = ++maxGen;
     await maxSave.run(
       setCompetitionMaxTime(competitionId, sec).then(
         (updated) => {
+          if (mine !== maxGen) return;
           competition = updated;
           void refreshClosing();
         },
         (e: unknown) => {
           if (
+            mine === maxGen &&
             e instanceof ApiError &&
             (e.body as { error?: string } | null)?.error === 'max_time_locked'
           ) {
@@ -535,7 +544,9 @@
         </span>
         <Button
           onclick={saveMaxTime}
-          disabled={maxLocked || formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
+          disabled={maxLocked ||
+            maxSave.state === 'saving' ||
+            formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
           data-testid="info-max-time-save"
         >
           {t('info.save')}
