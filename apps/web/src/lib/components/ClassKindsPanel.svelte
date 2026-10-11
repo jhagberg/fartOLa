@@ -59,7 +59,8 @@
   let notes = $state.raw<Record<string, ReturnType<typeof createSaveState>>>({});
   /** The plain message of a row's failed save. */
   let saveError = $state<Record<string, string>>({});
-  /** Only a row's newest edit may drop it after its save. */
+  /** Only a row's newest edit may drop it after its save; an edit that is
+   * not complete (no age) counts too, so an older save never drops it. */
   const rowGen: Record<string, number> = {};
 
   /** Saves reload concurrently: only the newest load sets the data, and
@@ -78,7 +79,8 @@
     }
   }
 
-  async function load(): Promise<void> {
+  /** Resolves true when the newest load brought the data. */
+  async function load(): Promise<boolean> {
     let waited = fetchKinds(++loadGen);
     newest = waited;
     await waited;
@@ -86,6 +88,7 @@
       waited = newest;
       await waited;
     }
+    return loadError === null;
   }
 
   $effect(() => {
@@ -164,13 +167,18 @@
   function saveRow(item: ClassKindItem): void {
     const kind = kindOf(item);
     if (kind === null) return;
-    const age = parseAge(ageOf(item));
-    if (kindNeedsAge(kind)) {
-      if (age === undefined) return setRowError(item.class_id, t('classKinds.err.ageInvalid'));
-      if (age === null) return setRowError(item.class_id, t('classKinds.err.ageRequired'));
-    }
-    setRowError(item.class_id, null);
     const id = item.class_id;
+    const mine = (rowGen[id] = (rowGen[id] ?? 0) + 1);
+    const age = parseAge(ageOf(item));
+    if (kindNeedsAge(kind) && (age === undefined || age === null)) {
+      // Not sent; an older save in flight no longer speaks for the row.
+      noteFor(id).reset();
+      return setRowError(
+        id,
+        t(age === undefined ? 'classKinds.err.ageInvalid' : 'classKinds.err.ageRequired')
+      );
+    }
+    setRowError(id, null);
     let queue = queues.get(id);
     if (queue === undefined) {
       queue = createSaveQueue<Kind>(
@@ -179,14 +187,13 @@
       );
       queues.set(id, queue);
     }
-    const mine = (rowGen[id] = (rowGen[id] ?? 0) + 1);
     void noteFor(id).run(
       queue.save({ class_kind: kind, age_class: kindNeedsAge(kind) ? age! : null }).then(
         async () => {
           // Keep the edit until the reload shows it: the row stays pending
-          // (out of Bekräfta alla) and never flashes the old kind.
-          await load();
-          if (mine === rowGen[id]) dropEdit(id);
+          // (out of Bekräfta alla) and never flashes the old kind, also
+          // when the reload fails.
+          if ((await load()) && mine === rowGen[id]) dropEdit(id);
           onSaved?.();
         },
         (e: unknown) => {
