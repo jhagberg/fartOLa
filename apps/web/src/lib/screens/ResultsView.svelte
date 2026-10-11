@@ -164,9 +164,10 @@
       const wanted = page.url.searchParams.get('klass');
       activeId = classesMeta.some((c) => c.id === wanted) ? wanted! : 'ALL';
     }
-    // Without the class list the page has no tabs: always offer the retry.
+    // Without the class list the page has no tabs: offer the retry, even
+    // when a live push superseded this load.
     if (comp.status === 'rejected') {
-      loadError = true;
+      if (seq === loadSeq || classesMeta.length === 0) loadError = true;
       return;
     }
     if (seq !== loadSeq) return;
