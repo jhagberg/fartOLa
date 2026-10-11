@@ -235,3 +235,38 @@ test('a live push after a failed load clears the error and shows the rows', asyn
     page.getByRole('alert').filter({ hasText: 'Kunde inte hämta resultaten.' })
   ).toHaveCount(0);
 });
+
+test('a live push cannot hide the retry when the class list failed to load', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setup(request);
+  let toPage: ((msg: string) => void) | null = null;
+  await page.routeWebSocket(/\/ws/, (ws) => {
+    toPage = (msg) => ws.send(msg);
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let held = false;
+  await page.route(new RegExp(`/api/competitions/${competitionId}$`), async (route) => {
+    if (held) await gate;
+    await route.fulfill({ status: 500, json: { error: 'boom' } });
+  });
+  await page.goto(`/competition/${competitionId}/results`);
+  const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta resultaten.' });
+  await expect(alert).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => toPage !== null).toBe(true);
+  held = true;
+  await alert.getByRole('button', { name: 'Försök igen' }).click();
+  // A live push lands while the retry is in flight, then the retry fails.
+  toPage!(
+    JSON.stringify({
+      type: 'results_full',
+      channel: 'x',
+      seq: 1,
+      payload: { classes: [], pending_unknown_cards: [] },
+    })
+  );
+  release();
+  await expect(alert).toBeVisible();
+});

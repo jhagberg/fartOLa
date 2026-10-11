@@ -130,6 +130,18 @@
   @keyframes flashRow {
     0% {
       background: var(--bg-sunken);
+    }
+    100% {
+      background: var(--bg-elev);
+    }
+  }
+  /* The bar sits on the first cell only. */
+  .res-table tr.new td:first-child {
+    animation-name: flashRowFirst;
+  }
+  @keyframes flashRowFirst {
+    0% {
+      background: var(--bg-sunken);
       box-shadow: inset 3px 0 0 var(--fg);
     }
     100% {
