@@ -23,7 +23,8 @@ import { ApiError } from '../api/client.ts';
 vi.mock('$app/state', () => ({
   page: { url: new URL('http://localhost/competition/c1/lottning'), state: {} },
 }));
-vi.mock('$app/navigation', () => ({ replaceState: vi.fn() }));
+const { goto } = vi.hoisted(() => ({ goto: vi.fn(async () => {}) }));
+vi.mock('$app/navigation', () => ({ goto }));
 
 describe('02.1-14 Task 14 — start method per class', () => {
   afterEach(() => {
@@ -215,6 +216,8 @@ describe('LottningView (mounted)', () => {
   let puts: Array<{ url: string; body: unknown }>;
   let patches: Array<{ url: string; body: unknown }>;
   let drawAnswer: { status: number; body: unknown };
+  /** When set, GET start-times/history waits for it. */
+  let holdHistory: Promise<void> | null;
   /** When set, the bibs POST answers this instead of drawAnswer. */
   let bibsAnswer: { status: number; body: unknown } | null;
   let startList: unknown[];
@@ -262,6 +265,7 @@ describe('LottningView (mounted)', () => {
     heldPatches = [];
     drawAnswer = { status: 201, body: { drawn: 2 } };
     bibsAnswer = null;
+    holdHistory = null;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown, status = 200) =>
@@ -295,7 +299,10 @@ describe('LottningView (mounted)', () => {
         if (url.endsWith('/classes/kinds')) classKindSource = 'operator';
         return json({ ok: true });
       }
-      if (url.endsWith('/start-times/history')) return json({ items: [] });
+      if (url.endsWith('/start-times/history')) {
+        if (holdHistory !== null) await holdHistory;
+        return json({ items: [] });
+      }
       if (url.endsWith('/classes/kinds'))
         return json({
           eventor: 'not_linked',
@@ -850,6 +857,28 @@ describe('LottningView (mounted)', () => {
     expect(document.querySelector('.err')!.textContent).toBe(
       'Startnummer 103 finns redan i en annan klass. Välj ett annat första nummer.'
     );
+  });
+
+  it('the redraw note with its undo link waits for the start list and the history', async () => {
+    startList = [drawnRunner('7')];
+    await mountView();
+    let release = (): void => {};
+    holdHistory = new Promise((r) => (release = r));
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect($('lottning-done')).not.toBeNull();
+    expect($('lottning-redrawn')).toBeNull();
+    release();
+    await settle();
+    expect($('lottning-redrawn')).not.toBeNull();
+  });
+
+  it('a class pick puts the class in the URL without a new history entry', async () => {
+    await mountView();
+    await choose('lottning-class-select', 'd10');
+    const [url, opts] = goto.mock.calls.at(-1) as unknown as [URL, Record<string, unknown>];
+    expect(url.searchParams.get('klass')).toBe('d10');
+    expect(opts).toMatchObject({ shallow: true, replace: true });
   });
 
   it('a failed numbering says something went wrong in plain words and logs the raw error', async () => {
