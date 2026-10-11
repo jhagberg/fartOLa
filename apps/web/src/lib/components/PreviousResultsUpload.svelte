@@ -26,8 +26,9 @@
     /** Called after a file was read in, so the parent refreshes `loaded`;
      * the upload counts as busy until the refresh it returns is done. */
     onuploaded?: () => void | Promise<void>;
-    /** Told when an upload starts and ends: the parent holds the pursuit
-     * draw until the input times are in. */
+    /** Told whether a chosen file is still unread (chosen, being read, or
+     * its refresh pending): the parent holds the pursuit draw until the
+     * input times are in. */
     onbusy?: (busy: boolean) => void;
   }
 
@@ -38,6 +39,13 @@
   /** The last upload's answer, with the name of the file it read. */
   let result = $state<(PreviousResultsImport & { file: string }) | null>(null);
   let error = $state<string | null>(null);
+  /** A file is chosen and not yet read (or failed): a draw now would use old times. */
+  const pending = $derived(busy || (file !== null && result === null && error === null));
+  $effect(() => {
+    onbusy?.(pending);
+    // Unmounted (another draw mode) with a file unread: nothing is held.
+    return () => onbusy?.(false);
+  });
 
   const ERRORS: Record<string, string> = {
     xsd_invalid: 'pursuitResults.err.xsdInvalid',
@@ -50,7 +58,6 @@
     if (file === null) return;
     const sent = file;
     busy = true;
-    onbusy?.(true);
     error = null;
     result = null;
     try {
@@ -66,7 +73,6 @@
         key !== undefined ? t(key) : t('pursuitResults.err.failed', { error: (e as Error).message });
     } finally {
       busy = false;
-      onbusy?.(false);
     }
   }
 </script>
@@ -138,7 +144,7 @@
     gap: var(--space-xs);
   }
   .file-label {
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     font-weight: 500;
   }
