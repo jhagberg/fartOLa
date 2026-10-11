@@ -437,3 +437,122 @@ describe('fees remount and the locked max time', () => {
     ).toBe(true);
   });
 });
+
+describe('saves that overlap: max time and the date', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  /** Every PATCH waits until the test answers it. */
+  let held: Array<{
+    url: string;
+    body: Record<string, unknown>;
+    answer: (status?: number) => void;
+  }>;
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+  };
+  const $ = <T extends Element>(id: string) => document.querySelector<T>(`[data-testid="${id}"]`)!;
+  const change = async (id: string, value: string, event = 'change') => {
+    const el = $<HTMLInputElement>(id);
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    if (event === 'change') el.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+  };
+
+  beforeEach(async () => {
+    held = [];
+    const competition = {
+      id: 'c1',
+      name: 'Krocktest',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+      distance: null,
+      max_time_sec: 9000,
+      race_started_at_ms: null,
+      clock_offset_min: 120,
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const status = await new Promise<number>((r) =>
+          held.push({ url, body, answer: (s = 200) => r(s) })
+        );
+        if (status !== 200) return json({ error: 'x' }, status);
+        return json({ ...competition, ...body });
+      }
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      if (url.endsWith('/classes/kinds')) return json({ eventor: 'not_linked', items: [] });
+      if (url.endsWith('/fees')) return json({ date: '2026-10-08', card_fee: null, classes: [] });
+      return json({
+        competition,
+        classes: [],
+        courses: [],
+        closing: { last_start_ms: null, closing_time_ms: null },
+      });
+    }) as unknown as typeof fetch;
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+  });
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('Spara for the max time waits while a save is in flight: one request, the newest value', async () => {
+    const save = $<HTMLButtonElement>('info-max-time-save');
+    await change('info-max-time', '120', 'input');
+    save.click();
+    await settle();
+    expect(save.disabled).toBe(true);
+    await change('info-max-time', '100', 'input');
+    save.click();
+    save.click();
+    await settle();
+    const maxPatches = () => held.filter((h) => h.url.endsWith('/max-time'));
+    expect(maxPatches()).toHaveLength(1);
+    held[0]!.answer();
+    await settle();
+    expect($('info-max-time-note').textContent).toContain('Sparat');
+    // The typed 100 was not sent: Spara is back for it.
+    expect($<HTMLInputElement>('info-max-time').value).toBe('100');
+    expect(save.disabled).toBe(false);
+    save.click();
+    await settle();
+    expect(maxPatches().map((h) => h.body)).toEqual([
+      { max_time_sec: 7200 },
+      { max_time_sec: 6000 },
+    ]);
+  });
+
+  it('a date typed wrong while a valid one saves is kept when that save fails', async () => {
+    await change('info-date', '2026-10-09');
+    expect(held).toHaveLength(1);
+    await change('info-date', '2026-13-45');
+    expect($('info-date-error')).not.toBeNull();
+    held[0]!.answer(500);
+    await settle();
+    expect($<HTMLInputElement>('info-date').value).toBe('2026-13-45');
+    expect($('info-date-error')).not.toBeNull();
+    expect($('info-date-note').textContent).not.toContain('Sparat');
+  });
+});
