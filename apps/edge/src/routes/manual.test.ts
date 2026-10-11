@@ -733,6 +733,10 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       elapsed_time_ms: null,
       start_ms: null,
       read_at_ms: null,
+      drawn_start_ms: null,
+      late_start_ms: null,
+      read_count: 0,
+      latest_read: null,
       missing_codes: [],
       manual_finish_ms: FINISH_MS,
       manual_finish_reason: 'Enheten',
@@ -781,6 +785,78 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
     });
     assert.equal((res.json() as { start_ms: number }).start_ms, Date.UTC(2026, 4, 22, 7, 50));
+  });
+
+  test('GET …/corrections has the latest read, the read count, the drawn start and the late start', async () => {
+    // Drawn 10:00 (CEST, 2026-05-22); a start punch at 10:00:00 + offset.
+    const DRAWN = Date.UTC(2026, 4, 22, 8, 0);
+    let seq = 100;
+    const run = async (startMethod: string, punchOffsetSec: number) => {
+      const { competitionId, classId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+      ctx.handle.sqlite
+        .prepare('UPDATE competitors SET card_number = 501, start_time_ms = ? WHERE id = ?')
+        .run(DRAWN, competitorId);
+      ctx.handle.sqlite
+        .prepare('UPDATE classes SET start_method = ? WHERE id = ?')
+        .run(startMethod, classId);
+      ctx.handle.sqlite
+        .prepare('UPDATE competitions SET race_started_at_ms = 1 WHERE id = ?')
+        .run(competitionId);
+      const startSec = 10 * 3600 + punchOffsetSec;
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId: 'test',
+          localSeq: ++seq,
+          competitionId,
+          eventType: 'card_read',
+          eventTimeMs: DRAWN + 30 * 60_000,
+          recordedAtMs: DRAWN + 30 * 60_000,
+          payload: {
+            event_type: 'card_read',
+            card_number: 501,
+            card_type: 'SI10',
+            start: { seconds_in_half_day: startSec, half_day: 0, weekday: null },
+            finish: { seconds_in_half_day: 10 * 3600 + 1200, half_day: 0, weekday: null },
+            check: null,
+            clear: null,
+            punch_count: 1,
+            punches: [
+              { code: 31, seconds_in_half_day: startSec + 300, half_day: 0, weekday: null },
+            ],
+            card_holder: null,
+          },
+        })
+        .run();
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
+      });
+      return res.json() as {
+        drawn_start_ms: number | null;
+        late_start_ms: number | null;
+        read_count: number;
+        latest_read: {
+          card_type: string;
+          punches: Array<{ code: number }>;
+          start: { seconds_in_half_day: number } | null;
+          finish: { seconds_in_half_day: number } | null;
+        } | null;
+      };
+    };
+    const onTime = await run('auto', 60);
+    assert.equal(onTime.late_start_ms, null, 'exactly 60 s is not late');
+    assert.equal(onTime.drawn_start_ms, DRAWN);
+    assert.equal(onTime.read_count, 1);
+    assert.equal(onTime.latest_read?.card_type, 'SI10');
+    assert.deepEqual(
+      onTime.latest_read?.punches.map((p) => p.code),
+      [31]
+    );
+    assert.equal(onTime.latest_read?.start?.seconds_in_half_day, 10 * 3600 + 60);
+    assert.equal(onTime.latest_read?.finish?.seconds_in_half_day, 10 * 3600 + 1200);
+    assert.equal((await run('auto', 61)).late_start_ms, 61_000, '61 s is late');
+    assert.equal((await run('start_punch', 192)).late_start_ms, null, 'none for start_punch');
   });
 
   test('a competitor in another competition → 404', async () => {

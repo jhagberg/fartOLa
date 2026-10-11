@@ -25,6 +25,7 @@
   import Input from '#lib/ui/Input.svelte';
   import Select from '#lib/ui/Select.svelte';
   import CorrectionsPanel from '#lib/components/CorrectionsPanel.svelte';
+  import EditRunnerRead from '#lib/components/EditRunnerRead.svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
     ApiError,
@@ -61,6 +62,8 @@
   let error: string | null = $state(null);
   let confirmingWithdraw = $state(false);
   let withdrawing = $state(false);
+  /** Bumped when a correction changes the result: the read block fetches again. */
+  let readVersion = $state(0);
 
   // Re-seed the form whenever the parent passes a different competitor
   // (or the modal toggles open). Track `competitor?.id` so the effect
@@ -182,6 +185,15 @@
     </button>
   {/snippet}
   {#snippet body()}
+    {#if competitor}
+      <EditRunnerRead
+        {competitionId}
+        competitorId={competitor.id}
+        classId={competitor.class_id}
+        cardNumber={competitor.card_number}
+        reloadKey={readVersion}
+      />
+    {/if}
     <form
       class="edit-form"
       onsubmit={(e) => {
@@ -315,7 +327,11 @@
     </form>
     {#if competitor}
       <hr class="divider" />
-      <CorrectionsPanel {competitionId} competitorId={competitor.id} />
+      <CorrectionsPanel
+        {competitionId}
+        competitorId={competitor.id}
+        onChanged={() => readVersion++}
+      />
     {/if}
   {/snippet}
   {#snippet foot()}
@@ -357,6 +373,7 @@
     color: var(--fg);
   }
   .edit-form {
+    margin-top: var(--space-sm);
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
