@@ -293,3 +293,147 @@ describe('closing time and distance (SOFT TR 4.16.3, TA till TR 7.4.4)', () => {
     expect(patches).toEqual([{ distance: 'sprint' }, { distance: null }]);
   });
 });
+
+// The whole page with a class, its kind and its fees: a fee save and the
+// class-kind save that remounts the fees, and the max time refused after
+// the first start (SOFT TR 4.21.2).
+describe('fees remount and the locked max time', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  let feeGets: number;
+  let feePuts: unknown[];
+  let holdPut: { release: () => void } | null;
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+  };
+
+  beforeEach(async () => {
+    feeGets = 0;
+    feePuts = [];
+    holdPut = null;
+    const competition = {
+      id: 'c1',
+      name: 'Avgiftstest',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+      distance: null,
+      max_time_sec: 9000,
+      race_started_at_ms: null,
+      clock_offset_min: 120,
+    };
+    const h21 = {
+      class_id: 'h21',
+      name: 'H21',
+      class_kind: 'senior',
+      age_class: 21,
+      class_kind_source: 'name',
+      suggestion: { class_kind: 'senior', age_class: 21, source: 'name' },
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url.endsWith('/max-time')) return json({ error: 'max_time_locked' }, 409);
+      if (url.endsWith('/fees')) {
+        if (init?.method === 'PUT') {
+          feePuts.push(JSON.parse(String(init.body)));
+          if (holdPut) await new Promise<void>((r) => (holdPut!.release = r));
+          return json({ updated: 1 });
+        }
+        feeGets++;
+        return json({
+          date: '2026-10-08',
+          card_fee: null,
+          classes: [
+            {
+              class_id: 'h21',
+              name: 'H21',
+              class_kind: 'senior',
+              entry_fee: 180,
+              youth_entry_fee: null,
+              late_fee_pct: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/classes/kinds')) {
+        if (init?.method === 'PUT') return json({ updated: 1 });
+        return json({ eventor: 'not_linked', items: [h21] });
+      }
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      return json({
+        competition,
+        classes: [{ id: 'h21', name: 'H21', short_name: null }],
+        courses: [],
+        closing: { last_start_ms: null, closing_time_ms: null },
+      });
+    }) as unknown as typeof fetch;
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+  });
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('a class-kind save remounts the fees only after a fee save in flight has landed', async () => {
+    expect(feeGets).toBe(1);
+    holdPut = { release: () => {} };
+    const fee = document.querySelector<HTMLInputElement>('input[aria-label^="Avgift för H21"]')!;
+    fee.value = '200';
+    fee.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    const kind = document.querySelector<HTMLSelectElement>(
+      '[data-class-id="h21"] [data-testid="class-kind-select"]'
+    )!;
+    kind.value = 'elit';
+    kind.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    // The fee save is still in flight: the fees are not reloaded under it.
+    expect(feeGets).toBe(1);
+    const held = holdPut;
+    holdPut = null;
+    held.release();
+    await settle();
+    expect(feePuts).toHaveLength(1);
+    expect(feeGets).toBe(2);
+  });
+
+  it('SOFT TR 4.21.2: a refused max time says so, shows the stored time and locks the field', async () => {
+    const input = document.querySelector<HTMLInputElement>('[data-testid="info-max-time"]')!;
+    expect(input.readOnly).toBe(false);
+    input.value = '120';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    document.querySelector<HTMLButtonElement>('[data-testid="info-max-time-save"]')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid="info-max-time-note"]')!.textContent!.trim()).toBe(
+      'Maxtiden kan inte ändras efter första start (TR 4.21.2).'
+    );
+    expect(document.querySelector('[data-testid="info-max-time-lock"]')!.textContent!.trim()).toBe(
+      'Låst sedan första start.'
+    );
+    expect(input.readOnly).toBe(true);
+    expect(input.value).toBe('150');
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-testid="info-max-time-save"]')!.disabled
+    ).toBe(true);
+  });
+});

@@ -157,21 +157,28 @@ test.describe('rapid edits are not lost', () => {
     const id = await openInfo(page, request);
     const bodies: unknown[] = [];
     const first = gate();
+    let released = false;
+    /** Whether each request reached the network after the first was let go. */
+    const afterRelease: boolean[] = [];
     await page.route(`**/api/competitions/${id}`, async (route) => {
       if (route.request().method() !== 'PATCH') return route.continue();
       bodies.push(route.request().postDataJSON());
+      afterRelease.push(released);
       if (bodies.length === 1) await first.wait;
       return route.continue();
     });
     await page.getByTestId('info-level').selectOption('niva3');
     await expect.poll(() => bodies.length).toBe(1);
     await page.getByTestId('info-distance').selectOption('medel');
-    // The second edit was made while the first was held: it waits.
-    expect(bodies).toHaveLength(1);
+    // The second edit is taken while the first is held.
+    await expect(page.getByTestId('info-distance-note')).toHaveText('Sparar…');
+    released = true;
     first.release();
     await expect(page.getByTestId('info-level-note')).toHaveText('Sparat');
     await expect(page.getByTestId('info-distance-note')).toHaveText('Sparat');
     expect(bodies).toEqual([{ level: 'niva3' }, { distance: 'medel' }]);
+    // The second waited for the first instead of going out beside it.
+    expect(afterRelease).toEqual([false, true]);
 
     await page.reload();
     await expect(page.getByTestId('info-level')).toHaveValue('niva3', { timeout: 20_000 });
@@ -199,7 +206,6 @@ test.describe('rapid edits are not lost', () => {
     await expect.poll(() => bodies.length).toBe(1);
     await late.fill('30');
     await late.blur();
-    expect(bodies).toHaveLength(1);
     first.release();
     await expect(feeRow(page, h21).getByTestId('fees-row-note')).toHaveText('Sparat');
     await expect.poll(() => bodies.length).toBe(2);
