@@ -518,9 +518,14 @@
     subscription.connect();
   }
 
+  /** Refetches overlap; only the newest answer may set the readout. */
+  let readoutSeq = 0;
+
   async function refetchReadout(): Promise<void> {
+    const mine = ++readoutSeq;
     try {
       const res = (await getReadout(competitionId)) as ReadoutResponse;
+      if (mine !== readoutSeq) return;
       history = res.history;
       pendingUnknownCards = res.pending_unknown_cards;
       voidedCodes = res.voided_codes;
