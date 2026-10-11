@@ -270,28 +270,31 @@ test.describe('a replayed read', () => {
       .click();
     await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
 
-    // The server's replay of the read the page already shows in its history.
-    toPage!(
-      JSON.stringify({
-        type: 'replay',
-        channel: `readout:${id}`,
-        payload: { event_type: 'card_read', card_number: ANNA },
-      })
-    );
-    // Prove the replay was handled: it has refetched the history by then.
-    const refetched = page.waitForResponse(`**/api/competitions/${id}/readout`);
-    toPage!(
-      JSON.stringify({
-        type: 'replay',
-        channel: `readout:${id}`,
-        payload: { event_type: 'card_read', card_number: CIA },
-      })
-    );
-    await refetched;
+    // The server's replay of reads the page already has in its history. Each
+    // replay refetches the history; wait for that before the next one.
+    for (const card of [ANNA, CIA]) {
+      const refetched = page.waitForResponse(`**/api/competitions/${id}/readout`);
+      toPage!(
+        JSON.stringify({
+          type: 'replay',
+          channel: `readout:${id}`,
+          payload: { event_type: 'card_read', card_number: card },
+        })
+      );
+      await refetched;
+    }
     await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
     await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
     await expect(page.getByTestId('toast')).toHaveCount(0);
     await expect(page.getByTestId('latest-read')).toHaveAttribute('data-flash', '');
+
+    // The pin survived the replays: a live read of Cia now replaces it, and
+    // only a surviving pin raises this notice.
+    await simulateRead(request, id, CIA, [31, 32, 33, 34], { start: 11 * 3600 });
+    await expect(page.getByTestId('toast')).toHaveText(
+      'Ny avläsning: Cia Carlsson. Den valda avläsningen finns i historiken.'
+    );
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toHaveCount(0);
   });
 });
 

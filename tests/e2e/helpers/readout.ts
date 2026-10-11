@@ -5,7 +5,7 @@
 // failed print (message, details, retry) and the status popover with a
 // failed save. Each asserts every element it adds is visible.
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { BASE, seedCompetition, simulateRead } from './seed.ts';
+import { seedCompetition, simulateRead } from './seed.ts';
 
 const CIA = 1_428_824;
 const ANNA = 7_501_853;
@@ -116,13 +116,17 @@ export async function prepareReadoutFrame(page: Page, request: APIRequestContext
   await mockHiredCard(page);
   // Live reads only: a read that reaches the page through the server's replay
   // after the first load is already in its history and raises no prompts.
+  // The readout hello also subscribes results:<id>, which the server answers
+  // with results_full after it has subscribed the readout channel; that first
+  // frame on /ws (not Vite's socket) says live reads will reach the page.
   const subscribed = new Promise<void>((resolve) =>
-    page.on('websocket', (ws) => ws.on('framesent', () => resolve()))
+    page.on('websocket', (ws) => {
+      if (new URL(ws.url()).pathname === '/ws') ws.on('framereceived', () => resolve());
+    })
   );
   await page.goto(`/competition/${id}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
   await subscribed;
-  await request.get(`${BASE}/api/health`);
   await simulateRead(request, id, CIA, [31, 32, 33, 34]);
   await expect(page.getByTestId('consent-confirmation-toast')).toBeVisible();
   await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
