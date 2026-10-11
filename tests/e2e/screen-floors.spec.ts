@@ -14,6 +14,12 @@ import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
 import { prepareSettings } from './helpers/settings.ts';
 import {
+  prepareReadoutPinnedPrintFailed,
+  prepareReadoutStatusFailed,
+  prepareReadoutEmpty,
+  prepareReadoutPrinted,
+} from './helpers/readout.ts';
+import {
   prepareAccess,
   prepareAccessWrongCode,
   prepareAccessLoadError,
@@ -176,6 +182,34 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('access-view'),
     prepare: async (page) => prepareAccessEmpty(page),
   },
+  {
+    name: 'Avläsning, äldre avläsning och misslyckad utskrift',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=latest-read]',
+    prepare: async (page, _id, request) => prepareReadoutPinnedPrintFailed(page, request),
+  },
+  {
+    name: 'Avläsning, statusval som inte sparades',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=latest-read]',
+    prepare: async (page, _id, request) => prepareReadoutStatusFailed(page, request),
+  },
+  {
+    name: 'Avläsning utan avläsning',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=latest-read]',
+    prepare: async (page, _id, request) => prepareReadoutEmpty(page, request),
+  },
+  {
+    name: 'Avläsning, kvittohuvud',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '.receipt-mirror .head',
+    prepare: async (page, _id, request) => prepareReadoutPrinted(page, request),
+  },
 ];
 
 test.describe('floor helpers', () => {
@@ -195,6 +229,12 @@ test.describe('floor helpers', () => {
     expect(t[0]).toContain('button.btn "b" 36×36');
     expect(t[1]).toContain('a. "x"');
     expect(t[2]).toMatch(/^summary\. "s" \d+×23$/);
+
+    await page.setContent(
+      `<section class="receipt-mirror"><header><span class="meta" style="font-size:12px">head</span></header>
+       <div class="receipt-wrap"><div class="paper"><span style="font-size:10px">printed</span></div></div></section>`
+    );
+    expect(await smallText(page)).toEqual(['span.meta "head" 12px']);
 
     await page.setContent(
       '<div inert><span style="font-size:12px">a</span><button>b</button></div>'

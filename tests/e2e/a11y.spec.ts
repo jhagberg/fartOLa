@@ -16,6 +16,12 @@ import { prepareHome, prepareHomeError } from './helpers/home.ts';
 import { prepareImport } from './helpers/import.ts';
 import { prepareSettings } from './helpers/settings.ts';
 import {
+  prepareReadoutPinnedPrintFailed,
+  prepareReadoutStatusFailed,
+  prepareReadoutEmpty,
+  prepareReadoutPrinted,
+} from './helpers/readout.ts';
+import {
   prepareAccess,
   prepareAccessWrongCode,
   prepareAccessLoadError,
@@ -69,6 +75,30 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       'readout',
       `/competition/${id}/readout`,
       (p) => p.getByTestId('latest-read').filter({ hasText: '7501853' }),
+    ],
+    [
+      'readout pinned, print failed',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareReadoutPinnedPrintFailed(p, request),
+    ],
+    [
+      'readout status save failed',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareReadoutStatusFailed(p, request),
+    ],
+    [
+      'readout empty',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareReadoutEmpty(p, request),
+    ],
+    [
+      'readout printed',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareReadoutPrinted(p, request),
     ],
     [
       'readout walkup',

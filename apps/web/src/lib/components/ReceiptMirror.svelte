@@ -36,8 +36,11 @@
     selected?: ReceiptTemplate;
     /** Top-4 leaderboard slice, ignored by the other 5 templates. */
     classResults?: ReceiptTopRow[];
-    /** Whether auto-print mode is ON — surfaces an AUTO badge in the head. */
+    /** Whether auto-print mode is ON — surfaces an "Auto" badge in the head. */
     autoPrint?: boolean;
+    /** True once a print of this read was accepted; until then the head
+     * says only "Kvitto", not that anything was printed. */
+    printed?: boolean;
     onSelect?: (tpl: ReceiptTemplate) => void;
   }
 
@@ -46,6 +49,7 @@
     selected = 'classic',
     classResults = [],
     autoPrint = false,
+    printed = false,
     onSelect,
   }: Props = $props();
 
@@ -60,10 +64,9 @@
 
 <section class="receipt-mirror">
   <header class="head">
-    <h3>{t('ro.printed')}</h3>
-    <span class="meta">80mm thermal · ESC/POS</span>
+    <h3>{printed ? t('ro.printed') : t('ro.receipt')}</h3>
     {#if autoPrint}
-      <span class="auto-badge">AUTO</span>
+      <span class="auto-badge">{t('ro.receipt.auto')}</span>
     {/if}
     <div class="tpl-chooser" role="tablist" aria-label={t('rcpt.tpl')}>
       {#each TABS as tpl (tpl)}
@@ -119,20 +122,14 @@
     font-size: var(--fs-label);
     font-weight: 600;
   }
-  .head .meta {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--fg-faint);
-  }
   .auto-badge {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--fs-label);
     padding: 2px 6px;
     background: var(--accent-soft);
     color: var(--accent-strong);
     border-radius: 4px;
     font-weight: 600;
-    letter-spacing: 0.05em;
   }
   .tpl-chooser {
     display: flex;

@@ -10,8 +10,10 @@
        optional place + StatusPill. Below the runner row, the parent
        passes its PunchGrid / SplitsTable via the `controls` snippet.
 
-  Manual-DNF popover (UI-SPEC §"Manual DNF override"):
-    - The "Bryt" button toggles a confirm popover with a reason input.
+  Manual-status popover (UI-SPEC §"Manual DNF override"):
+    - The "Ändra status…" button toggles a confirm popover with a reason input.
+    - Saving is awaited: the popover closes when the save resolves and
+      stays open, with the reason and the chosen status, when it fails.
     - Confirm fires onManualDnf(competitorId, reason).
     - If status is already DNF, the button surfaces as "Återkalla
       brytning" and fires onUnDnf(competitorId).
@@ -36,6 +38,7 @@
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/Button.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
   import PulseDot from '#lib/ui/PulseDot.svelte';
@@ -83,15 +86,25 @@
     flashKey?: string | null;
     /** Auto-print toggle state; disables the print button when true. */
     autoPrint?: boolean;
-    onSimulate?: () => void;
+    /** State of the last print of this read; the card says what happened. */
+    printState?: { status: 'idle' | 'busy' | 'ok' | 'failed'; error: string };
+    /** True while an older read is pinned and a newer one exists. */
+    pinnedOlder?: boolean;
+    onShowLatest?: () => void;
+    /** Dev builds only: without it the simulate button does not render. */
+    onSimulate?: (() => void) | undefined;
     onPrint?: () => void;
     onWalkup?: (cardNumber: number) => void;
-    onManualDnf?: (competitorId: string, reason: string) => void;
+    onManualDnf?: (competitorId: string, reason: string) => void | Promise<void>;
     onUnDnf?: (competitorId: string) => void;
     /** Phase 2.0 generalized override — preferred over onManualDnf when
      * supplied. The popover shows all five manual states (DNF/DNS/DQ/
      * CANCEL/MAX). Falls back to onManualDnf when status==='DNF'. */
-    onManualStatus?: (competitorId: string, status: ManualStatus, reason: string) => void;
+    onManualStatus?: (
+      competitorId: string,
+      status: ManualStatus,
+      reason: string
+    ) => void | Promise<void>;
     /** Phase 2.0 clear-override — preferred over onUnDnf when supplied. */
     onClearManualStatus?: (competitorId: string) => void;
     onEdit?: (competitorId: string) => void;
@@ -106,6 +119,9 @@
     read,
     flashKey = null,
     autoPrint = false,
+    printState = { status: 'idle', error: '' },
+    pinnedOlder = false,
+    onShowLatest,
     onSimulate,
     onPrint,
     onWalkup,
@@ -146,6 +162,8 @@
   let popDown = $state(false);
   let dnfReason = $state('');
   let pickedStatus = $state<ManualStatus>('DNF');
+  let dnfBusy = $state(false);
+  let dnfError = $state('');
 
   // True when the current row carries an OPERATOR-ASSERTED override.
   // Phase 2.1 fix: use manual_status (non-null = operator set) rather than
@@ -155,6 +173,14 @@
   function isOverridden(r: Read): boolean {
     return r.manual_status !== null;
   }
+
+  const printBusy = $derived(printState.status === 'busy');
+  // Nothing to print for an empty card or an unknown card; auto-print on
+  // means the edge prints by itself. The disabled button says why.
+  const printHint = $derived(
+    printBusy ? '' : !read?.competitorId ? t('ro.print.none') : autoPrint ? t('ro.print.auto') : ''
+  );
+  const printDisabled = $derived(printBusy || !read?.competitorId || autoPrint);
 
   function toggleDnf(): void {
     if (!read || !read.competitorId) return;
@@ -166,6 +192,7 @@
     }
     dnfOpen = !dnfOpen;
     if (dnfOpen) {
+      dnfError = '';
       pickedStatus = 'DNF';
       dnfReason = REASON_BY_STATUS.DNF;
       placePop();
@@ -194,16 +221,27 @@
     dnfReason = REASON_BY_STATUS[s];
   }
 
-  function confirmDnf(): void {
-    if (!read || !read.competitorId) return;
+  /** Awaits the save. The draft (reason, chosen status) is kept until it
+   * resolves; a failure leaves the popover open with the reason why. */
+  async function confirmDnf(): Promise<void> {
+    if (!read || !read.competitorId || dnfBusy) return;
     const reason = dnfReason.trim();
     if (reason.length === 0) return;
-    if (onManualStatus) {
-      onManualStatus(read.competitorId, pickedStatus, reason);
-    } else if (pickedStatus === 'DNF') {
-      // Legacy single-state callback path — preserved so existing tests +
-      // any pre-2.0 consumers keep working.
-      onManualDnf?.(read.competitorId, reason);
+    dnfBusy = true;
+    dnfError = '';
+    try {
+      if (onManualStatus) {
+        await onManualStatus(read.competitorId, pickedStatus, reason);
+      } else if (pickedStatus === 'DNF') {
+        // Legacy single-state callback path — preserved so existing tests +
+        // any pre-2.0 consumers keep working.
+        await onManualDnf?.(read.competitorId, reason);
+      }
+    } catch (e) {
+      dnfError = e instanceof Error && e.message ? e.message : t('common.unknownError');
+      return;
+    } finally {
+      dnfBusy = false;
     }
     dnfOpen = false;
     dnfReason = '';
@@ -213,6 +251,7 @@
   function cancelDnf(): void {
     dnfOpen = false;
     dnfReason = '';
+    dnfError = '';
     pickedStatus = 'DNF';
   }
 </script>
@@ -228,12 +267,23 @@
     <h3>{t('ro.latest')}</h3>
     <PulseDot variant="green" />
     <span class="meta mono">{t('ro.feed.live')}</span>
-    <div class="actions">
-      <button type="button" class="btn ghost" data-testid="simulate-btn" onclick={() => onSimulate?.()}>
-        <Icon name="corner-down-right" size={16} /> {t('ro.simulate')}
-      </button>
-    </div>
+    {#if onSimulate}
+      <div class="actions">
+        <Button variant="ghost" data-testid="simulate-btn" onclick={() => onSimulate()}>
+          <Icon name="corner-down-right" size={16} /> {t('ro.simulate')}
+        </Button>
+      </div>
+    {/if}
   </header>
+
+  {#if pinnedOlder}
+    <div class="pinned-bar" data-testid="pinned-bar">
+      <span>{t('ro.pinned')}</span>
+      <Button variant="secondary" size="sm" onclick={() => onShowLatest?.()}>
+        {t('ro.pinned.latest')}
+      </Button>
+    </div>
+  {/if}
 
   {#if !read}
     <div class="body">
@@ -255,14 +305,9 @@
           </div>
         </div>
         <div class="result-col">
-          <button
-            type="button"
-            class="btn primary lg"
-            data-testid="walkup-cta"
-            onclick={() => onWalkup?.(read.cardNumber)}
-          >
+          <Button size="lg" data-testid="walkup-cta" onclick={() => onWalkup?.(read.cardNumber)}>
             {t('ro.register')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -327,15 +372,14 @@
             bind:value={startInput}
             data-testid="missing-start-input"
           />
-          <button
-            type="button"
-            class="btn primary sm"
+          <Button
+            size="sm"
             disabled={startInput.trim().length === 0}
             data-testid="missing-start-save"
             onclick={() => read.competitorId && onSetStartTime?.(read.competitorId, startInput)}
           >
             {t('ro.missingStart.set')}
-          </button>
+          </Button>
         </div>
       {/if}
 
@@ -343,90 +387,102 @@
         {@render controls?.()}
       </div>
     </div>
-
-    <div class="foot">
-      <button
-        type="button"
-        class="btn primary"
-        data-testid="print-btn"
-        disabled={autoPrint}
-        onclick={() => onPrint?.()}
-      >
-        <Icon name="printer" size={20} /> {t('ro.print')}
-      </button>
-      {#if read.competitorId}
-        <button
-          type="button"
-          class="btn ghost"
-          data-testid="edit-competitor-btn"
-          onclick={() => read.competitorId && onEdit?.(read.competitorId)}
-        >
-          <Icon name="edit" size={20} /> {t('ro.edit')}
-        </button>
-        <div class="dnf-wrap">
-          <button
-            type="button"
-            class="btn ghost"
-            data-testid="manual-dnf-btn"
-            onclick={toggleDnf}
-          >
-            {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
-          </button>
-          {#if dnfOpen}
-            <div class="dnf-pop" class:down={popDown} role="dialog" bind:this={popEl}>
-              <div class="status-picker" role="radiogroup" aria-label={t('ro.dnf')}>
-                {#each MANUAL_STATUSES as s (s)}
-                  <button
-                    type="button"
-                    class="status-chip"
-                    class:active={pickedStatus === s}
-                    data-testid={`status-pick-${s}`}
-                    aria-checked={pickedStatus === s}
-                    role="radio"
-                    onclick={() => pickStatus(s)}
-                  >
-                    {t(`status.${s}`)}
-                  </button>
-                {/each}
-              </div>
-              <label class="dnf-label" for="dnf-reason">{t(`status.${pickedStatus}`)}</label>
-              <input
-                id="dnf-reason"
-                type="text"
-                class="dnf-input"
-                data-testid="dnf-reason-input"
-                bind:value={dnfReason}
-                maxlength="500"
-              />
-              <div class="dnf-actions">
-                <button
-                  type="button"
-                  class="btn ghost sm"
-                  data-testid="dnf-cancel"
-                  onclick={cancelDnf}
-                >
-                  {t('wiz.cancel')}
-                </button>
-                <button
-                  type="button"
-                  class="btn primary sm"
-                  data-testid="dnf-confirm"
-                  disabled={dnfReason.trim().length === 0}
-                  onclick={confirmDnf}
-                >
-                  {t('ro.status.save')}
-                </button>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <span class="autoprint-hint">
-        <span class="kbd">P</span>
-        <span class="faint">skriv ut</span>
-      </span>
-    </div>
   {/if}
+
+  <div class="foot">
+    <Button
+      data-testid="print-btn"
+      disabled={printDisabled}
+      disabledHint={printHint}
+      onclick={() => onPrint?.()}
+    >
+      <Icon name="printer" size={20} /> {t('ro.print')}
+    </Button>
+    {#if read?.competitorId}
+      <Button
+        variant="ghost"
+        data-testid="edit-competitor-btn"
+        onclick={() => read?.competitorId && onEdit?.(read.competitorId)}
+      >
+        <Icon name="edit" size={20} /> {t('ro.edit')}
+      </Button>
+      <div class="dnf-wrap">
+        <Button variant="ghost" data-testid="manual-dnf-btn" onclick={toggleDnf}>
+          {isOverridden(read) ? t('ro.undnf') : t('ro.dnf')}
+        </Button>
+        {#if dnfOpen}
+          <div class="dnf-pop" class:down={popDown} role="dialog" bind:this={popEl}>
+            <div class="status-picker" role="radiogroup" aria-label={t('ro.dnf')}>
+              {#each MANUAL_STATUSES as s (s)}
+                <button
+                  type="button"
+                  class="status-chip"
+                  class:active={pickedStatus === s}
+                  data-testid={`status-pick-${s}`}
+                  aria-checked={pickedStatus === s}
+                  role="radio"
+                  onclick={() => pickStatus(s)}
+                >
+                  {t(`status.${s}`)}
+                </button>
+              {/each}
+            </div>
+            <label class="dnf-label" for="dnf-reason">{t(`status.${pickedStatus}`)}</label>
+            <input
+              id="dnf-reason"
+              type="text"
+              class="dnf-input"
+              data-testid="dnf-reason-input"
+              bind:value={dnfReason}
+              maxlength="500"
+            />
+            {#if dnfError}
+              <p class="dnf-error" role="alert">
+                <Icon name="alert-triangle" size={16} /> {dnfError}
+              </p>
+            {/if}
+            <div class="dnf-actions">
+              <Button variant="ghost" size="sm" data-testid="dnf-cancel" onclick={cancelDnf}>
+                {t('wiz.cancel')}
+              </Button>
+              <Button
+                size="sm"
+                data-testid="dnf-confirm"
+                disabled={dnfReason.trim().length === 0 || dnfBusy}
+                onclick={() => void confirmDnf()}
+              >
+                {t('ro.status.save')}
+              </Button>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+    <span class="autoprint-hint">
+      <span class="kbd">P</span>
+      <span class="faint">skriv ut</span>
+    </span>
+    <div class="print-status" role="status">
+      {#if printState.status === 'busy'}
+        {t('ro.print.busy')}
+      {:else if printState.status === 'ok'}
+        <Icon name="check" size={16} /> {t('ro.print.ok')}
+      {/if}
+    </div>
+    {#if printState.status === 'failed'}
+      <div class="print-failed" role="alert" data-testid="print-failed">
+        <Icon name="alert-triangle" size={16} />
+        <span>{t('ro.print.failed')}</span>
+        <Button variant="secondary" size="sm" onclick={() => onPrint?.()}>
+          {t('common.retry')}
+        </Button>
+        <details>
+          <summary>{t('ro.print.reason')}</summary>
+          <span class="reason">{printState.error}</span>
+        </details>
+      </div>
+    {/if}
+  </div>
 </section>
 
 <style>
@@ -441,10 +497,12 @@
   }
   @keyframes flashIn {
     0% {
-      background: var(--accent-soft);
+      background: var(--bg-sunken);
+      box-shadow: inset 3px 0 0 var(--fg);
     }
     100% {
       background: var(--bg-elev);
+      box-shadow: inset 0 0 0 var(--fg);
     }
   }
   .head {
@@ -504,14 +562,13 @@
     place-items: center;
     margin: 0 auto 18px;
     color: var(--fg-faint);
-    font-family: var(--font-mono);
   }
   .empty-title {
     font-size: 16px;
     color: var(--fg);
   }
   .empty-sub {
-    font-size: 13px;
+    font-size: var(--fs-label);
     margin-top: 4px;
   }
   .runner-row {
@@ -564,7 +621,7 @@
     line-height: 1;
   }
   .place {
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     margin-top: 6px;
   }
@@ -577,46 +634,6 @@
     flex-wrap: wrap;
     position: relative;
   }
-  .btn {
-    height: var(--hit);
-    min-height: var(--hit);
-    padding: 0 18px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev);
-    color: var(--fg);
-    font-weight: 600;
-    font-size: var(--fs-body);
-    cursor: pointer;
-  }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
-  }
-  .btn.primary:hover:not(:disabled) {
-    background: var(--accent-strong);
-  }
-  .btn.ghost {
-    background: transparent;
-  }
-  .btn.ghost:hover {
-    background: var(--bg-sunken);
-  }
-  .btn.lg {
-    height: 56px;
-    padding: 0 24px;
-    font-size: 17px;
-  }
-  .btn.sm {
-    height: var(--hit);
-    padding: 0 12px;
-    font-size: var(--fs-label);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
   .dnf-wrap {
     position: relative;
   }
@@ -628,7 +645,6 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     padding: 12px;
-    box-shadow: var(--shadow-md);
     display: grid;
     gap: 8px;
     min-width: 320px;
@@ -705,6 +721,55 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 14px;
+  }
+  .dnf-error {
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    background: var(--dnf-soft);
+    color: var(--fg);
+    font-size: var(--fs-label);
+  }
+  .pinned-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sunken);
+    font-size: var(--fs-label);
+    font-weight: 600;
+  }
+  .print-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-label);
+    color: var(--fg);
+  }
+  .print-failed {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    background: var(--dnf-soft);
+    font-size: var(--fs-label);
+  }
+  .print-failed summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--hit);
+    cursor: pointer;
+  }
+  .print-failed .reason {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
   }
   .dnf-actions {
     display: flex;
