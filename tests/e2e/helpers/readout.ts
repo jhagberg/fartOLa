@@ -56,7 +56,11 @@ export async function prepareReadoutStatusFailed(
   await page.getByTestId('manual-dnf-btn').click();
   await page.getByTestId('status-pick-DQ').click();
   await page.getByTestId('dnf-confirm').click();
-  await expect(page.getByRole('alert').filter({ hasText: 'disk_full' })).toBeVisible();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Statusen sparades inte.' })
+  ).toBeVisible();
+  await page.getByText('Visa orsak').click();
+  await expect(page.getByText('disk_full')).toBeVisible();
 }
 
 /** No read yet: the disabled print button and its hint. */
