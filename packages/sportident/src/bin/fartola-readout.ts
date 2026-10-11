@@ -30,6 +30,7 @@ import { SerialTransport } from '../transport/SerialTransport.ts';
 import { SiMainStation } from '../SiStation/SiMainStation.ts';
 import { NdjsonEmitter } from '../output/ndjson.ts';
 import { emitDiagnostic } from '../output/diagnostics.ts';
+import { formatEvent } from '../output/pretty.ts';
 import type { FrameError } from '../siProtocol.ts';
 import type { BaseSiCard } from '../SiCard/BaseSiCard.ts';
 import { inferCardType } from '../SiCard/cardTypeFromNumber.ts';
@@ -41,6 +42,7 @@ import { replayFixture } from './replay.ts';
 //   --device <path>          Serial device (overrides $FARTOLA_DEVICE)
 //   --once                   Read one card then exit
 //   --include-raw-pages      Include raw_pages_b64 in card_read events
+//   --pretty                 Human-readable punch table instead of NDJSON
 //   --record <basename>      Tee NDJSON + directional wire transcript to disk.
 //                            Allowed roots: cwd OR /tmp (codex review #7).
 //   --replay <basename>      Drive SiMainStation against the transcript and
@@ -51,6 +53,7 @@ export interface CliOpts {
   device: string;
   once: boolean;
   includeRawPages: boolean;
+  pretty: boolean;
   record?: string;
   replay?: string;
 }
@@ -64,6 +67,8 @@ Options:
   --device <path>          Serial device (overrides $FARTOLA_DEVICE, default /dev/ttyUSB0)
   --once                   Read a single card then exit cleanly
   --include-raw-pages      Include raw_pages_b64 in card_read events
+  --pretty                 Print a human-readable punch table instead of NDJSON
+                           (ignored with --record and --replay)
   --record <basename>      Tee NDJSON to <basename>.expected.json AND capture
                            a directional wire transcript ('out <hex>' / 'in <hex>'
                            lines) to <basename>.bytes.hex. Allowed roots: the
@@ -88,6 +93,7 @@ export const parseArgs = (argv: string[]): CliOpts => {
     device: process.env.FARTOLA_DEVICE ?? '/dev/ttyUSB0',
     once: false,
     includeRawPages: false,
+    pretty: false,
   };
   // Helper: pull the value for a `--flag` argument. Accepts either the
   // following positional token (`--flag value`) OR an inline `--flag=value`
@@ -118,6 +124,8 @@ export const parseArgs = (argv: string[]): CliOpts => {
       opts.once = true;
     } else if (a === '--include-raw-pages') {
       opts.includeRawPages = true;
+    } else if (a === '--pretty') {
+      opts.pretty = true;
     } else if (a === '--record' || a.startsWith('--record=')) {
       const { value, consumed } = valueFor('--record', a, i);
       opts.record = value;
@@ -182,6 +190,9 @@ const main = async (): Promise<void> => {
       : new NdjsonEmitter({
           device_path: opts.device,
           ...(opts.includeRawPages ? { includeRawPages: true } : {}),
+          ...(opts.pretty
+            ? { out: (line: string) => process.stdout.write(formatEvent(JSON.parse(line))) }
+            : {}),
         });
 
   emitter.connection_changed({ state: 'opening' });
