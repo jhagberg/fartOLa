@@ -81,7 +81,9 @@ export function toEditRunnerRead(
       punch: read?.start_ms == null ? null : clock(read.start_ms),
       from: c.start_source,
     },
-    lateStart: c.late_start_ms === null ? null : formatElapsed(c.late_start_ms),
+    // late_start_ms can come from a pre-race scan of a lost-card runner:
+    // without a read-out there is no start punch to be late.
+    lateStart: read === null || c.late_start_ms === null ? null : formatElapsed(c.late_start_ms),
     finish:
       c.manual_finish_ms !== null
         ? { time: clock(c.manual_finish_ms), byHand: true }
