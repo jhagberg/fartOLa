@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { clockToEpochMs, parseTimeOfDay } from '@fartola/shared-types';
 import type { CorrectionsDTO } from '#lib/api/client.ts';
-import { cardClockText, courseCodes, toEditRunnerRead } from './edit-runner-read.ts';
+import { courseCodes, toEditRunnerRead } from './edit-runner-read.ts';
 
 const OFFSET = 120;
 const at = (text: string): number => clockToEpochMs('2026-10-09', parseTimeOfDay(text)!, OFFSET);
@@ -27,8 +27,12 @@ const read = (over: Partial<CorrectionsDTO> = {}): CorrectionsDTO => ({
   drawn_start_ms: at('10:00:00'),
   late_start_ms: null,
   read_count: 1,
+  start_source: 'drawn',
   latest_read: {
     card_type: 'SI10',
+    read_at_ms: at('10:20:00'),
+    start_ms: at('10:00:00'),
+    finish_ms: at('10:12:00'),
     start: clock('10:00:00'),
     finish: clock('10:12:00'),
     punches: [
@@ -87,11 +91,18 @@ describe('toEditRunnerRead', () => {
       punch: '10:00:00',
       from: 'drawn',
     });
-    const punched = toEditRunnerRead(read({ start_ms: at('10:03:12') }), ctx).start;
+    const punched = toEditRunnerRead(
+      read({ start_source: 'punch', start_ms: at('10:03:12') }),
+      ctx
+    ).start;
     expect(punched).toEqual({ drawn: '10:00:00', punch: '10:00:00', from: 'punch' });
+    // The punch is its own time; the source is the edge's, not a comparison.
+    const same = toEditRunnerRead(read({ start_source: 'punch' }), ctx).start;
+    expect(same.from).toBe('punch');
     const none = toEditRunnerRead(
       read({
         start_ms: null,
+        start_source: null,
         drawn_start_ms: null,
         latest_read: null,
         read_count: 0,
@@ -108,9 +119,31 @@ describe('toEditRunnerRead', () => {
   });
 
   it('is never read only with no read and a zero count', () => {
-    const none = { latest_read: null, read_count: 0, read_at_ms: null };
+    const none = { latest_read: null, read_count: 0 };
     expect(toEditRunnerRead(read(none), ctx).neverRead).toBe(true);
     expect(toEditRunnerRead(read({ ...none, read_count: 2 }), ctx).neverRead).toBe(false);
+  });
+
+  it('an afternoon SI5 read shows the edge-placed clocks, not the half-day bits', () => {
+    const v = toEditRunnerRead(
+      read({
+        start_source: 'punch',
+        latest_read: {
+          ...read().latest_read!,
+          card_type: 'SI5',
+          read_at_ms: at('14:30:00'),
+          start: clock('02:05:00'),
+          finish: clock('02:25:00'),
+          start_ms: at('14:05:00'),
+          finish_ms: at('14:25:00'),
+        },
+        read_at_ms: at('14:30:00'),
+      }),
+      ctx
+    );
+    expect(v.start.punch).toBe('14:05:00');
+    expect(v.finish).toEqual({ time: '14:25:00', byHand: false });
+    expect(v.readAt).toBe('14:30:00');
   });
 
   it('a finish by hand wins over the card finish', () => {
@@ -135,7 +168,7 @@ describe('toEditRunnerRead', () => {
   });
 });
 
-describe('courseCodes and cardClockText', () => {
+describe('courseCodes', () => {
   const course = (id: string, class_id: string | null, codes: number[]) =>
     ({
       id,
@@ -152,8 +185,5 @@ describe('courseCodes and cardClockText', () => {
     expect(courseCodes({ id: 'k', course_id: null }, courses)).toEqual([1, 2]);
     expect(courseCodes({ id: 'x', course_id: null }, courses)).toEqual([]);
     expect(courseCodes(undefined, courses)).toEqual([]);
-  });
-  it('adds the PM half day', () => {
-    expect(cardClockText({ seconds_in_half_day: 3600, half_day: 1 })).toBe('13:00:00');
   });
 });

@@ -736,6 +736,7 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       drawn_start_ms: null,
       late_start_ms: null,
       read_count: 0,
+      start_source: null,
       latest_read: null,
       missing_codes: [],
       manual_finish_ms: FINISH_MS,
@@ -857,6 +858,93 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     assert.equal(onTime.latest_read?.finish?.seconds_in_half_day, 10 * 3600 + 1200);
     assert.equal((await run('auto', 61)).late_start_ms, 61_000, '61 s is late');
     assert.equal((await run('start_punch', 192)).late_start_ms, null, 'none for start_punch');
+  });
+
+  test('GET …/corrections: a pre-race scan is no read; an SI5 afternoon clock is placed; start_source follows the start method', async () => {
+    // 2026-05-22 is CEST (+120): 14:00 local = 12:00 UTC.
+    const DRAWN = Date.UTC(2026, 4, 22, 12, 0);
+    let seq = 300;
+    const run = async (opts: {
+      startMethod?: string;
+      raceStart: number | null;
+      drawn: number | null;
+      cardType: string;
+      readAt: number;
+    }) => {
+      const { competitionId, classId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+      ctx.handle.sqlite
+        .prepare('UPDATE competitors SET card_number = 502, start_time_ms = ? WHERE id = ?')
+        .run(opts.drawn, competitorId);
+      ctx.handle.sqlite
+        .prepare('UPDATE classes SET start_method = ? WHERE id = ?')
+        .run(opts.startMethod ?? 'auto', classId);
+      ctx.handle.sqlite
+        .prepare('UPDATE competitions SET race_started_at_ms = ? WHERE id = ?')
+        .run(opts.raceStart, competitionId);
+      // SI5 has no PM bit: 14:05 is half_day 0, 02:05 into the half day.
+      const clk = (s: number) => ({ seconds_in_half_day: s, half_day: 0 as const, weekday: null });
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId: 'test',
+          localSeq: ++seq,
+          competitionId,
+          eventType: 'card_read',
+          eventTimeMs: opts.readAt,
+          recordedAtMs: opts.readAt,
+          payload: {
+            event_type: 'card_read',
+            card_number: 502,
+            card_type: opts.cardType,
+            start: clk(2 * 3600 + 5 * 60),
+            finish: clk(2 * 3600 + 25 * 60),
+            check: null,
+            clear: null,
+            punch_count: 1,
+            punches: [{ code: 31, ...clk(2 * 3600 + 10 * 60) }],
+            card_holder: null,
+          },
+        })
+        .run();
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
+      });
+      return res.json() as {
+        read_count: number;
+        start_source: string | null;
+        latest_read: {
+          read_at_ms: number;
+          start_ms: number | null;
+          finish_ms: number | null;
+        } | null;
+      };
+    };
+    const READ_AT = DRAWN + 30 * 60_000;
+    // Before the race started: not a read.
+    const pre = await run({
+      raceStart: READ_AT + 1,
+      drawn: DRAWN,
+      cardType: 'SI10',
+      readAt: READ_AT,
+    });
+    assert.equal(pre.latest_read, null);
+    assert.equal(pre.read_count, 0);
+    // SI5 at 14:05 local (12:05 UTC), not 02:05.
+    const si5 = await run({ raceStart: 1, drawn: DRAWN, cardType: 'SI5', readAt: READ_AT });
+    assert.equal(si5.read_count, 1);
+    assert.equal(si5.latest_read?.read_at_ms, READ_AT);
+    assert.equal(si5.latest_read?.start_ms, Date.UTC(2026, 4, 22, 12, 5));
+    assert.equal(si5.latest_read?.finish_ms, Date.UTC(2026, 4, 22, 12, 25));
+    // start_source by method, with a drawn start and a start punch.
+    const src = async (startMethod: string, drawn: number | null) =>
+      (await run({ startMethod, raceStart: 1, drawn, cardType: 'SI5', readAt: READ_AT }))
+        .start_source;
+    assert.equal(await src('start_time', DRAWN), 'drawn');
+    assert.equal(await src('start_time', null), null);
+    assert.equal(await src('start_punch', DRAWN), 'punch');
+    assert.equal(await src('auto', DRAWN), 'drawn');
+    assert.equal(await src('auto', null), 'punch');
   });
 
   test('a competitor in another competition → 404', async () => {
