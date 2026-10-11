@@ -492,8 +492,12 @@ test.describe('start method next to the class (Task 7)', () => {
         ? route.fulfill({ status: 500, json: { error: 'boom' } })
         : route.continue()
     );
-    await page.getByTestId('lottning-no-timing').check();
-    await expect(page.getByText('Något gick fel')).toBeVisible();
+    // The failed save unticks the box again, so click rather than check().
+    await page.getByTestId('lottning-no-timing').click();
+    await expect(page.getByTestId('lottning-no-timing-note')).toHaveText(
+      'Valet sparades inte. Försök igen.'
+    );
+    await expect(page.getByTestId('lottning-no-timing')).not.toBeChecked();
     await expect(page.getByText('boom')).toHaveCount(0);
   });
 });
