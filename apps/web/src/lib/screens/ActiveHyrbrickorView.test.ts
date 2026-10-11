@@ -360,6 +360,32 @@ describe('ActiveHyrbrickorView mounted', () => {
     expect(q('hyrbrickor-reload-error')).toBeNull();
   });
 
+  it('a retry from the stale warning shows that it is fetching until the answer is in', async () => {
+    let mode: 'ok' | 'fail' | 'hold' = 'ok';
+    let release: (r: Response) => void = () => {};
+    handle = (url, init) => {
+      if (init?.method === 'PATCH')
+        return Promise.resolve(json({ ok: true, returned_at_ms: 5_000 }));
+      if (mode === 'fail') return Promise.resolve(json({ error: 'boom' }, 500));
+      if (mode === 'hold') return new Promise((r) => (release = r));
+      return Promise.resolve(json({ open, returned: [] }));
+    };
+    await show();
+    mode = 'fail';
+    (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
+    await settle();
+    expect(q('hyrbrickor-reload-error')).not.toBeNull();
+    mode = 'hold';
+    q('hyrbrickor-reload-error')!.querySelector('button')!.click();
+    await settle();
+    expect(q('hyrbrickor-reloading')).not.toBeNull();
+    expect(q('hyrbrickor-reload-error')).toBeNull();
+    release(json({ open, returned: [] }));
+    await settle();
+    expect(q('hyrbrickor-reloading')).toBeNull();
+    expect(q('hyrbrickor-reload-error')).toBeNull();
+  });
+
   it('an older load does not overwrite newer data', async () => {
     const resolvers: Array<(r: Response) => void> = [];
     let n = 0;
@@ -371,13 +397,13 @@ describe('ActiveHyrbrickorView mounted', () => {
       return new Promise((res) => resolvers.push(res));
     };
     await show();
-    // Return a card: its reload (#2) hangs. Retry-style second load (#3) hangs too.
+    // Return a card: its reload (#2) hangs. Returning the other card starts
+    // a second reload (#3) that hangs too.
     (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
     await settle();
     expect(resolvers.length).toBe(1);
     // Newest response arrives first, the older one afterwards.
     const after = { open: [open[1]], returned: [{ ...open[0], returned_at_ms: 5_000 }] };
-    // trigger a manual second load via a fresh return of the other card
     (target.querySelector('[data-testid=hyrbrickor-row-return]') as HTMLButtonElement).click();
     await settle();
     expect(resolvers.length).toBe(2);
