@@ -32,6 +32,11 @@
   import { resultsChannel, type WsEnvelope } from '@fartola/shared-types';
   import type { CompetitionDTO, ClassDTO, CourseDTO, SoftStatus } from '@fartola/shared-types';
   import { getCompetition, getResults } from '#lib/api/client.ts';
+  import { page } from '$app/state';
+  import { replaceState } from '$app/navigation';
+  import Button from '#lib/ui/Button.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import ClassTabs from '#lib/components/ClassTabs.svelte';
   import ResultsTable from '#lib/components/ResultsTable.svelte';
   import MissingStartsPanel from '#lib/components/MissingStartsPanel.svelte';
@@ -80,6 +85,9 @@
   let classRows: Map<string, ResultRow[]> = $state(new Map());
   let activeId = $state('ALL');
   let fullscreen = $state(false);
+  let loadError = $state(false);
+  let loaded = $state(false);
+  let loadSeq = 0;
   let updatedAtMs = $state<number | null>(null);
   /** competitor_ids whose row should flash. Cleared after 4s by per-id
    * setTimeout (UI-SPEC §"Live results auto-update"). */
@@ -132,6 +140,16 @@
   });
 
   async function mountResults(): Promise<void> {
+    await load();
+    connectWs();
+  }
+
+  /** Resets the error/loaded flags first; a superseded load (an older
+   * retry finishing late) must not overwrite a newer one. */
+  async function load(): Promise<void> {
+    const seq = ++loadSeq;
+    loadError = false;
+    loaded = false;
     try {
       const [compRes, resultsRes] = await Promise.all([
         getCompetition(competitionId),
@@ -140,6 +158,7 @@
           classes: ResultsClass[];
         }>,
       ]);
+      if (seq !== loadSeq) return;
       competition = compRes.competition;
       classesMeta = compRes.classes;
       courses = compRes.courses;
@@ -147,14 +166,13 @@
       for (const c of resultsRes.classes) next.set(c.class_id, c.rows);
       classRows = next;
       updatedAtMs = Date.now();
-      if (activeId === 'ALL' && classesMeta.length > 0) {
-        // Keep ALL as default — operators projecting the screen want the
-        // aggregate; per-class tabs are one click away.
-      }
+      // The class in the URL; an unknown id falls back to "all classes".
+      const wanted = page.url.searchParams.get('klass');
+      activeId = classesMeta.some((c) => c.id === wanted) ? wanted! : 'ALL';
+      loaded = true;
     } catch {
-      // Soft fail — WS will catch up if the projection is computable.
+      if (seq === loadSeq) loadError = true;
     }
-    connectWs();
   }
 
   function connectWs(): void {
@@ -243,6 +261,10 @@
 
   function onTabSelect(id: string): void {
     activeId = id;
+    const url = new URL(page.url.href);
+    if (id === 'ALL') url.searchParams.delete('klass');
+    else url.searchParams.set('klass', id);
+    replaceState(url, page.state);
   }
 </script>
 
@@ -268,18 +290,22 @@
         {finishedCount}/{activeRows.length}
         {t('res.finished')}
       </span>
-      <button
-        type="button"
-        class="btn-fs"
+      <Button
+        variant="secondary"
         data-testid="results-fullscreen-toggle"
         onclick={() => void toggleFullscreen()}
       >
-        {fullscreen ? `⤓ ${t('res.exit')}` : `⤢ ${t('res.fullscreen')}`}
-      </button>
+        <Icon name={fullscreen ? 'minimize' : 'maximize'} size={16} />
+        {fullscreen ? t('res.exit') : t('res.fullscreen')}
+      </Button>
     </div>
   </header>
 
   <ClassTabs classes={tabItems} {totalCount} {activeId} onSelect={onTabSelect} />
+
+  {#if loadError}
+    <LoadError message={t('res.loadError')} onretry={() => void load()} />
+  {/if}
 
   {#each groups as g (g.classId)}
     <h2 class="class-course" data-testid="results-class-course">{g.heading}</h2>
@@ -287,9 +313,11 @@
       <ResultsTable rows={g.rows} {flashIds} />
     </div>
   {:else}
-    <div class="table-wrap">
-      <ResultsTable rows={[]} {flashIds} />
-    </div>
+    {#if !loadError}
+      <div class="table-wrap">
+        <ResultsTable rows={[]} {flashIds} />
+      </div>
+    {/if}
   {/each}
 
   <!-- 02.1-14 Task 15: secretariat sets missing start times (not on the projector) -->
@@ -330,8 +358,8 @@
     align-items: center;
     gap: 6px;
     font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ok);
+    font-size: var(--fs-label);
+    color: var(--fg-muted);
     padding: 4px 10px;
     background: var(--ok-soft);
     border-radius: 999px;
@@ -350,10 +378,10 @@
     font-feature-settings:
       'tnum' 1,
       'zero' 1;
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .updated {
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .head-right {
     margin-left: auto;
@@ -362,29 +390,14 @@
     gap: 12px;
   }
   .finished {
-    font-size: 13px;
-  }
-  .btn-fs {
-    height: var(--hit);
-    min-height: var(--hit);
-    padding: 0 var(--space-md);
-    border-radius: var(--radius);
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev);
-    color: var(--fg);
     font-size: var(--fs-label);
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .btn-fs:hover {
-    background: var(--bg-sunken);
   }
   .table-wrap {
     min-width: 0;
   }
   .comp-meta {
-    color: var(--fg-faint);
-    font-size: 12px;
+    color: var(--fg-muted);
+    font-size: var(--fs-label);
     margin: 0;
   }
 
@@ -410,6 +423,9 @@
   }
   .res-fs :global(.res-table td.plc) {
     font-size: 22px;
+  }
+  .res-fs :global(.status) {
+    font-size: 18px;
   }
   .res-fs :global(.res-tab) {
     font-size: 18px;

@@ -73,7 +73,7 @@
     {/each}
     {#if rows.length === 0}
       <tr>
-        <td colspan="5" class="empty">Inga deltagare ännu.</td>
+        <td colspan="5" class="empty">{t('res.empty')}</td>
       </tr>
     {/if}
   </tbody>
@@ -95,9 +95,7 @@
     border-bottom: 1px solid var(--border);
   }
   .res-table th {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     font-weight: 600;
     background: var(--bg-sunken);
@@ -123,16 +121,40 @@
     font-size: 14px;
   }
   .res-table tr.pend td {
-    color: var(--fg-faint);
+    color: var(--fg-muted);
   }
-  /* .new accent-soft for 4s — applied via flashIds prop. */
+  /* A new row: the neutral flash of the readout history, not green. */
   .res-table tr.new td {
-    background: var(--accent-soft);
-    transition: background 0.6s ease-out 3.4s;
+    animation: flashRow 4s ease-out;
+  }
+  .res-table tr.new td:first-child {
+    box-shadow: inset 3px 0 0 var(--fg);
+  }
+  @keyframes flashRow {
+    0% {
+      background: var(--bg-sunken);
+    }
+    100% {
+      background: var(--bg-elev);
+    }
   }
   .empty {
     text-align: center;
     padding: 40px;
-    color: var(--fg-faint);
+    color: var(--fg-muted);
+  }
+  @media (max-width: 1024px) {
+    .res-table th,
+    .res-table td {
+      padding: 10px 12px;
+    }
+    .res-table td.name,
+    .res-table td.club {
+      overflow-wrap: anywhere;
+    }
+    .res-table td.tm,
+    .res-table td.plc {
+      white-space: nowrap;
+    }
   }
 </style>
