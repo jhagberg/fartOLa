@@ -735,7 +735,7 @@
       <div class="sec-head">
         <div class="sec-eyebrow">SOFT:s regelverk</div>
         <h2>Vilka regler <i>fartOLa</i> klarar, och vilka som saknas.</h2>
-        <p>Vi har gått igenom Regelverk för OL, version 20260701_2 (gäller från 2026-07-01), och tagit ut de 75 regler och anvisningar som ett tävlingsprogram måste stödja. Varje regel har en status för <i>fartOLa</i>. Samma regler är också bedömda för MeOS 5.0 U3 utifrån källkoden.</p>
+        <p>Vi har gått igenom Regelverk för OL, version 20260701_2 (gäller från 2026-07-01), och tagit ut de 75 regler och anvisningar som ett tävlingsprogram måste stödja. Varje regel är bedömd för <i>fartOLa</i> och för MeOS 5.0 U3 med två linser: <b>inbyggt stöd</b> (har programmet funktionen?) och <b>uppfyllbar manuellt</b> (kan arrangören få rätt resultat genom att göra det för hand i programmet?). Reglerna kräver rätta beslut och resultat, inte vissa funktioner.</p>
       </div>
 
       <div class="callout" style="margin-bottom: 28px;">
@@ -746,21 +746,37 @@
       </div>
 
       <div class="cmp-top">
-        <table class="cmp-table">
-          <thead>
-            <tr><th>Status</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Uppfylld</td><td>36</td><td>36</td></tr>
-            <tr><td>Delvis</td><td>18</td><td>26</td></tr>
-            <tr><td>Saknas</td><td>16</td><td>7</td></tr>
-            <tr><td>Ej tillämplig (sköts i Eventor eller av SOFT)</td><td>5</td><td>6</td></tr>
-            <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
-          </tbody>
-        </table>
+        <div>
+          <table class="cmp-table">
+            <thead>
+              <tr><th>Inbyggt stöd</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Uppfylld</td><td>36</td><td>36</td></tr>
+              <tr><td>Delvis</td><td>19</td><td>26</td></tr>
+              <tr><td>Saknas</td><td>15</td><td>7</td></tr>
+              <tr><td>Ej tillämplig (sköts i Eventor eller av SOFT)</td><td>5</td><td>6</td></tr>
+              <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
+            </tbody>
+          </table>
+          <table class="cmp-table" style="margin-top: 16px;">
+            <thead>
+              <tr><th>Uppfyllbar manuellt</th><th><i>fartOLa</i></th><th>MeOS 5.0 U3</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Ja, går för hand</td><td>16</td><td>20</td></tr>
+              <tr><td>Delvis</td><td>9</td><td>6</td></tr>
+              <tr><td>Nej</td><td>4</td><td>0</td></tr>
+              <tr><td>Arrangörens plikt, inte programmets</td><td>5</td><td>7</td></tr>
+              <tr><td>Behövs inte (redan inbyggt eller ej tillämplig)</td><td>41</td><td>42</td></tr>
+              <tr class="total"><td>Totalt</td><td>75</td><td>75</td></tr>
+            </tbody>
+          </table>
+        </div>
         <div class="cmp-notes">
           <p>En regel räknas som uppfylld i <i>fartOLa</i> bara om den pekar på ett namngivet test som fallerar när beteendet går sönder. Testerna körs i CI, och CI stoppar om ett test som matrisen pekar på saknas eller om siffrorna i sammanfattningen inte stämmer.</p>
           <p>MeOS-kolumnen bygger på en genomgång av källkoden. Programmet har inte byggts eller körts för jämförelsen.</p>
+          <p>”Manuellt” förutsätter en operatör som kan regeln och gör det för hand i programmet. För MeOS är det en bedömning utifrån källkoden och gränssnittstexterna, inte provad i ett körande MeOS. Inbyggt eller för hand klarar <i>fartOLa</i> 52 regler och MeOS 56.</p>
           <p>
             <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/soft-regelverk-2026.md" target="_blank" rel="noopener">Hela regelmatrisen</a> ·
             <a href="https://github.com/jhagberg/fartOLa/blob/main/.planning/compliance/meos-jamforelse.md" target="_blank" rel="noopener">Jämförelsen med MeOS</a>
@@ -768,9 +784,12 @@
         </div>
       </div>
 
+      <h3 class="sub-head">Inbyggt stöd och hjälp att följa reglerna</h3>
+      <p class="body-text"><i>fartOLa</i> räknar fram det regeln kräver, nekar det som bryter mot den och säger vilken regel det gäller, och varnar när något ser fel ut. Stängningstiden räknas fram och Lottning säger när den flyttas (TR 4.16.3). Maxtiden låses vid första start (TR 4.21.2). Lottningen nekar klasser med samma bana samma minut och anger regeln (TA till TR 6.5.1). Sen start flaggas (TR 4.18.9), och statusraderna använder SOFT:s ord (TA till TR 7.8.2). Listorna nedan jämför inbyggt stöd.</p>
+
       <div class="cmp-cols">
         <div>
-          <h3 class="sub-head">Här ligger <i>fartOLa</i> före MeOS (12 regler)</h3>
+          <h3 class="sub-head">Inbyggt stöd: här ligger <i>fartOLa</i> före MeOS (12 regler)</h3>
           <ul class="cmp-list">
             <li><b>Stängningstid</b> (TR 4.16.3, 4.22.1): <i>fartOLa</i> räknar fram när målet stänger (sista start plus maxtid) och varnar när en lottning flyttar det. MeOS räknar inte ut det.</li>
             <li><b>Klasstyper</b> (TR 3.4.2): SOFT:s klasstyper från Eventor eller bekräftade av arrangören styr direktanmälan, seedning, jaktstart och avgiftstak. MeOS gissar typen ur klassnamnet.</li>
@@ -778,7 +797,7 @@
             <li><b>Sen start</b> (TR 4.18.9): tiden räknas från starttiden, och sen start flaggas. MeOS gör så bara om ”Ej startstämpling” är påslaget i varje klass.</li>
             <li><b>Hela banans tid</b> (TR 4.20.10): <i>fartOLa</i> drar aldrig av sträcktider. MeOS kan göra det med kontrollstatus ”Utan tidtagning” eller ”Försvunnen”.</li>
             <li><b>Hela sekunder</b> (TR 4.20.7): den officiella tiden avrundas till hel sekund. MeOS klipper av när tiondelar är påslagna.</li>
-            <li><b>Maxtid</b> (TR 4.21.1, 4.21.2): en maxtid för alla klasser, låst vid första start. I MeOS kan en klass få ett eget värde, och maxtiden kan ändras när som helst.</li>
+            <li><b>Maxtid</b> (TR 4.21.1, 4.21.2): en maxtid för alla klasser, låst vid första start, och ett försök att ändra den nekas med regeln. I MeOS kan en klass få ett eget värde, och maxtiden kan ändras när som helst.</li>
             <li><b>Anmälan utan namn</b> (TR 7.5.1) lottas inte. I MeOS hittades ingen sådan kontroll.</li>
             <li><b>Resultatlistan</b> (TR 7.8.2) visar klass, bana och banlängd. MeOS standardlista saknar banlängd.</li>
             <li><b>Statusrader</b> (TA till TR 7.8.2) med SOFT:s ord: ”Ej godkänd”, ”Diskad”, ”Ej start”, ”Deltagit”. MeOS skriver ”Felst.”, ”Utg.” och ”Disk.”.</li>
@@ -786,7 +805,7 @@
           </ul>
         </div>
         <div>
-          <h3 class="sub-head">Här ligger MeOS före (18 regler, plus godkännandet)</h3>
+          <h3 class="sub-head">Inbyggt stöd: här ligger MeOS före (18 regler, plus godkännandet)</h3>
           <ul class="cmp-list">
             <li><b>Tävlingsformer:</b> stafett, patrull, etapper, distrikt och mästerskap (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3 m.fl.).</li>
             <li><b>Deltagaruppgifter:</b> utan tidtagning per deltagare (TR 3.4.8) och åldersklass efter födelseår (TR 3.4.4).</li>
@@ -795,14 +814,17 @@
             <li><b>Störda klasser:</b> ogiltigförklarad klass och avkortad bana (TR 4.23.1, 4.23.3).</li>
             <li><b>Lottning:</b> vakanser, efteranmälda, ranking och klassdelning, startplanering över klasser, kval och final (TA till TR 6.5.1, TR 7.3.2–7.3.8, 7.5.5, 7.5.7–7.5.9).</li>
           </ul>
-          <p class="small">Lika för 44 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
+          <p class="small">Lika i inbyggt stöd för 44 regler, varav 5 där båda är ej tillämpliga. Båda saknar till exempel ordningen över mållinjen vid gemensam start (TR 4.20.8), kontroll av kodsiffror (TA till TR 6.8.2) och reservlista (TR 7.5.6).</p>
         </div>
       </div>
+
+      <h3 class="sub-head">Med den manuella linsen</h3>
+      <p class="body-text">I MeOS kan en operatör som kan regeln ofta göra det för hand. Av de 12 reglerna där <i>fartOLa</i> ligger före klarar MeOS 8 för hand, till exempel genom att kryssa i ”Ej startstämpling” i varje klass eller räkna ut stängningstiden själv, och 3 är arrangörens plikt (maxtiden i förväg och oförändrad, regelanmälan). Bara SOFT:s statusord går inte helt. Skillnaden är alltså oftast vem som bär regeln: i MeOS måste operatören komma ihåg den i varje klass och varje tävling, i <i>fartOLa</i> räknar, nekar och varnar programmet. Åt andra hållet klarar <i>fartOLa</i> 10 av MeOS 18 regler för hand eller som arrangörens plikt, till exempel startplanering över klasser och klassdelning, 7 delvis, och stafett inte alls.</p>
 
       <h3 class="sub-head">De största luckorna</h3>
       <ol class="cmp-list">
         <li><i>fartOLa</i> är inte godkänt som tidtagnings- eller lottningsprogram (TR 7.1.2, 7.5.2).</li>
-        <li>Ingen kontroll av klasser med samma bana som startar samtidigt, och ingen ranking, gallring eller reservlista (TA till TR 6.5.1, TR 7.5.3, 7.3.6, 7.5.5, 7.5.6).</li>
+        <li>Ingen startplanering över klasser, och ingen ranking, gallring eller reservlista (TA till TR 6.5.1, TR 7.5.3, 7.3.6, 7.5.5, 7.5.6).</li>
         <li>Patrull, stafett, etapper och mästerskap saknas (TR 3.2.1, 3.4.11, 3.6.3, 4.14.3).</li>
         <li>”Deltagit” utan tidtagning går bara att välja för en hel klass, inte för en enskild deltagare (TR 3.4.8, 4.21.3).</li>
         <li>Ingen ålderskontroll vid anmälan, trots att födelseåret sparas (TR 3.4.4).</li>
