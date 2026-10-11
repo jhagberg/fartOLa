@@ -5,7 +5,7 @@
 // was physically read at the finish. A manual mark is not a return.
 import { test, expect } from '@playwright/test';
 import { seedCompetition } from './helpers/seed.ts';
-import { ANNA, CIA, fetchSnapshot, snap } from './helpers/kvar.ts';
+import { ANNA, CIA, UPDATED, fetchSnapshot, snap } from './helpers/kvar.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -151,4 +151,110 @@ test('an unknown card is listed and blocks all back', async ({ page }) => {
   await expect(page.getByTestId('kvariskov-unknown')).toContainText('Okända brickor');
   await expect(page.getByTestId('kvariskov-unknown')).toContainText('#9999001');
   await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+});
+
+const row = (p: import('@playwright/test').Page, name: string) =>
+  p.getByTestId('kvariskov-row').filter({ hasText: name });
+
+test('each missing runner shows where it was seen', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA, CIA], [], false, {
+      sources: { [ANNA]: [{ kind: 'checkunit' }], [CIA]: [{ kind: 'radio', code: 53 }] },
+      checkunit: 'read',
+    })
+  );
+  await expect(row(page, 'Anna Andersson')).toContainText('Dosa');
+  await expect(row(page, 'Cia Carlsson')).toContainText('Radio K53');
+});
+
+test('a card read at the start is shown as such, also when unknown', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA, 9_999_001], [], false, {
+      sources: { [ANNA]: [{ kind: 'read' }], 9999001: [{ kind: 'radio', code: 40 }] },
+    })
+  );
+  await expect(row(page, 'Anna Andersson')).toContainText('Avläst start');
+  await expect(page.getByTestId('kvariskov-unknown')).toContainText('Radio K40');
+});
+
+test('no check punch is shown with a word', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA, CIA], [], false, {
+      sources: { [ANNA]: [{ kind: 'radio', code: 53 }], [CIA]: [{ kind: 'checkunit' }] },
+      noCheckCardNumbers: [ANNA],
+    })
+  );
+  await expect(row(page, 'Anna Andersson')).toContainText('Ingen checkstämpling');
+  await expect(row(page, 'Cia Carlsson')).not.toContainText('Ingen checkstämpling');
+});
+
+test('a hand-set status is not a return', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [], false, { outCardNumbers: [ANNA] }));
+  await expect(row(page, 'Anna Andersson')).toContainText('Handsatt status');
+  await expect(page.getByTestId('kvariskov-mark-safe')).toBeVisible();
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+});
+
+test('a stored check-unit read is never all clear', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [ANNA], false, { checkunit: 'stored', updated: UPDATED }));
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  await expect(page.getByTestId('kvariskov-all-returned')).toHaveCount(0);
+  await expect(page.getByTestId('kvariskov-stored-none-missing')).toContainText(
+    'Ingen saknas enligt dosan från'
+  );
+  await expect(page.getByTestId('kvariskov-stored-none-missing')).toContainText(
+    'Läs dosan igen för att vara säker.'
+  );
+  await expect(page.getByTestId('kvariskov-stored')).toContainText('(sparad avläsning)');
+});
+
+test('an unavailable check unit warns and is never all clear', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA], [ANNA], false, {
+      checkunit: 'unavailable',
+      updated: { ...UPDATED, checkunit_read_at_ms: null },
+    })
+  );
+  await expect(page.getByTestId('kvariskov-unavailable')).toContainText(
+    'Dosan är inte avläst. Listan bygger på radio och avläsningar.'
+  );
+  await expect(view(page)).not.toContainText('Alla löpare har återkommit');
+  await expect(page.getByTestId('kvariskov-none-missing')).toHaveCount(0);
+  await expect(page.getByTestId('kvariskov-stored-none-missing')).toHaveCount(0);
+});
+
+test('shows when the check unit was read and the last radio punch', async ({ page }) => {
+  await fetchSnapshot(page, snap([ANNA], [], false, { checkunit: 'read', updated: UPDATED }));
+  await expect(page.getByTestId('kvariskov-checkunit-read-at')).toHaveText(
+    /^Dosan avläst \d\d:\d\d$/
+  );
+  await expect(page.getByTestId('kvariskov-radio-last')).toHaveText(
+    /^Senaste radiostämpling \d\d:\d\d$/
+  );
+});
+
+test('no radio punch yet', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA], [], false, {
+      checkunit: 'read',
+      updated: { ...UPDATED, radio_last_punch_at_ms: null },
+    })
+  );
+  await expect(page.getByTestId('kvariskov-radio-last')).toHaveText(
+    'Senaste radiostämpling ingen än'
+  );
+});
+
+test('radio off: no radio line', async ({ page }) => {
+  await fetchSnapshot(
+    page,
+    snap([ANNA], [], false, { checkunit: 'read', updated: { ...UPDATED, radio_enabled: false } })
+  );
+  await expect(page.getByTestId('kvariskov-checkunit-read-at')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-radio-last')).toHaveCount(0);
 });

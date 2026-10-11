@@ -1533,6 +1533,25 @@ export interface CheckunitSnapshotResult {
   overflow: boolean;
   /** Total number of card numbers returned (convenience field). */
   readCount: number;
+  // The fields below come from the in-forest list. All optional: an older
+  // edge omits them.
+  /** Where each card was seen, by card number. */
+  sources?: Record<
+    string,
+    Array<{ kind: 'checkunit' } | { kind: 'radio'; code: number } | { kind: 'read' }>
+  >;
+  /** Seen by radio or a read but not at the check. */
+  noCheckCardNumbers?: number[];
+  /** Out by a hand-set status; not in returnedCardNumbers. */
+  outCardNumbers?: number[];
+  /** 'read' = just read; 'stored' = an earlier read; 'unavailable' = no check-unit read at all. */
+  checkunit?: 'read' | 'stored' | 'unavailable';
+  updated?: {
+    checkunit_read_at_ms: number | null;
+    radio_enabled: boolean;
+    radio_last_punch_at_ms: number | null;
+    roc_last_success_at: number | null;
+  };
 }
 
 /** POST /api/competitions/:id/checkunit/snapshot

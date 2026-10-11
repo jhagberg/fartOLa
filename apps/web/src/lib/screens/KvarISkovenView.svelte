@@ -33,6 +33,7 @@
     listCompetitors,
     listClasses,
   } from '#lib/api/client.ts';
+  import type { CheckunitSnapshotResult } from '#lib/api/client.ts';
   import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
   import { formatClockTime } from '@fartola/shared-types';
 
@@ -50,6 +51,15 @@
   let startedCards = $state<number[]>([]);
   /** Card numbers that physically returned (finish punch). */
   let returnedCards = $state<Set<number>>(new Set());
+  /** Where each card was seen (radio, check unit, start read), by card number. */
+  let sources = $state<NonNullable<CheckunitSnapshotResult['sources']>>({});
+  /** Cards seen by radio or a read but not at the check. */
+  let noCheckCards = $state<Set<number>>(new Set());
+  /** Cards out by a status set by hand (not a physical return). */
+  let handSetCards = $state<Set<number>>(new Set());
+  /** Where the check-unit part of the list came from. An older edge omits it: 'read'. */
+  let checkunitMode = $state<'read' | 'stored' | 'unavailable'>('read');
+  let updated = $state<CheckunitSnapshotResult['updated'] | null>(null);
   /** Whether memory wrapped around (may be missing some records). */
   let overflow = $state(false);
   /** Competitors in this competition (for name/club/class lookup). */
@@ -168,6 +178,11 @@
       const result = await postCheckunitSnapshot(competitionId);
       startedCards = result.cardNumbers;
       returnedCards = new Set(result.returnedCardNumbers ?? []);
+      sources = result.sources ?? {};
+      noCheckCards = new Set(result.noCheckCardNumbers ?? []);
+      handSetCards = new Set(result.outCardNumbers ?? []);
+      checkunitMode = result.checkunit ?? 'read';
+      updated = result.updated ?? null;
       overflow = result.overflow;
       fetchedAt = Date.now();
       hasFetched = true;
@@ -224,6 +239,25 @@
     return new Date(ms).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
   }
 
+  function sourceLabels(cn: number): string[] {
+    return (sources[String(cn)] ?? []).map((src) =>
+      src.kind === 'radio'
+        ? t('kvariskov.seenRadio', { code: src.code })
+        : src.kind === 'read'
+          ? t('kvariskov.seenRead')
+          : t('kvariskov.seenCheckunit')
+    );
+  }
+
+  /** A status set by hand is not a physical return: the card stays missing. */
+  function isHandSet(cn: number): boolean {
+    return handSetCards.has(cn) && !returnedCards.has(cn);
+  }
+
+  const checkunitReadAtMs = $derived(updated?.checkunit_read_at_ms ?? null);
+  /** With a stored or missing check-unit read, zero missing is never an all-clear. */
+  const softClear = $derived(checkunitMode !== 'read');
+
   function startText(ms: number | null): string {
     return ms == null || clockOffsetMin === null ? '—' : formatClockTime(ms, clockOffsetMin);
   }
@@ -261,6 +295,24 @@
     void loadClock();
   });
 </script>
+
+{#snippet seenTags(cn: number)}
+  <span class="tags">
+    {#each sourceLabels(cn) as label (label)}
+      <span class="tag" data-testid="kvariskov-seen">{label}</span>
+    {/each}
+    {#if noCheckCards.has(cn)}
+      <span class="tag warn" data-testid="kvariskov-no-check"
+        ><Icon name="alert-triangle" size={14} /> {t('kvariskov.noCheck')}</span
+      >
+    {/if}
+    {#if isHandSet(cn)}
+      <span class="tag warn" data-testid="kvariskov-hand-set"
+        ><Icon name="edit" size={14} /> {t('kvariskov.handSet')}</span
+      >
+    {/if}
+  </span>
+{/snippet}
 
 <div class="kvar" data-testid="kvariskov-view">
   <header class="hd">
@@ -307,6 +359,13 @@
   </section>
 
   {#if hasFetched}
+    {#if checkunitMode === 'unavailable'}
+      <div class="box warn" data-testid="kvariskov-unavailable">
+        <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
+        {t('kvariskov.unavailable')}
+      </div>
+    {/if}
+
     <!-- Summary banner -->
     <section class="sec summary-banner" data-testid="kvariskov-summary">
       {#if startedCards.length === 0}
@@ -314,7 +373,7 @@
           <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
           {t('kvariskov.emptyRead')}
         </div>
-      {:else if !loading && !lastFetchFailed}
+      {:else if !loading && !lastFetchFailed && !(softClear && missingCards.length === 0)}
         <div class="count-badge" class:urgent={missingCards.length > 0}>
           {t('kvariskov.result', { count: missingCards.length })}
         </div>
@@ -341,6 +400,22 @@
           >{t('kvariskov.fetchedAt', { time: fetchedText(fetchedAt) })}</span
         >
       {/if}
+      {#if checkunitReadAtMs !== null}
+        <span class="fetched" data-testid="kvariskov-checkunit-read-at"
+          >{t('kvariskov.checkunitReadAt', { time: fetchedText(checkunitReadAtMs) })}{#if checkunitMode === 'stored'}
+            <span data-testid="kvariskov-stored">{t('kvariskov.storedRead')}</span>{/if}</span
+        >
+      {/if}
+      {#if updated?.radio_enabled}
+        <span class="fetched" data-testid="kvariskov-radio-last"
+          >{t('kvariskov.radioLast', {
+            time:
+              updated.radio_last_punch_at_ms === null
+                ? t('kvariskov.radioNone')
+                : fetchedText(updated.radio_last_punch_at_ms),
+          })}</span
+        >
+      {/if}
       <Button
         variant="secondary"
         onclick={() => void fetchSnapshot()}
@@ -362,6 +437,7 @@
               <th>{t('kvariskov.class')}</th>
               <th>{t('kvariskov.startTime')}</th>
               <th>{t('kvariskov.elapsed')}</th>
+              <th>{t('kvariskov.seenAt')}</th>
               <th></th>
             </tr>
           </thead>
@@ -373,6 +449,7 @@
                 <td>{className(competitor.class_id)}</td>
                 <td>{startText(competitor.start_time_ms)}</td>
                 <td>{elapsed(competitor.start_time_ms)}</td>
+                <td>{@render seenTags(competitor.card_number!)}</td>
                 <td>
                   <Button
                     variant="secondary"
@@ -398,6 +475,7 @@
           {#each missingUnknownCards as cn (cn)}
             <li>
               #{cn}
+              {@render seenTags(cn)}
               <Button
                 variant="secondary"
                 size="sm"
@@ -418,6 +496,15 @@
           <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
           {t('kvariskov.noneMissingOverflow')}
         </div>
+      {:else if checkunitMode === 'stored'}
+        <div class="box warn" data-testid="kvariskov-stored-none-missing">
+          <strong><Icon name="alert-triangle" size={18} /> {t('kvariskov.warnLabel')}</strong>
+          {t('kvariskov.storedNoneMissing', {
+            time: checkunitReadAtMs === null ? '—' : fetchedText(checkunitReadAtMs),
+          })}
+        </div>
+      {:else if checkunitMode === 'unavailable'}
+        <!-- The warning at the top says the check unit is unread; no all-clear here. -->
       {:else if markedCards.length === 0}
         <div class="box ok" data-testid="kvariskov-all-returned">
           <strong><Icon name="check" size={18} /> {t('kvariskov.allBack')}</strong>
@@ -564,6 +651,26 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 12px;
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    color: var(--fg);
+  }
+  .tag.warn {
+    border-color: var(--mp);
+    background: var(--mp-soft);
+    color: var(--mp-fg);
   }
   .fetched {
     color: var(--fg-muted);
