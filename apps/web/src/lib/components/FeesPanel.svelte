@@ -5,7 +5,10 @@
   fee, youth fee (open classes) and late / walk-up surcharge. fartOLa
   charges them only to runners it registers itself and to hired cards;
   pre-entries pay what Eventor decided. Each field saves on change (no
-  unsaved edit mode, ADR-0016 rule 3). "Hämta från Eventor" copies the
+  unsaved edit mode, ADR-0016 rule 3) and says "Sparat" or the error at
+  its row. Saves go one at a time per row (ui/saveQueue.ts): a row sends
+  its last saved values plus the change, so a quick second edit is never
+  lost. "Hämta från Eventor" copies the
   linked event's fees. The surcharge column shows SOFT's cap for the class.
   Logic lives in screens/fees.ts.
 -->
@@ -13,6 +16,9 @@
   import { t } from '#lib/i18n/index.ts';
   import { feesFromEventor, getFees, putFees, type FeesResponse } from '#lib/api/client.ts';
   import Button from '#lib/ui/Button.svelte';
+  import SavedNote from '#lib/ui/SavedNote.svelte';
+  import { createSaveState } from '#lib/ui/saveState.svelte.ts';
+  import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
   import {
     eventorErrorKey,
     hasYouthFee,
@@ -34,6 +40,19 @@
   let notice = $state<string | null>(null);
   let busy = $state(false);
 
+  type Field = 'entry_fee' | 'youth_entry_fee' | 'late_fee_pct';
+  type Fees = Pick<ClassFeeItem, Field>;
+  /** The card fee's "row". */
+  const CARD = '';
+
+  /** One save at a time per row (class id, or CARD). */
+  const queues = new Map<string, SaveQueue<Fees> | SaveQueue<{ card_fee: number | null }>>();
+  let notes = $state.raw<Record<string, ReturnType<typeof createSaveState>>>({});
+  /** A value that is not one: nothing was sent. */
+  let invalid = $state<Record<string, string>>({});
+  /** Only a field's newest edit may put its saved value back. */
+  const fieldGen: Record<string, number> = {};
+
   async function load(): Promise<void> {
     try {
       data = await getFees(competitionId);
@@ -47,42 +66,85 @@
     void load();
   });
 
-  async function save(body: Parameters<typeof putFees>[1]): Promise<void> {
-    busy = true;
-    error = null;
-    notice = null;
-    try {
-      await putFees(competitionId, body);
-    } catch {
-      error = t('fees.err.saveFailed');
-    } finally {
-      // Stay disabled until the reload lands: the next edit builds on it.
-      await load();
-      busy = false;
+  function noteFor(row: string): ReturnType<typeof createSaveState> {
+    let note = notes[row];
+    if (note === undefined) {
+      note = createSaveState();
+      notes = { ...notes, [row]: note };
     }
+    return note;
   }
 
-  function onCardFee(text: string): void {
-    const fee = parseWhole(text);
-    if (fee === undefined) {
-      error = t('fees.err.kronor');
-      return;
-    }
-    void save({ card_fee: fee, classes: [] });
+  function setInvalid(row: string, message: string | null): void {
+    const next = { ...invalid };
+    if (message === null) delete next[row];
+    else next[row] = message;
+    invalid = next;
   }
 
-  type Field = 'entry_fee' | 'youth_entry_fee' | 'late_fee_pct';
+  /** Queue a change; the row's note says "Sparat" or the error. The shown
+   * data follows the saved values; a failure also resets the field. */
+  function save<T extends object>(
+    row: string,
+    queue: SaveQueue<T>,
+    field: keyof T & string,
+    fieldValue: T[keyof T & string],
+    input: HTMLInputElement,
+    show: (saved: T) => void
+  ): void {
+    setInvalid(row, null);
+    const gen = `${row}:${field}`;
+    const mine = (fieldGen[gen] = (fieldGen[gen] ?? 0) + 1);
+    void noteFor(row).run(
+      queue.save({ [field]: fieldValue } as Partial<T>).then(
+        () => {
+          if (mine === fieldGen[gen]) show(queue.saved);
+        },
+        (e: unknown) => {
+          if (mine === fieldGen[gen]) {
+            show(queue.saved);
+            input.value = value(queue.saved[field] as number | null);
+          }
+          throw e;
+        }
+      ),
+      { error: t('fees.err.saveFailed') }
+    );
+  }
 
-  function onClassField(item: ClassFeeItem, field: Field, text: string): void {
-    const value = parseWhole(text, field === 'late_fee_pct' ? 100 : undefined);
-    if (value === undefined) {
-      error = t(field === 'late_fee_pct' ? 'fees.err.percent' : 'fees.err.kronor');
-      return;
+  function onCardFee(input: HTMLInputElement): void {
+    if (data === null) return;
+    const fee = parseWhole(input.value);
+    if (fee === undefined) return setInvalid(CARD, t('fees.err.kronor'));
+    let queue = queues.get(CARD) as SaveQueue<{ card_fee: number | null }> | undefined;
+    if (queue === undefined) {
+      queue = createSaveQueue({ card_fee: data.card_fee }, (change) =>
+        putFees(competitionId, change)
+      );
+      queues.set(CARD, queue);
     }
-    const { class_id, entry_fee, youth_entry_fee, late_fee_pct } = item;
-    void save({
-      card_fee: data?.card_fee ?? null,
-      classes: [{ class_id, entry_fee, youth_entry_fee, late_fee_pct, [field]: value }],
+    save(CARD, queue, 'card_fee', fee, input, (saved) => {
+      if (data !== null) data.card_fee = saved.card_fee;
+    });
+  }
+
+  function onClassField(item: ClassFeeItem, field: Field, input: HTMLInputElement): void {
+    const fee = parseWhole(input.value, field === 'late_fee_pct' ? 100 : undefined);
+    const row = item.class_id;
+    if (fee === undefined)
+      return setInvalid(row, t(field === 'late_fee_pct' ? 'fees.err.percent' : 'fees.err.kronor'));
+    let queue = queues.get(row) as SaveQueue<Fees> | undefined;
+    if (queue === undefined) {
+      const { entry_fee, youth_entry_fee, late_fee_pct } = item;
+      // The row as last saved, plus the change (the card fee is not sent).
+      queue = createSaveQueue<Fees>({ entry_fee, youth_entry_fee, late_fee_pct }, (change, saved) =>
+        putFees(competitionId, { classes: [{ class_id: row, ...saved, ...change }] })
+      );
+      queues.set(row, queue);
+    }
+    save(row, queue, field, fee, input, (saved) => {
+      const shown = data?.classes.find((c) => c.class_id === row);
+      if (shown) shown[field] = saved[field];
     });
   }
 
@@ -96,13 +158,24 @@
     } catch (e) {
       error = t(eventorErrorKey(e));
     } finally {
+      // Stay disabled until the reload lands: the next edit builds on it.
       await load();
+      queues.clear();
       busy = false;
     }
   }
 
   const value = (n: number | null) => (n === null ? '' : String(n));
 </script>
+
+{#snippet note(row: string, testid: string)}
+  <span class="row-note" data-testid={testid}>
+    <SavedNote
+      state={invalid[row] ? 'error' : (notes[row]?.state ?? 'idle')}
+      error={invalid[row] ?? notes[row]?.error ?? ''}
+    />
+  </span>
+{/snippet}
 
 <div class="fees" data-testid="fees-panel">
   <p class="hint">{t('fees.hint')}</p>
@@ -116,10 +189,11 @@
           inputmode="numeric"
           value={value(data.card_fee)}
           disabled={busy}
-          onchange={(e) => onCardFee(e.currentTarget.value)}
+          onchange={(e) => onCardFee(e.currentTarget)}
           data-testid="fees-card-fee"
         />
       </label>
+      {@render note(CARD, 'fees-card-fee-note')}
       {#if eventorLinked}
         <Button
           variant="secondary"
@@ -162,7 +236,7 @@
                   aria-label={t('fees.entryFeeFor', { class: item.name })}
                   value={value(item.entry_fee)}
                   disabled={busy}
-                  onchange={(e) => onClassField(item, 'entry_fee', e.currentTarget.value)}
+                  onchange={(e) => onClassField(item, 'entry_fee', e.currentTarget)}
                 />
               </td>
               <td data-label={hasYouthFee(item.class_kind) ? t('fees.youthFee') : ''}>
@@ -174,7 +248,7 @@
                     aria-label={t('fees.youthFeeFor', { class: item.name })}
                     value={value(item.youth_entry_fee)}
                     disabled={busy}
-                    onchange={(e) => onClassField(item, 'youth_entry_fee', e.currentTarget.value)}
+                    onchange={(e) => onClassField(item, 'youth_entry_fee', e.currentTarget)}
                   />
                 {/if}
               </td>
@@ -187,13 +261,14 @@
                     aria-label={t('fees.latePctFor', { class: item.name })}
                     value={value(item.late_fee_pct)}
                     disabled={busy}
-                    onchange={(e) => onClassField(item, 'late_fee_pct', e.currentTarget.value)}
+                    onchange={(e) => onClassField(item, 'late_fee_pct', e.currentTarget)}
                   />
                   <span class="muted" data-testid="fees-cap"
                     >{item.class_kind === null
                       ? t('fees.capNoKind')
                       : t('fees.cap', { pct: walkupCapPct(item.class_kind) })}</span
                   >
+                  {@render note(item.class_id, 'fees-row-note')}
                 </div>
               </td>
             </tr>
