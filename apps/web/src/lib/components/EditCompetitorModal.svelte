@@ -19,9 +19,15 @@
 -->
 <script lang="ts">
   import Modal from '#lib/ui/Modal.svelte';
+  import Button from '#lib/ui/Button.svelte';
+  import Field from '#lib/ui/Field.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
+  import Input from '#lib/ui/Input.svelte';
+  import Select from '#lib/ui/Select.svelte';
   import CorrectionsPanel from '#lib/components/CorrectionsPanel.svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
+    ApiError,
     editCompetitorProfile,
     setManualStatus,
     type CompetitorProfilePatch,
@@ -35,9 +41,13 @@
     classes: ClassDTO[];
     onClose: () => void;
     onSaved: (updated: CompetitorDTO) => void;
+    /** After Återbud; without it the parent gets onSaved, as before. */
+    onWithdrawn?: (competitor: CompetitorDTO) => void;
   }
 
-  let { open, competitor, competitionId, classes, onClose, onSaved }: Props = $props();
+  let { open, competitor, competitionId, classes, onClose, onSaved, onWithdrawn }: Props = $props();
+
+  type FieldName = 'name' | 'class' | 'card' | 'paid';
 
   let name = $state('');
   let club = $state('');
@@ -45,6 +55,9 @@
   let cardNumber = $state('');
   let paid = $state('');
   let saving = $state(false);
+  /** One message per field, under the field; cleared when the field changes. */
+  let fieldErrors: Partial<Record<FieldName, string>> = $state({});
+  /** A failure that belongs to no field (the save itself). */
   let error: string | null = $state(null);
   let confirmingWithdraw = $state(false);
   let withdrawing = $state(false);
@@ -60,9 +73,16 @@
     classId = competitor?.class_id ?? '';
     cardNumber = competitor?.card_number == null ? '' : String(competitor.card_number);
     paid = String(competitor?.paid_amount ?? 0);
+    fieldErrors = {};
     error = null;
     confirmingWithdraw = false;
   });
+
+  function clearError(field: FieldName): void {
+    if (fieldErrors[field] === undefined) return;
+    const { [field]: _gone, ...rest } = fieldErrors;
+    fieldErrors = rest;
+  }
 
   function close(): void {
     if (saving) return;
@@ -72,36 +92,28 @@
   async function save(): Promise<void> {
     if (!competitor || saving) return;
     error = null;
+    const errors: Partial<Record<FieldName, string>> = {};
     const patch: CompetitorProfilePatch = {};
     const trimmedName = name.trim();
     const trimmedClub = club.trim();
-    if (trimmedName !== competitor.name) {
-      if (trimmedName.length < 2) {
-        error = t('err.required');
-        return;
-      }
-      patch.name = trimmedName;
-    }
+    if (trimmedName.length < 2) errors.name = t('edit.err.name');
+    else if (trimmedName !== competitor.name) patch.name = trimmedName;
     if (trimmedClub !== (competitor.club ?? '')) {
       patch.club = trimmedClub.length === 0 ? null : trimmedClub;
     }
-    if (classId !== competitor.class_id) {
-      patch.class_id = classId;
-    }
+    if (!classId) errors.class = t('edit.err.class');
+    else if (classId !== competitor.class_id) patch.class_id = classId;
     const parsedCard = cardNumber.trim().length === 0 ? null : Number(cardNumber.trim());
     if (parsedCard !== null && (!Number.isInteger(parsedCard) || parsedCard <= 0)) {
-      error = t('err.required');
-      return;
-    }
-    if (parsedCard !== competitor.card_number) {
+      errors.card = t('edit.err.card');
+    } else if (parsedCard !== competitor.card_number) {
       patch.card_number = parsedCard;
     }
     const parsedPaid = paid.trim() === '' ? 0 : Number(paid.trim());
-    if (!Number.isInteger(parsedPaid) || parsedPaid < 0) {
-      error = t('err.required');
-      return;
-    }
-    if (parsedPaid !== (competitor.paid_amount ?? 0)) patch.paid_amount = parsedPaid;
+    if (!Number.isInteger(parsedPaid) || parsedPaid < 0) errors.paid = t('edit.err.paid');
+    else if (parsedPaid !== (competitor.paid_amount ?? 0)) patch.paid_amount = parsedPaid;
+    fieldErrors = errors;
+    if (Object.keys(errors).length > 0) return;
     if (Object.keys(patch).length === 0) {
       onClose();
       return;
@@ -112,11 +124,14 @@
       onSaved(res.competitor);
       onClose();
     } catch (e) {
-      const msg = (e as Error).message ?? '';
-      if (msg.includes('card_already_bound'))
-        error = t('walk.err.cardTaken', { card: parsedCard ?? '' });
-      else if (msg.includes('class_not_in_competition')) error = t('err.required');
-      else error = t('err.network');
+      const code = e instanceof ApiError ? (e.body as { error?: string } | undefined)?.error : null;
+      if (code === 'card_already_bound') {
+        fieldErrors = { card: t('walk.err.cardTaken', { card: String(parsedCard ?? '') }) };
+      } else if (code === 'class_not_in_competition') {
+        fieldErrors = { class: t('edit.err.class') };
+      } else {
+        error = t('common.unknownError');
+      }
     } finally {
       saving = false;
     }
@@ -137,11 +152,11 @@
       // Surface the change to the parent by re-emitting the same row;
       // the manual_status lives on the projection, not the competitors
       // table, so the row data itself is unchanged. The parent's
-      // refetch on onSaved keeps it in sync.
-      onSaved(competitor);
+      // refetch keeps it in sync.
+      (onWithdrawn ?? onSaved)(competitor);
       onClose();
-    } catch (e) {
-      error = (e as Error).message;
+    } catch {
+      error = t('common.unknownError');
     } finally {
       withdrawing = false;
       confirmingWithdraw = false;
@@ -151,98 +166,146 @@
 
 <Modal {open} onClose={close}>
   {#snippet head()}
-    <h2>{t('ro.editTitle')}</h2>
+    <h2 class="sheet-title">{t('ro.editTitle')}</h2>
+    <button
+      type="button"
+      class="sheet-close"
+      onclick={close}
+      aria-label={t('edit.close')}
+      disabled={saving || withdrawing}
+      data-testid="edit-close"
+    >
+      <Icon name="x" size={18} />
+    </button>
   {/snippet}
   {#snippet body()}
-    <form class="edit-form" onsubmit={(e) => { e.preventDefault(); void save(); }}>
-      <label class="field">
-        <span>{t('walk.name')}</span>
-        <input
+    <form
+      class="edit-form"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <Field label={t('walk.name')} htmlFor="edit-name">
+        <Input
+          id="edit-name"
           type="text"
           bind:value={name}
           data-testid="edit-name"
           autocomplete="off"
-          minlength="2"
-          maxlength="200"
+          maxlength={200}
+          oninput={() => clearError('name')}
+          aria-invalid={fieldErrors.name ? 'true' : undefined}
+          aria-describedby={fieldErrors.name ? 'edit-name-error' : undefined}
         />
-      </label>
-      <label class="field">
-        <span>{t('walk.club')}</span>
-        <input
+        {#if fieldErrors.name}
+          <p class="err" role="alert" id="edit-name-error" data-testid="edit-name-error">
+            {fieldErrors.name}
+          </p>
+        {/if}
+      </Field>
+      <Field label={t('walk.club')} htmlFor="edit-club">
+        <Input
+          id="edit-club"
           type="text"
           bind:value={club}
           data-testid="edit-club"
           autocomplete="off"
-          maxlength="120"
+          maxlength={120}
         />
-      </label>
-      <label class="field">
-        <span>{t('walk.class')}</span>
-        <select bind:value={classId} data-testid="edit-class">
+      </Field>
+      <Field label={t('walk.class')} htmlFor="edit-class">
+        <Select
+          id="edit-class"
+          bind:value={classId}
+          data-testid="edit-class"
+          onchange={() => clearError('class')}
+          aria-invalid={fieldErrors.class ? 'true' : undefined}
+          aria-describedby={fieldErrors.class ? 'edit-class-error' : undefined}
+        >
+          {#if !classId}
+            <option value="" disabled>{t('walk.classPlaceholder')}</option>
+          {/if}
           {#each classes as cls (cls.id)}
             <option value={cls.id}>{cls.name}</option>
           {/each}
-        </select>
-      </label>
-      <label class="field">
-        <span>{t('walk.card')}</span>
-        <input
+        </Select>
+        {#if fieldErrors.class}
+          <p class="err" role="alert" id="edit-class-error" data-testid="edit-class-error">
+            {fieldErrors.class}
+          </p>
+        {/if}
+      </Field>
+      <Field label={t('walk.card')} htmlFor="edit-card">
+        <Input
+          id="edit-card"
           type="text"
           inputmode="numeric"
           bind:value={cardNumber}
           data-testid="edit-card"
           autocomplete="off"
-          pattern="[0-9]*"
+          oninput={() => clearError('card')}
+          aria-invalid={fieldErrors.card ? 'true' : undefined}
+          aria-describedby={fieldErrors.card ? 'edit-card-error' : undefined}
         />
-      </label>
-      <label class="field">
-        <span>{t('edit.paid')}</span>
-        <input
+        {#if fieldErrors.card}
+          <p class="err" role="alert" id="edit-card-error" data-testid="edit-card-error">
+            {fieldErrors.card}
+          </p>
+        {/if}
+      </Field>
+      <Field label={t('edit.paid')} htmlFor="edit-paid">
+        <Input
+          id="edit-paid"
           type="text"
           inputmode="numeric"
           bind:value={paid}
           data-testid="edit-paid"
           autocomplete="off"
-          pattern="[0-9]*"
+          oninput={() => clearError('paid')}
+          aria-invalid={fieldErrors.paid ? 'true' : undefined}
+          aria-describedby={fieldErrors.paid ? 'edit-paid-error' : undefined}
         />
-      </label>
+        {#if fieldErrors.paid}
+          <p class="err" role="alert" id="edit-paid-error" data-testid="edit-paid-error">
+            {fieldErrors.paid}
+          </p>
+        {/if}
+      </Field>
       {#if error}
-        <p class="err" data-testid="edit-error">{error}</p>
+        <p class="err" role="alert" data-testid="edit-error">{error}</p>
       {/if}
       <hr class="divider" />
       <div class="danger-zone">
         {#if !confirmingWithdraw}
-          <button
-            type="button"
-            class="btn danger-ghost"
+          <Button
+            variant="danger"
             data-testid="edit-withdraw-btn"
             onclick={() => (confirmingWithdraw = true)}
             disabled={saving || withdrawing}
           >
             {t('edit.withdraw.cta')}
-          </button>
+          </Button>
           <p class="danger-hint">{t('edit.withdraw.hint')}</p>
         {:else}
           <p class="danger-confirm">{t('edit.withdraw.confirmBody')}</p>
           <div class="danger-actions">
-            <button
-              type="button"
-              class="btn ghost"
+            <Button
+              variant="ghost"
               onclick={() => (confirmingWithdraw = false)}
               disabled={withdrawing}
               data-testid="edit-withdraw-cancel"
             >
               {t('walk.cancel')}
-            </button>
-            <button
-              type="button"
-              class="btn danger"
+            </Button>
+            <Button
+              variant="danger"
               onclick={() => void withdraw()}
               disabled={withdrawing}
               data-testid="edit-withdraw-confirm"
             >
               {withdrawing ? t('edit.withdraw.busy') : t('edit.withdraw.confirm')}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -253,48 +316,51 @@
     {/if}
   {/snippet}
   {#snippet foot()}
-    <button type="button" class="btn ghost" onclick={close} disabled={saving || withdrawing}>
+    <Button variant="ghost" onclick={close} disabled={saving || withdrawing}>
       {t('walk.cancel')}
-    </button>
-    <button
-      type="button"
-      class="btn primary"
+    </Button>
+    <Button
+      variant="primary"
       data-testid="edit-save-btn"
       disabled={saving || withdrawing}
       onclick={() => void save()}
     >
       {saving ? t('ro.editSaving') : t('ro.editSave')}
-    </button>
+    </Button>
   {/snippet}
 </Modal>
 
 <style>
+  .sheet-title {
+    flex: 1;
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+  }
+  .sheet-close {
+    background: transparent;
+    border: 0;
+    width: var(--hit);
+    height: var(--hit);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--fg-muted);
+  }
+  .sheet-close:hover:not(:disabled) {
+    background: var(--bg-sunken);
+    color: var(--fg);
+  }
   .edit-form {
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
   }
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .field span {
-    font-size: var(--fs-caption);
-    color: var(--fg-muted);
-  }
-  .field input,
-  .field select {
-    min-height: var(--hit);
-    padding: 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
-    font: inherit;
-  }
   .err {
     color: var(--dnf);
-    font-size: var(--fs-caption);
+    font-size: var(--fs-label);
     margin: 0;
   }
   .divider {
@@ -311,7 +377,7 @@
   .danger-hint {
     margin: 0;
     color: var(--fg-muted);
-    font-size: var(--fs-caption);
+    font-size: var(--fs-label);
   }
   .danger-confirm {
     margin: 0;
@@ -323,21 +389,5 @@
     display: flex;
     gap: var(--space-xs);
     width: 100%;
-  }
-  .btn.danger-ghost {
-    background: transparent;
-    border: 1px solid var(--dnf);
-    color: var(--dnf);
-  }
-  .btn.danger-ghost:hover:not(:disabled) {
-    background: oklch(0.95 0.02 25);
-  }
-  .btn.danger {
-    background: var(--dnf);
-    border: 1px solid var(--dnf);
-    color: #fff;
-  }
-  .btn.danger:hover:not(:disabled) {
-    filter: brightness(0.92);
   }
 </style>
