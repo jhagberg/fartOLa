@@ -4,8 +4,9 @@
 // ADR-0016 rule 7 floors, measured in the browser: targets ≥ 44 × 44 px
 // and no text that carries meaning below 14 px. Skips what a person
 // cannot see or reach: inert subtrees (the closed drawer), aria-hidden,
-// visually hidden (clipped 1 px) elements, the skip link and the
-// receipt mirror (a paper preview, ESC/POS sizes).
+// visually hidden (clipped 1 px) elements, the skip link and the receipt
+// paper preview (`.receipt-wrap .paper`, ESC/POS sizes). The mirror's own
+// head and tabs are measured.
 import type { Page } from '@playwright/test';
 
 export type FloorOpts = {
@@ -22,7 +23,7 @@ export type FloorOpts = {
 const nothing = (root: string | undefined, n: number, min: number): string[] =>
   n < min ? [`measured ${n} elements under ${root ?? 'body'} — nothing checked`] : [];
 
-const HIDDEN = '[inert], [aria-hidden="true"], .skip-link, .receipt-mirror';
+const HIDDEN = '[inert], [aria-hidden="true"], .skip-link, .receipt-wrap .paper';
 
 export async function smallTargets(page: Page, opts: FloorOpts = {}): Promise<string[]> {
   const { out, n } = await page

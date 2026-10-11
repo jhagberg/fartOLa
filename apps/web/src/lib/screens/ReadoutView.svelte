@@ -51,6 +51,7 @@
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
   import { tweaks } from '#lib/stores/tweaks.svelte.ts';
+  import { getEventorStatus, refreshEventorStatus } from '#lib/stores/eventorStatus.svelte.ts';
   import { bridgeStatus } from '#lib/stores/bridgeStatus.svelte.ts';
   import { resultsChannel, formatClockTime } from '@fartola/shared-types';
   import { createCardSubscription } from '#lib/services/cardSubscription.ts';
@@ -139,6 +140,11 @@
   let autoPrint = $state(false);
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last print, for the read it was for; another read shows none. */
+  let printState: { key: string | null; status: 'idle' | 'busy' | 'ok' | 'failed'; error: string } =
+    $state({ key: null, status: 'idle', error: '' });
+  /** The dev-only simulate button shows only when the edge says dev mode. */
+  const dev = $derived(getEventorStatus().fartola_dev);
 
   let subscription: ReturnType<typeof createCardSubscription> | null = null;
 
@@ -260,6 +266,20 @@
     return history[0] ?? null;
   });
 
+  const currentKey = $derived(currentRow ? historyKey(currentRow) : null);
+  const shownPrint = $derived(
+    printState.key !== null && printState.key === currentKey
+      ? printState
+      : { status: 'idle' as const, error: '' }
+  );
+  /** An older read is pinned and a newer one exists: the card says so. */
+  const pinnedOlder = $derived(
+    pinnedKey !== null &&
+      currentKey !== null &&
+      history[0] !== undefined &&
+      currentKey !== historyKey(history[0])
+  );
+
   /** Format a start_time_ms value (epoch ms) as HH:MM:SS on the competition clock. */
   function formatStartTimeMs(ms: number | null, offsetMin: number | null): string {
     if (ms === null || offsetMin === null) return '—';
@@ -352,6 +372,7 @@
 
   onMount(() => {
     void mountReadout();
+    void refreshEventorStatus();
     window.addEventListener('keydown', onKeydown);
   });
 
@@ -518,7 +539,8 @@
   // stay in-screen because they read screen-local state.
 
   function triggerCardReadSideEffects(cardNumber: number): void {
-    pinnedKey = null;
+    // A pinned older read stays pinned; the card's cue bar offers "Visa
+    // senaste" (RO-9) instead of replacing what the operator is reading.
     const top = history[0];
     if (top) {
       const key = historyKey(top);
@@ -698,12 +720,11 @@
     status: ManualStatus,
     reason: string
   ): Promise<void> {
-    try {
-      await apiSetManualStatus(competitionId, competitorId, status, reason);
-      await refetchReadout();
-    } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
-    }
+    // Throws on failure: the card keeps its popover open with the reason.
+    await apiSetManualStatus(competitionId, competitorId, status, reason);
+    await refetchReadout();
+    const name = competitorsById.get(competitorId)?.name ?? latestReadProp?.name ?? '';
+    toast(t('ro.status.done', { name, status: t(`status.${status}`) }));
   }
 
   async function onClearManualStatusHandler(competitorId: string): Promise<void> {
@@ -789,34 +810,37 @@
     }
   }
 
-  function onPrintClick(): void {
+  async function onPrintClick(): Promise<void> {
     if (autoPrint) return;
     const competitorId = latestReadProp?.competitorId ?? null;
-    if (competitorId === null) {
-      // Nothing to print — unknown card / empty state. UI-SPEC says the
-      // button is disabled in that case, but the keyboard 'P' shortcut
-      // can still fire — surface a benign toast.
-      toast(t('ro.printed'));
+    const key = currentKey;
+    if (competitorId === null || key === null) {
+      // The button is disabled with a hint; the 'P' shortcut says the same.
+      toast(t('ro.print.none'));
       return;
     }
-    // Optimistic toast — plan 15 ESC/POS print is async via the bridge.
-    toast(t('ro.printed'));
-    void apiPrintReceipt(competitionId, competitorId, selectedTemplate).catch((err: Error) => {
-      // UI-SPEC §"Error states" — 503/429 surface as
-      // "Utskrift misslyckades — Kontrollera papper i Star TSP143."
-      const msg = err.message ?? 'unknown';
-      toast(`Utskrift misslyckades (${msg})`);
-    });
+    if (shownPrint.status === 'busy') return;
+    printState = { key, status: 'busy', error: '' };
+    try {
+      await apiPrintReceipt(competitionId, competitorId, selectedTemplate);
+      printState = { key, status: 'ok', error: '' };
+    } catch (err) {
+      printState = { key, status: 'failed', error: (err as Error).message || t('common.unknownError') };
+    }
   }
 
   function onKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'P' || ev.key === 'p') {
-      // Ignore when focus is in an input so typing P in the DNF reason
-      // field doesn't trip the shortcut.
-      const tag = (ev.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
+      // Typing a P, a browser shortcut (Ctrl/Cmd/Alt) or any open dialog is
+      // not a request to print.
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const el = ev.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (el?.isContentEditable || el?.closest?.('[contenteditable]')) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       ev.preventDefault();
-      onPrintClick();
+      void onPrintClick();
     } else if (ev.key === 'Escape' && walkupCard !== null) {
       void goto(`/competition/${competitionId}/readout`);
     }
@@ -838,12 +862,17 @@
       read={latestReadProp}
       flashKey={flashKey}
       autoPrint={autoPrint}
-      onSimulate={() => void onSimulate()}
-      onPrint={onPrintClick}
+      printState={shownPrint}
+      {pinnedOlder}
+      onShowLatest={() => {
+        pinnedKey = null;
+      }}
+      onSimulate={dev ? () => void onSimulate() : undefined}
+      onPrint={() => void onPrintClick()}
       onWalkup={onWalkupCta}
       onManualDnf={(id, reason) => void onManualDnfHandler(id, reason)}
       onUnDnf={(id) => void onUnDnfHandler(id)}
-      onManualStatus={(id, status, reason) => void onManualStatusHandler(id, status, reason)}
+      onManualStatus={onManualStatusHandler}
       onClearManualStatus={(id) => void onClearManualStatusHandler(id)}
       onEdit={(id) => { editingCompetitorId = id; }}
       onSetStartTime={(id, text) => void onSetStartTimeHandler(id, text)}
@@ -926,8 +955,8 @@
           <span class="sw-thumb"></span>
         </span>
         <span class="lbl">{t('ro.autoprint')}</span>
+        <span class="state">{autoPrint ? t('ro.autoprint.on') : t('ro.autoprint.off')}</span>
       </label>
-      <span class="faint">Star TSP143 · /dev/usb/lp0</span>
     </div>
 
     {#if receiptRead}
@@ -935,6 +964,7 @@
         read={receiptRead}
         selected={selectedTemplate}
         autoPrint={autoPrint}
+        printed={shownPrint.status === 'ok'}
         onSelect={onTemplate}
       />
     {/if}
@@ -1076,7 +1106,7 @@
     font-feature-settings:
       'tnum' 1,
       'zero' 1;
-    font-size: 12px;
+    font-size: var(--fs-label);
   }
   .auto-print-row {
     display: flex;
@@ -1088,13 +1118,14 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    min-height: var(--hit);
     cursor: pointer;
     user-select: none;
   }
   .auto-toggle .sw {
     position: relative;
-    width: 36px;
-    height: 20px;
+    width: 44px;
+    height: 24px;
     background: var(--bg-sunken);
     border: 1px solid var(--border-strong);
     border-radius: 999px;
@@ -1113,8 +1144,8 @@
     position: absolute;
     left: 2px;
     top: 1px;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     background: var(--bg-elev);
     border-radius: 50%;
     box-shadow: var(--shadow-sm);
@@ -1125,16 +1156,16 @@
     border-color: var(--accent);
   }
   .auto-toggle .sw[data-on='true'] .sw-thumb {
-    left: 17px;
-    background: #fff;
+    left: 21px;
+    background: var(--accent-fg);
   }
-  .auto-toggle .lbl {
-    font-size: 13px;
+  .auto-toggle .lbl,
+  .auto-toggle .state {
+    font-size: var(--fs-label);
     font-weight: 500;
   }
-  .faint {
-    color: var(--fg-faint);
-    font-size: 13px;
+  .auto-toggle .state {
+    min-width: 2ch;
   }
   .card {
     background: var(--bg-elev);
@@ -1153,14 +1184,14 @@
     margin: 0;
     font-size: var(--fs-label);
     font-weight: 600;
-    color: var(--dnf);
+    color: var(--fg);
   }
   .pending-card .badge {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 11px;
-    background: var(--dnf-soft);
-    color: var(--dnf);
+    font-size: var(--fs-label);
+    background: var(--bg-sunken);
+    color: var(--fg);
     padding: 2px 8px;
     border-radius: 999px;
   }
