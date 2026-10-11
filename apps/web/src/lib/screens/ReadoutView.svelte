@@ -520,9 +520,21 @@
 
   /** Refetches overlap; only the newest answer may set the readout. */
   let readoutSeq = 0;
+  let readoutNewest: Promise<void> = Promise.resolve();
 
+  /** Resolves once the newest refetch has landed, so a caller that reads
+   * `history` afterwards (classifyCard) never sees an older state. */
   async function refetchReadout(): Promise<void> {
-    const mine = ++readoutSeq;
+    let waited = fetchReadout(++readoutSeq);
+    readoutNewest = waited;
+    await waited;
+    while (waited !== readoutNewest) {
+      waited = readoutNewest;
+      await waited;
+    }
+  }
+
+  async function fetchReadout(mine: number): Promise<void> {
     try {
       const res = (await getReadout(competitionId)) as ReadoutResponse;
       if (mine !== readoutSeq) return;
