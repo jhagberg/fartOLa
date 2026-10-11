@@ -33,7 +33,7 @@
   import type { CompetitionDTO, ClassDTO, CourseDTO, SoftStatus } from '@fartola/shared-types';
   import { getCompetition, getResults } from '#lib/api/client.ts';
   import { page } from '$app/state';
-  import { replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import Button from '#lib/ui/Button.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import LoadError from '#lib/ui/LoadError.svelte';
@@ -279,7 +279,7 @@
     const url = new URL(page.url.href);
     if (id === 'ALL') url.searchParams.delete('klass');
     else url.searchParams.set('klass', id);
-    replaceState(url, page.state);
+    void goto(url, { state: page.state, shallow: true, replace: true });
   }
 </script>
 

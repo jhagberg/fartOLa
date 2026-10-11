@@ -30,9 +30,12 @@
     refreshKey?: number;
     /** Called after an undo, so the parent reloads its start list. */
     onUndone?: () => void;
+    /** Called when the load for a refreshKey has landed (or failed), so the
+     * parent can tell the history shows the change it made. */
+    onLoaded?: (key: number) => void;
   }
 
-  let { competitionId, classNames, refreshKey = 0, onUndone }: Props = $props();
+  let { competitionId, classNames, refreshKey = 0, onUndone, onLoaded }: Props = $props();
 
   /** Rows shown before "Visa alla". */
   const FIRST = 5;
@@ -53,6 +56,7 @@
 
   async function load(): Promise<void> {
     const mine = ++generation;
+    const key = refreshKey;
     try {
       const [res, clock] = await Promise.all([
         getStartTimeHistory(competitionId),
@@ -66,6 +70,7 @@
       if (mine !== generation) return;
       loadError = (e as Error).message;
     }
+    onLoaded?.(key);
   }
 
   $effect(() => {

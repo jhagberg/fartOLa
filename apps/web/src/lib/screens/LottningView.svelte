@@ -26,7 +26,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/state';
-  import { replaceState } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
   import {
     ApiError,
@@ -178,6 +178,8 @@
   const uploading = $derived(resultsStatus === 'reading');
   /** Bumped whenever start times may have changed: the history refetches. */
   let historyKey = $state(0);
+  /** The newest historyKey whose history load has landed. */
+  let historyLoadedKey = $state(0);
 
   /** Start list after a draw or on initial load. */
   let startList: LottningResponse['start_list'] = $state([]);
@@ -326,7 +328,7 @@
   function onClassSelect(): Promise<void> {
     const url = new URL(page.url.href);
     url.searchParams.set('klass', selectedClassId);
-    replaceState(url, page.state);
+    void goto(url, { state: page.state, shallow: true, replace: true });
     return onClassChange();
   }
 
@@ -478,7 +480,6 @@
           : { ...body, allowStartClash: true, startClashReason: override }
       );
       done = summaryOf(res, className);
-      redrawn = hadList && settings.drawType === 'All';
       closingMove = closingMoved(res);
       firstControl = firstControlWarning(res);
       clashReason = '';
@@ -495,6 +496,8 @@
         }
       }
       await loadStartList();
+      // After the reloads: the undo link must not target the previous draw.
+      redrawn = hadList && settings.drawType === 'All';
     } catch (e) {
       refusal = refusalOf(e, className);
     } finally {
@@ -1235,7 +1238,7 @@
     {#if done !== null}
       <p class="done" role="status" data-testid="lottning-done">{done}</p>
     {/if}
-    {#if redrawn}
+    {#if redrawn && historyLoadedKey >= historyKey}
       <p class="done" role="status" data-testid="lottning-redrawn">
         {t('lottning.redrawn')}
         <a href="#lottning-history" onclick={showHistory}>{t('lottning.redrawnUndo')}</a>
@@ -1293,6 +1296,7 @@
       {competitionId}
       {classNames}
       refreshKey={historyKey}
+      onLoaded={(key) => (historyLoadedKey = Math.max(historyLoadedKey, key))}
       onUndone={() => {
         redrawn = false;
         void loadStartList();
