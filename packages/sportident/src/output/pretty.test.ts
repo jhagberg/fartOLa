@@ -65,4 +65,15 @@ describe('formatEvent card_read', () => {
     assert.match(text, /^ +1 +31 +12:01:40 +5:00 +5:00$/m);
     assert.match(text, /Finish {3}12:06:40 {2}split 5:00 {2}total 10:00/);
   });
+
+  test('SI5 has no AM/PM bit: elapsed time wraps over 12 hours', () => {
+    const text = formatEvent(
+      cardRead({
+        card_type: 'SI5',
+        start: { seconds_in_half_day: 42600, half_day: 0, weekday: null },
+        finish: { seconds_in_half_day: 600, half_day: 0, weekday: null },
+      })
+    );
+    assert.match(text, /total 20:00$/m);
+  });
 });

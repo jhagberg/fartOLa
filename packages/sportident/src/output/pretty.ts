@@ -21,9 +21,10 @@ const clockText = (s: number | null): string =>
     ? '—'
     : `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor(s / 60) % 60)}:${pad2(s % 60)}`;
 
-/** Elapsed seconds from `from` to `to`, wrapping once over midnight. */
-const elapsed = (from: number | null, to: number | null): number | null =>
-  from === null || to === null ? null : (to - from + DAY) % DAY;
+/** Elapsed seconds from `from` to `to`, wrapping once over the card's clock
+ *  period: 24 h, or 12 h for SI5, which has no AM/PM bit (ADR-0012). */
+const elapsed = (from: number | null, to: number | null, period: number): number | null =>
+  from === null || to === null ? null : (to - from + period) % period;
 
 const durationText = (s: number | null): string => {
   if (s === null) return '';
@@ -44,6 +45,7 @@ const formatCardRead = (e: Extract<NdjsonEvent, { event: 'card_read' }>): string
     else visits.push({ code: p.code, time: toSeconds(p) as number, count: 1 });
   }
 
+  const period = e.card_type === 'SI5' ? HALF_DAY : DAY;
   const start = toSeconds(e.start);
   const finish = toSeconds(e.finish);
   const holder = e.card_holder ?? {};
@@ -61,8 +63,8 @@ const formatCardRead = (e: Extract<NdjsonEvent, { event: 'card_read' }>): string
     lines.push(
       (
         `  ${String(i + 1).padStart(3)}  ${String(v.code).padStart(4)}  ${clockText(v.time)}` +
-        `  ${durationText(elapsed(prev, v.time)).padStart(8)}` +
-        `  ${durationText(elapsed(start, v.time)).padStart(8)}` +
+        `  ${durationText(elapsed(prev, v.time, period)).padStart(8)}` +
+        `  ${durationText(elapsed(start, v.time, period)).padStart(8)}` +
         (v.count > 1 ? `  (${v.count}×)` : '')
       ).trimEnd()
     );
@@ -71,8 +73,10 @@ const formatCardRead = (e: Extract<NdjsonEvent, { event: 'card_read' }>): string
   lines.push(
     '',
     `  Finish   ${clockText(finish)}` +
-      (finish !== null ? `  split ${durationText(elapsed(prev, finish))}` : '') +
-      (finish !== null && start !== null ? `  total ${durationText(elapsed(start, finish))}` : ''),
+      (finish !== null ? `  split ${durationText(elapsed(prev, finish, period))}` : '') +
+      (finish !== null && start !== null
+        ? `  total ${durationText(elapsed(start, finish, period))}`
+        : ''),
     `  ${e.punch_count} punches, ${visits.length} controls`,
     ''
   );
