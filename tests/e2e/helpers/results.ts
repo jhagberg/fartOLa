@@ -24,6 +24,8 @@ export async function prepareResultsFull(page: Page): Promise<void> {
 
 /** Projector mode (F), where the status pill is enlarged. */
 export async function prepareResultsFullscreen(page: Page): Promise<void> {
+  // The key handler is attached on mount; the tabs show once the page loaded.
+  await expect(page.getByTestId('class-tab').first()).toBeVisible({ timeout: 20_000 });
   await page.locator('body').focus();
   await page.keyboard.press('f');
   await expect(page.getByTestId('results-view')).toHaveAttribute('data-fullscreen', 'true');
@@ -33,6 +35,8 @@ export async function prepareResultsFullscreen(page: Page): Promise<void> {
 
 /** The failed load with its retry. */
 export async function prepareResultsError(page: Page): Promise<void> {
+  // No live socket: its first message would show the rows and clear the error.
+  await page.routeWebSocket(/\/ws/, () => {});
   await page.route(RESULTS, (route) => route.fulfill({ status: 500, json: { error: 'boom' } }));
   await page.reload();
   const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta resultaten.' });
