@@ -799,6 +799,8 @@
   "lottning.redrawnUndo": "Ångra i historiken nedan.",
   "lottning.maxTimeNone": "Ingen avvikande maxtid",
   "lottning.maxTimeFailed": "Maxtiden sparades inte. Försök igen.",
+  "lottning.maxTimeInvalid": "Ogiltig maxtid. Skriv mm:ss, till exempel 60:00.",
+  "lottning.resultsFailed": "Resultatlistan kunde inte läsas in",
   "lottning.maxTimeLocked": "Maxtiden kan inte ändras efter första start.",
   "lottning.moreOptions": "Fler val",
   "lottning.loadError": "Kunde inte hämta lottningen.",
