@@ -44,7 +44,10 @@ export interface CardSubscriptionOpts {
   onCardRead: (
     cardNumber: number,
     cardHolderHint: string | null,
-    classification: CardClassification
+    classification: CardClassification,
+    /** True for the server's replay (hello after load or reconnect), false
+     * for a live read. */
+    replay: boolean
   ) => void;
   /** Optional async resolver — given a cardNumber, returns whether
    * this card is unmatched in the current projection plus the hint to
@@ -101,13 +104,13 @@ export function createCardSubscription(opts: CardSubscriptionOpts): CardSubscrip
       // Other replayed envelope types (results_update, card_bound, etc.)
       // still pass through so /readout can rehydrate its projection.
       if (opts.ignoreReplayCardReads === true && inner.event_type === 'card_read') return;
-      dispatch(inner.event_type, inner);
+      dispatch(inner.event_type, inner, true);
       return;
     }
     dispatch(env.type, env.payload);
   }
 
-  function dispatch(eventType: string, payload: unknown): void {
+  function dispatch(eventType: string, payload: unknown, replay = false): void {
     if (eventType === 'card_read') {
       const card = payload as { card_number?: unknown; card_holder?: unknown } | null;
       const cardNumber = typeof card?.card_number === 'number' ? card.card_number : null;
@@ -123,16 +126,17 @@ export function createCardSubscription(opts: CardSubscriptionOpts): CardSubscrip
             opts.onCardRead(
               cardNumber,
               cardHolderHint ?? inlineHint,
-              isUnmatched ? 'unknown' : 'known'
+              isUnmatched ? 'unknown' : 'known',
+              replay
             );
           })
           .catch(() => {
             // Resolver failed — best-effort treat as unclassified so
             // the caller still sees the read and can decide.
-            opts.onCardRead(cardNumber, inlineHint, 'unclassified');
+            opts.onCardRead(cardNumber, inlineHint, 'unclassified', replay);
           });
       } else {
-        opts.onCardRead(cardNumber, inlineHint, 'unclassified');
+        opts.onCardRead(cardNumber, inlineHint, 'unclassified', replay);
       }
       return;
     }

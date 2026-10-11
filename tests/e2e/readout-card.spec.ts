@@ -250,6 +250,51 @@ test.describe('a pinned older read', () => {
   });
 });
 
+test.describe('a replayed read', () => {
+  test('one the page already has does not unpin, notify or flash', async ({ page, request }) => {
+    const { competitionId: id } = await seedCompetition(request, { controls: 4 });
+    await simulateRead(request, id, CIA, [31, 32, 33, 34]);
+    await simulateRead(request, id, ANNA, [31, 32, 33, 34]);
+    let toPage: ((msg: string) => void) | null = null;
+    await page.routeWebSocket(/\/ws/, (ws) => {
+      ws.connectToServer();
+      toPage = (msg) => ws.send(msg);
+    });
+    await readout(page, id);
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(ANNA));
+    await expect.poll(() => toPage !== null).toBe(true);
+    await page
+      .getByTestId('history-row')
+      .filter({ hasText: String(CIA) })
+      .first()
+      .click();
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
+
+    // The server's replay of the read the page already shows in its history.
+    toPage!(
+      JSON.stringify({
+        type: 'replay',
+        channel: `readout:${id}`,
+        payload: { event_type: 'card_read', card_number: ANNA },
+      })
+    );
+    // Prove the replay was handled: it has refetched the history by then.
+    const refetched = page.waitForResponse(`**/api/competitions/${id}/readout`);
+    toPage!(
+      JSON.stringify({
+        type: 'replay',
+        channel: `readout:${id}`,
+        payload: { event_type: 'card_read', card_number: CIA },
+      })
+    );
+    await refetched;
+    await expect(page.getByTestId('card-number').first()).toHaveText(String(CIA));
+    await expect(page.getByText('Du tittar på en äldre avläsning.')).toBeVisible();
+    await expect(page.getByTestId('toast')).toHaveCount(0);
+    await expect(page.getByTestId('latest-read')).toHaveAttribute('data-flash', '');
+  });
+});
+
 test.describe('overlapping prints and the status popover', () => {
   test('a late print result never overwrites another read, and keeps its own failure', async ({
     page,
