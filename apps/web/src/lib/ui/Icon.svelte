@@ -38,6 +38,7 @@
   import Search from '@lucide/svelte/icons/search';
   import Settings from '@lucide/svelte/icons/settings';
   import Shuffle from '@lucide/svelte/icons/shuffle';
+  import Strikethrough from '@lucide/svelte/icons/strikethrough';
   import Sun from '@lucide/svelte/icons/sun';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Trophy from '@lucide/svelte/icons/trophy';
@@ -82,6 +83,7 @@
     sun: Sun,
     maximize: Maximize,
     minimize: Minimize,
+    strikethrough: Strikethrough,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } satisfies Record<string, Component<any>>;
   export type IconName = keyof typeof ICONS;

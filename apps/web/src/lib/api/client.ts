@@ -357,12 +357,13 @@ export function getFees(competitionId: string): Promise<FeesResponse> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/fees`);
 }
 
-/** Set the card fee and class fees. All or nothing. */
+/** Set the card fee and class fees. All or nothing; a part left out is
+ * left as it is. */
 export function putFees(
   competitionId: string,
   body: {
-    card_fee: number | null;
-    classes: Array<Omit<ClassFeeItem, 'name' | 'class_kind'>>;
+    card_fee?: number | null;
+    classes?: Array<Omit<ClassFeeItem, 'name' | 'class_kind'>>;
   }
 ): Promise<{ updated: number }> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/fees`, {

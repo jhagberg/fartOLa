@@ -1,6 +1,6 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Vitest coverage for the course-wide "Makulera kontroll" toggle in
+// Vitest coverage for the course-wide "Stryk kontroll" toggle in
 // CompetitionInfoView (02.1-14 Task 5). Pure-helper style like
 // SettingsView.test.ts: i18n keys + the client calls the toggle makes.
 
@@ -17,7 +17,7 @@ describe('02.1-14 Task 5 — voided-control toggle', () => {
       expect(sv[key], `missing sv key ${key}`).toBeTruthy();
       expect(en[key], `missing en key ${key}`).toBeTruthy();
     }
-    expect(sv['info.courses.voidControl']).toBe('Makulera kontroll');
+    expect(sv['info.courses.voidControl']).toBe('Stryk kontroll {{code}}');
   });
 
   describe('client', () => {
@@ -97,7 +97,7 @@ describe('competition max time (SOFT TR 4.21.1)', () => {
 });
 
 // SOFT TR 3.3.1: the competition level (nivå 1–4 or träning) is set in the
-// competition's fields card and saved with the other fields.
+// competition's fields card and saves on change, alone (ADR-0016 rule 3).
 describe('competition level (SOFT TR 3.3.1)', () => {
   let component: ReturnType<typeof mount> | null = null;
   let patches: unknown[];
@@ -156,7 +156,7 @@ describe('competition level (SOFT TR 3.3.1)', () => {
     expect(sv['info.level.hint']).toContain('TR 3.3.1');
   });
 
-  it('shows "Inte angiven" when unset and saves the chosen level; choosing none sends null', async () => {
+  it('shows "Inte angiven" when unset and saves the chosen level on change; none sends null', async () => {
     const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
     component = mount(CompetitionInfoView, {
       target: document.body,
@@ -165,24 +165,16 @@ describe('competition level (SOFT TR 3.3.1)', () => {
     await settle();
     const select = document.querySelector('[data-testid="info-level"]') as HTMLSelectElement;
     expect(select.selectedOptions[0]!.textContent).toBe('Inte angiven');
-    const save = document.querySelector('[data-testid="info-save"]') as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    expect(document.querySelector('[data-testid="info-save"]')).toBeNull();
 
     select.value = 'niva1';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
-    expect(save.disabled).toBe(false);
-    save.click();
-    await settle();
-    expect(patches).toHaveLength(1);
-    expect((patches[0] as { level: unknown }).level).toBe('niva1');
-
     select.value = '';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
-    save.click();
-    await settle();
-    expect((patches[1] as { level: unknown }).level).toBeNull();
+    // Each change is its own field-only patch.
+    expect(patches).toEqual([{ level: 'niva1' }, { level: null }]);
   });
 });
 
@@ -273,10 +265,9 @@ describe('closing time and distance (SOFT TR 4.16.3, TA till TR 7.4.4)', () => {
     closing.closing_time_ms = Date.UTC(2026, 9, 8, 12, 30);
     const name = document.querySelector('[data-testid="info-name"]') as HTMLInputElement;
     name.value = 'Ny';
-    name.dispatchEvent(new Event('input', { bubbles: true }));
+    name.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
-    (document.querySelector('[data-testid="info-save"]') as HTMLButtonElement).click();
-    await settle();
+    expect(patches).toEqual([{ name: 'Ny' }]);
     expect(document.querySelector('[data-testid="info-closing-time"]')!.textContent!.trim()).toBe(
       '14:30'
     );
@@ -293,18 +284,12 @@ describe('closing time and distance (SOFT TR 4.16.3, TA till TR 7.4.4)', () => {
     await mountWith({ last_start_ms: null, closing_time_ms: null });
     const select = document.querySelector('[data-testid="info-distance"]') as HTMLSelectElement;
     expect(select.selectedOptions[0]!.textContent).toBe('Inte angiven');
-    const save = document.querySelector('[data-testid="info-save"]') as HTMLButtonElement;
     select.value = 'sprint';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
-    save.click();
-    await settle();
-    expect(patches[0]!.distance).toBe('sprint');
     select.value = '';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await settle();
-    save.click();
-    await settle();
-    expect(patches[1]!.distance).toBeNull();
+    expect(patches).toEqual([{ distance: 'sprint' }, { distance: null }]);
   });
 });

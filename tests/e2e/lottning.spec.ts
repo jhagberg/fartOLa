@@ -124,8 +124,7 @@ test('class kinds and the competition level are set on the info page', async ({
   await expect(page.getByTestId('class-kinds-all-confirmed')).toBeVisible();
 
   await page.getByTestId('info-level').selectOption('niva1');
-  await page.getByTestId('info-save').click();
-  await expect(page.getByTestId('info-saved-toast')).toBeVisible();
+  await expect(page.getByTestId('info-level-note')).toHaveText('Sparat');
   await page.reload();
   await expect(page.getByTestId('info-level')).toHaveValue('niva1');
 });
