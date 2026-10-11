@@ -316,6 +316,7 @@ async function twoCompetitions(
     competitions: Array<{ id: string; name: string }>;
   };
   const nameB = listed.competitions.find((c) => c.id === b)?.name ?? '';
+  expect(nameB, 'competition B is listed').not.toBe('');
   await request.post(`${BASE}/api/sessions/active-competition`, { data: { competition_id: a } });
   await page.route('**/src/routes/competition/**', () => {
     /* never answered: the readout does not open */

@@ -276,14 +276,19 @@
 
   const currentCompId = $derived(activeCompetition.id);
 
-  /** One token per competition switch: a list that arrives for the
-   * competition the operator has left is dropped. */
+  /** One token per load: a list that arrives for the competition the
+   * operator has left, or after a newer load, is dropped. */
   const codesRequest = latestOnly();
+  /** One token per competition switch: a generate or revoke that answers
+   * for the competition the operator has left writes nothing. */
+  const codesSwitch = latestOnly();
+  let codesCurrent = codesSwitch();
 
   async function loadHelperCodes(): Promise<void> {
+    // Taken first, so a switch to no competition also drops a late list.
+    const isCurrent = codesRequest();
     const id = currentCompId;
     if (!id) return;
-    const isCurrent = codesRequest();
     helperCodesLoading = true;
     try {
       const r = await listEventCodes(id);
@@ -297,10 +302,12 @@
 
   async function handleGenerate(): Promise<void> {
     if (!currentCompId || generatingCode) return;
+    const isCurrent = codesCurrent;
     generatingCode = true;
     codeErr = null;
     try {
       const generated = await generateEventCode(currentCompId);
+      if (!isCurrent()) return;
       // Show the plaintext code immediately for 30 seconds.
       revealedCodes[generated.id] = generated.code;
       if (revealTimers[generated.id]) clearTimeout(revealTimers[generated.id]);
@@ -310,23 +317,24 @@
       }, 30_000);
       await loadHelperCodes();
     } catch {
-      codeErr = t('settings.helperCodes.generateError');
+      if (isCurrent()) codeErr = t('settings.helperCodes.generateError');
     } finally {
-      generatingCode = false;
+      if (isCurrent()) generatingCode = false;
     }
   }
 
   async function handleRevoke(codeId: string): Promise<void> {
     if (!currentCompId || revokingId) return;
+    const isCurrent = codesCurrent;
     revokingId = codeId;
     codeErr = null;
     try {
       await revokeEventCode(currentCompId, codeId);
-      await loadHelperCodes();
+      if (isCurrent()) await loadHelperCodes();
     } catch {
-      codeErr = t('settings.helperCodes.revokeError');
+      if (isCurrent()) codeErr = t('settings.helperCodes.revokeError');
     } finally {
-      revokingId = null;
+      if (isCurrent()) revokingId = null;
     }
   }
 
@@ -342,8 +350,11 @@
     // Reload helper codes whenever the active competition changes, and show
     // nothing of the previous competition meanwhile.
     void currentCompId;
+    codesCurrent = codesSwitch();
     helperCodes = [];
     codeErr = null;
+    generatingCode = false;
+    revokingId = null;
     void loadHelperCodes();
   });
 
@@ -356,8 +367,8 @@
   let liveErr: string | null = $state(null);
   let liveMsg: string | null = $state(null);
 
-  /** One token per competition switch: a load that answers for the competition
-   * the operator has left must not fill the form. */
+  /** One token per load, save or clear: an answer for the competition the
+   * operator has left (or superseded by a newer request) writes nothing. */
   const liveRequest = latestOnly();
 
   async function loadLive(): Promise<void> {
@@ -365,6 +376,8 @@
     live = null;
     liveErr = null;
     liveMsg = null;
+    // A save for the previous competition no longer holds the buttons.
+    liveBusy = false;
     // Nothing typed for the previous competition may be saved into this one.
     liveId = '';
     livePwd = '';
@@ -385,34 +398,40 @@
       liveErr = t('settings.liveresultat.invalid');
       return;
     }
+    const isCurrent = liveRequest();
     liveBusy = true;
     liveErr = null;
     liveMsg = null;
     try {
-      live = await setLiveresultatCredentials(currentCompId, liveId.trim(), livePwd);
+      const r = await setLiveresultatCredentials(currentCompId, liveId.trim(), livePwd);
+      if (!isCurrent()) return;
+      live = r;
       livePwd = '';
       liveMsg = t('settings.liveresultat.saved');
     } catch {
-      liveErr = t('settings.liveresultat.saveError');
+      if (isCurrent()) liveErr = t('settings.liveresultat.saveError');
     } finally {
-      liveBusy = false;
+      if (isCurrent()) liveBusy = false;
     }
   }
 
   async function clearLive(): Promise<void> {
     if (!currentCompId || liveBusy) return;
+    const isCurrent = liveRequest();
     liveBusy = true;
     liveErr = null;
     liveMsg = null;
     try {
-      live = await clearLiveresultatCredentials(currentCompId);
+      const r = await clearLiveresultatCredentials(currentCompId);
+      if (!isCurrent()) return;
+      live = r;
       liveId = '';
       livePwd = '';
       liveMsg = t('settings.liveresultat.cleared');
     } catch {
-      liveErr = t('settings.liveresultat.saveError');
+      if (isCurrent()) liveErr = t('settings.liveresultat.saveError');
     } finally {
-      liveBusy = false;
+      if (isCurrent()) liveBusy = false;
     }
   }
 
