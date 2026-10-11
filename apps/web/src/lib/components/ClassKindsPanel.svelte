@@ -7,6 +7,8 @@
   mode, ADR-0016 rule 3); "Bekräfta" confirms the proposal as it stands.
   Rules that refuse something (pursuit, seeding, vacant places) need a
   confirmed kind, so unconfirmed classes are counted and marked in text.
+  A row's saves go one at a time (ui/saveQueue.ts) and say "Sparat" or
+  the error at the row; a failed save shows the saved kind again.
   With onlyClassId it shows one class (LottningView's confirm path).
   Logic lives in screens/class-kinds.ts.
 -->
@@ -15,6 +17,9 @@
   import { t } from '#lib/i18n/index.ts';
   import { getClassKinds, putClassKinds, type ClassKindsResponse } from '#lib/api/client.ts';
   import Button from '#lib/ui/Button.svelte';
+  import SavedNote from '#lib/ui/SavedNote.svelte';
+  import { createSaveState } from '#lib/ui/saveState.svelte.ts';
+  import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
   import {
     CLASS_KINDS,
     confirmItem,
@@ -47,6 +52,15 @@
   let ageText = $state<Record<string, string>>({});
   let rowError = $state<Record<string, string>>({});
   let busy = $state(false);
+
+  type Kind = { class_kind: ClassKind; age_class: number | null };
+  /** One save at a time per row; an edit made meanwhile waits for it. */
+  const queues = new Map<string, SaveQueue<Kind>>();
+  let notes = $state.raw<Record<string, ReturnType<typeof createSaveState>>>({});
+  /** The plain message of a row's failed save. */
+  let saveError = $state<Record<string, string>>({});
+  /** Only a row's newest edit may drop it after its save. */
+  const rowGen: Record<string, number> = {};
 
   async function load(): Promise<void> {
     try {
@@ -111,8 +125,26 @@
     }
   }
 
-  /** Save one row as it now stands (select + age). */
-  async function saveRow(item: ClassKindItem): Promise<void> {
+  function noteFor(id: string): ReturnType<typeof createSaveState> {
+    let note = notes[id];
+    if (note === undefined) {
+      note = createSaveState();
+      notes = { ...notes, [id]: note };
+    }
+    return note;
+  }
+
+  /** Forget a row's edit: it shows the stored values again. */
+  function dropEdit(id: string): void {
+    const { [id]: _k, ...restChosen } = chosen;
+    const { [id]: _a, ...restAge } = ageText;
+    chosen = restChosen;
+    ageText = restAge;
+  }
+
+  /** Save one row as it now stands (select + age). An incomplete row waits
+   * with its message; a failed save drops the edit and says so at the row. */
+  function saveRow(item: ClassKindItem): void {
     const kind = kindOf(item);
     if (kind === null) return;
     const age = parseAge(ageOf(item));
@@ -120,19 +152,43 @@
       if (age === undefined) return setRowError(item.class_id, t('classKinds.err.ageInvalid'));
       if (age === null) return setRowError(item.class_id, t('classKinds.err.ageRequired'));
     }
-    await put([
-      { class_id: item.class_id, class_kind: kind, age_class: kindNeedsAge(kind) ? age! : null },
-    ]);
+    setRowError(item.class_id, null);
+    const id = item.class_id;
+    let queue = queues.get(id);
+    if (queue === undefined) {
+      queue = createSaveQueue<Kind>(
+        { class_kind: item.class_kind ?? kind, age_class: item.age_class },
+        (change, saved) => putClassKinds(competitionId, [{ class_id: id, ...saved, ...change }])
+      );
+      queues.set(id, queue);
+    }
+    const mine = (rowGen[id] = (rowGen[id] ?? 0) + 1);
+    void noteFor(id).run(
+      queue.save({ class_kind: kind, age_class: kindNeedsAge(kind) ? age! : null }).then(
+        async () => {
+          if (mine === rowGen[id]) dropEdit(id);
+          await load();
+          onSaved?.();
+        },
+        (e: unknown) => {
+          if (mine === rowGen[id]) {
+            dropEdit(id);
+            saveError = { ...saveError, [id]: t(kindsErrorKey(e).key) };
+          }
+          throw e;
+        }
+      )
+    );
   }
 
   function onKindChange(item: ClassKindItem, value: string): void {
     chosen = { ...chosen, [item.class_id]: value as ClassKind };
-    void saveRow(item);
+    saveRow(item);
   }
 
   function onAgeChange(item: ClassKindItem, value: string): void {
     ageText = { ...ageText, [item.class_id]: value };
-    void saveRow(item);
+    saveRow(item);
   }
 </script>
 
@@ -245,6 +301,12 @@
                       </Button>
                     {/if}
                   </div>
+                  <span class="row-note" data-testid="class-kind-note">
+                    <SavedNote
+                      state={notes[item.class_id]?.state ?? 'idle'}
+                      error={saveError[item.class_id] ?? ''}
+                    />
+                  </span>
                   {#if rowError[item.class_id]}
                     <p class="err" role="alert" data-testid="class-kind-error">
                       {rowError[item.class_id]}

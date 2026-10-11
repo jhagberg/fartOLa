@@ -53,6 +53,7 @@ import {
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
+import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -333,6 +334,18 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/lottning`,
     ready: (p) => p.getByTestId('lottning-view'),
     prepare: async (page, _id, request) => prepareLottningEmpty(page, request),
+  },
+  {
+    name: 'Tävlingsinfo före start, struken kontroll, regeltext, fel och sparat',
+    url: (id) => `/competition/${id}/info`,
+    ready: (p) => p.getByTestId('competition-info'),
+    prepare: async (page, _id, request) => prepareInfo(page, request),
+  },
+  {
+    name: 'Tävlingsinfo efter start med låst maxtid',
+    url: (id) => `/competition/${id}/info`,
+    ready: (p) => p.getByTestId('competition-info'),
+    prepare: async (page) => prepareInfoLocked(page),
   },
   {
     name: 'Lottning, laddningsfel',

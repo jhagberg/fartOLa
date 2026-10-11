@@ -18,6 +18,7 @@ import {
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
+import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
@@ -235,7 +236,18 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${regId}/registration`,
       (p) => p.getByTestId('registration-view'),
     ],
-    ['info', `/competition/${id}/info`, (p) => p.getByTestId('competition-info')],
+    [
+      'info locked max time',
+      `/competition/${id}/info`,
+      (p) => p.getByTestId('competition-info'),
+      prepareInfoLocked,
+    ],
+    [
+      'info saved, error, rule and voided',
+      `/competition/${id}/info`,
+      (p) => p.getByTestId('competition-info'),
+      (p) => prepareInfo(p, request),
+    ],
     ['export', `/competition/${exId}/export`, (p) => p.getByTestId('export-view'), prepareExport],
     [
       'export invalid',
