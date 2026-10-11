@@ -1,4 +1,4 @@
-This describes plans 1 and 2 of the design lab: plan 1 (the shared building blocks) and plan 2 (the screen passes). Plan 3 (the remaining screens) is not done.
+This describes the three plans of the design lab: plan 1 (the shared building blocks), plan 2 (the screen passes) and plan 3 (the remaining screens).
 
 # Design lab, plan 1: building blocks
 
@@ -173,10 +173,35 @@ The bright-sun rows for `--dns`, `--dq`, `--cancel` and `--max` equal the defaul
 
 - The Eventor search shows the organisation (for example "StorTuna OK") as the club. This is fixed in the edge (`apps/edge`), not in the web app.
 - Walk-up search components still have their own `:focus` outlines, now redundant with the global ring. Delete them when that code is next touched (see the leftovers todo).
-- Screens left for plan 3: Avläsning, Direktanmälan, Resultat, Lottning, Tävlingsinfo, Anmälda, Hyrbrickor. Related todos: `2026-10-10-competition-info-one-save-model.md`, `2026-10-10-open-classes-start-punch-by-default.md`, `2026-10-10-edit-runner-shows-start-and-punches.md`.
+- The screens left after plan 2 (Avläsning, Direktanmälan, Resultat, Lottning, Tävlingsinfo, Anmälda, Hyrbrickor) were done in plan 3, below.
 - Known axe violations: [the axe todo](../../.planning/todos/pending/2026-10-09-axe-known-violations.md).
 - Not done on purpose: undo, modal focus, `userMessage()`, previews (see audit.md "Out of scope").
 
 ## Screenshots, plan 2
 
 In `fartOLa-docs`, folder `design-lab-2026-10/after-plan-2/` (the same screens as plan 1, plus the wizard, helper login, speaker and kontroll screens). Taken with `DESIGN_LAB_SHOTS=<folder> pnpm exec playwright test tests/e2e/design-lab-screens.spec.ts --workers=1`.
+
+# Plan 3: remaining screens
+
+Plan: [plan-3-remaining-screens.md](plan-3-remaining-screens.md). Findings: [audit.md](audit.md) (each section has a "Plan 3" status line). Rules: [ADR-0016](../decisions/0016-simple-clear-ui-not-meos-parity.md).
+
+## What changed, per screen
+
+- **Avläsning.** Toasts stack, and identical re-reads are grouped into one. A new read takes over the card, and an older answer never replaces a newer one. Print and status feedback is per read, and no device paths show. Rules 1 and 2 (nothing false on screen, the newest read is what you see).
+- **Direktanmälan.** Card conflicts are named in plain words, a saved toast confirms the entry, and targets are 44 px. Rules 3 and 7.
+- **Resultat.** A failed load shows an error with a retry, the class is in the url, and the fullscreen view is readable at a distance. Rules 3 and 7.
+- **Lottning.** The start method sits next to the class and says what it means; the stored max time is shown; undo replaces confirm. Class settings save one at a time, each showing "Sparat" or the error at the field. Kontroll links each class without start times here. Rules 1, 3 and 6.
+- **Tävlingsinfo.** Everything saves on change and shows "Sparat" or the error at the field. Max time keeps its button, since it locks at the first start. Rule 3 (no unsaved edit mode).
+- **Anmälda.** Filters stay in the url, errors are shown per field, and the edit dialog shows start, punches and splits. A half-typed edit is kept after a failure. Rules 1, 3 and 6.
+- **Hyrbrickor.** "Markera återlämnad" gives a result line, each list has its own load error, the empty state explains itself, and text is 14 px. Rules 6 and 7.
+- **Inställningar.** Late answers from the previous competition no longer land in the new one. Rule 2.
+- **Shared.** `SavedNote` is the one inline "Sparat" or error note for fields that save on change; load and save errors give plain messages, not raw server text (the remaining places are in a todo).
+- **Local run.** `scripts/run-local.sh` starts without developer tools; set `FARTOLA_DEV=1` to opt in.
+
+## Not done on purpose
+
+The "Fri start" button on Kontroll and the open-class start-punch default (they change which start a result runs from, so they need a replay), the punch log view, modal focus, undo lists and `userMessage()`. See the todos in `.planning/todos/pending/`.
+
+## Screenshots, plan 3
+
+In `fartOLa-docs`, folder `design-lab-2026-10/after-plan-3/` (the same screens as plan 2, plus Hyrbrickor and the opened Ändra dialog). Taken with `DESIGN_LAB_SHOTS=<folder> pnpm exec playwright test tests/e2e/design-lab-screens.spec.ts --workers=1`.
