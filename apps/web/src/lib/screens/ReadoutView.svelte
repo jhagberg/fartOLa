@@ -138,8 +138,10 @@
   let walkupTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedTemplate: ReceiptTemplate = $state('classic');
   let autoPrint = $state(false);
-  let toastMessage: string | null = $state(null);
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Notices on screen, newest first; each leaves after its own 3 s. */
+  let toasts: Array<{ id: number; msg: string }> = $state([]);
+  let toastSeq = 0;
+  const toastTimers = new Set<ReturnType<typeof setTimeout>>();
   /** The last print, for the read it was for; another read shows none. */
   let prints: Record<string, { status: 'busy' | 'ok' | 'failed'; error: string }> = $state({});
   /** The dev-only simulate button shows only when the edge says dev mode. */
@@ -210,7 +212,7 @@
     fromRebind?: string;
   } | null = $state(null);
   /** Per-session set of competitor ids the operator has dismissed (chose
-   * "Avfärda") so the toast doesn't re-pop on subsequent reads for the
+   * "Senare") so the toast doesn't re-pop on subsequent reads for the
    * same runner. consent_status stays 'pending_first_read' server-side. */
   const dismissedConsentForCompetitorIds: Set<string> = new Set();
 
@@ -377,7 +379,7 @@
     if (subscription) subscription.disconnect();
     if (flashTimer) clearTimeout(flashTimer);
     if (walkupTimer) clearTimeout(walkupTimer);
-    if (toastTimer) clearTimeout(toastTimer);
+    for (const h of toastTimers) clearTimeout(h);
     if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
   });
 
@@ -852,11 +854,13 @@
   }
 
   function toast(msg: string): void {
-    toastMessage = msg;
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toastMessage = null;
+    const id = ++toastSeq;
+    toasts = [{ id, msg }, ...toasts];
+    const h = setTimeout(() => {
+      toasts = toasts.filter((x) => x.id !== id);
+      toastTimers.delete(h);
     }, 3000);
+    toastTimers.add(h);
   }
 </script>
 
@@ -977,10 +981,6 @@
 </div>
 </div>
 
-{#if toastMessage}
-  <div class="toast" role="status" data-testid="toast">{toastMessage}</div>
-{/if}
-
 {#if walkupCard !== null}
   <WalkupModal
     cardNumber={Number(walkupCard)}
@@ -992,6 +992,10 @@
   />
 {/if}
 
+<div class="toast-stack" data-testid="toast-stack">
+  {#each toasts as x (x.id)}
+    <div class="toast" role="status" data-testid="toast">{x.msg}</div>
+  {/each}
 {#if pendingConsentToast}
   <ConsentConfirmationToast
     competitorId={pendingConsentToast.competitorId}
@@ -1012,6 +1016,7 @@
     onDismiss={onHyrbrickaDismiss}
   />
 {/if}
+</div>
 
 <EditCompetitorModal
   open={editingCompetitorId !== null}
@@ -1226,17 +1231,28 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .toast {
+  .toast-stack {
     position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(24px, env(safe-area-inset-bottom));
+    width: min(420px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+    pointer-events: none;
+  }
+  .toast-stack > :global(*) {
+    pointer-events: auto;
+  }
+  .toast {
     background: var(--fg);
     color: var(--bg-elev);
     padding: 10px 18px;
     border-radius: var(--radius);
     font-size: var(--fs-label);
     box-shadow: var(--shadow-lg);
-    z-index: 100;
   }
 </style>

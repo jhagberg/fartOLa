@@ -51,7 +51,7 @@ describe('Plan 02-05 — i18n keys for the Hyrbricka toast', () => {
     }
     // Title carries the warning emoji + the Swedish prompt.
     expect(sv['readout.hyrbricka.title']).toMatch(/Hyrbricka/i);
-    expect(sv['readout.hyrbricka.returned']).toBe('Returnerad');
+    expect(sv['readout.hyrbricka.returned']).toBe('Markera återlämnad');
     expect(sv['readout.hyrbricka.dismiss']).toBe('Ignorera');
   });
 
@@ -69,7 +69,7 @@ describe('Plan 02-05 — i18n keys for the Hyrbricka toast', () => {
     ]) {
       expect(en[key], `missing en key ${key}`).toBeTruthy();
     }
-    expect(en['readout.hyrbricka.returned']).toBe('Returned');
+    expect(en['readout.hyrbricka.returned']).toBe('Mark as returned');
     expect(en['readout.hyrbricka.dismiss']).toBe('Dismiss');
   });
 

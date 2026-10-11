@@ -4,7 +4,7 @@
   Plan 02-05 — Hyrbricka finish-readout toast. Surfaces on a card_read
   when the matched competitor's card has an open hired_cards row (the
   /readout response's `hired_card_open` field is non-null). Shows the
-  contact info MeOS lacks AND a one-tap "Returnerad" button — operator
+  contact info MeOS lacks AND a one-tap "Markera återlämnad" button — operator
   hands the card back, clicks, sets returned_at_ms = now().
 
   The "Ignorera" button dismisses the toast WITHOUT a server PATCH; the
@@ -127,17 +127,12 @@
 
 <style>
   .hyrbricka-toast {
-    position: fixed;
-    right: max(24px, env(safe-area-inset-right));
-    bottom: max(24px, env(safe-area-inset-bottom));
-    width: min(420px, calc(100vw - 32px));
     background: var(--bg-elev);
     border: 1px solid var(--border-strong);
     border-left: 4px solid var(--dnf);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: 16px 18px;
-    z-index: 90;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -153,7 +148,7 @@
   }
   .card-line {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg);
   }
   .contact {
@@ -163,7 +158,7 @@
   }
   .contact .row {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg);
     display: flex;
     gap: 8px;

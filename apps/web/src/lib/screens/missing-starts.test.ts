@@ -176,8 +176,8 @@ describe('missing starts panel (02.1-14 Task 15)', () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
     const en = (await import('../i18n/en.json')).default as Record<string, string>;
     expect(sv['ms.title']).toBe('Saknade starttider');
-    expect(sv['ms.setAll']).toBe('Sätt alla');
-    expect(sv['ms.stats']).toBe('median {{median}} (medel {{mean}}, n={{n}})');
+    expect(sv['ms.setAll']).toBe('Sätt alla ({{n}})');
+    expect(sv['ms.stats']).toBe('median {{median}}, medel {{mean}} ({{n}} löpare)');
     expect(sv['ms.startAfterFinish']).toBe('Starttiden är efter målgången.');
     for (const key of [
       'ms.title',

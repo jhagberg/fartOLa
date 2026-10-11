@@ -13,6 +13,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import Check from '@lucide/svelte/icons/check';
+  import ChevronUp from '@lucide/svelte/icons/chevron-up';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Circle from '@lucide/svelte/icons/circle';
@@ -63,6 +64,7 @@
     info: Info,
     'chevron-right': ChevronRight,
     'chevron-down': ChevronDown,
+    'chevron-up': ChevronUp,
     shuffle: Shuffle,
     'alert-triangle': TriangleAlert,
     printer: Printer,

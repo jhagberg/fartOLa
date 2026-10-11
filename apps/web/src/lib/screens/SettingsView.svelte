@@ -954,11 +954,17 @@
         <h3 tabindex="-1">{t('tw.title')}</h3>
       </header>
       <AppearanceSettings />
+      <p class="version" data-testid="app-version">{t('settings.version', { v: '0.1.0-phase1' })}</p>
     </section>
   </div>
 </section>
 
 <style>
+  .version {
+    margin: var(--space-md) 0 0;
+    font-size: var(--fs-label);
+    color: var(--fg-muted);
+  }
   .group {
     display: flex;
     flex-direction: column;

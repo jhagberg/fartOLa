@@ -18,6 +18,7 @@ import {
   prepareReadoutStatusFailed,
   prepareReadoutEmpty,
   prepareReadoutPrinted,
+  prepareReadoutFrame,
 } from './helpers/readout.ts';
 import {
   prepareAccess,
@@ -31,6 +32,7 @@ import {
   prepareWizardImportError,
   prepareWizardDiscard,
 } from './helpers/wizard.ts';
+import { prepareMissingStarts, prepareMissingStartsError } from './helpers/missing-starts.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -209,6 +211,26 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('readout-view'),
     root: '.receipt-mirror .head',
     prepare: async (page, _id, request) => prepareReadoutPrinted(page, request),
+  },
+  {
+    name: 'Avläsning, hela sidan med grupperade avläsningar och två notiser',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    prepare: async (page, _id, request) => prepareReadoutFrame(page, request),
+  },
+  {
+    name: 'Resultat, saknade starttider',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    root: '[data-testid=missing-starts]',
+    prepare: async (page) => prepareMissingStarts(page),
+  },
+  {
+    name: 'Resultat, saknade starttider med laddningsfel',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    root: '[data-testid=missing-starts-error]',
+    prepare: async (page) => prepareMissingStartsError(page),
   },
 ];
 

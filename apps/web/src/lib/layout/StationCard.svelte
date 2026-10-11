@@ -13,25 +13,21 @@
 -->
 <script lang="ts">
   import PulseDot from '../ui/PulseDot.svelte';
-  import Icon from '../ui/Icon.svelte';
   import { t } from '../i18n/index.ts';
   import { reconnectBridge, ApiError } from '../api/client.ts';
 
   type Status = 'online' | 'offline' | 'connecting';
 
   interface Props {
-    stationName?: string;
     serial?: string;
-    devicePath?: string;
-    baud?: number;
+    /** Shown only when the bridge reports a port. */
+    port?: string;
     status?: Status;
   }
 
   let {
-    stationName = 'BSM7-USB',
     serial = '—',
-    devicePath = '/dev/ttyUSB0',
-    baud = 38400,
+    port,
     status = 'offline',
   }: Props = $props();
 
@@ -40,7 +36,7 @@
   );
 
   const label = $derived(
-    status === 'online' ? t('ro.online') : status === 'connecting' ? t('wiz.detecting') : t('ro.offline')
+    status === 'online' ? t('ro.online') : status === 'connecting' ? t('ro.searching') : t('ro.offline')
   );
 
   const labelColor = $derived(
@@ -71,18 +67,15 @@
 
 <div class="station-card">
   <div class="row title">{t('ro.station')}</div>
-  <div class="row">
-    <PulseDot {variant} label={label} />
-    <b class="mono name">{stationName}</b>
-  </div>
   <div class="row spread">
-    <span class="mono faint">{serial}</span>
-    <span class="status-label" style="color: {labelColor}"><Icon name="circle" size={10} fill="currentColor" /> {label}</span>
+    <span class="status-label" style="color: {labelColor}"><PulseDot {variant} label={label} /> {t('ro.reader', { state: label })}</span>
   </div>
-  <div class="row spread small">
-    <span class="faint">{devicePath}</span>
-    <span class="mono faint">{baud}</span>
-  </div>
+  {#if serial !== '—'}
+    <div class="row"><span class="mono faint">{serial}</span></div>
+  {/if}
+  {#if port}
+    <div class="row"><span class="faint">{port}</span></div>
+  {/if}
   {#if status !== 'online'}
     <button
       type="button"
@@ -117,18 +110,10 @@
   .row.spread {
     justify-content: space-between;
   }
-  .row.small {
-    font-size: var(--fs-label);
-  }
   .row.title {
     font-size: var(--fs-label);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
     color: var(--fg-muted);
     font-weight: 600;
-  }
-  .name {
-    font-size: var(--fs-label);
   }
   .status-label {
     font-size: var(--fs-label);

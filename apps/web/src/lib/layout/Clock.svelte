@@ -14,6 +14,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from '../i18n/index.ts';
 
   let now = $state(new Date());
 
@@ -31,8 +32,7 @@
   });
 </script>
 
-<div class="clock mono" title="Lokal tid · TID">
-  <span class="caption">TID</span>
+<div class="clock mono" role="group" aria-label={t('clock.label')}>
   <span class="value">{formatted}</span>
 </div>
 
@@ -47,13 +47,5 @@
     display: inline-flex;
     align-items: baseline;
     gap: 6px;
-  }
-  .caption {
-    font-size: var(--fs-label);
-    color: var(--fg-muted);
-    font-family: var(--font-ui);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 500;
   }
 </style>

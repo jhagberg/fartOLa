@@ -10,6 +10,8 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/Button.svelte';
+  import LoadError from '#lib/ui/LoadError.svelte';
   import { listMissingStarts } from '#lib/api/client.ts';
   import { formatElapsed } from '#lib/screens/readout-types.ts';
   import {
@@ -32,10 +34,20 @@
 
   let data = $state<MissingStartsResponse | null>(null);
   let texts = $state<Record<string, string>>({});
+  /** A failed apply (shown above the table). */
   let error = $state<string | null>(null);
+  /** The first or a refresh load failed. */
+  let loadFailed = $state(false);
+  let loaded = $state(false);
   let busy = $state(false);
+  /** How many start times the last apply set. */
+  let done = $state<number | null>(null);
+  let loadSeq = 0;
 
   async function load(): Promise<void> {
+    const seq = ++loadSeq;
+    loadFailed = false;
+    loaded = false;
     try {
       const next = await listMissingStarts(competitionId);
       // Keep what the operator typed for runners still listed.
@@ -44,10 +56,14 @@
         nextTexts[item.competitor_id] =
           texts[item.competitor_id] ?? initialStartText(item, next.clock_offset_min);
       }
+      if (seq !== loadSeq) return;
       texts = nextTexts;
       data = next;
-    } catch (e) {
-      error = (e as Error).message;
+    } catch {
+      if (seq !== loadSeq) return;
+      loadFailed = true;
+    } finally {
+      if (seq === loadSeq) loaded = true;
     }
   }
 
@@ -60,6 +76,7 @@
   async function apply(items: MissingStartItem[], clockOffsetMin: number): Promise<void> {
     busy = true;
     error = null;
+    done = null;
     try {
       const res = await applyMissingStartRows(
         competitionId,
@@ -70,6 +87,7 @@
         error = t(res.error === 'after_finish' ? 'ms.startAfterFinish' : 'lottning.invalidTime');
         return;
       }
+      done = res.updated;
       await load();
     } catch (e) {
       error = (e as Error).message;
@@ -81,6 +99,14 @@
   const header = $derived(data ? statsLabel(data) : null);
 </script>
 
+{#if loadFailed}
+  <div data-testid="missing-starts-error">
+    <LoadError message={t('ms.loadError')} onretry={() => void load()} />
+  </div>
+{/if}
+{#if done !== null}
+  <p class="done" role="status" data-testid="missing-starts-done">{t('ms.done', { n: done })}</p>
+{/if}
 {#if data && data.items.length > 0}
   <section class="ms" data-testid="missing-starts">
     <header class="ms-head">
@@ -88,15 +114,16 @@
       {#if header}
         <span class="muted mono" data-testid="missing-starts-stats">{t(header.key, header.vars)}</span>
       {/if}
-      <button
-        type="button"
-        class="btn primary"
-        disabled={busy}
-        data-testid="missing-starts-set-all"
-        onclick={() => data && void apply(data.items, data.clock_offset_min)}
-      >
-        {t('ms.setAll')}
-      </button>
+      <span class="set-all">
+        <Button
+          variant="primary"
+          disabled={busy}
+          data-testid="missing-starts-set-all"
+          onclick={() => data && void apply(data.items, data.clock_offset_min)}
+        >
+          {busy ? t('ms.setting') : t('ms.setAll', { n: data.items.length })}
+        </Button>
+      </span>
     </header>
     {#if error}
       <p class="err" role="alert">{error}</p>
@@ -109,7 +136,7 @@
           <th>{t('ms.check')}</th>
           <th>{t('ms.suggested')}</th>
           <th>{t('ms.result')}</th>
-          <th></th>
+          <th><span class="sr-only">{t('ms.set')}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -135,14 +162,13 @@
                 : item.status}
             </td>
             <td>
-              <button
-                type="button"
-                class="btn"
+              <Button
+                variant="secondary"
                 disabled={busy}
                 onclick={() => data && void apply([item], data.clock_offset_min)}
               >
                 {t('ms.set')}
-              </button>
+              </Button>
             </td>
           </tr>
         {/each}
@@ -166,8 +192,20 @@
     margin: 0;
     font-size: 16px;
   }
-  .ms-head .btn {
+  .set-all {
     margin-left: auto;
+  }
+  .done {
+    margin: 0;
+    color: var(--fg);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
   .muted {
     color: var(--fg-muted);
@@ -194,36 +232,15 @@
     border-bottom: 1px solid var(--border);
   }
   .ms-table th {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     background: var(--bg-sunken);
   }
   .start {
     width: 10ch;
-    height: 32px;
+    height: var(--hit);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     padding: 0 8px;
-  }
-  .btn {
-    height: 32px;
-    padding: 0 12px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border-strong);
-    background: var(--bg-elev);
-    color: var(--fg);
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
-  }
-  .btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
   }
 </style>

@@ -48,7 +48,14 @@
   );
 
   const label = $derived(
-    wsStatus === 'open' ? t('ro.online') : wsStatus === 'connecting' ? t('wiz.detecting') : t('ro.offline')
+    t('ro.reader', {
+      state:
+        wsStatus === 'open'
+          ? t('ro.online')
+          : wsStatus === 'connecting'
+            ? t('ro.searching')
+            : t('ro.offline'),
+    })
   );
 
   const color = $derived(

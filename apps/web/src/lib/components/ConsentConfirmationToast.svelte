@@ -5,7 +5,7 @@
   competitor whose consent_status === 'pending_first_read' (the default
   for EntryList-imported rows; plan 05). Operator confirms → PATCH
   /api/competitors/:id flips consent_status to 'confirmed_on_read' and
-  stamps consent_at_ms. "Avfärda" hides the toast locally without a
+  stamps consent_at_ms. "Senare" hides the toast locally without a
   server flip; the parent view keeps a per-session
   dismissedConsentForCompetitorIds set so the SAME competitor doesn't
   re-trigger the toast on subsequent reads in this session.
@@ -93,17 +93,12 @@
 
 <style>
   .consent-toast {
-    position: fixed;
-    right: 24px;
-    bottom: 24px;
-    width: min(380px, calc(100vw - 32px));
     background: var(--bg-elev);
     border: 1px solid var(--border-strong);
     border-left: 4px solid var(--accent);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: 16px 18px;
-    z-index: 80;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -115,13 +110,13 @@
   }
   .body {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
     line-height: 1.4;
   }
   .err {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--dnf);
   }
   .actions {

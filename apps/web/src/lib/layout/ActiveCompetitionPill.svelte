@@ -261,7 +261,7 @@
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--shadow-lg);
     max-height: min(480px, 70vh);
     display: flex;
     flex-direction: column;
@@ -316,6 +316,7 @@
   }
   .row.current {
     background: var(--bg-sunken);
+    box-shadow: inset 3px 0 0 var(--fg);
   }
   .row-name {
     overflow-wrap: anywhere;
