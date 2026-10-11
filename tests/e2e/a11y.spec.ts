@@ -10,6 +10,11 @@ import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 import { prepareRegistration } from './helpers/registration.ts';
+import {
+  prepareWalkupAlternatives,
+  prepareWalkupCardTaken,
+  prepareWalkupNetworkError,
+} from './helpers/walkup.ts';
 import { prepareEventor, prepareEventorNoKey } from './helpers/eventor.ts';
 import { prepareKvar, prepareKvarAsleep, prepareKvarError } from './helpers/kvar.ts';
 import { prepareHome, prepareHomeError } from './helpers/home.ts';
@@ -124,6 +129,24 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       'readout walkup',
       `/competition/${id}/readout?walkup=7500123`,
       (p) => p.getByTestId('walkup-modal'),
+    ],
+    [
+      'walkup alternatives, error and discard',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareWalkupAlternatives(p, String(id)),
+    ],
+    [
+      'walkup card taken',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareWalkupCardTaken(p, String(id)),
+    ],
+    [
+      'walkup network error',
+      `/competition/${id}/readout`,
+      (p) => p.getByTestId('readout-view'),
+      (p) => prepareWalkupNetworkError(p, String(id)),
     ],
     ['results', `/competition/${id}/results`, (p) => p.getByTestId('results-view')],
     ['lottning', `/competition/${id}/lottning`, (p) => p.getByTestId('lottning-view')],

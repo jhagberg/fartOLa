@@ -871,6 +871,12 @@
     }
   }
 
+  /** The modal's close: back to the plain readout, and say who was saved. */
+  function onWalkupClose(saved: boolean, runner?: { name: string; className: string }): void {
+    void goto(`/competition/${competitionId}/readout`);
+    if (saved && runner) toast(t('walk.saved', { name: runner.name, class: runner.className }));
+  }
+
   function toast(msg: string): void {
     const id = ++toastSeq;
     toasts = [{ id, msg }, ...toasts];
@@ -1006,6 +1012,7 @@
     {classes}
     cardHolderHint={walkupHint}
     {eventorHint}
+    onClose={onWalkupClose}
     onRebound={(r) => void onRebound(r)}
   />
 {/if}
