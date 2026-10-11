@@ -299,7 +299,10 @@ test('Lotta om draws at once, the history offers Ångra and undo restores the ol
   await page.getByTestId('lottning-draw-btn').click();
   await expect(page.getByText('Lottat. Ångra i historiken nedan.')).toBeVisible();
   expect(await page.locator('.redraw-confirm').count()).toBe(0);
-  expect(await times()).not.toEqual(before);
+  // The line shows before the list and the history reload: wait for both,
+  // or the read sees the old times and the undo hits the first draw.
+  await expect(page.locator('[data-testid=lottning-row] .col-start')).toHaveText([/^11:/, /^11:/]);
+  await expect(page.locator('[data-testid=history-row][data-cause=draw]')).toHaveCount(2);
 
   await page.getByRole('link', { name: 'Ångra i historiken nedan.' }).click();
   await page.getByTestId('history-row').first().getByTestId('history-undo').click();
