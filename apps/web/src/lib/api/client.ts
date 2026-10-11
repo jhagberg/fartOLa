@@ -641,7 +641,8 @@ export interface CorrectionsDTO {
   /** The start the running time runs from (class start method, latest
    * read); null when there is none. */
   start_ms: number | null;
-  /** The latest read-out (epoch ms); null without one. */
+  /** The latest scan of the card, a pre-race one included (epoch ms); null
+   * without one. `latest_read.read_at_ms` is the read-out. */
   read_at_ms: number | null;
   /** The drawn start (epoch ms); null when none is drawn. */
   drawn_start_ms: number | null;
