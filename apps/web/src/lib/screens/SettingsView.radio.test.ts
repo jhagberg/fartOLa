@@ -42,10 +42,15 @@ interface Pending {
 
 let radioGets: Record<string, Pending>;
 let patches: Array<{ url: string; body: unknown }>;
+/** When set, every PATCH waits until the test releases it. */
+let holdPatches: boolean;
+let heldPatches: Array<() => void>;
 
 function installFetch(): void {
   radioGets = {};
   patches = [];
+  holdPatches = false;
+  heldPatches = [];
   global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const json = (body: unknown) =>
@@ -57,6 +62,7 @@ function installFetch(): void {
     if (m) {
       if (init?.method === 'PATCH') {
         patches.push({ url, body: JSON.parse(String(init.body)) });
+        if (holdPatches) await new Promise<void>((r) => heldPatches.push(r));
         return json(status(m[1]!, '999', true));
       }
       return new Promise<Response>((resolve) => {
@@ -128,6 +134,37 @@ describe('SettingsView — ROC section', () => {
     expect(patches).toHaveLength(1);
     expect(patches[0]!.url).toContain('/competitions/B/radio/settings');
     expect((patches[0]!.body as { roc_competition_id: string }).roc_competition_id).toBe('555');
+  });
+
+  it('a save left running in the old competition neither locks nor unlocks the new one', async () => {
+    component = mount(SettingsView, { target: document.body });
+    await settle();
+    radioGets['A']!.resolve(status('A', '111', true));
+    await settle();
+    holdPatches = true;
+    saveButton().click();
+    await settle();
+    expect(saveButton().disabled).toBe(true);
+
+    // The operator switches to B while A's save is still in flight.
+    await activeCompetition.set('B');
+    await settle();
+    radioGets['B']!.resolve(status('B', '555', true));
+    await settle();
+    // B's own form is not locked by A's save.
+    expect(saveButton().disabled).toBe(false);
+
+    // B's save runs; A's save finishing must not unlock it.
+    saveButton().click();
+    await settle();
+    expect(patches).toHaveLength(2);
+    expect(saveButton().disabled).toBe(true);
+    heldPatches[0]!();
+    await settle();
+    expect(saveButton().disabled).toBe(true);
+    heldPatches[1]!();
+    await settle();
+    expect(saveButton().disabled).toBe(false);
   });
 
   it('Save stays off when the settings could not be loaded', async () => {
