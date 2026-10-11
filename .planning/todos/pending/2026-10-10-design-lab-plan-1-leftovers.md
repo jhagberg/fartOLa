@@ -13,31 +13,21 @@ files:
 
 ## Problem
 
-Plan 2 (`docs/design-lab/plan-2-screen-passes.md`) closed most of the small
-findings from the plan 1 reviews. What is left sits in files other tracks
+Plans 2 and 3 closed most of the small findings from the plan 1 reviews.
+What is left sits in files other tracks
 own, or in the readout, and waits for them.
 
 ## What
 
 Visual and wording:
 
-- 12–13 px text plan 1 did not reach: WalkupModal alternatives chip (m2-fees).
-- WalkupModal scrim: use `var(--scrim)` (m2-fees).
-- Hyrbrickor rows HY-1 … HY-5 in `docs/design-lab/audit.md` (plan 3).
-- Double edge (border plus `--shadow-md` ring): `LatestReadCard .dnf-pop`
-  (sekretariat).
 - `LatestReadCard .blink mono`, `.btn.lg` 13–17 px rules (sekretariat).
 - `ReceiptMirror .tpl-tab` focus ring may clip in its `overflow: hidden` box
   (sekretariat).
-- Green text `var(--ok, #107a57)` in AddRunnerSheet and RunnersListView: use
-  `var(--ok)` without the fallback (m2-bibs / m2-prerace).
 - AddRunnerSheet's redundant `:focus` outline (m2-bibs / m2-prerace).
 - Walk-up search components (ClubAutocomplete, SmartClubSearch,
   SmartRunnerSearch, EventorAutocomplete): their `:focus` outlines are
   redundant with the global ring. Delete them when that code is next touched.
-- Wording: "Bröt loppet" tooltip vs "Utgått"; `ro.dnf` "Bryt";
-  `ro.missingStart.hint` and `tw.contrast` still English in sv.json; audit row
-  WA-10 should use the existing `--mp-fg` (sekretariat).
 
 Code and tests:
 
