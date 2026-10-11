@@ -71,9 +71,9 @@
   let query = $state(page.url.searchParams.get('q') ?? '');
   let selectedClassId = $state<string | null>(page.url.searchParams.get('klass')); // null = Alla
   /** Status filter from the URL (?status=mp), so back and reload keep it. */
-  const statusParam = $derived(page.url.searchParams.get('status'));
-  const statusFilter = $derived<StatusFilter | null>(
-    isStatusFilter(statusParam) ? statusParam : null
+  const initialStatus = page.url.searchParams.get('status');
+  let statusFilter = $state<StatusFilter | null>(
+    isStatusFilter(initialStatus) ? initialStatus : null
   );
 
   // Edit modal state
@@ -182,22 +182,23 @@
   );
 
   function setStatusFilter(f: StatusFilter | null): void {
-    const u = new URL(page.url.href);
-    if (f === null) u.searchParams.delete('status');
-    else u.searchParams.set('status', f);
-    void goto(u.pathname + u.search, { replace: true, reset: false });
+    statusFilter = f;
+    syncUrl();
   }
 
-  /** Put the search and the class in the URL without a navigation
-   * (shallow): same page, no reload, focus and scroll stay. Both come
-   * from the state, not from page.url, which lags behind a pending
-   * navigation (a quick second change would put the first one back). */
+  /** Put the search, the class and the status in the URL without a
+   * navigation (shallow): same page, no reload, focus and scroll stay.
+   * All three come from the state, not from page.url, which lags behind
+   * a pending navigation (a quick second change would put the first one
+   * back). */
   function syncUrl(): void {
     const u = new URL(page.url.href);
     if (query.trim() === '') u.searchParams.delete('q');
     else u.searchParams.set('q', query);
     if (selectedClassId === null) u.searchParams.delete('klass');
     else u.searchParams.set('klass', selectedClassId);
+    if (statusFilter === null) u.searchParams.delete('status');
+    else u.searchParams.set('status', statusFilter);
     void goto(u.pathname + u.search, { replace: true, shallow: true, state: page.state });
   }
 
@@ -270,7 +271,7 @@
     await tick();
     document
       .querySelector(`[data-competitor-id="${id}"]`)
-      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      ?.scrollIntoView({ block: 'center', behavior: 'auto' });
     if (highlightTimer) clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => (highlightId = null), 2000);
   }
