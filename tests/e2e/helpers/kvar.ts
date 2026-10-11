@@ -63,7 +63,7 @@ export async function mockSnapshot(page: Page, body: Snapshot): Promise<void> {
 export async function fetchSnapshot(page: Page, body: Snapshot): Promise<void> {
   await mockSnapshot(page, body);
   await page.getByTestId('kvariskov-fetch').click();
-  await expect(page.getByTestId('kvariskov-summary')).toBeVisible();
+  await expect(page.getByTestId('kvariskov-fetched-at')).toBeVisible();
 }
 
 export async function prepareKvar(page: Page): Promise<void> {
