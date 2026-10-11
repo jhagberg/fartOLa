@@ -58,6 +58,12 @@ import {
   prepareResultsError,
   prepareResultsEmpty,
 } from './helpers/results.ts';
+import {
+  prepareHyrbrickorEmpty,
+  prepareHyrbrickorFull,
+  prepareHyrbrickorLoadError,
+  prepareHyrbrickorOpen,
+} from './helpers/hyrbrickor.ts';
 import { prepareExport, prepareExportError } from './helpers/export.ts';
 
 // Buttons fade their colours (0.12 s): switch transitions off so axe never
@@ -256,6 +262,30 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/runners`,
       (p) => p.getByTestId('runners-view'),
       (p) => prepareRunnersAdd(p, request),
+    ],
+    [
+      'hyrbrickor open',
+      `/competition/${id}/hyrbrickor`,
+      (p) => p.getByTestId('hyrbrickor-view'),
+      prepareHyrbrickorOpen,
+    ],
+    [
+      'hyrbrickor returned, toast and errors',
+      `/competition/${id}/hyrbrickor`,
+      (p) => p.getByTestId('hyrbrickor-view'),
+      prepareHyrbrickorFull,
+    ],
+    [
+      'hyrbrickor load error',
+      `/competition/${id}/hyrbrickor`,
+      (p) => p.getByTestId('hyrbrickor-view'),
+      prepareHyrbrickorLoadError,
+    ],
+    [
+      'hyrbrickor empty',
+      `/competition/${id}/hyrbrickor`,
+      (p) => p.getByTestId('hyrbrickor-view'),
+      prepareHyrbrickorEmpty,
     ],
     [
       'lottning load error',

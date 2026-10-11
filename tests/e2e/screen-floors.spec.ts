@@ -56,6 +56,12 @@ import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import { prepareEditReadError, prepareEditReadMispunch } from './helpers/edit-runner.ts';
+import {
+  prepareHyrbrickorEmpty,
+  prepareHyrbrickorFull,
+  prepareHyrbrickorLoadError,
+  prepareHyrbrickorOpen,
+} from './helpers/hyrbrickor.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -388,6 +394,30 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/lottning`,
     ready: (p) => p.getByTestId('lottning-view'),
     prepare: async (page) => prepareLottningLoadError(page),
+  },
+  {
+    name: 'Hyrbrickor, öppen bricka med märke och kontakt',
+    url: (id) => `/competition/${id}/hyrbrickor`,
+    ready: (p) => p.getByTestId('hyrbrickor-view'),
+    prepare: async (page) => prepareHyrbrickorOpen(page),
+  },
+  {
+    name: 'Hyrbrickor, återlämnad, resultat, radfel och listfel vid omhämtning',
+    url: (id) => `/competition/${id}/hyrbrickor`,
+    ready: (p) => p.getByTestId('hyrbrickor-view'),
+    prepare: async (page) => prepareHyrbrickorFull(page),
+  },
+  {
+    name: 'Hyrbrickor, laddningsfel',
+    url: (id) => `/competition/${id}/hyrbrickor`,
+    ready: (p) => p.getByTestId('hyrbrickor-view'),
+    prepare: async (page) => prepareHyrbrickorLoadError(page),
+  },
+  {
+    name: 'Hyrbrickor, tomt',
+    url: (id) => `/competition/${id}/hyrbrickor`,
+    ready: (p) => p.getByTestId('hyrbrickor-view'),
+    prepare: async (page) => prepareHyrbrickorEmpty(page),
   },
 ];
 
