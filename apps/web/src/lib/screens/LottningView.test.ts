@@ -215,6 +215,8 @@ describe('LottningView (mounted)', () => {
   let puts: Array<{ url: string; body: unknown }>;
   let patches: Array<{ url: string; body: unknown }>;
   let drawAnswer: { status: number; body: unknown };
+  /** When set, the bibs POST answers this instead of drawAnswer. */
+  let bibsAnswer: { status: number; body: unknown } | null;
   let startList: unknown[];
   let seeding: Array<{ id: string; seed_group: number }>;
   let previousResults: { results: number; ok: number };
@@ -259,6 +261,7 @@ describe('LottningView (mounted)', () => {
     holdClassPatch = false;
     heldPatches = [];
     drawAnswer = { status: 201, body: { drawn: 2 } };
+    bibsAnswer = null;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown, status = 200) =>
@@ -273,6 +276,8 @@ describe('LottningView (mounted)', () => {
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
       if (init?.method === 'POST') {
         posts.push({ url, body });
+        if (bibsAnswer !== null && url.endsWith('/bibs'))
+          return json(bibsAnswer.body, bibsAnswer.status);
         return json(drawAnswer.body, drawAnswer.status);
       }
       if (init?.method === 'PATCH') {
@@ -845,6 +850,44 @@ describe('LottningView (mounted)', () => {
     expect(document.querySelector('.err')!.textContent).toBe(
       'Startnummer 103 finns redan i en annan klass. Välj ett annat första nummer.'
     );
+  });
+
+  it('a failed numbering says something went wrong in plain words and logs the raw error', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    startList = [drawnRunner(null)];
+    drawAnswer = { status: 500, body: { error: 'boom' } };
+    await mountView();
+    await typeInto('lottning-bib-base', '101');
+    ($('lottning-bibs-assign') as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector('.err')!.textContent).toBe('Något gick fel');
+    expect(log).toHaveBeenCalled();
+  });
+
+  it('a failed renumbering after a redraw says so in plain words', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    startList = [drawnRunner('7')];
+    h12Class = { bib_prefix: null, bib_base: 7 };
+    bibsAnswer = { status: 500, body: { error: 'boom' } };
+    await mountView();
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    expect(document.querySelector('.err')!.textContent).toBe('Något gick fel');
+    expect(log).toHaveBeenCalled();
+  });
+
+  it('a failed start place save says something went wrong in plain words', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    startList = [drawnRunner(null)];
+    await mountView();
+    holdClassPatch = true;
+    await typeInto('lottning-start-name', 'Start 2');
+    ($('lottning-start-name-save') as HTMLButtonElement).click();
+    await settle();
+    heldPatches[0]!.answer(500);
+    await settle();
+    expect(document.querySelector('.err')!.textContent).toBe('Något gick fel');
+    expect(log).toHaveBeenCalled();
   });
 
   it('SOFT TR 7.5.4: a whole-class redraw renumbers the bibs in the new start order', async () => {
