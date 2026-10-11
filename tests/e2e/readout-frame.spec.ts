@@ -148,8 +148,21 @@ test.describe('missing starts', () => {
   test('a failed first load shows the error with a retry', async ({ page, request }) => {
     const { competitionId: id } = await seedCompetition(request, { controls: 4 });
     const recover = await mockMissingStartsLoadError(page);
+    // The panel loads again when the results arrive: from the page's own
+    // load, then from the server's answer to the WebSocket hello. Recover
+    // only after that last load, so it is the retry that brings the list.
+    let answered = false;
+    page.on('websocket', (ws) => {
+      if (new URL(ws.url()).pathname !== '/ws') return;
+      ws.on('framereceived', (f) => {
+        if (String(f.payload).includes('"results_full"')) answered = true;
+      });
+    });
+    const lastLoad = page.waitForRequest((r) => answered && r.url().endsWith('/missing-starts'));
     await page.goto(`/competition/${id}/results`);
     const err = page.getByTestId('missing-starts-error');
+    await expect(err).toBeVisible();
+    await (await lastLoad).response();
     await expect(err).toBeVisible();
     recover();
     await err.getByRole('button', { name: 'Försök igen' }).click();

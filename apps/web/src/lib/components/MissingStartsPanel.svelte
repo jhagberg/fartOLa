@@ -43,9 +43,11 @@
   let done = $state<number | null>(null);
   let loadSeq = 0;
 
-  async function load(clearDone = true): Promise<void> {
+  /** A retry clears the error first; a refresh keeps it until a load works,
+   * so live results do not tear down the retry button under the operator. */
+  async function load(clearDone = true, retry = false): Promise<void> {
     const seq = ++loadSeq;
-    loadFailed = false;
+    if (retry) loadFailed = false;
     try {
       const next = await listMissingStarts(competitionId);
       // Keep what the operator typed for runners still listed.
@@ -57,6 +59,7 @@
       if (seq !== loadSeq) return;
       texts = nextTexts;
       data = next;
+      loadFailed = false;
       // A later load with runners listed is a new situation: the old result line goes.
       if (clearDone && next.items.length > 0) done = null;
     } catch {
@@ -99,7 +102,7 @@
 
 {#if loadFailed}
   <div data-testid="missing-starts-error">
-    <LoadError message={t('ms.loadError')} onretry={() => void load()} />
+    <LoadError message={t('ms.loadError')} onretry={() => void load(true, true)} />
   </div>
 {/if}
 {#if done !== null}
