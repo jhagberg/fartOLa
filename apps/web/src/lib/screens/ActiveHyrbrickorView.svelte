@@ -48,6 +48,8 @@
   /** Bumped by every load and every return: a response that is no longer
    * the latest must not overwrite newer data. */
   let seq = 0;
+  /** A retry from 'stale' is running: the warning gives way to a busy line. */
+  let reloading = $state(false);
 
   onMount(() => {
     void fetchAll();
@@ -59,6 +61,7 @@
   async function fetchAll(): Promise<void> {
     const mine = ++seq;
     if (load !== 'stale' && load !== 'loaded') load = 'loading';
+    reloading = load === 'stale';
     try {
       const r = await listHiredCards(competitionId);
       if (mine !== seq) return;
@@ -66,9 +69,11 @@
       returned = r.returned;
       paid = r.paid_on_site;
       load = 'loaded';
+      reloading = false;
     } catch {
       if (mine !== seq) return;
       load = load === 'loaded' || load === 'stale' ? 'stale' : 'error';
+      reloading = false;
     }
   }
 
@@ -132,7 +137,9 @@
       <LoadError message={t('hyrbrickor.loadError')} onretry={() => void fetchAll()} />
     </div>
   {:else}
-    {#if load === 'stale'}
+    {#if load === 'stale' && reloading}
+      <p class="muted" data-testid="hyrbrickor-reloading">{t('hyrbrickor.loading')}</p>
+    {:else if load === 'stale'}
       <div data-testid="hyrbrickor-reload-error">
         <LoadError message={t('hyrbrickor.reloadError')} onretry={() => void fetchAll()} />
       </div>
