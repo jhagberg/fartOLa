@@ -155,7 +155,12 @@ test('the open status picker is placed again when the window is resized', async 
   await page.setViewportSize({ width: 1366, height: 768 });
   await openLongRead(page, request);
   await page.getByTestId('manual-dnf-btn').click();
+  const pop = page.locator('.dnf-pop');
+  await expect(pop).not.toHaveClass(/\bdown\b/);
   await expectPickerVisible(page, false);
   await page.setViewportSize({ width: 683, height: 384 });
+  // The browser fires resize on its next frame, after setViewportSize has
+  // returned; wait for the popover to be placed again before measuring.
+  await expect(pop).toHaveClass(/\bdown\b/);
   await expectPickerVisible(page, true);
 });
