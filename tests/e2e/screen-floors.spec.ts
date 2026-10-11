@@ -54,6 +54,7 @@ import {
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
+import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -346,6 +347,26 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/info`,
     ready: (p) => p.getByTestId('competition-info'),
     prepare: async (page) => prepareInfoLocked(page),
+  },
+  {
+    name: 'Anmälda, lista med återbud, bricka, hyrbricka, starttid och filtrerat antal',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    prepare: async (page, _id, request) => prepareRunnersList(page, request),
+  },
+  {
+    name: 'Anmälda, ändra med fel vid fälten',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareRunnersEdit(page, request),
+  },
+  {
+    name: 'Anmälda, lägg till',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareRunnersAdd(page, request),
   },
   {
     name: 'Lottning, laddningsfel',

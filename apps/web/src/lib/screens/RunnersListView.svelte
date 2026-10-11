@@ -19,7 +19,7 @@
     - Empty state CTA opens the same Importera sheet.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
@@ -65,8 +65,11 @@
   let loading = $state(true);
   let loadError = $state<string | null>(null);
 
-  let query = $state('');
-  let selectedClassId = $state<string | null>(null); // null = Alla
+  // Search and class chip live in the URL (?q=, ?klass=), so back and
+  // reload keep them. The URL is written on a change, not read back, so
+  // typing is never overwritten by a navigation that lags behind.
+  let query = $state(page.url.searchParams.get('q') ?? '');
+  let selectedClassId = $state<string | null>(page.url.searchParams.get('klass')); // null = Alla
   /** Status filter from the URL (?status=mp), so back and reload keep it. */
   const statusParam = $derived(page.url.searchParams.get('status'));
   const statusFilter = $derived<StatusFilter | null>(
@@ -107,6 +110,10 @@
       competitors = compRes.competitors;
       classes = classRes.classes;
       hiredCardSet = new Set(hiredRes.open.map((c) => c.card_number));
+      // A class in the URL that is not in this competition: show all.
+      if (selectedClassId !== null && !classes.some((k) => k.id === selectedClassId)) {
+        selectClass(null);
+      }
       // Paint the first rows, then add the rest a chunk per frame; again
       // after an import (the sheet covered the list, so no scroll is lost).
       rowLimit = ROWS_PER_FRAME;
@@ -181,9 +188,32 @@
     void goto(u.pathname + u.search, { replace: true, reset: false });
   }
 
+  /** Put the search and the class in the URL without a navigation
+   * (shallow): same page, no reload, focus and scroll stay. Both come
+   * from the state, not from page.url, which lags behind a pending
+   * navigation (a quick second change would put the first one back). */
+  function syncUrl(): void {
+    const u = new URL(page.url.href);
+    if (query.trim() === '') u.searchParams.delete('q');
+    else u.searchParams.set('q', query);
+    if (selectedClassId === null) u.searchParams.delete('klass');
+    else u.searchParams.set('klass', selectedClassId);
+    void goto(u.pathname + u.search, { replace: true, shallow: true, state: page.state });
+  }
+
+  function selectClass(id: string | null): void {
+    selectedClassId = id;
+    syncUrl();
+  }
+
   function clearSearch(): void {
     query = '';
+    syncUrl();
   }
+
+  const filtered = $derived(
+    query.trim().length > 0 || selectedClassId !== null || statusFilter !== null
+  );
 
   function openImportSheet(): void {
     importSheetOpen = true;
@@ -214,7 +244,41 @@
   function onEditSaved(updated: CompetitorDTO): void {
     competitors = competitors.map((c) => (c.id === updated.id ? updated : c));
     void refreshStatuses();
+    toast(t('runners.toast.saved', { name: updated.name }));
+    void showRow(updated.id);
   }
+  function onWithdrawn(c: CompetitorDTO): void {
+    void refreshStatuses();
+    toast(t('runners.toast.withdrawn', { name: c.name }));
+    void showRow(c.id);
+  }
+
+  let toastMessage = $state<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function toast(msg: string): void {
+    toastMessage = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toastMessage = null), 3000);
+  }
+
+  /** The row that just changed: scrolled into view and highlighted for 2 s. */
+  let highlightId = $state<string | null>(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+  async function showRow(id: string): Promise<void> {
+    rowLimit = Infinity; // the row may be below the chunk drawn so far
+    highlightId = id;
+    await tick();
+    document
+      .querySelector(`[data-competitor-id="${id}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => (highlightId = null), 2000);
+  }
+
+  onDestroy(() => {
+    if (toastTimer) clearTimeout(toastTimer);
+    if (highlightTimer) clearTimeout(highlightTimer);
+  });
 
   /** Re-read the projected statuses after a local write (add, edit,
    * Återbud), so the status filters, counts and pills follow it. */
@@ -242,6 +306,13 @@
     competitors = [...competitors, created];
     addOpen = false;
     void refreshStatuses();
+    toast(
+      t('runners.toast.added', {
+        name: created.name,
+        class: classById.get(created.class_id)?.name ?? '',
+      })
+    );
+    void showRow(created.id);
   }
 </script>
 
@@ -251,7 +322,12 @@
       <h1 class="title">{t('runners.title')}</h1>
       {#if !loading && competitors.length > 0}
         <span class="count" data-testid="runners-count">
-          {t('runners.count', { count: competitors.length })}
+          {filtered
+            ? t('runners.count.filtered', {
+                shown: sortedVisible.length,
+                total: competitors.length,
+              })
+            : t('runners.count', { count: competitors.length })}
         </span>
       {/if}
     </div>
@@ -299,6 +375,7 @@
           type="search"
           inputmode="search"
           bind:value={query}
+          oninput={syncUrl}
           placeholder={t('runners.search.placeholder')}
           aria-label={t('runners.search.placeholder')}
         />
@@ -306,10 +383,11 @@
           <button
             class="search-clear"
             type="button"
+            data-testid="runners-search-clear"
             onclick={clearSearch}
             aria-label={t('runners.search.clear')}
           >
-            <Icon name="x" size={14} />
+            <Icon name="x" size={16} />
           </button>
         {/if}
       </div>
@@ -325,7 +403,7 @@
           aria-selected={selectedClassId === null}
           class="chip"
           class:active={selectedClassId === null}
-          onclick={() => (selectedClassId = null)}
+          onclick={() => selectClass(null)}
         >
           {t('runners.filter.allClasses')}
         </button>
@@ -336,7 +414,7 @@
             aria-selected={selectedClassId === klass.id}
             class="chip"
             class:active={selectedClassId === klass.id}
-            onclick={() => (selectedClassId = klass.id)}
+            onclick={() => selectClass(klass.id)}
             data-testid="runners-class-chip"
           >
             {klass.short_name ?? klass.name}
@@ -375,7 +453,11 @@
 
     {#if sortedVisible.length === 0}
       <div class="empty-state subtle" data-testid="runners-noresults">
-        <h2 class="empty-title">{t('runners.noResults.title', { q: query })}</h2>
+        <h2 class="empty-title">
+          {query.trim() === ''
+            ? t('runners.noResults.titleNoQuery')
+            : t('runners.noResults.title', { q: query.trim() })}
+        </h2>
         <p class="muted">{t('runners.noResults.desc')}</p>
       </div>
     {:else}
@@ -384,12 +466,18 @@
           {@const klass = c.class_id ? classById.get(c.class_id) : null}
           {@const isHire = c.card_number !== null && hiredCardSet.has(c.card_number)}
           {@const st = statusById.get(c.id)}
+          {@const withdrawn = st?.status === 'CANCEL'}
           <li>
             <button
               type="button"
               class="row"
+              class:withdrawn
+              class:highlight={highlightId === c.id}
               onclick={() => openEdit(c)}
               data-testid="runners-row"
+              data-competitor-id={c.id}
+              data-withdrawn={withdrawn ? 'true' : undefined}
+              data-highlight={highlightId === c.id ? 'true' : undefined}
               aria-label={`${t('runners.row.edit')}: ${c.name}`}
             >
               <div class="row-main">
@@ -421,13 +509,12 @@
                   </span>
                 {:else if isHire}
                   <span class="chip-data card hire" data-testid="runners-card-hire">
-                    <Icon name="key" size={12} />
+                    <Icon name="key" size={14} />
                     <span class="mono">{c.card_number}</span>
                     · {t('runners.row.card.hire')}
                   </span>
                 {:else}
-                  <span class="chip-data card owned">
-                    <span class="dot" aria-hidden="true"></span>
+                  <span class="chip-data card owned" data-testid="runners-card-owned">
                     <span class="mono">{c.card_number}</span>
                   </span>
                 {/if}
@@ -441,6 +528,10 @@
   {/if}
 </section>
 
+{#if toastMessage !== null}
+  <div class="toast" role="status" data-testid="runners-toast">{toastMessage}</div>
+{/if}
+
 <!-- Edit modal — reuses the existing operator correction surface so this
      view doesn't duplicate the patch-name/club/class/card form. -->
 <EditCompetitorModal
@@ -450,6 +541,7 @@
   {classes}
   onClose={closeEdit}
   onSaved={onEditSaved}
+  {onWithdrawn}
 />
 
 <!-- Manual add sheet — smart Eventor search + manual fields + Klubblös. -->
@@ -546,7 +638,7 @@
   }
   .search-wrap :global(input) {
     padding-left: 36px;
-    padding-right: 36px;
+    padding-right: var(--hit);
     width: 100%;
     min-height: 44px;
   }
@@ -559,9 +651,9 @@
   }
   .search-clear {
     position: absolute;
-    right: 8px;
-    width: 28px;
-    height: 28px;
+    right: 0;
+    width: var(--hit);
+    height: var(--hit);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -572,7 +664,7 @@
     cursor: pointer;
   }
   .search-clear:hover {
-    background: var(--bg-elev);
+    background: var(--bg-sunken);
     color: var(--fg);
   }
   .chip-row {
@@ -609,41 +701,54 @@
   .chip.active {
     background: var(--accent);
     border-color: var(--accent);
-    color: var(--accent-fg, white);
+    color: var(--accent-fg);
   }
   .list {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
   }
   /* Rows off screen skip layout and paint until scrolled to. */
   .list > li {
     content-visibility: auto;
     contain-intrinsic-size: auto 64px;
   }
+  .list > li + li {
+    border-top: 1px solid var(--border);
+  }
   .row {
     width: 100%;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    background: transparent;
+    border: 0;
     padding: 12px 14px;
     display: flex;
     align-items: center;
     gap: var(--space-sm);
     cursor: pointer;
     text-align: left;
-    transition:
-      border-color 120ms,
-      background 120ms;
-    min-height: 60px;
+    transition: background 120ms;
+    min-height: var(--hit);
   }
   .row:hover,
   .row:focus-visible {
     background: var(--bg-sunken);
-    border-color: var(--border-strong);
+  }
+  /* Återbud: the text goes muted; the pill carries the word. */
+  .row.withdrawn .name,
+  .row.withdrawn .club {
+    color: var(--fg-muted);
+  }
+  /* The row that just changed: the neutral flash of the readout history. */
+  .row.highlight {
+    animation: flashRow 2s ease-out;
+  }
+  @keyframes flashRow {
+    0% {
+      background: var(--bg-sunken);
+    }
+    100% {
+      background: transparent;
+    }
   }
   .row-main {
     flex: 1;
@@ -661,7 +766,7 @@
   }
   .club {
     color: var(--fg-muted);
-    font-size: 13px;
+    font-size: var(--fs-label);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -676,7 +781,7 @@
     flex-wrap: nowrap;
   }
   .chip-data {
-    font-size: 12px;
+    font-size: var(--fs-label);
     padding: 4px 8px;
     border-radius: 999px;
     white-space: nowrap;
@@ -696,15 +801,13 @@
     border: 1px solid var(--border);
     font-family: var(--font-mono);
   }
-  .chip-data.card.owned {
-    background: var(--ok-soft, rgba(16, 122, 87, 0.12));
-    color: var(--ok, #107a57);
-    border: 1px solid var(--ok, #107a57);
-  }
+  /* Card chips carry no status colour: neutral, the hire card by its
+     key icon and the word. */
+  .chip-data.card.owned,
   .chip-data.card.hire {
-    background: rgba(33, 99, 224, 0.12);
-    color: #1c50b8;
-    border: 1px solid #1c50b8;
+    background: var(--bg-sunken);
+    color: var(--fg);
+    border: 1px solid var(--border);
   }
   .chip-data.card.missing {
     background: transparent;
@@ -713,17 +816,9 @@
     font-style: italic;
   }
   .chip-data.start-time {
-    background: var(--mp-soft, rgba(235, 130, 9, 0.1));
-    color: oklch(0.45 0.12 70);
-    border: 1px solid oklch(0.65 0.12 70);
-    font-size: 11px;
-  }
-  .chip-data .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    display: inline-block;
+    background: var(--mp-soft);
+    color: var(--mp-fg);
+    border: 1px solid var(--border-strong);
   }
   .mono {
     font-family: var(--font-mono);
@@ -757,6 +852,19 @@
     margin: 0;
     font-size: 18px;
     font-weight: 600;
+  }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg-elev);
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    font-size: var(--fs-label);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
   }
   /* Modal renders the head wrapper with padding + border-bottom; we just
      drop title + close button into the head snippet so we don't get a

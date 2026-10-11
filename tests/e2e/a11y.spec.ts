@@ -19,6 +19,7 @@ import {
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
+import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
@@ -224,6 +225,24 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/lottning`,
       (p) => p.getByTestId('lottning-view'),
       (p) => prepareLottningEmpty(p, request),
+    ],
+    [
+      'runners list',
+      `/competition/${id}/runners`,
+      (p) => p.getByTestId('runners-view'),
+      (p) => prepareRunnersList(p, request),
+    ],
+    [
+      'runners edit with field errors',
+      `/competition/${id}/runners`,
+      (p) => p.getByTestId('runners-view'),
+      (p) => prepareRunnersEdit(p, request),
+    ],
+    [
+      'runners add sheet',
+      `/competition/${id}/runners`,
+      (p) => p.getByTestId('runners-view'),
+      (p) => prepareRunnersAdd(p, request),
     ],
     [
       'lottning load error',
