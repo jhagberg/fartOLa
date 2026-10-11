@@ -73,6 +73,22 @@ test('design-lab screens', async ({ browser, request }) => {
     }
   }
 
+  // The opened Ändra dialog (start, punches and splits), over the readout.
+  for (const [mode, high] of [
+    ['default', false],
+    ['sun', true],
+  ] as const) {
+    for (const [tag, viewport] of SIZES) {
+      const page = await browser.newPage({ viewport });
+      await page.goto(`/competition/${id}/readout`);
+      await page.getByTestId('edit-competitor-btn').click({ timeout: 20_000 });
+      await page.getByTestId('edit-read').locator('[data-state]').first().waitFor();
+      if (high) await page.evaluate(() => document.documentElement.classList.add('contrast-high'));
+      await page.screenshot({ path: `${OUT}/edit-dialog-${tag}-${mode}.png` });
+      await page.close();
+    }
+  }
+
   // Colour-blind check of the readout (spec "Verification"): Machado 2009
   // matrices in linear RGB, plus greyscale.
   const M: Record<string, string> = {
