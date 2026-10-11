@@ -57,7 +57,7 @@
   import EnteredRunnerStep from '#lib/components/EnteredRunnerStep.svelte';
   import type { CardRebind } from '#lib/api/client.ts';
   import type { EventorClubSuggestion } from '@fartola/shared-types';
-  import { ApiError } from '#lib/api/client.ts';
+  import { ApiError, getCompetitor } from '#lib/api/client.ts';
   import type {
     ClassDTO,
     EventorLookupHit,
@@ -92,8 +92,10 @@
     /** Close handler. The `saved` arg lets the parent distinguish a
      * successful save (true) from an operator-cancelled close (scrim tap,
      * cancel button, escape key — all false). Used by RegistrationView to
-     * push the unsaved card back into the queue instead of dropping it. */
-    onClose?: ((saved: boolean) => void) | null;
+     * push the unsaved card back into the queue instead of dropping it.
+     * A save of a new runner also passes who was saved and in which class,
+     * so the parent can say so. */
+    onClose?: ((saved: boolean, runner?: { name: string; className: string }) => void) | null;
     /** An entered runner got this card instead (the "anmäld?" step). */
     onRebound?: ((r: CardRebind) => void) | null;
   }
@@ -262,6 +264,11 @@
   /** Banner on 409 — captures the existing competitor so the operator can
    * trigger a replace-card flow on the SAME row. */
   let cardTakenExistingId = $state<string | null>(null);
+  /** What the banner says: the holder when we could fetch them. */
+  let cardTakenMsg = $state('');
+  /** Counts saves, so a holder lookup that answers after the modal moved
+   * on (closed, or another save started) is dropped. */
+  let saveSeq = 0;
   /** Level-A mobile resilience (2026-05-17): raw network failures get a
    * dedicated prominent banner with a "Försök igen" CTA, separate from
    * the small fieldError surface so a volunteer on a phone notices
@@ -302,7 +309,7 @@
     confirmingClose = false;
   }
 
-  function close(saved: boolean = false): void {
+  function close(saved: boolean = false, runner?: { name: string; className: string }): void {
     // Phase 2.0 Plan 02-02b: when the parent supplies onClose (the
     // registration desk drives auto-advance), invoke it with the saved
     // flag so the parent can decide whether to push the card back into
@@ -310,7 +317,8 @@
     // /readout path leaves onClose null and falls through to the
     // URL-strip goto; the saved flag is irrelevant there.
     if (onClose !== null) {
-      onClose(saved);
+      if (runner) onClose(saved, runner);
+      else onClose(saved);
       return;
     }
     void goto(`/competition/${competitionId}/readout`);
@@ -366,6 +374,7 @@
     fieldError = null;
     cardTakenExistingId = null;
     networkError = false;
+    const seq = ++saveSeq;
     const err = validate();
     if (err !== null) {
       fieldError = err;
@@ -399,14 +408,31 @@
       // Success — back to readout, query param cleared. Pass saved=true so
       // a parent that tracks unsaved cards (RegistrationView) drops this
       // one rather than re-queueing it.
-      close(true);
+      close(true, {
+        name: name.trim(),
+        className: classes.find((c) => c.id === classId)?.name ?? '',
+      });
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.body as { error?: string; existing_competitor_id?: string } | undefined;
         if (body && body.error === 'card_taken' && typeof body.existing_competitor_id === 'string') {
-          cardTakenExistingId = body.existing_competitor_id;
+          const holderId = body.existing_competitor_id;
+          const card = String(cardNumberLocal);
+          let msg = t('walk.err.cardTaken', { card });
+          try {
+            const competitor = await getCompetitor(competitionId, holderId);
+            const holderClass = classes.find((c) => c.id === competitor.class_id)?.name;
+            if (holderClass !== undefined) {
+              msg = t('walk.err.cardTakenBy', { card, name: competitor.name, class: holderClass });
+            }
+          } catch {
+            // The plain message stands.
+          }
+          if (!mounted || seq !== saveSeq) return;
+          cardTakenMsg = msg;
+          cardTakenExistingId = holderId;
         } else {
-          fieldError = t('err.network');
+          fieldError = t('walk.err.conflict', { reason: body?.error ?? e.message });
         }
       } else if (e instanceof ApiError && e.status === 400) {
         const body = e.body as { error?: string } | undefined;
@@ -643,21 +669,13 @@
       </Field>
 
       <label class="consent-row">
-        <input
-          type="checkbox"
-          data-testid="walkup-consent"
-          bind:checked={consent}
-        />
+        <input type="checkbox" data-testid="walkup-consent" bind:checked={consent} />
         <span>{t('walk.consent')}</span>
       </label>
 
       <!-- Phase 2.0 D-HB-3 — Hyrbricka checkbox + expandable contact fields. -->
       <label class="consent-row">
-        <input
-          type="checkbox"
-          data-testid="walkup-hired"
-          bind:checked={hiredCard}
-        />
+        <input type="checkbox" data-testid="walkup-hired" bind:checked={hiredCard} />
         <span>{t('walk.hyrbricka')}</span>
       </label>
 
@@ -728,7 +746,7 @@
 
       {#if cardTakenExistingId}
         <p class="banner" data-testid="walkup-card-taken">
-          {t('walk.err.cardTaken', { card: String(cardNumberLocal) })}
+          {cardTakenMsg}
         </p>
       {/if}
 
@@ -814,17 +832,16 @@
   .walkup-scrim {
     position: fixed;
     inset: 0;
-    background: rgba(20, 20, 30, 0.32);
+    background: var(--scrim);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: var(--space-lg);
     z-index: 50;
-    backdrop-filter: blur(2px);
   }
   .walkup-modal {
     background: var(--bg-elev);
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     width: min(560px, 100%);
     max-height: calc(100vh - 48px);
@@ -855,7 +872,7 @@
   .desc {
     margin: 0;
     color: var(--fg-muted);
-    font-size: 13px;
+    font-size: var(--fs-body);
   }
   .body {
     padding: 18px 22px;
@@ -866,21 +883,24 @@
   }
   .consent-row {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
-    font-size: 13px;
+    min-height: var(--hit);
+    font-size: var(--fs-body);
     color: var(--fg-muted);
     line-height: 1.4;
     cursor: pointer;
   }
   .consent-row input[type='checkbox'] {
-    margin-top: 3px;
+    width: 24px;
+    height: 24px;
+    margin: 0;
     flex-shrink: 0;
   }
   .err {
     margin: 0;
     color: var(--dnf);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .fee-line {
     margin: 0;
@@ -895,7 +915,7 @@
   .info {
     margin: 0;
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-style: italic;
   }
   .hired-fields {
@@ -912,7 +932,7 @@
     color: var(--dnf);
     padding: 10px 12px;
     border-radius: var(--radius);
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   /* Level-A mobile resilience banner — visually heavier than .banner so a
      volunteer on a phone notices it across the room. Survives until the
@@ -920,7 +940,7 @@
   .net-err {
     margin: 4px 0 0;
     background: var(--dnf);
-    color: #fff;
+    color: var(--accent-fg);
     padding: 12px 14px;
     border-radius: var(--radius);
     display: flex;
@@ -934,7 +954,7 @@
   }
   .net-err-body {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--fs-label);
     line-height: 1.35;
   }
   .foot {
@@ -960,7 +980,7 @@
   .discard-msg {
     margin: 0;
     color: var(--fg);
-    font-size: 13.5px;
+    font-size: var(--fs-body);
     font-weight: 500;
   }
   .discard-actions {
@@ -972,23 +992,24 @@
   .alternatives-chip {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    background: var(--mp-soft, rgba(200, 150, 0, 0.1));
-    border: 1px solid var(--mp, #c89600);
+    min-height: var(--hit);
+    padding: 2px 14px;
+    background: var(--mp-soft);
+    border: 1px solid var(--mp);
     border-radius: 99px;
     color: var(--mp-fg);
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     cursor: pointer;
     align-self: flex-start;
     line-height: 1.4;
   }
   .alternatives-chip:hover {
-    background: var(--mp-soft, rgba(200, 150, 0, 0.2));
+    background: var(--mp-soft);
   }
   /* Alternatives picker — inline popover listing all candidates */
   .alternatives-picker {
-    background: var(--bg-elev, #fff);
+    background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
@@ -998,7 +1019,7 @@
   .alternatives-picker-title {
     margin: 0;
     padding: 8px 12px;
-    font-size: 12px;
+    font-size: var(--fs-label);
     font-weight: 600;
     color: var(--fg-muted);
     border-bottom: 1px solid var(--border);
@@ -1006,6 +1027,8 @@
   .alternatives-candidate {
     display: flex;
     flex-direction: column;
+    justify-content: center;
+    min-height: var(--hit);
     padding: 8px 12px;
     cursor: pointer;
     gap: 2px;
@@ -1017,12 +1040,12 @@
     border-top: 1px solid var(--border);
   }
   .alt-name {
-    font-size: 13.5px;
+    font-size: var(--fs-label);
     font-weight: 500;
     color: var(--fg);
   }
   .alt-club {
-    font-size: 12px;
+    font-size: var(--fs-label);
     color: var(--fg-muted);
   }
 </style>

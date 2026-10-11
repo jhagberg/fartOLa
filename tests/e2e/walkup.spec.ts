@@ -44,6 +44,7 @@ import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { mockAlternatives } from './helpers/walkup.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COURSEDATA_FIXTURE = path.resolve(
@@ -388,4 +389,94 @@ test('C-M4 Senare does not flip consent_status; toast does not re-pop in same se
   await simulateRead(request, competitionId, 1_428_824);
   await page.waitForTimeout(1_000);
   await expect(toast).not.toBeVisible();
+});
+
+// Fills a valid form for `card` on the readout's walk-up modal and saves.
+async function walkupSave(
+  page: import('@playwright/test').Page,
+  competitionId: string,
+  h21Id: string,
+  card: number,
+  name: string
+): Promise<void> {
+  await page.goto(`/competition/${competitionId}/readout?walkup=${card}`);
+  await expect(page.getByTestId('walkup-modal')).toBeVisible({ timeout: 5_000 });
+  await page.getByTestId('walkup-not-entered').click();
+  await page.getByTestId('walkup-name').fill(name);
+  await page.getByTestId('walkup-class').selectOption(h21Id);
+  await page.getByTestId('walkup-consent').check();
+  await page.getByTestId('walkup-save').click();
+}
+
+test('a saved walk-up says who was registered and in which class', async ({ page, request }) => {
+  const { competitionId, h21Id } = await setup(request);
+  await walkupSave(page, competitionId, h21Id, 9_999_994, 'Erik Eriksson');
+  await expect(page.getByTestId('walkup-modal')).not.toBeVisible();
+  await expect(page.getByTestId('toast')).toHaveText('Erik Eriksson anmäld i H21');
+});
+
+test('a card in use names its holder and class', async ({ page, request }) => {
+  const { competitionId, h21Id } = await setup(request);
+  await walkupSave(page, competitionId, h21Id, 7_501_853, 'Dubbel Dubbelsson');
+  await expect(page.getByTestId('walkup-card-taken')).toHaveText(
+    'Brickan 7501853 används av Anna Andersson (H21)'
+  );
+  await expect(page.getByTestId('walkup-modal')).toBeVisible();
+});
+
+test('a card in use still says so when the holder cannot be fetched', async ({ page, request }) => {
+  const { competitionId, h21Id, annaId } = await setup(request);
+  await page.route(`**/api/competitions/${competitionId}/competitors/${annaId}`, (r) =>
+    r.fulfill({ status: 500, json: { error: 'down' } })
+  );
+  await walkupSave(page, competitionId, h21Id, 7_501_853, 'Dubbel Dubbelsson');
+  await expect(page.getByTestId('walkup-card-taken')).toHaveText(
+    'Brickan 7501853 används redan i tävlingen.'
+  );
+});
+
+test('another conflict shows its own reason, not a network error', async ({ page, request }) => {
+  const { competitionId, h21Id } = await setup(request);
+  await page.route('**/api/competitors', (r) =>
+    r.request().method() === 'POST'
+      ? r.fulfill({ status: 409, json: { error: 'class_closed' } })
+      : r.continue()
+  );
+  await walkupSave(page, competitionId, h21Id, 9_999_995, 'Erik Eriksson');
+  await expect(page.getByTestId('walkup-error')).toHaveText('Kunde inte spara: class_closed');
+});
+
+test('the consent row is 44 px high with a 24 px box, and its text ticks it', async ({
+  page,
+  request,
+}) => {
+  const { competitionId } = await setup(request);
+  await page.goto(`/competition/${competitionId}/readout?walkup=9999996`);
+  await page.getByTestId('walkup-not-entered').click();
+  const box = page.getByTestId('walkup-consent');
+  const row = page.locator('label.consent-row', { has: box });
+  const rowBox = await row.boundingBox();
+  const checkBox = await box.boundingBox();
+  expect(rowBox!.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round(checkBox!.width)).toBe(24);
+  expect(Math.round(checkBox!.height)).toBe(24);
+  await expect(box).not.toBeChecked();
+  await row.getByText('Samtycke har inhämtats från deltagaren').click();
+  await expect(box).toBeChecked();
+});
+
+test('the alternatives chip and its candidates are 44 px targets', async ({ page, request }) => {
+  const { competitionId } = await setup(request);
+  await mockAlternatives(page);
+  await page.goto(`/competition/${competitionId}/readout?walkup=9999997`);
+  await page.getByTestId('walkup-not-entered').click();
+  const chip = page.getByTestId('walkup-alternatives-chip');
+  await expect(chip).toHaveText('1 andra förslag');
+  expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await chip.click();
+  const options = page.getByTestId('walkup-alternatives-picker').getByRole('option');
+  await expect(options).toHaveCount(2);
+  for (const o of await options.all()) {
+    expect((await o.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
 });

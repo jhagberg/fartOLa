@@ -186,3 +186,16 @@ test('the add button says what is missing', async ({ page, request }) => {
   await expect(page.getByTestId('walkup-card')).toHaveValue('7501853');
   await expect(page.getByTestId('reg-manual-input')).toHaveValue('');
 });
+
+test('a saved walk-up gives a toast on the registration desk', async ({ page, request }) => {
+  const { competitionId: id } = await seedCompetition(request, { controls: 3 });
+  await page.goto(`/competition/${id}/registration`);
+  await page.getByTestId('reg-manual-input').fill('7500321');
+  await page.getByTestId('reg-manual-form').getByRole('button', { name: 'Lägg till' }).click();
+  await page.getByRole('button', { name: /direktanmälan/ }).click();
+  await page.getByTestId('walkup-name').fill('Provlöpare Tre');
+  await page.getByTestId('walkup-class').selectOption({ index: 1 });
+  await page.getByTestId('walkup-consent').check();
+  await page.getByTestId('walkup-save').click();
+  await expect(page.getByTestId('reg-toast')).toContainText('Provlöpare Tre anmäld i');
+});
