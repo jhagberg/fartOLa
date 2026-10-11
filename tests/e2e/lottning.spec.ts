@@ -475,7 +475,7 @@ test.describe('start method next to the class (Task 7)', () => {
     const before = await select.inputValue();
     await select.selectOption('start_punch');
     const note = page.getByTestId('lottning-start-method-note');
-    await expect(note).toContainText('Starttid räknas från sparades inte. Försök igen.');
+    await expect(note).toContainText('Valet sparades inte. Försök igen.');
     await expect(note).not.toContainText('Sparat');
     await expect(select).toHaveValue(before);
   });
