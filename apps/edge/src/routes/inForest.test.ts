@@ -142,14 +142,40 @@ describe('SOFT TR 4.22.1: in forest', () => {
     assert.equal((await list()).runners.length, 0);
   });
 
-  it('SOFT TR 4.22.1: a status set by hand takes the runner out of the forest', async () => {
+  it('SOFT TR 4.22.1: a status set by hand on a runner never seen is not in the forest', async () => {
+    ev('manual_status_set', START + 50 * MIN, {
+      competitor_id: 'r1',
+      status: 'DNS',
+      reason: 'ej start',
+    });
+    assert.equal((await list()).runners.length, 0);
+    const body = (await snapshotNoReader()).json() as { error?: string };
+    assert.equal(body.error, 'no_reader');
+  });
+
+  it('SOFT TR 4.22.1: a status set by hand does not hide a runner seen by radio', async () => {
     radio(50, 12);
     ev('manual_status_set', START + 50 * MIN, {
       competitor_id: 'r1',
       status: 'DNF',
       reason: 'utgatt',
     });
-    assert.equal((await list()).runners.length, 0);
+    const { runners } = await list();
+    assert.equal(runners.length, 1);
+    assert.equal(runners[0]?.card_number, CARD);
+    assert.equal((runners[0] as unknown as { hand_set_status: boolean }).hand_set_status, true);
+    const res = await snapshotNoReader();
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as {
+      cardNumbers: number[];
+      returnedCardNumbers: number[];
+      outCardNumbers: number[];
+      sources: Record<string, unknown>;
+    };
+    assert.deepEqual(body.cardNumbers, [CARD]);
+    assert.deepEqual(body.returnedCardNumbers, []);
+    assert.deepEqual(body.outCardNumbers, [CARD]);
+    assert.deepEqual(body.sources[String(CARD)], [{ kind: 'radio', code: 50 }]);
   });
 
   it('SOFT TR 4.22.1: a radio finish unit alone does not list the runner', async () => {

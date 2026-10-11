@@ -6,6 +6,8 @@
 //   - read:      a card read with a start punch
 // "Out" (not in the forest): a card read with a finish punch, a manual finish
 // time (TR 4.20.6) or a status set by hand (Ej start, Utgått, Återbud, ...).
+// A hand-set status is not a physical return: a card some source has seen
+// stays listed (status_seen); only a hand-set card nobody saw is left out.
 // "No check": seen by radio or read but not at the check (the check unit's
 // memory, a radio check code, or the check punch of a read).
 //
@@ -34,6 +36,9 @@ export interface InForestCard {
 export interface InForestData {
   /** Not out: cards seen by any source. */
   cards: InForestCard[];
+  /** Out by a status set by hand, but seen by some source: a status is not a
+   * physical return, so they stay listed (never hide a runner from the list). */
+  status_seen: InForestCard[];
   /** Out, with why. Includes check-unit cards that are out. */
   out: Array<{ card_number: number; reason: OutReason }>;
   checkunit: { cards: number[]; overflow: boolean; read_at_ms: number } | null;
@@ -140,18 +145,22 @@ export function loadInForest(
 
   const haveCheckSource = checkunit !== null || checkCodes.size > 0 || checkInRead;
   const cards: InForestCard[] = [];
+  const statusSeen: InForestCard[] = [];
   for (const [cn, list] of sources) {
-    if (out.has(cn)) continue;
-    cards.push({
+    const reason = out.get(cn);
+    if (reason !== undefined && reason !== 'status') continue;
+    (reason === 'status' ? statusSeen : cards).push({
       card_number: cn,
       sources: list,
       no_check: haveCheckSource && !atCheck.has(cn),
     });
   }
   cards.sort((a, b) => a.card_number - b.card_number);
+  statusSeen.sort((a, b) => a.card_number - b.card_number);
 
   return {
     cards,
+    status_seen: statusSeen,
     out: [...out].map(([card_number, reason]) => ({ card_number, reason })),
     checkunit,
     radio_last_punch_at_ms: radioLast,
