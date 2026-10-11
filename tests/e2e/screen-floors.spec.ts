@@ -55,6 +55,7 @@ import {
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
+import { prepareEditReadError, prepareEditReadMispunch } from './helpers/edit-runner.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -360,6 +361,20 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('runners-view'),
     root: '[role="dialog"]',
     prepare: async (page, _id, request) => prepareRunnersEdit(page, request),
+  },
+  {
+    name: 'Anmälda, ändra med start, stämplingar, sträcktider och sen start',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareEditReadMispunch(page, request),
+  },
+  {
+    name: 'Anmälda, ändra när stämplingarna inte kunde hämtas',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareEditReadError(page, request),
   },
   {
     name: 'Anmälda, lägg till',

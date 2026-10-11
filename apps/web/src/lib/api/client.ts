@@ -643,6 +643,20 @@ export interface CorrectionsDTO {
   start_ms: number | null;
   /** The latest read-out (epoch ms); null without one. */
   read_at_ms: number | null;
+  /** The drawn start (epoch ms); null when none is drawn. */
+  drawn_start_ms: number | null;
+  /** Start punch more than 60 s after the drawn start (ms); null when not
+   * late, and always null in a class timed from the start punch. */
+  late_start_ms: number | null;
+  /** Reads the card has made in this competition. */
+  read_count: number;
+  /** The latest read as the card gave it; null when never read. */
+  latest_read: {
+    punches: Array<{ code: number; seconds_in_half_day: number; half_day: number }>;
+    start: { seconds_in_half_day: number; half_day: number } | null;
+    finish: { seconds_in_half_day: number; half_day: number } | null;
+    card_type: string;
+  } | null;
   missing_codes: number[];
   manual_finish_ms: number | null;
   manual_finish_reason: string | null;
