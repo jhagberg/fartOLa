@@ -18,7 +18,7 @@ import {
   prepareLottningLoadError,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
-import { prepareInfo, prepareInfoLocked } from './helpers/info.ts';
+import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import {
   prepareEditReadError,
@@ -319,6 +319,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/info`,
       (p) => p.getByTestId('competition-info'),
       (p) => prepareInfo(p, request),
+    ],
+    [
+      'info fees reload error',
+      `/competition/${id}/info`,
+      (p) => p.getByTestId('competition-info'),
+      (p) => prepareInfoFeesReloadError(p, request),
     ],
     ['export', `/competition/${exId}/export`, (p) => p.getByTestId('export-view'), prepareExport],
     [

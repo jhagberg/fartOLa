@@ -70,3 +70,36 @@ export async function prepareInfoLocked(page: Page): Promise<void> {
   await expect(page.getByTestId('info-max-time')).toHaveAttribute('readonly', '');
   await expect(page.getByTestId('info-reimport')).toBeVisible();
 }
+
+/** "Hämta från Eventor" whose reload failed: the fees stay locked, with a
+ * plain error and a retry. The competition is shown as Eventor-linked. */
+export async function prepareInfoFeesReloadError(
+  page: Page,
+  request: APIRequestContext
+): Promise<void> {
+  const { competitionId: id } = await seedCompetition(request, { controls: 23, start: false });
+  await page.route(`**/api/competitions/${id}`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as { competition: Record<string, unknown> };
+    body.competition.eventor_event_id = 1;
+    return route.fulfill({ response, json: body });
+  });
+  await page.route(`**/api/competitions/${id}/fees/from-eventor`, (route) =>
+    route.fulfill({ json: { updated: 0 } })
+  );
+  await page.goto(`/competition/${id}/info`);
+  const fetchFees = page.getByTestId('fees-from-eventor');
+  await expect(fetchFees).toBeEnabled({ timeout: 20_000 });
+  await page.route(`**/api/competitions/${id}/fees`, (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, json: { error: 'boom' } })
+      : route.continue()
+  );
+  await fetchFees.click();
+  await expect(page.getByTestId('fees-reload-error')).toContainText(
+    'Det gick inte att läsa avgifterna igen.'
+  );
+  await expect(page.getByTestId('fees-reload-error').getByRole('button')).toBeVisible();
+  await expect(page.getByTestId('fees-card-fee')).toBeDisabled();
+}
