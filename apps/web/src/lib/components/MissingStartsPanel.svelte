@@ -91,7 +91,8 @@
       done = res.updated;
       await load(false);
     } catch (e) {
-      error = (e as Error).message;
+      console.error('start time save failed:', e);
+      error = t('common.unknownError');
     } finally {
       busy = false;
     }

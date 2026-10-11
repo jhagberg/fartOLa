@@ -98,6 +98,8 @@ describe('ClassKindsPanel (mounted)', () => {
   let holdGet: { release: () => void } | null;
   /** When set, every PUT waits until the test releases it. */
   let holdPut: { release: () => void } | null;
+  /** The next GET of the kinds answers 500 (once). */
+  let failGet: boolean;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 6; i++) {
@@ -111,6 +113,7 @@ describe('ClassKindsPanel (mounted)', () => {
     puts = [];
     holdGet = null;
     holdPut = null;
+    failGet = false;
     items = [H21, D45, OPEN];
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const json = (body: unknown, status = 200) =>
@@ -143,6 +146,10 @@ describe('ClassKindsPanel (mounted)', () => {
         return json({ updated: body.items.length });
       }
       expect(String(input)).toBe('/api/competitions/comp-1/classes/kinds');
+      if (failGet) {
+        failGet = false;
+        return json({ error: 'boom' }, 500);
+      }
       const now = items;
       if (holdGet) await new Promise<void>((r) => (holdGet!.release = r));
       return json({ eventor: 'not_linked', items: now });
@@ -159,6 +166,24 @@ describe('ClassKindsPanel (mounted)', () => {
     document
       .querySelector(`[data-class-id="${id}"] [data-testid="class-kind-status"]`)!
       .textContent!.trim();
+
+  it('a failed load says so in plain words, logs the raw error and retries', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    failGet = true;
+    component = mount(ClassKindsPanel, {
+      target: document.body,
+      props: { competitionId: 'comp-1' },
+    });
+    await settle();
+    const alert = document.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('Kunde inte läsa klasstyperna.');
+    expect(alert.textContent).not.toMatch(/boom|500|HTTP/);
+    expect(log).toHaveBeenCalled();
+    alert.querySelector('button')!.click();
+    await settle();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(status('h21')).toBe('Förslag från klassnamnet, inte bekräftad');
+  });
 
   it('shows unconfirmed kinds in text and confirms all proposals with one PUT', async () => {
     component = mount(ClassKindsPanel, {
