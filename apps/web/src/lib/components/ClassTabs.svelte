@@ -81,9 +81,9 @@
   }
   .res-tab .count {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--fs-label);
     margin-left: 6px;
-    color: var(--fg-faint);
+    color: var(--fg-muted);
   }
   .res-tab.active {
     color: var(--accent-strong);

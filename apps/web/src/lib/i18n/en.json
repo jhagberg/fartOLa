@@ -460,6 +460,8 @@
   "res.fullscreen": "Fullscreen",
   "res.exit": "Exit fullscreen",
   "res.starters": "starters",
+  "res.empty": "No runners in the class yet.",
+  "res.loadError": "Could not load the results.",
   "res.finished": "finished",
   "nav.speaker": "Speaker",
   "spk.title": "Speaker",

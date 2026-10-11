@@ -39,6 +39,12 @@ import {
   prepareWalkupNetworkError,
   prepareWalkupNoMatch,
 } from './helpers/walkup.ts';
+import {
+  prepareResultsFull,
+  prepareResultsFullscreen,
+  prepareResultsError,
+  prepareResultsEmpty,
+} from './helpers/results.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -251,6 +257,30 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/readout`,
     ready: (p) => p.getByTestId('readout-view'),
     prepare: async (page, _id, request) => prepareReadoutFrame(page, request),
+  },
+  {
+    name: 'Resultat, hela sidan',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    prepare: async (page) => prepareResultsFull(page),
+  },
+  {
+    name: 'Resultat, helskärm',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    prepare: async (page) => prepareResultsFullscreen(page),
+  },
+  {
+    name: 'Resultat, laddningsfel',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    prepare: async (page) => prepareResultsError(page),
+  },
+  {
+    name: 'Resultat, tom klass',
+    url: (id) => `/competition/${id}/results`,
+    ready: (p) => p.getByTestId('results-view'),
+    prepare: async (page) => prepareResultsEmpty(page),
   },
   {
     name: 'Resultat, saknade starttider',

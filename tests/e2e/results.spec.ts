@@ -139,6 +139,8 @@ test('F key toggles fullscreen / projector mode', async ({ page, request }) => {
   const view = page.getByTestId('results-view');
   await expect(view).toBeVisible();
   await expect(view).toHaveAttribute('data-fullscreen', 'false');
+  // The key handler is attached on mount; the tabs show once the page loaded.
+  await expect(page.getByTestId('class-tab').first()).toBeVisible({ timeout: 20_000 });
 
   // Press F → projector mode active. We focus the body first so the
   // keydown isn't routed to an input (none exist on this view but be
@@ -151,4 +153,67 @@ test('F key toggles fullscreen / projector mode', async ({ page, request }) => {
   // Press F again → exits projector mode.
   await page.keyboard.press('f');
   await expect(view).toHaveAttribute('data-fullscreen', 'false', { timeout: 2_000 });
+});
+
+test('a failed results load shows the error and a retry that loads', async ({ page, request }) => {
+  const { competitionId } = await setup(request);
+  let failing = true;
+  await page.route('**/api/competitions/*/results', (route) =>
+    failing ? route.fulfill({ status: 500, json: { error: 'boom' } }) : route.fallback()
+  );
+  await page.goto(`/competition/${competitionId}/results`);
+  const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta resultaten.' });
+  await expect(alert).toBeVisible({ timeout: 20_000 });
+  failing = false;
+  await alert.getByRole('button', { name: 'Försök igen' }).click();
+  await expect(alert).toHaveCount(0);
+  await expect(page.getByTestId('results-row').first()).toBeVisible();
+});
+
+test('an empty class says so in plain words', async ({ page, request }) => {
+  const { competitionId } = await setup(request);
+  await page.routeWebSocket(/\/ws/, () => {}); // no live socket to fill the class
+  await page.route('**/api/competitions/*/results', (route) =>
+    route.fulfill({ json: { competition_id: competitionId, classes: [] } })
+  );
+  await page.goto(`/competition/${competitionId}/results`);
+  await page.getByTestId('class-tab').first().click({ timeout: 20_000 });
+  await expect(page.getByText('Inga löpare i klassen ännu.')).toBeVisible();
+  await expect(page.getByText('Inga deltagare ännu.')).toHaveCount(0);
+});
+
+test('the class tab is kept in the url and survives a reload', async ({ page, request }) => {
+  const { competitionId } = await setup(request);
+  const info = (await (await request.get(`${BASE}/api/competitions/${competitionId}`)).json()) as {
+    classes: { id: string; name: string }[];
+  };
+  const cls = info.classes[1]!;
+  await page.goto(`/competition/${competitionId}/results`);
+  const tab = page.getByTestId('class-tab').filter({ hasText: cls.name });
+  await tab.click({ timeout: 20_000 });
+  await expect(page).toHaveURL(new RegExp(`[?&]klass=${cls.id}`));
+  await page.reload();
+  await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
+  await page.getByTestId('class-tab-all').click();
+  await expect(page).not.toHaveURL(/klass=/);
+  // An unknown class id falls back to all classes.
+  await page.goto(`/competition/${competitionId}/results?klass=nope`);
+  await expect(page.getByTestId('class-tab-all')).toHaveAttribute('aria-selected', 'true', {
+    timeout: 20_000,
+  });
+});
+
+test('in fullscreen the status pill is at least 18 px', async ({ page, request }) => {
+  const { competitionId } = await setup(request);
+  await page.goto(`/competition/${competitionId}/results`);
+  const view = page.getByTestId('results-view');
+  await expect(view).toBeVisible();
+  await page.locator('body').focus();
+  await page.keyboard.press('f');
+  await expect(view).toHaveAttribute('data-fullscreen', 'true', { timeout: 2_000 });
+  const pill = page.locator('.res-table .status').first();
+  await expect(pill).toBeVisible({ timeout: 20_000 });
+  const px = await pill.evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
+  expect(px).toBeGreaterThanOrEqual(18);
+  await expect(page.getByTestId('results-fullscreen-toggle')).toHaveText(/Avsluta helskärm/);
 });
