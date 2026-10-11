@@ -115,6 +115,8 @@ for (const [what, patch] of [
     await page.goto(`/competition/${id}/readout`);
     await expect(page.getByTestId('history-row')).toHaveCount(2);
     await expect(page.getByTestId('history-group')).toHaveCount(0);
+    // A refetch still in flight when the test ends must not fail it.
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
 }
 
