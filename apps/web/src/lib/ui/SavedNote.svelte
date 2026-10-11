@@ -23,19 +23,21 @@
   });
 </script>
 
-{#if noteState === 'error'}
-  <span class="note err" role="alert">
-    <Icon name="alert-triangle" />
-    <span>{error || t('common.unknownError')}</span>
-  </span>
-{:else if noteState === 'saving'}
-  <span class="note" role="status">{t('common.saving')}</span>
-{:else if noteState === 'saved' && !faded}
-  <span class="note ok" role="status">
-    <Icon name="check" />
-    <span>{t('common.saved')}</span>
-  </span>
-{/if}
+<span class="wrap" aria-live={noteState === 'error' ? 'assertive' : 'polite'} aria-atomic="true">
+  {#if noteState === 'error'}
+    <span class="note err">
+      <Icon name="alert-triangle" />
+      <span>{error || t('common.unknownError')}</span>
+    </span>
+  {:else if noteState === 'saving'}
+    <span class="note">{t('common.saving')}</span>
+  {:else if noteState === 'saved' && !faded}
+    <span class="note ok">
+      <Icon name="check" />
+      <span>{t('common.saved')}</span>
+    </span>
+  {/if}
+</span>
 
 <style>
   .note {

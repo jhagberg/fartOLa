@@ -8,18 +8,22 @@ export type SaveStateName = 'idle' | 'saving' | 'saved' | 'error';
 export function createSaveState() {
   let state = $state<SaveStateName>('idle');
   let error = $state('');
+  let details = $state('');
   let generation = 0;
 
-  async function run(promise: Promise<unknown>): Promise<void> {
+  async function run(promise: Promise<unknown>, opts?: { error?: string }): Promise<void> {
     const mine = ++generation;
     state = 'saving';
     error = '';
+    details = '';
     try {
       await promise;
       if (mine === generation) state = 'saved';
     } catch (e) {
       if (mine !== generation) return;
-      error = e instanceof Error && e.message ? e.message : t('common.unknownError');
+      details = e instanceof Error ? e.message : String(e);
+      console.error('save failed:', e);
+      error = opts?.error ?? t('common.unknownError');
       state = 'error';
     }
   }
@@ -28,6 +32,7 @@ export function createSaveState() {
     generation++;
     state = 'idle';
     error = '';
+    details = '';
   }
 
   return {
@@ -36,6 +41,9 @@ export function createSaveState() {
     },
     get error() {
       return error;
+    },
+    get details() {
+      return details;
     },
     run,
     reset,
