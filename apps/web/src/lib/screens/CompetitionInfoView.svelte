@@ -65,6 +65,16 @@
   let competition: CompetitionDTO | null = $state(null);
   /** Bumped when a class kind is saved, to reload the fees. */
   let feesKey = $state(0);
+  /** Fee saves in flight or waiting: the remount waits for them, or a
+   * waiting edit would go out on the old panel's values. */
+  let feesPending = $state(0);
+  let feesStale = $state(false);
+  $effect(() => {
+    if (feesStale && feesPending === 0) {
+      feesStale = false;
+      feesKey++;
+    }
+  });
   let classes: ClassDTO[] = $state([]);
   let courses: CourseDTO[] = $state([]);
   let competitors: CompetitorDTO[] = $state([]);
@@ -542,7 +552,11 @@
       {#if classes.length === 0}
         <p class="empty">{t('info.classes.empty')}</p>
       {:else}
-        <ClassKindsPanel {competitionId} details={classDetails} onSaved={() => feesKey++} />
+        <ClassKindsPanel
+          {competitionId}
+          details={classDetails}
+          onSaved={() => (feesStale = true)}
+        />
       {/if}
     </section>
 
@@ -552,9 +566,13 @@
         <h2>{t('fees.heading')}</h2>
       </header>
       <!-- Remounted after a class kind is saved: the kind decides the youth
-           fee field and the cap shown. -->
+           fee field and the cap shown. Not while a fee save is pending. -->
       {#key feesKey}
-        <FeesPanel {competitionId} eventorLinked={competition?.eventor_event_id != null} />
+        <FeesPanel
+          {competitionId}
+          eventorLinked={competition?.eventor_event_id != null}
+          bind:pending={feesPending}
+        />
       {/key}
     </section>
 

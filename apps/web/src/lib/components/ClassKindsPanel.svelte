@@ -62,12 +62,29 @@
   /** Only a row's newest edit may drop it after its save. */
   const rowGen: Record<string, number> = {};
 
-  async function load(): Promise<void> {
+  /** Saves reload concurrently: only the newest load sets the data, and
+   * every load resolves once the newest has landed. */
+  let loadGen = 0;
+  let newest: Promise<void> = Promise.resolve();
+
+  async function fetchKinds(gen: number): Promise<void> {
     try {
-      data = await getClassKinds(competitionId);
+      const next = await getClassKinds(competitionId);
+      if (gen !== loadGen) return;
+      data = next;
       loadError = null;
     } catch (e) {
-      loadError = (e as Error).message;
+      if (gen === loadGen) loadError = (e as Error).message;
+    }
+  }
+
+  async function load(): Promise<void> {
+    let waited = fetchKinds(++loadGen);
+    newest = waited;
+    await waited;
+    while (waited !== newest) {
+      waited = newest;
+      await waited;
     }
   }
 
@@ -166,8 +183,10 @@
     void noteFor(id).run(
       queue.save({ class_kind: kind, age_class: kindNeedsAge(kind) ? age! : null }).then(
         async () => {
-          if (mine === rowGen[id]) dropEdit(id);
+          // Keep the edit until the reload shows it: the row stays pending
+          // (out of Bekräfta alla) and never flashes the old kind.
           await load();
+          if (mine === rowGen[id]) dropEdit(id);
           onSaved?.();
         },
         (e: unknown) => {

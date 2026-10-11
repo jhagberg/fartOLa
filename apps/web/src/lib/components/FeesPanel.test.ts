@@ -16,6 +16,7 @@ let cardFee: number | null;
 let puts: Array<Record<string, unknown>>;
 /** When set, the next PUT waits until the test releases it. */
 let holdPut: { release: () => void } | null;
+/** The next PUT answers 500 (once). */
 let failPut: boolean;
 
 function installFetch(): void {
@@ -30,7 +31,10 @@ function installFetch(): void {
       const body = JSON.parse(String(init.body)) as { card_fee?: number | null };
       puts.push(body);
       if (holdPut) await new Promise<void>((r) => (holdPut!.release = r));
-      if (failPut) return json({ error: 'boom' }, 500);
+      if (failPut) {
+        failPut = false;
+        return json({ error: 'boom' }, 500);
+      }
       if (body.card_fee !== undefined) cardFee = body.card_fee;
       return json({ updated: 0 });
     }
@@ -84,7 +88,7 @@ describe('FeesPanel', () => {
     installFetch();
     component = mount(FeesPanel, {
       target: document.body,
-      props: { competitionId: COMP, eventorLinked: false },
+      props: { competitionId: COMP, eventorLinked: true },
     });
     await settle();
   });
@@ -132,5 +136,62 @@ describe('FeesPanel', () => {
     await settle();
     expect(rowNote()).toBe('Det gick inte att spara avgiften.');
     expect(entry().value).toBe('180');
+  });
+
+  it('a newer edit of the field waits through a failure and is saved; the field keeps it', async () => {
+    holdPut = { release: () => {} };
+    change(entry(), '200');
+    await settle();
+    change(entry(), '210');
+    await settle();
+    failPut = true;
+    const first = holdPut;
+    holdPut = null;
+    first.release();
+    await settle();
+    expect(entry().value).toBe('210');
+    expect(puts).toEqual([
+      { classes: [{ ...H21, entry_fee: 200 }] },
+      { classes: [{ ...H21, entry_fee: 210 }] },
+    ]);
+    expect(rowNote()).toBe('Sparat');
+  });
+
+  it('a field that failed keeps its error at the row while another field then saves', async () => {
+    holdPut = { release: () => {} };
+    change(entry(), '999');
+    await settle();
+    change(late(), '60');
+    await settle();
+    failPut = true;
+    const first = holdPut;
+    holdPut = null;
+    first.release();
+    await settle();
+    expect(puts[1]).toEqual({ classes: [{ ...H21, late_fee_pct: 60 }] });
+    expect(entry().value).toBe('180');
+    expect(rowNote()).toBe('Det gick inte att spara avgiften.');
+    // Editing that field again clears it.
+    change(entry(), '190');
+    await settle();
+    expect(rowNote()).toBe('Sparat');
+  });
+
+  it('"Hämta från Eventor" waits until no fee save is in flight or waiting', async () => {
+    const fetchButton = () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="fees-from-eventor"]')!;
+    expect(fetchButton().disabled).toBe(false);
+    holdPut = { release: () => {} };
+    change(entry(), '200');
+    await settle();
+    change(late(), '60');
+    await settle();
+    expect(fetchButton().disabled).toBe(true);
+    const first = holdPut;
+    holdPut = null;
+    first.release();
+    await settle();
+    expect(puts).toHaveLength(2);
+    expect(fetchButton().disabled).toBe(false);
   });
 });

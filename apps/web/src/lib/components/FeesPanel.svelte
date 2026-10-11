@@ -31,9 +31,12 @@
     competitionId: string;
     /** The competition is linked to an Eventor event. */
     eventorLinked: boolean;
+    /** Fee saves in flight or waiting (bound by the parent, which must not
+     * remount the panel under them). */
+    pending?: number;
   }
 
-  let { competitionId, eventorLinked }: Props = $props();
+  let { competitionId, eventorLinked, pending = $bindable(0) }: Props = $props();
 
   let data = $state<FeesResponse | null>(null);
   let error = $state<string | null>(null);
@@ -52,6 +55,14 @@
   let invalid = $state<Record<string, string>>({});
   /** Only a field's newest edit may put its saved value back. */
   const fieldGen: Record<string, number> = {};
+  /** Per row, the fields whose save failed and were put back: the row
+   * keeps the error until that field is edited again. */
+  let failed = $state<Record<string, string[]>>({});
+
+  function markFailed(row: string, field: string, on: boolean): void {
+    const rest = (failed[row] ?? []).filter((f) => f !== field);
+    failed = { ...failed, [row]: on ? [...rest, field] : rest };
+  }
 
   async function load(): Promise<void> {
     try {
@@ -93,23 +104,28 @@
     show: (saved: T) => void
   ): void {
     setInvalid(row, null);
+    markFailed(row, field, false);
     const gen = `${row}:${field}`;
     const mine = (fieldGen[gen] = (fieldGen[gen] ?? 0) + 1);
-    void noteFor(row).run(
-      queue.save({ [field]: fieldValue } as Partial<T>).then(
-        () => {
-          if (mine === fieldGen[gen]) show(queue.saved);
-        },
-        (e: unknown) => {
-          if (mine === fieldGen[gen]) {
-            show(queue.saved);
-            input.value = value(queue.saved[field] as number | null);
+    pending++;
+    void noteFor(row)
+      .run(
+        queue.save({ [field]: fieldValue } as Partial<T>).then(
+          () => {
+            if (mine === fieldGen[gen]) show(queue.saved);
+          },
+          (e: unknown) => {
+            if (mine === fieldGen[gen]) {
+              show(queue.saved);
+              input.value = value(queue.saved[field] as number | null);
+              markFailed(row, field, true);
+            }
+            throw e;
           }
-          throw e;
-        }
-      ),
-      { error: t('fees.err.saveFailed') }
-    );
+        ),
+        { error: t('fees.err.saveFailed') }
+      )
+      .finally(() => pending--);
   }
 
   function onCardFee(input: HTMLInputElement): void {
@@ -161,6 +177,7 @@
       // Stay disabled until the reload lands: the next edit builds on it.
       await load();
       queues.clear();
+      failed = {};
       busy = false;
     }
   }
@@ -171,8 +188,10 @@
 {#snippet note(row: string, testid: string)}
   <span class="row-note" data-testid={testid}>
     <SavedNote
-      state={invalid[row] ? 'error' : (notes[row]?.state ?? 'idle')}
-      error={invalid[row] ?? notes[row]?.error ?? ''}
+      state={invalid[row] || failed[row]?.length ? 'error' : (notes[row]?.state ?? 'idle')}
+      error={invalid[row] ??
+        (failed[row]?.length ? t('fees.err.saveFailed') : notes[row]?.error) ??
+        ''}
     />
   </span>
 {/snippet}
@@ -195,9 +214,10 @@
       </label>
       {@render note(CARD, 'fees-card-fee-note')}
       {#if eventorLinked}
+        <!-- Not over a fee save: the fetched fees would be overwritten. -->
         <Button
           variant="secondary"
-          disabled={busy}
+          disabled={busy || pending > 0}
           onclick={() => void fromEventor()}
           data-testid="fees-from-eventor"
         >
