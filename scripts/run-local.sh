@@ -23,7 +23,8 @@
 #   BIND_HOST=0.0.0.0   listen host (0.0.0.0 = reachable from other LAN computers)
 #   DATA_DIR=~/.local/share/fartola     base dir for db + backups
 #   DB_PATH / BACKUP_DIR                override individually
-#   FARTOLA_DEV=1       dev admin endpoints on (default on here)
+#   FARTOLA_DEV=1       dev admin endpoints on (off by default: race-day machines
+#                       must not show the simulated read)
 #
 # Locked-style sibling of scripts/build-fartola.sh + scripts/dev.sh.
 
@@ -100,7 +101,7 @@ echo ""
 # FARTOLA_DEV=1 mounts /api/__dev/* and /api/__admin/* (the UI's simulated
 # read and Eventor refresh, manual backup/retention runs). The edge server
 # only accepts writes to them from this laptop, never from the LAN.
-exec env FARTOLA_DEV="${FARTOLA_DEV:-1}" node "$BIN" \
+exec env FARTOLA_DEV="${FARTOLA_DEV:-0}" node "$BIN" \
   --port "$PORT" \
   --bind-host "$BIND_HOST" \
   "${LAN_FLAG[@]}" \
