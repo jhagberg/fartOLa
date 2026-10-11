@@ -97,3 +97,26 @@ export async function prepareRunnersAdd(page: Page, request: APIRequestContext):
   await page.getByTestId('add-runner-save').click();
   await expect(page.getByTestId('add-runner-error')).toBeVisible();
 }
+
+/** More runners in H21, sorted after the seeded ones (Zorro 01...). */
+export async function addRunners(
+  request: APIRequestContext,
+  seed: RunnersSeed,
+  names: string[],
+  cards: Array<number | null> = []
+): Promise<void> {
+  await Promise.all(
+    names.map(async (name, i) => {
+      const res = await request.post(`${BASE}/api/competitors`, {
+        data: {
+          competition_id: seed.id,
+          name,
+          class_id: seed.h21,
+          card_number: cards[i] ?? null,
+          consent: true,
+        },
+      });
+      expect(res.status(), await res.text()).toBe(201);
+    })
+  );
+}
