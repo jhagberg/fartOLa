@@ -9,7 +9,7 @@
 // Shares the tmp DB with the other specs; every test makes its own
 // competition from the synthetic IOF fixtures (H21 × 2, D21 × 1).
 
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
@@ -140,6 +140,7 @@ test('SOFT TR 7.5.4: bibs are numbered in start order, changed by hand and shown
   await page.getByTestId('lottning-draw-btn').click();
   await expect(page.getByTestId('lottning-row')).toHaveCount(2);
 
+  await page.getByText('Fler val').click();
   await page.getByTestId('lottning-bib-base').fill('101');
   await page.getByTestId('lottning-bibs-assign').click();
   await expect(page.getByTestId('lottning-done')).toHaveText(
@@ -157,4 +158,219 @@ test('SOFT TR 7.5.4: bibs are numbered in start order, changed by hand and shown
   await expect(page.getByTestId('runners-bib')).toHaveCount(2);
   const bibs = await page.getByTestId('runners-bib').allInnerTexts();
   expect(bibs.sort()).toEqual(['Startnr 102', 'Startnr 150']);
+});
+
+async function classIds(page: Page, id: string): Promise<Record<string, string>> {
+  const res = await page.request.get(`${BASE}/api/competitions/${id}/classes`);
+  const { classes } = (await res.json()) as { classes: Array<{ id: string; name: string }> };
+  return Object.fromEntries(classes.map((c) => [c.name, c.id]));
+}
+
+test.describe('max time per class (LO-1)', () => {
+  test('the field shows the stored value for the chosen class, and clearing says so', async ({
+    page,
+    request,
+  }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await page.getByTestId('lottning-max-time').fill('60:00');
+    await page.getByTestId('lottning-max-time-save').click();
+    await expect(page.getByText('Sparat')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByTestId('lottning-view')).toBeVisible();
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'D21' });
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('');
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('60:00');
+
+    await page.getByTestId('lottning-max-time').fill('');
+    await page.getByTestId('lottning-max-time-save').click();
+    await expect(page.getByText('Ingen avvikande maxtid')).toBeVisible();
+    await page.reload();
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('');
+  });
+
+  test('a slow answer for the old class does not land in the field', async ({ page, request }) => {
+    const id = await setupCompetition(request);
+    const ids = await classIds(page, id);
+    for (const [name, sec] of [
+      ['H21', 3600],
+      ['D21', 1800],
+    ] as const) {
+      const res = await request.patch(`${BASE}/api/competitions/${id}/classes/${ids[name]}`, {
+        data: { maxTimeSec: sec },
+      });
+      expect(res.status()).toBe(200);
+    }
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(`**/api/competitions/${id}/lottning/${ids['D21']}`, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('60:00');
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'D21' });
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('60:00');
+    const stale = page.waitForResponse(`**/api/competitions/${id}/lottning/${ids['D21']}`);
+    release();
+    // Let the page process the old class's answer before looking again.
+    await (await stale).finished();
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    );
+    await expect(page.getByTestId('lottning-max-time')).toHaveValue('60:00');
+  });
+
+  test('a failed save says so next to the field', async ({ page, request }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+    await page.route(`**/api/competitions/${id}/classes/*`, (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'boom' } })
+        : route.continue()
+    );
+    await page.getByTestId('lottning-max-time').fill('45:00');
+    await page.getByTestId('lottning-max-time-save').click();
+    await expect(page.getByText('Maxtiden sparades inte. Försök igen.')).toBeVisible();
+  });
+});
+
+test('a max time refused after the first start says why (LO-1)', async ({ page, request }) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+  await page.route(`**/api/competitions/${id}/classes/*`, (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 409, json: { error: 'max_time_locked' } })
+      : route.continue()
+  );
+  await page.getByTestId('lottning-max-time').fill('45:00');
+  await page.getByTestId('lottning-max-time-save').click();
+  await expect(page.getByText('Maxtiden kan inte ändras efter första start.')).toBeVisible();
+});
+
+test('Lotta om draws at once, the history offers Ångra and undo restores the old times (LO-2)', async ({
+  page,
+  request,
+}) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  await page.getByTestId('lottning-first-start').fill('10:00');
+  await page.getByTestId('lottning-draw-btn').click();
+  await expect(page.getByTestId('lottning-row')).toHaveCount(2);
+  const times = async () => page.locator('[data-testid=lottning-row] .col-start').allInnerTexts();
+  const before = await times();
+
+  await page.getByTestId('lottning-first-start').fill('11:00');
+  await expect(page.getByTestId('lottning-draw-btn')).toHaveText('Lotta om');
+  await page.getByTestId('lottning-draw-btn').click();
+  await expect(page.getByText('Lottat. Ångra i historiken nedan.')).toBeVisible();
+  expect(await page.locator('.redraw-confirm').count()).toBe(0);
+  expect(await times()).not.toEqual(before);
+
+  await page.getByRole('link', { name: 'Ångra i historiken nedan.' }).click();
+  await page.getByTestId('history-row').first().getByTestId('history-undo').click();
+  await expect(page.getByTestId('history-done')).toBeVisible();
+  await expect.poll(times).toEqual(before);
+});
+
+test('a chosen pursuit file keeps Lotta disabled until it is read in (LO-4)', async ({
+  page,
+  request,
+}) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  await page.getByTestId('lottning-mode-select').selectOption('Pursuit');
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route('**/import/previous-results', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page
+    .getByTestId('pursuit-results-file')
+    .setInputFiles(path.join(FIXTURES, 'iof30-resultlist-expected.xml'));
+  await expect(page.getByTestId('lottning-draw-btn')).toBeDisabled();
+  await expect(page.getByText('Resultatlistan läses in', { exact: true })).toBeVisible();
+
+  await page.getByTestId('pursuit-results-upload').click();
+  await expect(page.getByTestId('pursuit-results-upload')).toHaveText('Läser in filen…');
+  release();
+  await expect(page.getByTestId('pursuit-results-done')).toBeVisible();
+  await expect(page.getByTestId('lottning-draw-btn')).toBeEnabled();
+  await expect(page.getByText('Resultatlistan läses in', { exact: true })).toHaveCount(0);
+});
+
+test.describe('row edit (LO-6)', () => {
+  test('Enter saves, Escape cancels and an error shows in the row', async ({ page, request }) => {
+    const id = await setupCompetition(request);
+    await page.goto(`/competition/${id}/lottning`);
+    await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+    await page.getByTestId('lottning-draw-btn').click();
+    await expect(page.getByTestId('lottning-row')).toHaveCount(2);
+
+    const first = page.getByTestId('lottning-row').first();
+    await first.getByTestId('lottning-edit-time-btn').click();
+    await page.getByTestId('lottning-edit-time-input').press('Escape');
+    await expect(page.getByTestId('lottning-edit-time-input')).toHaveCount(0);
+
+    await first.getByTestId('lottning-edit-time-btn').click();
+    await page.getByTestId('lottning-edit-time-input').fill('xx:yy');
+    await page.getByTestId('lottning-edit-time-input').press('Enter');
+    await expect(page.getByTestId('lottning-row-error')).toHaveText(
+      'Ogiltigt tidsformat. Använd HH:MM eller HH:MM:SS.'
+    );
+    await expect(page.getByTestId('lottning-edit-time-input')).toBeVisible();
+
+    await page.getByTestId('lottning-edit-time-input').fill('12:34:56');
+    await page.getByTestId('lottning-edit-time-input').press('Enter');
+    await expect(page.getByTestId('lottning-edit-time-input')).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid=lottning-row] .col-start').filter({ hasText: '12:34:56' })
+    ).toHaveCount(1);
+  });
+});
+
+test('a class without a list says so plainly, and the kind is two short lines (LO-5, LO-10)', async ({
+  page,
+  request,
+}) => {
+  const id = await setupCompetition(request);
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  await expect(page.getByTestId('lottning-empty')).toHaveText(
+    'Inga starttider ännu. Välj klass och tryck Lotta.'
+  );
+  const kind = page.getByTestId('lottning-class-kind');
+  await expect(kind).toContainText('Klasstyp:');
+  await expect(kind).toContainText('Förslag från klassnamnet, inte bekräftad ·');
+  await expect(kind.getByRole('link')).toHaveText('Bekräfta på Tävlingsinfo');
+  expect(await kind.innerText()).not.toMatch(/\(.*\(/);
+});
+
+test('a failed load says so and can be retried (LO-5)', async ({ page, request }) => {
+  const id = await setupCompetition(request);
+  const ids = await classIds(page, id);
+  let fail = true;
+  await page.route(`**/api/competitions/${id}/lottning/${ids['H21']}`, (route) =>
+    fail ? route.fulfill({ status: 500, json: { error: 'boom' } }) : route.continue()
+  );
+  await page.goto(`/competition/${id}/lottning`);
+  await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
+  const alert = page.getByRole('alert').filter({ hasText: 'Kunde inte hämta lottningen.' });
+  await expect(alert).toBeVisible();
+  await expect(page.getByTestId('lottning-empty')).toHaveCount(0);
+  fail = false;
+  await alert.getByRole('button', { name: 'Försök igen' }).click();
+  await expect(alert).toHaveCount(0);
+  await expect(page.getByTestId('lottning-empty')).toBeVisible();
 });
