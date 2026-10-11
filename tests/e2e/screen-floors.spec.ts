@@ -37,6 +37,7 @@ import {
   prepareWalkupAlternatives,
   prepareWalkupCardTaken,
   prepareWalkupNetworkError,
+  prepareWalkupNoMatch,
 } from './helpers/walkup.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
@@ -100,6 +101,13 @@ const SCREENS: Screen[] = [
     ready: (p) => p.getByTestId('readout-view'),
     root: '[data-testid=walkup-modal]',
     prepare: async (page, id) => prepareWalkupNetworkError(page, id),
+  },
+  {
+    name: 'Direktanmälan med namnsökning utan träff',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=walkup-modal]',
+    prepare: async (page, id) => prepareWalkupNoMatch(page, id),
   },
   {
     name: 'Export',

@@ -31,6 +31,13 @@ export async function mockAlternatives(page: Page): Promise<void> {
   );
 }
 
+/** The name search finds nobody. */
+async function mockNoMatch(page: Page): Promise<void> {
+  await page.route(/\/api\/eventor\/lookup\?.*\bq=/, (r) =>
+    r.fulfill({ json: { suggestions: [] } })
+  );
+}
+
 /** Open the modal for CARD on the form step. */
 export async function openWalkup(page: Page, id: string, card = CARD): Promise<void> {
   await page.goto(`/competition/${id}/readout?walkup=${card}`);
@@ -40,11 +47,7 @@ export async function openWalkup(page: Page, id: string, card = CARD): Promise<v
 }
 
 async function fillValid(page: Page): Promise<void> {
-  // The name search's own dropdown is another screen's element: a failed
-  // search never opens it.
-  await page.route(/\/api\/eventor\/lookup\?.*\bq=/, (r) =>
-    r.fulfill({ status: 500, json: { error: 'down' } })
-  );
+  await mockNoMatch(page);
   await page.getByTestId('walkup-name').fill('Provlöpare Två');
   await page.getByTestId('walkup-class').selectOption({ index: 1 });
   await page.getByTestId('walkup-consent').check();
@@ -56,6 +59,8 @@ export async function prepareWalkupAlternatives(page: Page, id: string): Promise
   await openWalkup(page, id);
   await expect(page.getByTestId('walkup-name')).toHaveValue('Provsson, Pia');
   await expect(page.getByTestId('walkup-eventor-fill')).toBeVisible();
+  await expect(page.locator('.desc')).toBeVisible();
+  await expect(page.locator('.info')).toBeVisible();
   await page.getByTestId('walkup-alternatives-chip').click();
   await expect(page.getByTestId('walkup-alternatives-picker')).toBeVisible();
   await expect(page.locator('.alt-name').first()).toBeVisible();
@@ -94,4 +99,12 @@ export async function prepareWalkupNetworkError(page: Page, id: string): Promise
   await fillValid(page);
   await page.getByTestId('walkup-save').click();
   await expect(page.getByTestId('walkup-network-error')).toBeVisible();
+}
+
+/** A name nobody matches: the search's open "Inga träffar" row. */
+export async function prepareWalkupNoMatch(page: Page, id: string): Promise<void> {
+  await mockNoMatch(page);
+  await openWalkup(page, id);
+  await page.getByTestId('walkup-name').fill('Zzzz');
+  await expect(page.getByText('Inga träffar')).toBeVisible();
 }

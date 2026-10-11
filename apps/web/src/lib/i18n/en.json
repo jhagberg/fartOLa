@@ -536,7 +536,6 @@
   "walk.err.hyrbrickaContact": "Enter at least phone or email for the hired card.",
   "walk.err.cardTaken": "Card {{card}} is already in use in the competition.",
   "walk.err.cardTakenBy": "Card {{card}} is in use by {{name}} ({{class}})",
-  "walk.err.conflict": "Could not save: {{reason}}",
   "walk.saved": "{{name}} registered in {{class}}",
   "walk.err.replaceCard": "Correct card",
   "walk.discard.msg": "Discard the form? Any typed values will be lost.",
