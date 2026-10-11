@@ -33,6 +33,11 @@ import {
   prepareWizardDiscard,
 } from './helpers/wizard.ts';
 import { prepareMissingStarts, prepareMissingStartsError } from './helpers/missing-starts.ts';
+import {
+  prepareWalkupAlternatives,
+  prepareWalkupCardTaken,
+  prepareWalkupNetworkError,
+} from './helpers/walkup.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -74,6 +79,27 @@ const SCREENS: Screen[] = [
       // The walk-up modal belongs to another track: leave it out.
       await page.getByTestId('walkup-modal').evaluate((e) => e.setAttribute('inert', ''));
     },
+  },
+  {
+    name: 'Direktanmälan med förslag, fel och avbrytsfråga',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=walkup-modal]',
+    prepare: async (page, id) => prepareWalkupAlternatives(page, id),
+  },
+  {
+    name: 'Direktanmälan med använd bricka',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=walkup-modal]',
+    prepare: async (page, id) => prepareWalkupCardTaken(page, id),
+  },
+  {
+    name: 'Direktanmälan med nätverksfel',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=walkup-modal]',
+    prepare: async (page, id) => prepareWalkupNetworkError(page, id),
   },
   {
     name: 'Export',

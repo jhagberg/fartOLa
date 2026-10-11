@@ -411,10 +411,7 @@ export function lookupCompetitorByCard(
   );
 }
 
-export function getCompetitor(
-  competitionId: string,
-  competitorId: string
-): Promise<{ competitor: CompetitorDTO }> {
+export function getCompetitor(competitionId: string, competitorId: string): Promise<CompetitorDTO> {
   return apiFetch(
     `/api/competitions/${encodeURIComponent(competitionId)}/competitors/${encodeURIComponent(competitorId)}`
   );

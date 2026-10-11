@@ -261,7 +261,8 @@
       });
   }
 
-  function onWalkupClose(_saved: boolean): void {
+  function onWalkupClose(saved: boolean, runner?: { name: string; className: string }): void {
+    if (saved && runner) toast(t('walk.saved', { name: runner.name, class: runner.className }));
     // Cancel = discard, regardless of saved/not-saved. An earlier draft
     // pushed the current card back into the queue on !saved, which created
     // an infinite cancel-loop: with an empty queue, push-back + pop just
@@ -277,8 +278,7 @@
     // discard path and skips the confirm by design — that's the operator
     // saying "I'm done with this card".
     //
-    // The saved param stays in the signature so a future flow that wants
-    // to differentiate save-vs-cancel still can.
+    // The saved flag only decides the toast.
     const next = cardQueue.pop();
     if (next !== null) {
       mountCard(next);
