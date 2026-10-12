@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Authored for fartola. Not ported from upstream.
 #
-# Build the publishable `fartola` tarball: chains `pnpm build` on @fartola/web
-# (SvelteKit adapter-static → apps/web/build/) and @fartola/edge (tsup →
-# apps/edge/dist/), copies the web build + the IOF.xsd into the edge dist/
+# Build the publishable `fartola` tarball: chains `pnpm build` on
+# @fartola/sportident (tsup → packages/sportident/dist/, which the other two
+# import and the edge bundles), @fartola/web (SvelteKit adapter-static →
+# apps/web/build/) and @fartola/edge (tsup → apps/edge/dist/), copies the web build + the IOF.xsd into the edge dist/
 # tree, then `pnpm pack`s the edge package. The resulting tarball is
 # self-contained: `npm install -g <tarball>` lands the `fartola` bin on PATH
 # with no separate publish step for the workspace siblings (tsup noExternals
@@ -26,17 +27,22 @@ ROOT="$(cd "$EDGE_DIR/../.." && pwd)"
 
 DIST_DIR="$ROOT/dist"
 
-echo "[1/5] Building apps/web (SvelteKit adapter-static)..."
+# Always rebuilt: the edge bundles packages/sportident/dist, and a dist left
+# from an earlier checkout would put old SPORTident code in the tarball.
+echo "[1/6] Building packages/sportident (tsup)..."
+pnpm --filter @fartola/sportident build
+
+echo "[2/6] Building apps/web (SvelteKit adapter-static)..."
 pnpm --filter @fartola/web build
 
-echo "[2/5] Building apps/edge (tsup esm+cjs+dts)..."
+echo "[3/6] Building apps/edge (tsup esm+cjs+dts)..."
 pnpm --filter @fartola/edge build
 
-echo "[3/5] Copying apps/web/build → apps/edge/dist/web..."
+echo "[4/6] Copying apps/web/build → apps/edge/dist/web..."
 rm -rf "$EDGE_DIR/dist/web"
 cp -r "$ROOT/apps/web/build" "$EDGE_DIR/dist/web"
 
-echo "[4/5] Verifying packaged assets..."
+echo "[5/6] Verifying packaged assets..."
 # IOF.xsd is copied by the edge build script already; double-check it landed
 # (the install-smoke test asserts the migrator + xsd validator both work
 # off the tarball without source-tree fallbacks).
@@ -61,7 +67,7 @@ test -d "$EDGE_DIR/drizzle" || {
   exit 1
 }
 
-echo "[5/5] Packing tarball into $DIST_DIR/ ..."
+echo "[6/6] Packing tarball into $DIST_DIR/ ..."
 mkdir -p "$DIST_DIR"
 # pnpm pack writes to the package directory by default; --pack-destination
 # routes the .tgz to the repo-root dist/.
