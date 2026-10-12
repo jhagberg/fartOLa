@@ -422,4 +422,19 @@ describe('classes route (PATCH maxTimeSec)', () => {
     });
     assert.equal(res.statusCode, 400);
   });
+
+  test('POST a class name that is taken → 409 class_name_taken, also on a double click', async () => {
+    const post = () =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${ctx.competitionId}/classes`,
+        payload: { name: 'Extraklass', class_kind: 'oppen' },
+      });
+    assert.equal((await post()).statusCode, 201);
+    const again = await post();
+    assert.equal(again.statusCode, 409, again.body);
+    assert.deepEqual(again.json(), { error: 'class_name_taken' });
+    const rows = ctx.handle.db.select().from(classes).where(eq(classes.name, 'Extraklass')).all();
+    assert.equal(rows.length, 1);
+  });
 });
