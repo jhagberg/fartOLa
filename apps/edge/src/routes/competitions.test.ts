@@ -471,8 +471,8 @@ describe('competitions REST CRUD', () => {
     const post = (action: string, payload: object = {}) =>
       ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/${action}`, payload });
     // /results serves the cache until the debounced recompute; recompute here.
-    const status = async (): Promise<string> =>
-      ctx.app.projectionStore.recomputeNow(id)!.competitors.get('cmp-1')!.status;
+    const status = async (competitorId = 'cmp-1'): Promise<string> =>
+      ctx.app.projectionStore.recomputeNow(id)!.competitors.get(competitorId)!.status;
     const column = () =>
       ctx.handle.db.select().from(competitions).where(eq(competitions.id, id)).get()!
         .raceStartedAtMs;
@@ -602,6 +602,94 @@ describe('competitions REST CRUD', () => {
       assert.equal(await status(), 'OK');
       const input = loadCompetitionInputs(ctx.handle, id)!;
       assert.deepEqual(reduce({ ...input, race_started_at_ms: null }), reduce(input));
+    });
+
+    // Codex review of PR 130 (SOFT TR 4.20.6, card missing): a runner with a
+    // finish entered by hand and no card read is scored too.
+    test('a runner timed by hand, with no card read, is covered by the guard and the undo', async () => {
+      const classId = ((await post('classes', { name: 'D21' })).json() as { id: string }).id;
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: 'cmp-hand',
+          competitionId: id,
+          name: 'Berit',
+          classId,
+          cardNumber: null,
+          startTimeMs: t1 + 1_000,
+        })
+        .run();
+      const byHand = (localSeq: number, competitorId: string) => ({
+        nodeId: 'test-node',
+        competitionId: id,
+        localSeq,
+        eventType: 'manual_finish_set',
+        eventTimeMs: t1 + 40_000,
+        recordedAtMs: t1 + 40_000,
+        payload: {
+          event_type: 'manual_finish_set' as const,
+          competitor_id: competitorId,
+          finish_ms: t1 + 35_000,
+          reason: 'bricka saknas',
+        },
+      });
+      // Anna (cmp-1) has a card read and a finish by hand: one, not two.
+      ctx.handle.db
+        .insert(events)
+        .values([byHand(3, 'cmp-hand'), byHand(4, 'cmp-1')])
+        .run();
+      const before = await status('cmp-hand');
+      assert.notEqual(before, 'PEND');
+
+      const refused = await post('reset-race');
+      assert.equal(refused.statusCode, 409);
+      assert.deepEqual(refused.json(), { error: 'reads_since_start', reads: 2 });
+      await post('reset-race', { force: true });
+      await post('start-race');
+      assert.equal(await status('cmp-hand'), 'PEND');
+      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 2 } });
+      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.equal(await status('cmp-hand'), before);
+    });
+
+    test('a reset with only a runner timed by hand is refused and can be undone', async () => {
+      id = (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: '/api/competitions',
+            payload: { name: 'By hand', date: '2026-10-04' },
+          })
+        ).json() as { id: string }
+      ).id;
+      const classId = ((await post('classes', { name: 'H21' })).json() as { id: string }).id;
+      assert.equal((await post('start-race')).statusCode, 201);
+      const start = column()!;
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: 'cmp-only',
+          competitionId: id,
+          name: 'Cecilia',
+          classId,
+          cardNumber: null,
+          startTimeMs: start + 1_000,
+        })
+        .run();
+      const set = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${id}/competitors/cmp-only/manual-finish`,
+        payload: { finish_ms: start + 600_000, reason: 'bricka saknas' },
+      });
+      assert.equal(set.statusCode, 201, set.body);
+      assert.notEqual(await status('cmp-only'), 'PEND');
+      assert.equal(eventCount('card_read'), 1); // the other competition's
+      assert.deepEqual((await post('reset-race')).json(), { error: 'reads_since_start', reads: 1 });
+      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal(await status('cmp-only'), 'PEND');
+      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: start, reads: 1 } });
+      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.notEqual(await status('cmp-only'), 'PEND');
     });
 
     test('a reset after a start by mistake has nothing to undo', async () => {

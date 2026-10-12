@@ -45,6 +45,7 @@ import { competitions, classes, competitors, events, type EventPayload } from '.
 import { writeStartTimes } from '../db/startTimes.ts';
 import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
+import type { CompetitorView } from '../projection/types.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { readoutChannel } from '@fartola/shared-types';
@@ -360,6 +361,11 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       .send(competitionRowToDTO({ ...existing, maxTimeSec: parsed.data.max_time_sec }));
   });
 
+  /** The runners as the projection has them now (not the debounced cache). */
+  const viewsOf = (competitionId: string): CompetitorView[] => [
+    ...(app.projectionStore.recomputeNow(competitionId)?.competitors.values() ?? []),
+  ];
+
   /** Cards read at `fromMs` or later (and before `beforeMs`): the reads the
    * reducer scores for a race started at `fromMs`. */
   const readsBetween = (
@@ -380,10 +386,32 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       )
       .get()!.n;
 
+  /** Runners the reducer scores from a finish entered by hand alone (SOFT TR
+   * 4.20.6, card missing; no read in the race) for a race started at
+   * `fromMs`, with the finish before `beforeMs`. A status set by hand
+   * survives a reset and is not counted. */
+  const byHandBetween = (
+    views: readonly CompetitorView[],
+    fromMs: number,
+    beforeMs = Number.MAX_SAFE_INTEGER
+  ): number =>
+    views.filter(
+      (v) =>
+        v.manual_status === null &&
+        v.manual_finish_ms !== null &&
+        v.manual_finish_ms >= fromMs &&
+        v.manual_finish_ms < beforeMs &&
+        !v.card_read_history.some((r) => r.event_time_ms >= fromMs)
+    ).length;
+
   /** What "undo reset" would do, or null. It goes back to the latest reset
    * that took read-outs away and is not undone, and also undoes every reset
    * after it. A reset after a start by mistake took nothing: nothing to undo. */
   const undoableReset = (c: Competition) => {
+    const views = viewsOf(c.id);
+    // A finish by hand at or after the current start is scored now: an undo
+    // brings back only those before it.
+    const startNow = c.raceStartedAtMs ?? undefined;
     const rows = app.fartolaDb.db
       .select()
       .from(events)
@@ -411,14 +439,18 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       }
     }
     const live = resets.filter((r) => !undone.has(`${r.node_id}:${r.local_seq}`));
-    const from = live.findLastIndex((r) => readsBetween(c.id, r.startMs, r.atMs) > 0);
+    const from = live.findLastIndex(
+      (r) => readsBetween(c.id, r.startMs, r.atMs) + byHandBetween(views, r.startMs, startNow) > 0
+    );
     if (from === -1) return null;
     const startedAtMs = live[from]!.startMs;
     return {
       undoes: live.slice(from).map(({ node_id, local_seq }) => ({ node_id, local_seq })),
       started_at_ms: startedAtMs,
-      // Read-outs that count again: those since that start that do not count now.
-      reads: readsBetween(c.id, startedAtMs, c.raceStartedAtMs ?? undefined),
+      // What counts again: read-outs and finishes by hand since that start
+      // that do not count now.
+      reads:
+        readsBetween(c.id, startedAtMs, startNow) + byHandBetween(views, startedAtMs, startNow),
     };
   };
 
@@ -505,8 +537,9 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
   // returns 200 with the current state and writes no new event.
   //
   // Guard (2026-10-12): the reset is for a start made by mistake. When cards
-  // have been read since the start the race is real and those read-outs
-  // would stop counting: 409 { error: 'reads_since_start', reads } unless
+  // have been read since the start, or a runner is scored from a finish
+  // entered by hand, the race is real and those would stop counting:
+  // 409 { error: 'reads_since_start', reads } (both in the one count) unless
   // the body says { force: true }. Undo: POST …/reset-race/undo.
   app.post<{ Params: { id: string } }>('/api/competitions/:id/reset-race', async (req, reply) => {
     const { id: competitionId } = req.params;
@@ -520,7 +553,9 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     if (existing.raceStartedAtMs === null) {
       return reply.code(200).send(competitionRowToDTO(existing));
     }
-    const reads = readsBetween(competitionId, existing.raceStartedAtMs);
+    const reads =
+      readsBetween(competitionId, existing.raceStartedAtMs) +
+      byHandBetween(viewsOf(competitionId), existing.raceStartedAtMs);
     if (reads > 0 && (req.body as { force?: unknown } | null)?.force !== true) {
       return reply.code(409).send({ error: 'reads_since_start', reads });
     }
