@@ -62,7 +62,7 @@ export interface RadioSettings {
   start_codes: number[];
   check_codes: number[];
   finish_codes: number[];
-  /** Distinct codes heard from ROC that are in none of the lists: suggestions. */
+  /** Distinct codes heard by radio that are in none of the lists: suggestions. */
   heard_codes: number[];
 }
 
@@ -73,10 +73,38 @@ export interface RadioPollStatus {
   consecutive_failures: number;
 }
 
+/** One serial port listened to for autosend records (--radio-serial): a
+ * jSh.Radio gateway, an SRR receiver or an online station. */
+export interface RadioSerialStatus {
+  path: string;
+  /** The port is open. A gateway sends nothing between punches, so an open
+   * port says the cable is in, not that the radio network is up. */
+  connected: boolean;
+  /** Why the port is not open, or the last error on it. */
+  last_error: string | null;
+  /** Epoch ms when the last punch arrived on this port. */
+  last_punch_at: number | null;
+  /** Punches stored since the program started. */
+  punches: number;
+  /** Punches already stored (heard twice). */
+  duplicates: number;
+  /** Punches that arrived while no competition was active: not stored. */
+  no_competition: number;
+  /** Whole frames that are no punch (other commands, SIAC indicator). */
+  ignored: number;
+  /** Broken frames (bad checksum, half frames). */
+  frame_errors: number;
+  /** Broken frames that look like base-protocol records: a station has
+   * "legacy protocol" on and must be set to the extended protocol. */
+  legacy_records: number;
+}
+
 export interface RadioStatus {
   settings: RadioSettings;
   /** null when the poller is not running (tests, --no-bridge boots). */
   poll: RadioPollStatus | null;
+  /** The serial ports listened to; empty when none was given. */
+  serial: RadioSerialStatus[];
   now_ms: number;
   /** The competition clock's UTC offset in minutes (ADR-0017), to show times. */
   clock_offset_min: number;

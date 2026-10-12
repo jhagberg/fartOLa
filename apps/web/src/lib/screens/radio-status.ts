@@ -1,6 +1,7 @@
 // Authored for fartola. Not ported from upstream.
 //
-// View helpers for the radio-control status (ROC input). A control's state is
+// View helpers for the radio-control status (ROC input and radio gateways on
+// serial ports). A control's state is
 // shown as text plus an icon, never by colour alone (ADR-0016 rule 7).
 
 import { formatClockTime } from '@fartola/shared-types';
@@ -86,6 +87,41 @@ export function rocLinkProblem(status: RadioStatus): string | null {
   return status.poll !== null && status.poll.consecutive_failures > 0
     ? (status.poll.last_error ?? 'error')
     : null;
+}
+
+/** The ports of a status. An answer without the field (an edge from before
+ * it existed) has none. */
+const serialOf = (status: RadioStatus): RadioStatus['serial'] =>
+  (status.serial as RadioStatus['serial'] | undefined) ?? [];
+
+/** The panel has something to show: ROC is on, or a serial port is listened to. */
+export function radioPanelShown(status: RadioStatus): boolean {
+  return status.settings.enabled || serialOf(status).length > 0;
+}
+
+export interface RadioSerialView {
+  path: string;
+  connected: boolean;
+  /** 'HH:MM:SS' when the last punch arrived on the port; null = none yet. */
+  lastPunch: string | null;
+  /** i18n key and count per warning. */
+  warnings: { key: string; n: number }[];
+}
+
+/** One line per serial port listened to. An open port only says the cable is
+ * in: a gateway is quiet between punches, so the controls' own states say
+ * whether the radio network delivers. */
+export function radioSerialViews(status: RadioStatus): RadioSerialView[] {
+  return serialOf(status).map((s) => ({
+    path: s.path,
+    connected: s.connected,
+    lastPunch:
+      s.last_punch_at === null ? null : formatClockTime(s.last_punch_at, status.clock_offset_min),
+    warnings: [
+      { key: 'radio.serial.legacy', n: s.legacy_records },
+      { key: 'radio.serial.noCompetition', n: s.no_competition },
+    ].filter((w) => w.n > 0),
+  }));
 }
 
 /** Out-of-order guard for async responses: `begin()` returns a check that is

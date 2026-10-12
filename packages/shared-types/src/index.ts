@@ -117,6 +117,7 @@ export type {
   RadioControlStatus,
   RadioSettings,
   RadioPollStatus,
+  RadioSerialStatus,
   RadioStatus,
 } from './radio.ts';
 export type {
