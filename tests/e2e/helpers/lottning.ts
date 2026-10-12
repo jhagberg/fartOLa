@@ -5,16 +5,17 @@
 // loads or the action that reads them; every changed element is asserted
 // visible at the end of its state.
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { seedCompetition } from './seed.ts';
+import { BASE, seedCompetition } from './seed.ts';
 
 const LOTTNING = '**/api/competitions/*/lottning/*';
 
 /** Its own competition (these states
  * draw and save, which would change what the shared one shows other screens. */
-async function ownLottning(page: Page, request: APIRequestContext): Promise<void> {
+async function ownLottning(page: Page, request: APIRequestContext): Promise<string> {
   const { competitionId } = await seedCompetition(request, { controls: 8, start: false });
   await page.goto(`/competition/${competitionId}/lottning`);
   await expect(page.getByTestId('lottning-view')).toBeVisible();
+  return competitionId;
 }
 
 async function chooseClass(page: Page, name: string): Promise<void> {
@@ -52,8 +53,9 @@ export async function prepareLottningFull(page: Page, request: APIRequestContext
   await page.route('**/api/competitions/*/classes/*', (route) =>
     route.request().method() === 'PATCH' ? route.fulfill({ json: { ok: true } }) : route.continue()
   );
-  await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
-  await page.getByTestId('lottning-start-method').selectOption('start_punch');
+  await expect(page.getByTestId('lottning-start-method')).toBeVisible();
+  await expect(page.getByText('Startlista. Tiden räknas från starttiden.')).toBeVisible();
+  await page.getByTestId('lottning-start-start_time').check();
   await page.getByTestId('lottning-max-time').fill('60:00');
   await page.getByTestId('lottning-max-time-save').click();
   await expect(page.getByTestId('lottning-start-method-note')).toContainText('Sparat');
@@ -80,8 +82,8 @@ export async function prepareLottningMaxTimeError(
   await page.getByTestId('lottning-max-time').fill('abc');
   await page.getByTestId('lottning-max-time-save').click();
   await expect(page.getByTestId('lottning-max-time-error')).toBeVisible();
-  await expect(page.getByTestId('lottning-start-method-help')).toBeVisible();
-  await page.getByTestId('lottning-start-method').selectOption('start_punch');
+  await expect(page.getByTestId('lottning-start-method')).toBeVisible();
+  await page.getByTestId('lottning-start-start_time').click();
   await expect(page.getByTestId('lottning-start-method-note')).toContainText(
     'Valet sparades inte. Försök igen.'
   );
@@ -90,6 +92,42 @@ export async function prepareLottningMaxTimeError(
   await expect(page.getByTestId('lottning-no-timing-note')).toContainText(
     'Valet sparades inte. Försök igen.'
   );
+}
+
+/** H21 stored as free start, then confirmed as an age class at nivå 1: the
+ * third answer is closed, the conflict stands in the error style and Lotta
+ * waits with its hint. */
+export async function prepareLottningStartChoiceConflict(
+  page: Page,
+  request: APIRequestContext
+): Promise<void> {
+  const id = await ownLottning(page, request);
+  const res = await request.get(`${BASE}/api/competitions/${id}/classes`);
+  const { classes } = (await res.json()) as { classes: Array<{ id: string; name: string }> };
+  const h21 = classes.find((c) => c.name === 'H21')!.id;
+  // Free start is allowed while the level is unset; the rules then close it.
+  const free = await request.patch(`${BASE}/api/competitions/${id}/classes/${h21}`, {
+    data: { start_method: 'free_start' },
+  });
+  expect(free.status(), await free.text()).toBe(200);
+  const kind = await request.put(`${BASE}/api/competitions/${id}/classes/kinds`, {
+    data: { items: [{ class_id: h21, class_kind: 'senior', age_class: null }] },
+  });
+  expect(kind.status(), await kind.text()).toBeLessThan(300);
+  const level = await request.patch(`${BASE}/api/competitions/${id}`, { data: { level: 'niva1' } });
+  expect(level.status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId('lottning-view')).toBeVisible();
+  await chooseClass(page, 'H21');
+  await expect(page.getByTestId('lottning-start-free_start')).toBeDisabled();
+  await expect(page.getByTestId('lottning-start-free_start')).toBeChecked();
+  await expect(page.getByTestId('lottning-start-method-rule')).toHaveText(
+    'Fri start är inte tillåten i åldersklass på nivå 1–3 (TR 7.4.2).'
+  );
+  await expect(page.getByTestId('lottning-draw-btn')).toBeDisabled();
+  await expect(
+    page.getByText('Klassen har fri start. Välj Lottad starttid för att lotta.')
+  ).toBeVisible();
 }
 
 /** A pursuit file chosen and being read: Lotta waits with its hint. */

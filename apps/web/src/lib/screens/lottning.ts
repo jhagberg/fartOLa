@@ -6,7 +6,7 @@
 // typed per runner, and a refused draw as plain Swedish (ADR-0016 rule 6).
 // The server is the judge of the SOFT rules; the view shows its answer.
 
-import type { ClassKind } from '@fartola/shared-types';
+import type { StartMethod } from '@fartola/shared-types';
 import {
   ApiError,
   type DrawMode,
@@ -147,6 +147,7 @@ const BY_CODE: Record<string, Refusal> = {
   restart_overlaps_pursuit: { key: 'lottning.err.restartOverlaps' },
   one_seeding_group: { key: 'lottning.err.oneSeedingGroup' },
   class_not_found: { key: 'lottning.err.classNotFound' },
+  free_start_class: { key: 'lottning.drawHint.freeStart' },
 };
 
 /** A refused draw (or seeding save) as an i18n key, with the class name. */
@@ -198,18 +199,17 @@ export function closingMoved(res: LottningResult): { from: number; to: number } 
 
 /** The start-order note for a class (SOFT TR 7.4.2, TR 7.4.3): runners
  * without a start time where free start time is banned, or the reminder
- * that an open class uses free start time. Start punching itself is
- * allowed (TR 4.18.16). */
+ * that a class stored as free start needs no draw. It follows the stored
+ * answer, not the class kind. */
 export function startOrderNote(cls: {
-  class_kind?: ClassKind | null;
+  start_method?: StartMethod | null;
   free_start_banned?: boolean | null;
   without_start_time?: number;
 }): { key: string; vars?: Record<string, unknown> } | null {
   const without = cls.without_start_time ?? 0;
   if (cls.free_start_banned === true && without > 0)
     return { key: 'lottning.freeStartBanned', vars: { count: without } };
-  if (cls.class_kind === 'oppen' || cls.class_kind === 'inskolning')
-    return { key: 'lottning.openClassFreeStart' };
+  if (cls.start_method === 'free_start') return { key: 'lottning.freeStartNote' };
   return null;
 }
 

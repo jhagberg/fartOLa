@@ -31,21 +31,19 @@ describe('02.1-14 Task 14 — start method per class', () => {
     vi.restoreAllMocks();
   });
 
-  it('sv + en have the select keys; the old checkbox key is gone', async () => {
+  it('sv + en have the start choice keys with the agreed texts; the old select keys are gone', async () => {
     const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
     const en = (await import('../i18n/en.json')).default as Record<string, string>;
-    expect(sv['lottning.startMethod']).toBe('Starttid räknas från');
-    expect(sv['lottning.startMethod.auto']).toBe('Automatiskt');
-    expect(sv['lottning.startMethod.start_time']).toBe('Starttid');
-    expect(sv['lottning.startMethod.start_punch']).toBe('Startstämpling');
-    for (const key of [
-      'lottning.startMethod',
-      'lottning.startMethod.auto',
-      'lottning.startMethod.start_time',
-      'lottning.startMethod.start_punch',
-    ]) {
-      expect(en[key], `missing en key ${key}`).toBeTruthy();
-    }
+    expect(sv['lottning.startChoice']).toBe('Så startar klassen');
+    expect(sv['lottning.startChoice.start_time']).toBe('Lottad starttid');
+    expect(sv['lottning.startChoice.start_punch']).toBe('Lottad starttid och startstämpling');
+    expect(sv['lottning.startChoice.free_start']).toBe('Fri start med startstämpling');
+    for (const k of Object.keys(sv).filter(
+      (k) => k.startsWith('lottning.startChoice') || k.startsWith('lottning.drawHint')
+    ))
+      expect(en[k], `missing en key ${k}`).toBeTruthy();
+    expect(Object.keys(sv).filter((k) => k.startsWith('lottning.startMethod'))).toEqual([]);
+    expect(Object.keys(en).filter((k) => k.startsWith('lottning.startMethod'))).toEqual([]);
     expect(sv['lottning.ignoreStartPunch']).toBeUndefined();
   });
 
@@ -160,14 +158,17 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     });
   });
 
-  it('SOFT TR 7.4.2/7.4.3: startOrderNote — banned with runners left, open class, else none', () => {
+  it('SOFT TR 7.4.2/7.4.3: startOrderNote — banned with runners left, stored free start, else none', () => {
     expect(startOrderNote({ free_start_banned: true, without_start_time: 3 })).toEqual({
       key: 'lottning.freeStartBanned',
       vars: { count: 3 },
     });
     expect(startOrderNote({ free_start_banned: true, without_start_time: 0 })).toBeNull();
     expect(startOrderNote({ free_start_banned: null, without_start_time: 3 })).toBeNull();
-    expect(startOrderNote({ class_kind: 'inskolning' })?.key).toBe('lottning.openClassFreeStart');
+    // It follows the stored answer, not the class kind.
+    expect(startOrderNote({ start_method: 'free_start' })?.key).toBe('lottning.freeStartNote');
+    expect(startOrderNote({ start_method: 'start_punch' })).toBeNull();
+    expect(startOrderNote({ start_method: 'auto' })).toBeNull();
   });
 
   it('SOFT TA till TR 6.5.1 / TR 7.5.3: a start clash refusal lists the classes and minutes; only first-control warnings warn', () => {
@@ -237,7 +238,11 @@ describe('LottningView (mounted)', () => {
   let distance: string | null;
   /** When set, every class PATCH waits until the test answers it. */
   let holdClassPatch: boolean;
-  let heldPatches: Array<{ body: unknown; answer: (status?: number) => void }>;
+  let heldPatches: Array<{ body: unknown; answer: (status?: number, body?: unknown) => void }>;
+  /** The stored start_method of H12 in the class list, and when the race started. */
+  let h12Start: string | undefined;
+  let raceStartedAt: number | null;
+  let patchAnswer: { status: number; body: unknown } | null;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -263,6 +268,9 @@ describe('LottningView (mounted)', () => {
     distance = null;
     holdClassPatch = false;
     heldPatches = [];
+    h12Start = undefined;
+    raceStartedAt = null;
+    patchAnswer = null;
     drawAnswer = { status: 201, body: { drawn: 2 } };
     bibsAnswer = null;
     holdHistory = null;
@@ -287,11 +295,16 @@ describe('LottningView (mounted)', () => {
       if (init?.method === 'PATCH') {
         patches.push({ url, body });
         if (holdClassPatch && url.includes('/classes/')) {
-          const status = await new Promise<number>((r) =>
-            heldPatches.push({ body, answer: (s = 200) => r(s) })
+          const answer = await new Promise<{ status: number; body: unknown }>((r) =>
+            heldPatches.push({
+              body,
+              answer: (s = 200, b = { error: 'x' }) => r({ status: s, body: b }),
+            })
           );
-          return status === 200 ? json({ ok: true }) : json({ error: 'x' }, status);
+          return answer.status === 200 ? json({ ok: true }) : json(answer.body, answer.status);
         }
+        if (patchAnswer !== null && url.includes('/classes/'))
+          return json(patchAnswer.body, patchAnswer.status);
         return json({ ok: true, competitor: {} });
       }
       if (init?.method === 'PUT') {
@@ -328,6 +341,7 @@ describe('LottningView (mounted)', () => {
               class_kind: 'ungdom',
               age_class: 12,
               class_kind_source: classKindSource,
+              ...(h12Start !== undefined ? { start_method: h12Start } : {}),
             },
             {
               id: 'd10',
@@ -379,6 +393,7 @@ describe('LottningView (mounted)', () => {
           date: '2026-10-08',
           clock_offset_min: 120,
           level: 'niva3',
+          race_started_at_ms: raceStartedAt,
           distance,
         },
         classes: [],
@@ -400,6 +415,18 @@ describe('LottningView (mounted)', () => {
     await settle();
   };
 
+  /** Tick one answer of "Så startar klassen" the way a click does. */
+  const pick = async (value: string) => {
+    const el = $(`lottning-start-${value}`) as HTMLInputElement;
+    el.checked = true;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+  };
+  const ticked = () =>
+    [...document.querySelectorAll<HTMLInputElement>('[data-testid="lottning-start-method"] input')]
+      .filter((r) => r.checked)
+      .map((r) => r.value);
+
   const mountView = async () => {
     const { default: LottningView } = await import('./LottningView.svelte');
     component = mount(LottningView, { target: document.body, props: { competitionId: 'c1' } });
@@ -418,16 +445,22 @@ describe('LottningView (mounted)', () => {
     expect(posts[0]!.body.intervalSec).toBe(60);
   });
 
-  it('SOFT TR 7.4.2: an age class at nivå 1–3 with runners without a start time is flagged; an open class is told it uses free start time', async () => {
+  it('SOFT TR 7.4.2: an age class at nivå 1–3 with runners without a start time is flagged; a class stored as free start is told it needs no draw', async () => {
     h12Class = { free_start_banned: true, without_start_time: 2 };
     await mountView();
     expect($('lottning-start-note')!.textContent).toContain('2 löpare saknar starttid');
     expect($('lottning-start-note')!.textContent).toContain('TR 7.4.2');
     if (component) void unmount(component);
     document.body.innerHTML = '';
+    // An open class that is not stored as free start gets no free-start note.
     h12Class = { class_kind: 'oppen', free_start_banned: false, without_start_time: 2 };
     await mountView();
-    expect($('lottning-start-note')!.textContent).toContain('fri starttid (TR 7.4.3)');
+    expect($('lottning-start-note')).toBeNull();
+    if (component) void unmount(component);
+    document.body.innerHTML = '';
+    h12Start = 'free_start';
+    await mountView();
+    expect($('lottning-start-note')!.textContent).toContain('Fri start: löparna tidtas');
   });
 
   it('a reload of the same class keeps the interval the operator typed', async () => {
@@ -1005,14 +1038,14 @@ describe('LottningView (mounted)', () => {
   it('a second start method chosen while the first saves waits for it and stays chosen', async () => {
     await mountView();
     holdClassPatch = true;
-    await choose('lottning-start-method', 'start_punch');
-    await choose('lottning-start-method', 'start_time');
+    await pick('start_punch');
+    await pick('start_time');
     // One request at a time: the edge cannot apply them in the wrong order.
     expect(classPatches()).toHaveLength(1);
     heldPatches[0]!.answer();
     await settle();
     // The older answer does not bring the older method back.
-    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_time');
+    expect(ticked()).toEqual(['start_time']);
     expect(text('lottning-start-method-note')).not.toContain('Sparat');
     expect(classPatches().map((p) => p.body)).toEqual([
       { start_method: 'start_punch' },
@@ -1020,21 +1053,177 @@ describe('LottningView (mounted)', () => {
     ]);
     heldPatches[1]!.answer();
     await settle();
-    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_time');
+    expect(ticked()).toEqual(['start_time']);
     expect(text('lottning-start-method-note')).toContain('Sparat');
   });
 
   it('a failed newest start method shows the one last saved, with the error', async () => {
     await mountView();
     holdClassPatch = true;
-    await choose('lottning-start-method', 'start_punch');
-    await choose('lottning-start-method', 'start_time');
+    await pick('start_punch');
+    await pick('start_time');
     heldPatches[0]!.answer();
     await settle();
     heldPatches[1]!.answer(500);
     await settle();
-    expect(($('lottning-start-method') as HTMLSelectElement).value).toBe('start_punch');
+    expect(ticked()).toEqual(['start_punch']);
     expect(text('lottning-start-method-note')).toBe('Valet sparades inte. Försök igen.');
+  });
+
+  describe('Så startar klassen (ADR-0018)', () => {
+    const disabled = (v: string) => ($(`lottning-start-${v}`) as HTMLInputElement).disabled;
+
+    it('three answers with their second lines; a class stored as auto has none ticked and says why', async () => {
+      h12Start = 'auto';
+      await mountView();
+      const group = $('lottning-start-method')!;
+      expect(group.tagName).toBe('FIELDSET');
+      expect(group.querySelector('legend')!.textContent).toBe('Så startar klassen');
+      const rows = [...group.querySelectorAll('label')].map((l) =>
+        l.textContent!.replace(/\s+/g, ' ').trim()
+      );
+      expect(rows).toEqual([
+        'Lottad starttid Startlista. Tiden räknas från starttiden.',
+        'Lottad starttid och startstämpling Startlista som sprider ut starten. Tiden räknas från startstämplingen.',
+        'Fri start med startstämpling Ingen startlista behövs. Kontroll frågar inte efter starttider.',
+      ]);
+      for (const v of ['start_time', 'start_punch', 'free_start']) {
+        const r = $(`lottning-start-${v}`) as HTMLInputElement;
+        expect(document.getElementById(r.getAttribute('aria-describedby')!)).not.toBeNull();
+      }
+      expect(ticked()).toEqual([]);
+      expect(text('lottning-start-method-none')).toBe(
+        'Inget val gjort (äldre tävling). Tiden räknas från löparens starttid om den finns, annars från startstämplingen.'
+      );
+    });
+
+    it('the stored answer is ticked; a successful choice saves start_method and says Sparat', async () => {
+      h12Start = 'start_punch';
+      await mountView();
+      expect(ticked()).toEqual(['start_punch']);
+      expect($('lottning-start-method-none')).toBeNull();
+      await pick('free_start');
+      expect(classPatches().map((p) => p.body)).toEqual([{ start_method: 'free_start' }]);
+      expect(text('lottning-start-method-note')).toContain('Sparat');
+      expect(ticked()).toEqual(['free_start']);
+    });
+
+    it('free start with start times that exist says they stay; a drawn answer does not', async () => {
+      h12Start = 'free_start';
+      startList = [{ id: 'r1' }];
+      await mountView();
+      expect(text('lottning-start-method-keep')).toBe(
+        'Starttider som redan finns ligger kvar och används om löparen saknar startstämpling.'
+      );
+      await pick('start_time');
+      expect($('lottning-start-method-keep')).toBeNull();
+    });
+
+    it('free_start_banned closes the third answer with the rule text; a 409 free_start_forbidden shows it, not the code', async () => {
+      h12Start = 'start_time';
+      h12Class = { free_start_banned: true };
+      await mountView();
+      expect(disabled('free_start')).toBe(true);
+      expect(disabled('start_time')).toBe(false);
+      expect(text('lottning-start-method-rule')).toBe(
+        'Fri start är inte tillåten i åldersklass på nivå 1–3 (TR 7.4.2).'
+      );
+      expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('false');
+      patchAnswer = { status: 409, body: { error: 'free_start_forbidden' } };
+      await pick('start_punch');
+      expect(text('lottning-start-method-note')).toContain(
+        'Fri start är inte tillåten i åldersklass'
+      );
+      expect(document.body.textContent).not.toContain('free_start_forbidden');
+      expect(ticked()).toEqual(['start_time']);
+    });
+
+    it('a banned class stored as free start shows the conflict in the error style', async () => {
+      h12Start = 'free_start';
+      h12Class = { free_start_banned: true };
+      await mountView();
+      const rule = $('lottning-start-method-rule')!;
+      expect(rule.getAttribute('data-conflict')).toBe('true');
+      expect(rule.classList.contains('rule-err')).toBe(true);
+      expect(rule.querySelector('svg')).not.toBeNull();
+      expect(rule.textContent).toContain('Fri start är inte tillåten i åldersklass');
+    });
+
+    it('free_start_required closes the two drawn answers; a 409 free_start_required shows the text', async () => {
+      h12Start = 'free_start';
+      h12Class = { free_start_required: true };
+      await mountView();
+      expect(disabled('start_time')).toBe(true);
+      expect(disabled('start_punch')).toBe(true);
+      expect(disabled('free_start')).toBe(false);
+      expect(text('lottning-start-method-rule')).toBe(
+        'Öppen klass ska ha fri starttid på nivå 1–3 (TR 7.4.3).'
+      );
+      expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('false');
+      patchAnswer = { status: 409, body: { error: 'free_start_required' } };
+      await pick('free_start');
+      expect(text('lottning-start-method-note')).toContain('Öppen klass ska ha fri starttid');
+      expect(document.body.textContent).not.toContain('free_start_required');
+    });
+
+    it('a required class stored with a drawn answer shows the conflict until free start is chosen', async () => {
+      h12Start = 'start_punch';
+      h12Class = { free_start_required: true };
+      await mountView();
+      expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('true');
+      await pick('free_start');
+      expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('false');
+    });
+
+    it('without the rule flags all three answers are open', async () => {
+      h12Start = 'start_punch';
+      await mountView();
+      for (const v of ['start_time', 'start_punch', 'free_start']) expect(disabled(v)).toBe(false);
+      expect($('lottning-start-method-rule')).toBeNull();
+      // A drawn answer at a training race can be drawn.
+      expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('when the race has started the group says a change recalculates the times', async () => {
+      await mountView();
+      expect($('lottning-start-method-running')).toBeNull();
+      if (component) void unmount(component);
+      document.body.innerHTML = '';
+      raceStartedAt = 1_000;
+      await mountView();
+      expect(text('lottning-start-method-running')).toBe(
+        'Tävlingen pågår. Ett byte räknar om tiderna för klassens löpare.'
+      );
+    });
+
+    it('Lotta is disabled with a hint for free start and for a required class; a 409 free_start_class shows the matching text', async () => {
+      h12Start = 'free_start';
+      await mountView();
+      const draw = $('lottning-draw-btn') as HTMLButtonElement;
+      expect(draw.disabled).toBe(true);
+      expect(document.body.textContent).toContain(
+        'Klassen har fri start. Välj Lottad starttid för att lotta.'
+      );
+      await pick('start_time');
+      expect(draw.disabled).toBe(false);
+      drawAnswer = { status: 409, body: { error: 'free_start_class' } };
+      draw.click();
+      await settle();
+      expect(document.body.textContent).toContain(
+        'Klassen har fri start. Välj Lottad starttid för att lotta.'
+      );
+      expect(document.body.textContent).not.toContain('free_start_class');
+      if (component) void unmount(component);
+      document.body.innerHTML = '';
+      h12Start = 'free_start';
+      h12Class = { free_start_required: true };
+      await mountView();
+      expect(($('lottning-draw-btn') as HTMLButtonElement).disabled).toBe(true);
+      expect(document.body.textContent).toContain(
+        'Öppen klass ska ha fri starttid på nivå 1–3 och lottas inte.'
+      );
+      drawAnswer = { status: 409, body: { error: 'free_start_class' } };
+    });
   });
 
   it('two max-time saves go out one after the other; the note follows the newest', async () => {

@@ -52,6 +52,7 @@
   import Button from '#lib/ui/Button.svelte';
   import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
+  import Icon from '#lib/ui/Icon.svelte';
   import { createSaveState } from '#lib/ui/saveState.svelte.ts';
   import { createSaveQueue, type SaveQueue } from '#lib/ui/saveQueue.ts';
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
@@ -151,6 +152,8 @@
   let level: CompetitionLevel | null = $state(null);
   /** Distance (SOFT TA till TR 7.4.4): the interval hint names its norm. */
   let distance: CompetitionDistance | null = $state(null);
+  /** The race has started (the competition's race_started_at_ms is set). */
+  let raceStarted = $state(false);
   /** GET lottning's class (SOFT TR 7.4.2/7.4.3 fields), for the start note. */
   let lottClass: LottningResponse['class'] | null = $state(null);
   /** The class the interval was last prefilled for, and whether the
@@ -255,6 +258,7 @@
       clock = { date: detail.competition.date, offsetMin: detail.competition.clock_offset_min };
       level = detail.competition.level ?? null;
       distance = detail.competition.distance ?? null;
+      raceStarted = detail.competition.race_started_at_ms != null;
       if (classId !== intervalClassId) {
         intervalClassId = classId;
         if (!intervalTouched && res.class.suggested_interval_sec != null)
@@ -499,7 +503,12 @@
       // After the reloads: the undo link must not target the previous draw.
       redrawn = hadList && settings.drawType === 'All';
     } catch (e) {
-      refusal = refusalOf(e, className);
+      const r = refusalOf(e, className);
+      // One code from the edge; the flag says which of the two reasons holds.
+      refusal =
+        r.key === 'lottning.drawHint.freeStart' && freeStartRequired
+          ? { key: 'lottning.drawHint.required' }
+          : r;
     } finally {
       submitting = false;
     }
@@ -551,10 +560,42 @@
   const selectedStartMethod = $derived<StartMethod>(
     classes.find((c) => c.id === selectedClassId)?.start_method ?? 'auto'
   );
-  const START_METHODS: StartMethod[] = ['auto', 'start_time', 'start_punch'];
-  const startNote = $derived.by(() => {
+  /** The three answers; `auto` is only ever stored by older competitions. */
+  const START_CHOICES = ['start_time', 'start_punch', 'free_start'] as const;
+  /** The rule flags belong to the class shown, not the one before a switch. */
+  const ruleClass = $derived.by(() => {
     const c = lottClass;
-    return c === null ? null : startOrderNote(c);
+    return c !== null && c.id === selectedClassId ? c : null;
+  });
+  const freeStartBanned = $derived(ruleClass?.free_start_banned === true);
+  const freeStartRequired = $derived(ruleClass?.free_start_required === true);
+  const startChoiceDisabled = (m: (typeof START_CHOICES)[number]): boolean =>
+    m === 'free_start' ? freeStartBanned : freeStartRequired;
+  /** The rule text under the group: why an answer is closed, or (in the
+   * error style) that the stored answer breaks the rule. */
+  const startRule = $derived.by(() => {
+    if (freeStartBanned)
+      return { key: 'lottning.startChoice.banned', conflict: selectedStartMethod === 'free_start' };
+    if (freeStartRequired)
+      return {
+        key: 'lottning.startChoice.required',
+        conflict: selectedStartMethod === 'start_time' || selectedStartMethod === 'start_punch',
+      };
+    return null;
+  });
+  /** Free start keeps start times that already exist (as a fallback). */
+  const hasStartTimes = $derived(classRunners.some((r) => r.start_time_ms !== null));
+  /** Lotta waits for a drawn answer: free start has no start list to make. */
+  const drawBlockedKey = $derived(
+    freeStartRequired
+      ? 'lottning.drawHint.required'
+      : selectedStartMethod === 'free_start'
+        ? 'lottning.drawHint.freeStart'
+        : null
+  );
+  const startNote = $derived.by(() => {
+    const c = ruleClass;
+    return c === null ? null : startOrderNote({ ...c, start_method: selectedStartMethod });
   });
 
   /** The class settings saved from this form; each decides how the class
@@ -625,32 +666,38 @@
     );
   }
 
-  function saveStartMethod(select: HTMLSelectElement): void {
-    if (!selectedClassId) return;
-    const id = selectedClassId;
-    void startSave.run(
-      saveClassSetting(
-        id,
-        'start_method',
-        select.value as StartMethod,
-        selectedStartMethod,
-        (saved, ok) => {
-          classes = classes.map((c) => (c.id === id ? { ...c, start_method: saved } : c));
-          if (!ok && id === selectedClassId) select.value = saved;
-        }
-      ),
-      { error: t('lottning.startMethod.failed') }
-    );
+  /** The 409s the rules answer a start choice with, in plain words. */
+  function startRefusalText(e: unknown): string | null {
+    const code = e instanceof ApiError ? (e.body as { error?: string } | null)?.error : undefined;
+    if (code === 'free_start_forbidden') return t('lottning.startChoice.banned');
+    if (code === 'free_start_required') return t('lottning.startChoice.required');
+    return null;
   }
 
-  /** What the start method means for this class (SOFT TR 3.3.1: nivå 1–3). */
-  const startMethodHelp = $derived.by(() => {
-    const kind = selectedClass?.class_kind;
-    if (kind === 'oppen' || kind === 'inskolning') return 'lottning.startMethod.help.open';
-    if (kind && (level === 'niva1' || level === 'niva2' || level === 'niva3'))
-      return 'lottning.startMethod.help.ranked';
-    return 'lottning.startMethod.help.default';
-  });
+  let startGroupEl: HTMLFieldSetElement | undefined = $state();
+
+  function saveStartMethod(value: StartMethod): void {
+    if (!selectedClassId) return;
+    const id = selectedClassId;
+    let why = t('lottning.startChoice.failed');
+    void startSave.run(
+      saveClassSetting(id, 'start_method', value, selectedStartMethod, (saved, ok) => {
+        classes = classes.map((c) => (c.id === id ? { ...c, start_method: saved } : c));
+        // The DOM keeps the clicked radio when the stored answer did not change.
+        if (!ok && id === selectedClassId)
+          for (const r of startGroupEl?.querySelectorAll<HTMLInputElement>('input') ?? [])
+            r.checked = r.value === saved;
+      }).catch((e: unknown) => {
+        why = startRefusalText(e) ?? why;
+        throw e;
+      }),
+      {
+        get error() {
+          return why;
+        },
+      }
+    );
+  }
 
   // --- SOFT TR 7.5.4: start place and bibs ---------------------------------
 
@@ -855,27 +902,66 @@
         </Select>
       </Field>
 
-      <!-- Which start the class's times run from (02.1-14 Task 14) -->
-      <Field label={t('lottning.startMethod')} htmlFor="lottning-start-method">
-        <Select
-          id="lottning-start-method"
-          value={selectedStartMethod}
-          disabled={!selectedClassId}
-          onchange={(e) => saveStartMethod(e.currentTarget)}
-          aria-describedby="lottning-start-method-help"
-          data-testid="lottning-start-method"
-        >
-          {#each START_METHODS as m (m)}
-            <option value={m}>{t(`lottning.startMethod.${m}`)}</option>
-          {/each}
-        </Select>
-        <p class="hint" id="lottning-start-method-help" data-testid="lottning-start-method-help">
-          {t(startMethodHelp)}
-        </p>
-        <div class="max-time-state" data-testid="lottning-start-method-note">
-          <SavedNote state={startSave.state} error={startSave.error} />
+      <!-- How the class starts: one choice, three answers (ADR-0018) -->
+      <fieldset
+        class="radio-group"
+        bind:this={startGroupEl}
+        disabled={!selectedClassId}
+        aria-describedby="lottning-start-method-rule"
+        data-testid="lottning-start-method"
+      >
+        <legend>{t('lottning.startChoice')}</legend>
+        {#each START_CHOICES as m (m)}
+          <label class="choice-row">
+            <input
+              type="radio"
+              name="lottning-start-method"
+              value={m}
+              checked={selectedStartMethod === m}
+              disabled={startChoiceDisabled(m)}
+              aria-describedby="lottning-start-{m}-desc"
+              onchange={() => saveStartMethod(m)}
+              data-testid="lottning-start-{m}"
+            />
+            <span>
+              {t(`lottning.startChoice.${m}`)}
+              <span class="hint" id="lottning-start-{m}-desc"
+                >{t(`lottning.startChoice.${m}.desc`)}</span
+              >
+            </span>
+          </label>
+        {/each}
+        <div id="lottning-start-method-rule">
+          {#if selectedStartMethod === 'auto' && selectedClassId}
+            <p class="hint" data-testid="lottning-start-method-none">
+              {t('lottning.startChoice.none')}
+            </p>
+          {/if}
+          {#if startRule !== null}
+            <p
+              class={startRule.conflict ? 'rule-err' : 'hint'}
+              data-testid="lottning-start-method-rule"
+              data-conflict={startRule.conflict}
+            >
+              {#if startRule.conflict}<Icon name="alert-triangle" />{/if}
+              <span>{t(startRule.key)}</span>
+            </p>
+          {/if}
+          {#if selectedStartMethod === 'free_start' && hasStartTimes}
+            <p class="hint" data-testid="lottning-start-method-keep">
+              {t('lottning.startChoice.keepTimes')}
+            </p>
+          {/if}
+          {#if raceStarted}
+            <p class="hint" data-testid="lottning-start-method-running">
+              {t('lottning.startChoice.running')}
+            </p>
+          {/if}
         </div>
-      </Field>
+      </fieldset>
+      <div class="max-time-state" data-testid="lottning-start-method-note">
+        <SavedNote state={startSave.state} error={startSave.error} />
+      </div>
 
       <!-- What the SOFT rules read: class kind (TR 3.4.2) and level (TR 3.3.1) -->
       {#if selectedClass !== null && selectedKindStatus !== null}
@@ -906,7 +992,7 @@
           </p>
           {#if startNote !== null}
             <p
-              class:warn={startNote.key !== 'lottning.openClassFreeStart'}
+              class:warn={startNote.key !== 'lottning.freeStartNote'}
               data-testid="lottning-start-note"
             >
               {t(startNote.key, startNote.vars)}
@@ -1270,14 +1356,20 @@
       <Button
         variant="primary"
         onclick={() => void submitDraw()}
-        disabled={submitting || resultsHold || !selectedClassId || !startListLoaded}
+        disabled={submitting ||
+          resultsHold ||
+          drawBlockedKey !== null ||
+          !selectedClassId ||
+          !startListLoaded}
         {...resultsHold
           ? {
               disabledHint: t(
                 resultsStatus === 'failed' ? 'lottning.resultsFailed' : 'lottning.waitResults'
               ),
             }
-          : {}}
+          : drawBlockedKey !== null
+            ? { disabledHint: t(drawBlockedKey) }
+            : {}}
         data-testid="lottning-draw-btn"
       >
         {submitting
@@ -1572,6 +1664,30 @@
     align-items: center;
     gap: var(--space-xs);
     min-height: var(--hit);
+  }
+  .choice-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: var(--hit);
+    cursor: pointer;
+  }
+  .choice-row input {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .choice-row .hint {
+    display: block;
+  }
+  .rule-err {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    margin: 0;
+    color: var(--dnf);
+    font-size: var(--fs-label);
   }
   .hint {
     margin: 0;
