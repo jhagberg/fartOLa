@@ -95,17 +95,28 @@ A stored answer can become wrong later, when the kind is confirmed or the
 level is set after the answer was chosen. fartOLa does not rewrite the
 answer then, because that would change times. Kontroll lists the class as
 a conflict until the operator picks an allowed answer, whether or not its
-runners have start times. An older open class without a choice (`auto`)
+runners have start times. A class with no starting runner is not listed,
+as in Kontroll's other class checks. An older open class without a choice (`auto`)
 is such a conflict at nivå 1–3.
 
 ### Defaults for a new class
 
-The default follows the class kind, confirmed or suggested from the name.
-Open classes and inskolning get free start. An age class gets "Lottad
-starttid". A class of unknown kind gets "Lottad starttid och
-startstämpling", which times a runner from whichever start exists, and
-Kontroll then asks about the missing start times. The operator can change
-the answer within what the rules allow for the class and level.
+The default follows the class kind, confirmed or suggested from the
+name, and for an age class also the level of the competition:
+
+- Open classes and inskolning get free start.
+- An age class at nivå 1–3 gets "Lottad starttid", which is what TR 7.4.2
+  asks for: the start order is drawn, and a runner without a start time
+  is not timed from the start punch.
+- An age class at nivå 4, at a training race or with no level set gets
+  "Lottad starttid och startstämpling". The organiser has a free hand
+  there, and a small race that never draws its classes still gets a time
+  for everyone who punched the start.
+- A class of unknown kind gets "Lottad starttid och startstämpling" too.
+
+The level is read when the class is created. Setting the level later
+does not change classes that already exist. The operator can change the
+answer within what the rules allow for the class and level.
 
 ### Changing the answer
 
@@ -121,7 +132,8 @@ it did and links to Lottning, where the answer can be changed again.
 
 "Fri start" is offered only when nothing of the class can be rescored:
 the race has not started, and no runner of the class has a card read, a
-manual finish or a hand-set status. A race that was started and reset
+manual finish or a hand-set status. A withdrawn runner (Återbud, Ej
+start) does not count, since nothing about that runner is timed. A race that was started and reset
 keeps such data, so "not started" alone is not enough. The server decides
 this, both when it builds the list and when it takes the click, so a page
 left open cannot change results. Kontroll does not offer "Fri start"
@@ -150,11 +162,11 @@ punch is timed from them.
 - Bad, because Startstämpling changes meaning for Kontroll: an existing
   class with it is now listed when a runner lacks a start time. This is
   intended, but it is a change.
-- Bad, because a new age class no longer falls back to the start punch
-  for a runner without a start time. The result shows "saknar start" and
-  no time until the runner gets a start time or the class gets another
-  answer. Kontroll shows it before the race, and the punches are stored,
-  so nothing is lost.
+- Bad, because a new age class at nivå 1–3 no longer falls back to the
+  start punch for a runner without a start time. The result shows "saknar
+  start" and no time until the runner gets a start time or the class gets
+  another answer. Kontroll shows it before the race, and the punches are
+  stored, so nothing is lost.
 - Neutral, because the shortcut has no undo of its own. The answer is
   a visible setting, and the operator changes it back in Lottning.
 - Neutral, because the setting stays in Lottning. A column on
