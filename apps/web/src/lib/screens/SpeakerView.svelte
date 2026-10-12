@@ -17,6 +17,8 @@
    - Bright light flips the same appearance setting as Inställningar.
    - Keys (not while typing): F full screen, 1–9 focus that panel.
      No auto-scroll: each panel scrolls on its own, "på väg in" on top.
+   - With `feed` (the public demo, src/demo) the board, the name and the
+     clock come from the caller: nothing is fetched and no socket opens.
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
@@ -37,16 +39,21 @@
 
   interface Props {
     competitionId: string;
+    /** `classes` (names) are chosen until the viewer has chosen. */
+    feed?: { name: string; board: SpeakerBoard; nowMs: number; classes: string[] };
   }
 
-  let { competitionId }: Props = $props();
+  let { competitionId, feed }: Props = $props();
 
   const storageKey = $derived(`fartola.speaker.${competitionId}`);
 
-  let board = $state<SpeakerBoard | null>(null);
-  let competitionName = $state('');
+  let fetched = $state<SpeakerBoard | null>(null);
+  let fetchedName = $state('');
   let chosen: string[] = $state([]);
-  let nowMs = $state(Date.now());
+  let wallMs = $state(Date.now());
+  const board = $derived(feed ? feed.board : fetched);
+  const competitionName = $derived(feed ? feed.name : fetchedName);
+  const nowMs = $derived(feed ? feed.nowMs : wallMs);
   let fullscreen = $state(false);
   let wsClient: WsClient | null = null;
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,14 +79,22 @@
     board?.classes.find((c) => c.class_id === id)?.class_name ?? '';
 
   onMount(() => {
+    const preset = feed
+      ? feed.board.classes.filter((c) => feed.classes.includes(c.class_name)).map((c) => c.class_id)
+      : [];
     try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]') as unknown;
+      const saved = JSON.parse(
+        localStorage.getItem(storageKey) ?? JSON.stringify(preset)
+      ) as unknown;
       if (Array.isArray(saved)) chosen = saved.filter((x): x is string => typeof x === 'string');
     } catch {
-      // Unreadable storage: start with nothing chosen.
+      // Unreadable storage: start with nothing chosen (the demo: its classes).
+      chosen = preset;
     }
-    void load();
-    tick = setInterval(() => (nowMs = Date.now()), 5_000);
+    if (!feed) {
+      void load();
+      tick = setInterval(() => (wallMs = Date.now()), 5_000);
+    }
     window.addEventListener('keydown', onKeydown);
     document.addEventListener('fullscreenchange', onFullscreenChange);
   });
@@ -98,7 +113,7 @@
   async function load(): Promise<void> {
     try {
       const { competition } = await getCompetition(competitionId);
-      competitionName = competition.name;
+      fetchedName = competition.name;
     } catch {
       // The name is cosmetic here; the board still loads.
     }
@@ -116,8 +131,8 @@
     try {
       const next = await getSpeakerBoard(competitionId);
       if (request !== latestRequest || destroyed) return;
-      board = next;
-      nowMs = Date.now();
+      fetched = next;
+      wallMs = Date.now();
     } catch {
       // Keep the last board; the next envelope tries again.
     }
