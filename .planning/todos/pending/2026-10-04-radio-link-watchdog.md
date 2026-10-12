@@ -140,8 +140,11 @@ Done, for ROC input (roc.olresultat.se):
 - [ ] Not done: sound/alert and phone push, speaker view (later task).
 - [ ] Not done: per-sender delay ("Leveranstid från ROC"); ROC rows carry no
   sender name.
-- [ ] Not done: jSh/SRR radio input. Gateway and protocol are known now,
-  see "jSh.Radio gateway" below; nothing is built.
+- [x] jSh/SRR radio input (2026-10-12): `--radio-serial <port>` listens on
+  a gateway's serial port and stores each autosend record as a radio punch
+  on the active competition, so the status, the watchdog, the speaker and
+  kvar i skogen see it like a ROC punch. Listen only. Not yet tried on a
+  real gateway or station: see "jSh.Radio gateway" below.
 - [ ] Not done: tune thresholds on real data; prefill the control lists from
   the course file.
 
@@ -190,19 +193,29 @@ run or taken apart), and SPORTident's PC Programmer's Guide 5, chapter 5.
   with `showunitid=1`, which may give the "per-sender" item above what
   it lacks.
 
-To build (none of it exists; `SiMainStation.ts` dropped the autosend
-listener):
+Built 2026-10-12:
 
-1. A passive listener: open the port, never send, parse frames with the
-   existing parser and CRC, decode 0xD3. It must not run `SiMainStation`,
-   which sends commands when it connects.
-2. Widen `radio_punch` beyond `source: 'roc'` and feed the same status
-   and watchdog; deduplicate with ROC on (card, code, time of day).
-3. Port choice in the settings, so the listener and the read-out station
-   never take each other's port; reconnect and warn when the port is gone.
-4. In the edge process like the ROC poller (already independent of any
-   screen); golden frames and the DM replay for tests; a BSM7/BS8 in
-   autosend + extended protocol on USB stands in for the gateway.
+- `packages/sportident/src/autosend.ts`: the 0xD3 decoder and a listener
+  that never sends (so not `SiMainStation`, which sends commands when it
+  connects). It finds its way back after noise on the line and counts
+  what it gives up on, also records that look like the base protocol
+  (a station with "legacy protocol" left on).
+- `apps/edge/src/integrations/radioserial/`: one input per
+  `--radio-serial` port, in the edge process like the ROC poller. A punch
+  heard twice is stored once (control, card, time of day); the port is
+  reopened when the cable comes back; a reader's port is refused.
+- The radio panel shows a line per port, also with ROC off.
+
+Left:
+
+- A bench test: a BSM7/BS8 in autosend + extended protocol on USB sends
+  the same bytes as the gateway; then a borrowed gateway and router.
+- The port is a start flag; choosing it in the settings screen is not
+  built.
+- The same punch from ROC and from a serial port is two rows, collapsed
+  when read (as two ROC senders are).
+- Gaps per station from the backup address (stored, not used), the
+  station-settings check and TinyMesh status: see above.
 
 ## Open questions
 
