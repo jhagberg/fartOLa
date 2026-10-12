@@ -173,19 +173,22 @@
     font-size: var(--fs-label);
     color: var(--fg-muted);
   }
+  /* The slider fills the line, so it is a full-height touch target; the
+     bars lie over its upper part and let clicks through. */
   .line {
+    position: relative;
     flex: 1;
     min-width: 200px;
-    display: flex;
-    flex-direction: column;
+    height: 48px;
   }
   /* The bars end where the slider's thumb can go (half a thumb in). */
   .dens {
-    position: relative;
+    position: absolute;
+    inset: 0 8px auto;
     display: flex;
     align-items: flex-end;
-    height: 22px;
-    margin: 0 8px;
+    height: 16px;
+    pointer-events: none;
   }
   .d {
     flex: 1;
@@ -203,10 +206,11 @@
       var(--bg-elev) 2px 6px
     );
   }
-  /* With the bars above it the slider is a full-height touch target. */
   input[type='range'] {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    height: 22px;
+    height: 100%;
     margin: 0;
     accent-color: var(--fg);
   }

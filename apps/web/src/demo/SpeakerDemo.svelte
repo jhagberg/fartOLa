@@ -26,9 +26,12 @@
 
   const times = eventTimes(demoData);
   const firstStart = Math.min(...demoData.runners.flatMap((r) => (r[3] === null ? [] : [r[3] as number])));
+  // Whole minutes at both ends: the slider steps a minute at a time and
+  // must be able to reach the end.
+  const MIN = 60_000;
   const clock = createClock(
-    Math.min(times[0]!, demoMs(demoData, firstStart)) - 60_000,
-    times.at(-1)! + 60_000
+    Math.floor(Math.min(times[0]!, demoMs(demoData, firstStart)) / MIN) * MIN - MIN,
+    Math.ceil(times.at(-1)! / MIN) * MIN + MIN
   );
   const source = boardSource(demoData);
   clock.seek((firstFinishMs(demoData, DEMO_CLASSES) ?? clock.startMs) - LEAD_MS);
