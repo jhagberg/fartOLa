@@ -437,4 +437,17 @@ describe('classes route (PATCH maxTimeSec)', () => {
     const rows = ctx.handle.db.select().from(classes).where(eq(classes.name, 'Extraklass')).all();
     assert.equal(rows.length, 1);
   });
+
+  test('POST a class → the projection the server holds gets the class', async () => {
+    const results = `/api/competitions/${ctx.competitionId}/results`;
+    await ctx.app.inject({ method: 'GET', url: results }); // the server now holds a projection
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${ctx.competitionId}/classes`,
+      payload: { name: 'Extraklass', class_kind: 'oppen' },
+    });
+    const { id } = res.json() as { id: string };
+    await new Promise((r) => setTimeout(r, 80)); // past the 50 ms debounce
+    assert.ok(ctx.app.projectionStore.get(ctx.competitionId)?.results_by_class.has(id));
+  });
 });

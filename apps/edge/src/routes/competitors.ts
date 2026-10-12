@@ -636,13 +636,12 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
         },
         seq,
       });
-      // Plan 08: walk-up bind ALSO touches the projection (clears
-      // pending_unknown_cards once the projection sees this card_bound
-      // event AND the competitor is now matchable against subsequent
-      // card_read events). markDirty schedules a recompute + per-class
-      // results_update broadcast.
-      app.projectionStore.markDirty(input.competition_id);
     }
+    // Plan 08: the projection gets the new runner, with or without a card
+    // (a bind also clears pending_unknown_cards and makes the runner
+    // matchable against card_read events). markDirty schedules a recompute
+    // + per-class results_update broadcast.
+    app.projectionStore.markDirty(input.competition_id);
 
     // Echo the created row.
     const dto: CompetitorDTO = {

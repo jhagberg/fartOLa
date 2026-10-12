@@ -149,6 +149,28 @@ describe('competitors walk-up registration', () => {
     assert.equal(evtRows[0]?.eventType, 'card_bound');
   });
 
+  test('a runner entered without a card is in the projection the server holds', async () => {
+    const debounced = () => new Promise((r) => setTimeout(r, 80)); // past the 50 ms debounce
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    await debounced(); // the recompute the new class asked for is done
+    // The result list has been opened: the server now holds a projection.
+    await ctx.app.inject({ method: 'GET', url: `/api/competitions/${competitionId}/results` });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Alva Almfors',
+        class_id: classId,
+        consent: true,
+      },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    const { id } = res.json() as { id: string };
+    await debounced();
+    assert.ok(ctx.app.projectionStore.get(competitionId)?.competitors.has(id));
+  });
+
   test('test 2: same card_number for same competition twice → second is 409 card_taken', async () => {
     const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
     const payload = {
@@ -299,8 +321,10 @@ describe('competitors walk-up registration', () => {
       },
     });
     assert.equal(res.statusCode, 201);
-    assert.equal(ctx.recorded.length, 1);
-    const rec = ctx.recorded[0];
+    // A results_update from the seed's markDirty may have arrived already.
+    const sent = ctx.recorded.filter((r) => r.envelope.type !== 'results_update');
+    assert.equal(sent.length, 1);
+    const rec = sent[0];
     assert.ok(rec);
     assert.equal(rec.channel, `readout:${competitionId}`);
     assert.equal(rec.envelope.type, 'card_bound');
@@ -319,7 +343,7 @@ describe('competitors walk-up registration', () => {
         consent: true,
       },
     });
-    assert.equal(ctx.recorded.length, 0);
+    assert.equal(ctx.recorded.filter((r) => r.envelope.type !== 'results_update').length, 0);
   });
 });
 
