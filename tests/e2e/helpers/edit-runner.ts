@@ -28,10 +28,17 @@ export async function seedAnnaMispunch(
 ): Promise<{ id: string; annaId: string }> {
   const { competitionId: id } = await seedCompetition(request, { controls: 6 });
   const list = (await (await request.get(`${BASE}/api/competitions/${id}/competitors`)).json()) as {
-    competitors: Array<{ id: string; name: string }>;
+    competitors: Array<{ id: string; name: string; class_id: string }>;
   };
-  const annaId = list.competitors.find((c) => c.name.startsWith('Anna'))!.id;
+  const anna = list.competitors.find((c) => c.name.startsWith('Anna'))!;
+  const annaId = anna.id;
   if (lateSec !== null) {
+    // These states are about a time that runs from the drawn start. A class
+    // made without a level starts from the punch (ADR-0018), so say so.
+    const cls = await request.patch(`${BASE}/api/competitions/${id}/classes/${anna.class_id}`, {
+      data: { start_method: 'start_time' },
+    });
+    expect(cls.status(), await cls.text()).toBeLessThan(300);
     const patch = await request.patch(
       `${BASE}/api/competitions/${id}/competitors/${annaId}/start-time`,
       { data: { start_time_ms: startPunchEpoch() - lateSec * 1000 } }
