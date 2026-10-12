@@ -395,9 +395,6 @@ test.describe('row edit (LO-6)', () => {
 });
 
 test.describe('start method next to the class (Task 7)', () => {
-  const OPEN_HELP =
-    'Öppen klass: löparna startar när de vill och stämplar start. Välj Startstämpling om klassen inte ska lottas.';
-
   async function setKind(
     request: APIRequestContext,
     id: string,
@@ -420,15 +417,17 @@ test.describe('start method next to the class (Task 7)', () => {
     const order = await page
       .getByTestId('lottning-settings')
       .locator('select, input, textarea, button')
-      .evaluateAll((els) => els.slice(0, 3).map((e) => e.getAttribute('data-testid')));
+      .evaluateAll((els) => els.slice(0, 5).map((e) => e.getAttribute('data-testid')));
     expect(order).toEqual([
       'lottning-class-select',
-      'lottning-start-method',
+      'lottning-start-start_time',
+      'lottning-start-start_punch',
+      'lottning-start-free_start',
       'lottning-mode-select',
     ]);
   });
 
-  test('an open class says it starts at will, an age class at level 1 says it is drawn', async ({
+  test('an open class at nivå 1 must be free start, an age class cannot be', async ({
     page,
     request,
   }) => {
@@ -439,25 +438,31 @@ test.describe('start method next to the class (Task 7)', () => {
     const lvl = await request.patch(`${BASE}/api/competitions/${id}`, { data: { level: 'niva1' } });
     expect(lvl.status()).toBe(200);
     await page.goto(`/competition/${id}/lottning`);
-    const help = page.getByTestId('lottning-start-method-help');
+    const rule = page.getByTestId('lottning-start-method-rule');
     await page.getByTestId('lottning-class-select').selectOption({ label: 'D21' });
-    await expect(help).toHaveText(OPEN_HELP);
+    await expect(rule).toHaveText('Öppen klass ska ha fri starttid på nivå 1–3 (TR 7.4.3).');
+    await expect(page.getByTestId('lottning-start-start_time')).toBeDisabled();
+    await expect(page.getByTestId('lottning-start-free_start')).toBeEnabled();
     await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
-    await expect(help).toHaveText('Lottad start enligt tävlingsregler (starttid).');
+    await expect(rule).toHaveText(
+      'Fri start är inte tillåten i åldersklass på nivå 1–3 (TR 7.4.2).'
+    );
+    await expect(page.getByTestId('lottning-start-free_start')).toBeDisabled();
+    await expect(page.getByTestId('lottning-start-start_time')).toBeEnabled();
   });
 
   test('changing it says Sparat, and the choice is stored', async ({ page, request }) => {
     const id = await setupCompetition(request);
     await page.goto(`/competition/${id}/lottning`);
     await page.getByTestId('lottning-class-select').selectOption({ label: 'H21' });
-    await page.getByTestId('lottning-start-method').selectOption('start_punch');
+    await page.getByTestId('lottning-start-start_time').check();
     await expect(page.getByTestId('lottning-start-method-note')).toContainText('Sparat');
     const ids = await classIds(page, id);
     const res = await request.get(`${BASE}/api/competitions/${id}/classes`);
     const { classes } = (await res.json()) as {
       classes: Array<{ id: string; start_method: string }>;
     };
-    expect(classes.find((c) => c.id === ids['H21'])?.start_method).toBe('start_punch');
+    expect(classes.find((c) => c.id === ids['H21'])?.start_method).toBe('start_time');
   });
 
   test('a failed save shows the error at the field, never Sparat, and the stored value again', async ({
@@ -473,13 +478,13 @@ test.describe('start method next to the class (Task 7)', () => {
         ? route.fulfill({ status: 500, json: { error: 'boom' } })
         : route.continue()
     );
-    const select = page.getByTestId('lottning-start-method');
-    const before = await select.inputValue();
-    await select.selectOption('start_punch');
+    // The seed stores H21 as start_punch (no level): choosing another fails.
+    await expect(page.getByTestId('lottning-start-start_punch')).toBeChecked();
+    await page.getByTestId('lottning-start-start_time').click();
     const note = page.getByTestId('lottning-start-method-note');
     await expect(note).toContainText('Valet sparades inte. Försök igen.');
     await expect(note).not.toContainText('Sparat');
-    await expect(select).toHaveValue(before);
+    await expect(page.getByTestId('lottning-start-start_punch')).toBeChecked();
   });
 
   test('a failed no-timing save is still shown, in plain words', async ({ page, request }) => {

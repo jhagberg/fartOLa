@@ -51,6 +51,7 @@ import {
   prepareLottningPursuitReading,
   prepareLottningEmpty,
   prepareLottningLoadError,
+  prepareLottningStartChoiceConflict,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
@@ -328,6 +329,12 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/lottning`,
     ready: (p) => p.getByTestId('lottning-view'),
     prepare: async (page, _id, request) => prepareLottningMaxTimeError(page, request),
+  },
+  {
+    name: 'Lottning, startval som strider mot reglerna och Lotta som väntar',
+    url: (id) => `/competition/${id}/lottning`,
+    ready: (p) => p.getByTestId('lottning-view'),
+    prepare: async (page, _id, request) => prepareLottningStartChoiceConflict(page, request),
   },
   {
     name: 'Lottning, jaktstart med fil som läses in',

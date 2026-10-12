@@ -16,6 +16,7 @@ import {
   prepareLottningPursuitReading,
   prepareLottningEmpty,
   prepareLottningLoadError,
+  prepareLottningStartChoiceConflict,
 } from './helpers/lottning.ts';
 import { prepareKontrollNoStart } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
@@ -218,6 +219,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/lottning`,
       (p) => p.getByTestId('lottning-view'),
       (p) => prepareLottningMaxTimeError(p, request),
+    ],
+    [
+      'lottning start choice conflict',
+      `/competition/${id}/lottning`,
+      (p) => p.getByTestId('lottning-view'),
+      (p) => prepareLottningStartChoiceConflict(p, request),
     ],
     [
       'lottning pursuit reading',
