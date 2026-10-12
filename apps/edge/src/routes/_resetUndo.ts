@@ -4,7 +4,9 @@
 //
 //   - A reset can be undone when it is not undone already and it took
 //     results away (cards read, or runners timed by hand, that stopped
-//     counting). A reset after a start by mistake took nothing.
+//     counting). A reset after a start by mistake took nothing. The number
+//     is recorded in the race_reset event when the reset is made (`took`);
+//     a reset from before that field existed cannot be undone.
 //   - The undo goes back to the LATEST such reset and also takes back every
 //     reset made after it (those took nothing away).
 //   - So a reset stops being undoable when it is undone, and it waits while a
