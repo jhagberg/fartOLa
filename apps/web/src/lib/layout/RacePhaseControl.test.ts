@@ -20,6 +20,8 @@ describe('RacePhaseControl', () => {
   let readsSinceStart: number;
   let undo: { started_at_ms: number; reads: number } | null;
   let posts: Array<{ url: string; body: unknown }>;
+  // Holds back the answer to a reset until released.
+  let hold: Promise<void> | null;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -41,6 +43,7 @@ describe('RacePhaseControl', () => {
     readsSinceStart = 623;
     undo = null;
     posts = [];
+    hold = null;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown, status = 200) =>
@@ -49,9 +52,16 @@ describe('RacePhaseControl', () => {
           headers: { 'content-type': 'application/json' },
         });
       const comp = () => ({ id: 'c1', name: 'Test', race_started_at_ms: startedAtMs });
+      // A second competition, started and with read-outs of its own.
+      const other = { id: 'c2', name: 'Other', race_started_at_ms: START };
       if (init?.method === 'POST' && url.includes('/reset-race')) {
         const body = JSON.parse(String(init.body)) as { force?: boolean };
         posts.push({ url, body });
+        if (hold) await hold;
+        if (url.includes('/c2/')) {
+          if (body.force !== true) return json({ error: 'reads_since_start', reads: 7 }, 409);
+          return json({ ...other, race_started_at_ms: null }, 201);
+        }
         if (url.endsWith('/reset-race/undo')) {
           startedAtMs = undo!.started_at_ms;
           undo = null;
@@ -63,8 +73,9 @@ describe('RacePhaseControl', () => {
         }
         return json(comp(), 201);
       }
+      if (url.endsWith('/c2/reset-race/undo')) return json({ undo: null });
       if (url.endsWith('/reset-race/undo')) return json({ undo });
-      if (url === '/api/competitions') return json({ competitions: [comp()] });
+      if (url === '/api/competitions') return json({ competitions: [comp(), other] });
       return json({});
     }) as unknown as typeof fetch;
   });
@@ -121,6 +132,42 @@ describe('RacePhaseControl', () => {
     expect(posts).toEqual([{ url: '/api/competitions/c1/reset-race/undo', body: {} }]);
     expect(el('race-phase-pill')!.textContent).toContain('10:05');
     expect(el('undo-reset-btn')).toBeNull();
+  });
+
+  // Codex review of PR 130: the warning and the tick belong to the
+  // competition they were given for.
+  it('switching competition drops the warning and the tick: no forced reset for the other one', async () => {
+    await mountIt();
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    await click('reset-race-force-check');
+    await activeCompetition.set('c2');
+    await settle();
+    el('reset-race-confirm')?.click();
+    await settle();
+    expect(posts.filter((p) => p.url.includes('/c2/'))).toEqual([]);
+    expect(el('reset-race-confirm')).toBeNull();
+    // Asked again for c2, it gets its own warning with its own count.
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    expect(posts.at(-1)).toEqual({ url: '/api/competitions/c2/reset-race', body: {} });
+    expect(text()).toContain('7 avläsningar har gjorts sedan starten');
+  });
+
+  it('a refusal that arrives after a switch is not shown for the other competition', async () => {
+    let release!: () => void;
+    hold = new Promise<void>((r) => (release = r));
+    await mountIt();
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    await activeCompetition.set('c2');
+    await settle();
+    hold = null;
+    release();
+    await settle();
+    expect(text()).not.toContain('623 avläsningar');
+    expect(el('reset-race-force-check')).toBeNull();
+    expect(el('race-phase-pill')!.textContent).toContain('Tävling pågår');
   });
 
   it('sv + en have the same race texts', async () => {
