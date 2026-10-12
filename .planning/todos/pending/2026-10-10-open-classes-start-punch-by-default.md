@@ -70,8 +70,28 @@ one "startmetod" per class under the class parameters, with "stämpelstart"
 as the choice for open classes; the Ö classes come predefined for free
 start time and entry on the day. The guide's draw step says to draw the
 classes that do not use start punch. From 6.6.2 an online start punch sets
-the start time only for classes with stämpelstart. The guides do not show a
-drawn start list combined with timing from the punch.
+the start time only for classes with stämpelstart.
+
+**OLA in the program** (own observation 2026-10-12, OLA 6.6.2, by the
+coordinator in the lab; GUI only):
+
+- Two independent settings per class. **Starttidsfördelning** says how the
+  class gets start times (normal draw, seeded draw, manual start list, club
+  or district draw, start by result, reversed, pursuit, random start groups).
+  **Startmetod** says how the start is taken: Starttid, Stämpel,
+  Kontrollerad stämpelstart, Startgrind, Vågstart.
+- A class with Startmetod Stämpel can be drawn: no warning, and the start
+  list then shows its start times like any other class.
+- There is no separate "fri starttid" choice; free start is Startmetod
+  Stämpel.
+- In the lab competition the open classes and Inskolning came with Stämpel
+  and the age classes with Starttid; all had normal draw as the
+  distribution. Whether that default follows the class type or the import
+  was not checked.
+- Not observed: which time counts when a runner has both a drawn time and a
+  start punch; what "Kontrollerad stämpelstart" does; how an undrawn punch
+  class looks in the start list; whether OLA lists missing start times
+  before the race.
 
 **fartOLa today:** one setting, "Starttid räknas från" (auto, start time,
 start punch). Timing already allows a drawn list with timing from the punch
@@ -82,7 +102,7 @@ misleading part.
 
 ## Proposal (Jonas to decide)
 
-Two questions per class, as in MeOS, and no "Automatiskt":
+Two questions per class, as in both MeOS and OLA, and no "Automatiskt":
 
 1. **Startlista:** "Lottas" or "Fri start". Kontroll lists runners without
    a start time only for "Lottas".
