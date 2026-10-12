@@ -33,7 +33,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
-import { and, desc, eq, asc, isNotNull } from 'drizzle-orm';
+import { and, count, desc, eq, asc, gte, inArray, isNotNull, lt } from 'drizzle-orm';
 
 import {
   CompetitionCreateInput,
@@ -41,7 +41,7 @@ import {
   type CompetitionDTO,
   type ClassDTO,
 } from '@fartola/shared-types';
-import { competitions, classes, competitors } from '../db/schema.ts';
+import { competitions, classes, competitors, events, type EventPayload } from '../db/schema.ts';
 import { writeStartTimes } from '../db/startTimes.ts';
 import { loadCourseDTOs } from './_courses.ts';
 import type { Competition } from '../db/types.ts';
@@ -360,6 +360,68 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       .send(competitionRowToDTO({ ...existing, maxTimeSec: parsed.data.max_time_sec }));
   });
 
+  /** Cards read at `fromMs` or later (and before `beforeMs`): the reads the
+   * reducer scores for a race started at `fromMs`. */
+  const readsBetween = (
+    competitionId: string,
+    fromMs: number,
+    beforeMs = Number.MAX_SAFE_INTEGER
+  ): number =>
+    app.fartolaDb.db
+      .select({ n: count() })
+      .from(events)
+      .where(
+        and(
+          eq(events.competitionId, competitionId),
+          eq(events.eventType, 'card_read'),
+          gte(events.eventTimeMs, fromMs),
+          lt(events.eventTimeMs, beforeMs)
+        )
+      )
+      .get()!.n;
+
+  /** What "undo reset" would do, or null. It goes back to the latest reset
+   * that took read-outs away and is not undone, and also undoes every reset
+   * after it. A reset after a start by mistake took nothing: nothing to undo. */
+  const undoableReset = (c: Competition) => {
+    const rows = app.fartolaDb.db
+      .select()
+      .from(events)
+      .where(
+        and(
+          eq(events.competitionId, c.id),
+          inArray(events.eventType, ['race_reset', 'race_reset_undone'])
+        )
+      )
+      .orderBy(asc(events.eventTimeMs), asc(events.localSeq))
+      .all();
+    const undone = new Set<string>();
+    const resets: Array<{ node_id: string; local_seq: number; atMs: number; startMs: number }> = [];
+    for (const e of rows) {
+      const p = e.payload as EventPayload;
+      if (p.event_type === 'race_reset_undone') {
+        for (const u of p.undoes) undone.add(`${u.node_id}:${u.local_seq}`);
+      } else if (p.event_type === 'race_reset') {
+        resets.push({
+          node_id: e.nodeId,
+          local_seq: e.localSeq,
+          atMs: e.eventTimeMs,
+          startMs: p.previous_started_at_ms,
+        });
+      }
+    }
+    const live = resets.filter((r) => !undone.has(`${r.node_id}:${r.local_seq}`));
+    const from = live.findLastIndex((r) => readsBetween(c.id, r.startMs, r.atMs) > 0);
+    if (from === -1) return null;
+    const startedAtMs = live[from]!.startMs;
+    return {
+      undoes: live.slice(from).map(({ node_id, local_seq }) => ({ node_id, local_seq })),
+      started_at_ms: startedAtMs,
+      // Read-outs that count again: those since that start that do not count now.
+      reads: readsBetween(c.id, startedAtMs, c.raceStartedAtMs ?? undefined),
+    };
+  };
+
   // POST /api/competitions/:id/start-race — flip the race-phase gate.
   //
   // Phase 2.1 (2026-05-18). Pre-race, every card_read is an identity scan
@@ -441,6 +503,11 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
   //
   // Idempotent: when already in pre-race phase (race_started_at_ms IS NULL),
   // returns 200 with the current state and writes no new event.
+  //
+  // Guard (2026-10-12): the reset is for a start made by mistake. When cards
+  // have been read since the start the race is real and those read-outs
+  // would stop counting: 409 { error: 'reads_since_start', reads } unless
+  // the body says { force: true }. Undo: POST …/reset-race/undo.
   app.post<{ Params: { id: string } }>('/api/competitions/:id/reset-race', async (req, reply) => {
     const { id: competitionId } = req.params;
     const existing = app.fartolaDb.db
@@ -452,6 +519,10 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
 
     if (existing.raceStartedAtMs === null) {
       return reply.code(200).send(competitionRowToDTO(existing));
+    }
+    const reads = readsBetween(competitionId, existing.raceStartedAtMs);
+    if (reads > 0 && (req.body as { force?: unknown } | null)?.force !== true) {
+      return reply.code(409).send({ error: 'reads_since_start', reads });
     }
 
     const previousStartedAtMs = existing.raceStartedAtMs;
@@ -487,4 +558,76 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     if (!updated) return reply.code(404).send({ error: 'competition not found' });
     return reply.code(201).send(competitionRowToDTO(updated));
   });
+
+  // GET /api/competitions/:id/reset-race/undo — what an undo would do:
+  // { undo: { started_at_ms, reads } | null }. The UI shows it before the
+  // operator confirms (ADR-0016 rule 1), also after a reload.
+  app.get<{ Params: { id: string } }>(
+    '/api/competitions/:id/reset-race/undo',
+    async (req, reply) => {
+      const existing = app.fartolaDb.db
+        .select()
+        .from(competitions)
+        .where(eq(competitions.id, req.params.id))
+        .get();
+      if (!existing) return reply.code(404).send({ error: 'competition not found' });
+      const undo = undoableReset(existing);
+      return reply.send({
+        undo: undo && { started_at_ms: undo.started_at_ms, reads: undo.reads },
+      });
+    }
+  );
+
+  // POST /api/competitions/:id/reset-race/undo — take back a reset that hit
+  // a real race. Events cannot be deleted, so this appends a
+  // `race_reset_undone` event naming the resets; the reducer skips them and
+  // the result is as if they never happened. The race start goes back to the
+  // start the reset removed. A start made after the reset stays in the log
+  // and loses to the earlier one (the reducer's earliest-wins), so the
+  // column gets the earlier of the two. 409 nothing_to_undo otherwise.
+  app.post<{ Params: { id: string } }>(
+    '/api/competitions/:id/reset-race/undo',
+    async (req, reply) => {
+      const { id: competitionId } = req.params;
+      const existing = app.fartolaDb.db
+        .select()
+        .from(competitions)
+        .where(eq(competitions.id, competitionId))
+        .get();
+      if (!existing) return reply.code(404).send({ error: 'competition not found' });
+      const undo = undoableReset(existing);
+      if (undo === null) return reply.code(409).send({ error: 'nothing_to_undo' });
+
+      const startedAtMs = Math.min(undo.started_at_ms, existing.raceStartedAtMs ?? Infinity);
+      const r = app.fartolaDb.sqlite.transaction(() => {
+        const inserted = insertEvent(
+          app.fartolaDb,
+          app.fartolaNodeId,
+          'race_reset_undone',
+          Date.now(),
+          {
+            event_type: 'race_reset_undone',
+            undoes: undo.undoes,
+            restored_started_at_ms: startedAtMs,
+          },
+          competitionId
+        );
+        app.fartolaDb.db
+          .update(competitions)
+          .set({ raceStartedAtMs: startedAtMs })
+          .where(eq(competitions.id, competitionId))
+          .run();
+        return inserted;
+      })();
+      app.wsBroadcast(readoutChannel(competitionId), {
+        type: 'race_started',
+        payload: { started_at_ms: startedAtMs },
+        seq: r.local_seq,
+      });
+      app.projectionStore.markDirty(competitionId);
+      return reply
+        .code(201)
+        .send(competitionRowToDTO({ ...existing, raceStartedAtMs: startedAtMs }));
+    }
+  );
 }

@@ -30,6 +30,7 @@ import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import { classes, competitions, competitors, events } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
+import { reduce } from '../projection/reduce.ts';
 import { clockToEpochMs, competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
 
@@ -460,6 +461,166 @@ describe('competitions REST CRUD', () => {
       payload: {},
     });
     assert.equal(res.statusCode, 404);
+  });
+
+  // 2026-10-12: "Återställ" then "Starta tävling" during a real race made
+  // 623 of 631 read-outs stop counting, with no way back.
+  describe('reset-race during a real race', () => {
+    let id: string;
+    let t1: number;
+    const post = (action: string, payload: object = {}) =>
+      ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/${action}`, payload });
+    // /results serves the cache until the debounced recompute; recompute here.
+    const status = async (): Promise<string> =>
+      ctx.app.projectionStore.recomputeNow(id)!.competitors.get('cmp-1')!.status;
+    const column = () =>
+      ctx.handle.db.select().from(competitions).where(eq(competitions.id, id)).get()!
+        .raceStartedAtMs;
+    const eventCount = (eventType: string) =>
+      ctx.handle.db.select().from(events).where(eq(events.eventType, eventType)).all().length;
+    const undoInfo = async () =>
+      (
+        await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}/reset-race/undo` })
+      ).json() as { undo: { started_at_ms: number; reads: number } | null };
+
+    // The race started a minute ago and one runner has read out since.
+    beforeEach(async () => {
+      id = (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: '/api/competitions',
+            payload: { name: 'Reset', date: '2026-10-04' },
+          })
+        ).json() as { id: string }
+      ).id;
+      const classId = ((await post('classes', { name: 'H21' })).json() as { id: string }).id;
+      t1 = Date.now() - 60_000;
+      const base = { nodeId: 'test-node', competitionId: id };
+      ctx.handle.db
+        .insert(events)
+        .values([
+          {
+            ...base,
+            localSeq: 1,
+            eventType: 'race_started',
+            eventTimeMs: t1,
+            recordedAtMs: t1,
+            payload: { event_type: 'race_started', started_at_ms: t1 },
+          },
+          {
+            ...base,
+            localSeq: 2,
+            eventType: 'card_read',
+            eventTimeMs: t1 + 30_000,
+            recordedAtMs: t1 + 30_000,
+            payload: {
+              event_type: 'card_read',
+              card_number: 100,
+              card_type: 'SI10',
+              start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+              finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 700, weekday: null },
+              check: null,
+              clear: null,
+              punch_count: 0,
+              punches: [],
+              card_holder: null,
+            },
+          },
+        ])
+        .run();
+      ctx.handle.db
+        .update(competitions)
+        .set({ raceStartedAtMs: t1 })
+        .where(eq(competitions.id, id))
+        .run();
+      ctx.handle.db
+        .insert(competitors)
+        .values({ id: 'cmp-1', competitionId: id, name: 'Anna', classId, cardNumber: 100 })
+        .run();
+    });
+
+    test('the loss: forced reset, start again → the read-out no longer counts', async () => {
+      assert.equal(await status(), 'OK');
+      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await post('start-race')).statusCode, 201);
+      assert.equal(await status(), 'PEND');
+    });
+
+    test('reset-race is refused when read-outs exist since the start, and says how many', async () => {
+      const res = await post('reset-race');
+      assert.equal(res.statusCode, 409);
+      assert.deepEqual(res.json(), { error: 'reads_since_start', reads: 1 });
+      assert.equal(column(), t1);
+      assert.equal(eventCount('race_reset'), 0);
+      assert.equal(await status(), 'OK');
+    });
+
+    test('a start by mistake (no read-outs since) resets without force', async () => {
+      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await post('start-race')).statusCode, 201);
+      assert.equal((await post('reset-race')).statusCode, 201);
+      assert.equal(column(), null);
+    });
+
+    test('undo after the reset restores the start and the read-out counts again', async () => {
+      assert.deepEqual(await undoInfo(), { undo: null });
+      await post('reset-race', { force: true });
+      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
+      const res = await post('reset-race/undo');
+      assert.equal(res.statusCode, 201);
+      assert.equal((res.json() as { race_started_at_ms: number }).race_started_at_ms, t1);
+      assert.equal(column(), t1);
+      assert.equal(await status(), 'OK');
+      // Nothing left to undo; a second call writes no event.
+      assert.deepEqual(await undoInfo(), { undo: null });
+      assert.equal((await post('reset-race/undo')).statusCode, 409);
+      assert.equal(eventCount('race_reset_undone'), 1);
+    });
+
+    test('undo after reset and a new start: the earlier start wins, replay agrees', async () => {
+      await post('reset-race', { force: true });
+      await post('start-race');
+      assert.equal(await status(), 'PEND');
+      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
+      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.equal(column(), t1);
+      assert.equal(await status(), 'OK');
+      // The event log alone (no cached column) gives the live result.
+      const input = loadCompetitionInputs(ctx.handle, id)!;
+      assert.equal(input.race_started_at_ms, t1);
+      assert.deepEqual(reduce({ ...input, race_started_at_ms: null }), reduce(input));
+    });
+
+    test('a second reset that took nothing away does not hide the first: undo takes back both', async () => {
+      await post('reset-race', { force: true });
+      await post('start-race');
+      assert.equal((await post('reset-race')).statusCode, 201);
+      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
+      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.equal(column(), t1);
+      assert.equal(await status(), 'OK');
+      const input = loadCompetitionInputs(ctx.handle, id)!;
+      assert.deepEqual(reduce({ ...input, race_started_at_ms: null }), reduce(input));
+    });
+
+    test('a reset after a start by mistake has nothing to undo', async () => {
+      id = (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: '/api/competitions',
+            payload: { name: 'Mistake', date: '2026-10-04' },
+          })
+        ).json() as { id: string }
+      ).id;
+      assert.equal((await post('start-race')).statusCode, 201);
+      assert.equal((await post('reset-race')).statusCode, 201);
+      assert.deepEqual(await undoInfo(), { undo: null });
+      const res = await post('reset-race/undo');
+      assert.equal(res.statusCode, 409);
+      assert.deepEqual(res.json(), { error: 'nothing_to_undo' });
+    });
   });
 
   // Plan 02.1-11 — eventor_event_id linkage

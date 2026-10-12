@@ -313,6 +313,14 @@ export function reduce(input: ReduceInput): CompetitionState {
   /** True when a card_read at `atMs` scores under the current race phase. */
   const inRacePhaseAt = (atMs: number): boolean =>
     raceStartedAtMs === undefined || (raceStartedAtMs !== null && atMs >= raceStartedAtMs);
+  // Resets a race_reset_undone names: skipped below, as if they never happened.
+  const undoneResets = new Set<string>();
+  for (const e of sortedEvents) {
+    const payload = e.payload as EventPayload;
+    if (e.competitionId === input.competition_id && payload.event_type === 'race_reset_undone') {
+      for (const u of payload.undoes) undoneResets.add(`${u.node_id}:${u.local_seq}`);
+    }
+  }
 
   for (const e of sortedEvents) {
     if (e.competitionId !== input.competition_id) continue;
@@ -399,6 +407,7 @@ export function reduce(input: ReduceInput): CompetitionState {
         // the cached column is stale. We set to `null` (pre-race) not
         // `undefined` (gate-off) — once a race_started has been recorded,
         // the gate stays meaningful.
+        if (undoneResets.has(`${e.nodeId}:${e.localSeq}`)) break;
         raceStartedAtMs = null;
         // Un-score any auto-detected statuses already applied in this
         // pass. Manual overrides survive (the operator's assertion is

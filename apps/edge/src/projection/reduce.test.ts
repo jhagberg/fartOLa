@@ -1018,6 +1018,75 @@ describe('reduce — CompetitionState projection', () => {
     assert.equal(bob.manual_status, 'DNF');
   });
 
+  // 2026-10-12: a reset during a real race, then "Starta tävling" again.
+  // Anna read out before the reset, Bob between the reset and the new start.
+  function resetDuringRace(): { events: Event[]; reset: Event; t1: number; t3: number } {
+    seqCounter = 0;
+    const t1 = 1_700_000_000_000;
+    const t3 = t1 + 180_000;
+    const run = [p(31), p(32), p(33), p(34)];
+    const reset = evt(
+      { event_type: 'race_reset', previous_started_at_ms: t1 },
+      { eventTimeMs: t1 + 120_000 }
+    );
+    const events = [
+      evt({ event_type: 'race_started', started_at_ms: t1 }, { eventTimeMs: t1 }),
+      cardRead(1, run, hd(10 * 3600), hd(10 * 3600 + 500), { eventTimeMs: t1 + 60_000 }),
+      reset,
+      cardRead(2, run, hd(10 * 3600), hd(10 * 3600 + 600), { eventTimeMs: t1 + 150_000 }),
+      evt({ event_type: 'race_started', started_at_ms: t3 }, { eventTimeMs: t3 }),
+    ];
+    return { events, reset, t1, t3 };
+  }
+  const resetRunners = {
+    competitors: [comp({ id: 'c-anna', cardNumber: 1 }), comp({ id: 'c-bob', cardNumber: 2 })],
+    classes: [cls('cls-H21')],
+    courses: [course('cls-H21', [31, 32, 33, 34])],
+  };
+
+  test('race_reset then a new race_started: reads from before the new start no longer score', () => {
+    const { events, t3 } = resetDuringRace();
+    const state = reduce({
+      competition_id: 'comp-1',
+      race_started_at_ms: t3,
+      events,
+      ...resetRunners,
+    });
+    assert.equal(state.competitors.get('c-anna')!.status, 'PEND');
+    assert.equal(state.competitors.get('c-bob')!.status, 'PEND');
+  });
+
+  test('race_reset_undone: the reset never happened, also after a new race_started', () => {
+    const { events, reset, t1, t3 } = resetDuringRace();
+    events.push(
+      evt(
+        {
+          event_type: 'race_reset_undone',
+          undoes: [{ node_id: reset.nodeId, local_seq: reset.localSeq }],
+          restored_started_at_ms: t1,
+        },
+        { eventTimeMs: t3 + 60_000 }
+      )
+    );
+    const live = reduce({
+      competition_id: 'comp-1',
+      race_started_at_ms: t1,
+      events,
+      ...resetRunners,
+    });
+    assert.equal(live.competitors.get('c-anna')!.status, 'OK');
+    assert.equal(live.competitors.get('c-anna')!.elapsed_time_ms, 500 * 1000);
+    assert.equal(live.competitors.get('c-bob')!.status, 'OK');
+    // The events alone give the same result as the live state.
+    const replayed = reduce({
+      competition_id: 'comp-1',
+      race_started_at_ms: null,
+      events,
+      ...resetRunners,
+    });
+    assert.deepEqual(replayed, live);
+  });
+
   test('Phase-2.0 results sort: OK > MP > DNF > DQ > MAX > DNS > CANCEL > PEND', () => {
     seqCounter = 0;
     const competitors = [
