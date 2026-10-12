@@ -44,3 +44,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # The public speaker demo is built by the Pages workflow on main; build
+      # it here too, so a change that breaks it fails on the PR.
+      - run: pnpm --filter @fartola/web build:demo

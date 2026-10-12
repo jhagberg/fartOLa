@@ -3,8 +3,15 @@ name: pages
 on:
   push:
     branches: [main]
+    # apps/ and packages/: the speaker demo is built from the app's own
+    # speaker view and board calculation, so it follows them.
     paths:
       - 'docs/**'
+      - 'apps/web/**'
+      - 'apps/edge/src/speaker/**'
+      - 'apps/edge/src/projection/**'
+      - 'packages/shared-types/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -20,9 +27,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - name: Enable Corepack (pins pnpm from package.json `packageManager`)
+        run: corepack enable && corepack prepare --activate
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The speaker demo (apps/web/src/demo) → docs/speaker-demo/. Built
+      # here, not committed.
+      - run: pnpm --filter @fartola/web build:demo
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
