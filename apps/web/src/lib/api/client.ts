@@ -212,9 +212,31 @@ export function startRace(id: string): Promise<CompetitionDTO> {
 
 /** Phase 2.1 — rollback the race-phase gate. Operator hits this when the
  * race was started by mistake (testing, demo). Idempotent: already-in-pre-
- * race returns the same row without writing a new event. */
-export function resetRace(id: string): Promise<CompetitionDTO> {
+ * race returns the same row without writing a new event. When cards have
+ * been read since the start the edge answers 409
+ * { error: 'reads_since_start', reads } unless `force` is set. */
+export function resetRace(id: string, force = false): Promise<CompetitionDTO> {
   return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/reset-race`, {
+    method: 'POST',
+    body: force ? { force: true } : {},
+  });
+}
+
+/** What undoing the reset would do: the start it restores and how many
+ * read-outs count again. */
+export interface ResetRaceUndo {
+  started_at_ms: number;
+  reads: number;
+}
+
+/** null when there is no reset to undo (none, undone, or it took no
+ * read-outs away). */
+export function getResetRaceUndo(id: string): Promise<{ undo: ResetRaceUndo | null }> {
+  return apiFetch(`/api/competitions/${encodeURIComponent(id)}/reset-race/undo`);
+}
+
+export function undoResetRace(id: string): Promise<CompetitionDTO> {
+  return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/reset-race/undo`, {
     method: 'POST',
     body: {},
   });
