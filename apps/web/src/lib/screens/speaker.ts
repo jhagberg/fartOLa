@@ -8,9 +8,12 @@
 
 import type { SpeakerClass, SpeakerRunner, SpeakerRunnerStatus } from '@fartola/shared-types';
 
-/** Panels per row and rows: 1 → 1×1, 2 → 2×1, 3–4 → 2×2, 5–6 → 3×2, 7–9 → 3×3. */
+/** Panels per row and rows: 1 → 1×1, 2 → 2×1, 3–4 → 2×2, 5–6 → 3×2,
+ * 7–8 → 4×2, 9 → 3×3. Up to eight panels stay on two rows: a panel's rows
+ * are runners, and on a wide screen a third row costs each panel more
+ * runners than a fourth column costs it width. */
 export function speakerGrid(n: number): { cols: number; rows: number } {
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const cols = Math.max(1, n <= 2 ? n : n <= 8 ? Math.ceil(n / 2) : Math.ceil(Math.sqrt(n)));
   return { cols, rows: Math.max(1, Math.ceil(n / cols)) };
 }
 

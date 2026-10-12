@@ -166,6 +166,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
     font-size: 18px;
+    container-type: inline-size;
   }
   .head {
     display: flex;
@@ -252,6 +253,31 @@
   }
   .plc {
     font-weight: 700;
+  }
+  /* A narrow panel (four in a row on a 1920 px screen): three radio
+     controls and the finish do not fit beside the name, so the name gets
+     the line above the times. Every column stays in sight and no name
+     breaks in the middle of a word. */
+  @container (max-width: 520px) {
+    .tbl tr {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    .tbl .who,
+    .tbl thead th:first-child {
+      flex: 0 0 100%;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 var(--space-sm);
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+    .tbl td,
+    .tbl thead .num {
+      flex: 1 1 0;
+      padding-left: 0;
+    }
   }
   .bh {
     display: block;
