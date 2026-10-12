@@ -182,6 +182,11 @@ describe('serial radio input', () => {
       NOON - 10_000 + 250,
       NOON - 10_000 + 750,
     ]);
+    // The radio status places them the same way and counts both.
+    const c78 = buildRadioStatus(handle, COMP, NOON, null)?.controls.find(
+      (c) => c.control_code === 78
+    );
+    assert.equal(c78?.received, 2);
     await i.stop();
   });
 

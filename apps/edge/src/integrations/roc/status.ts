@@ -12,7 +12,7 @@ import { competitions, events } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
 import { cardClockToEpochMs } from '../../projection/halfDayClockMath.ts';
 import { competitionClockOffsetMin } from '../../time/competitionClock.ts';
-import { placeTimeOfDay } from './place.ts';
+import { placeRadioPunch } from './place.ts';
 import { cardTypeFromNumber } from '../../si/cardType.ts';
 import type { RocPollStatus } from './poller.ts';
 import {
@@ -73,7 +73,7 @@ export function buildRadioStatus(
     if (p.event_type !== 'radio_punch') continue;
     // Placed again from the time of day and the receive time, as the poller
     // does, so events from earlier builds (no stored placement) match too.
-    const timeMs = placeTimeOfDay(p.time_of_day, p.received_at_ms, offsetMin);
+    const timeMs = placeRadioPunch(p, offsetMin);
     radio.push({
       code: p.control_code,
       card: p.card_number,

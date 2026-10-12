@@ -5,6 +5,9 @@
 // each of them and at the finish, an expected finish time, and the events
 // strip. A pure function of the projection's runners and the stored radio
 // punches; radio punches never change results (the reducer ignores them).
+// A time at a radio control is a running time, so it is rounded to whole
+// seconds like the official time (SOFT TR 4.20.7) and equal times share
+// the place (TR 4.20.8), also when a serial radio punch carries a fraction.
 //
 // The prognosis mimics MeOS's speaker module (oEventSpeaker.cpp:1960-2030,
 // read, not ported): expected = time at the last radio control + the best
@@ -22,6 +25,8 @@ import type {
   SpeakerRunnerStatus,
   SpeakerSplit,
 } from '@fartola/shared-types';
+
+import { officialMs } from '../projection/dnfMp.ts';
 
 export interface BoardRunnerIn {
   id: string;
@@ -118,7 +123,7 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
     const out: Array<number | null> = controls.map(() => null);
     for (let i = 0, j = 0; i < n && j < m;) {
       if (controls[i] === punches[j]!.code && dp[i]![j] === 1 + dp[i + 1]![j + 1]!) {
-        out[i] = punches[j]!.timeMs - r.start_time_ms!;
+        out[i] = officialMs(punches[j]!.timeMs - r.start_time_ms!);
         i++;
         j++;
       } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
@@ -172,7 +177,7 @@ export function buildSpeakerBoard(input: BoardInput): SpeakerBoard {
         r.status === 'PEND' && finish === null && !cls.no_timing
           ? punchesOf(r).find((p) => finishCodes.has(p.code))
           : undefined;
-      const radioFinish = finishPunch ? finishPunch.timeMs - r.start_time_ms! : null;
+      const radioFinish = finishPunch ? officialMs(finishPunch.timeMs - r.start_time_ms!) : null;
       let expected: number | null = null;
       const j = row.findLastIndex((t) => t !== null);
       const leg = j >= 0 ? bestLeg[j] : null;

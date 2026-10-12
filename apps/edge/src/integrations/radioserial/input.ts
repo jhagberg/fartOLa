@@ -31,7 +31,7 @@ import { competitions } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
 import { insertEvent } from '../../si/eventInserter.ts';
 import { competitionClockOffsetMin } from '../../time/competitionClock.ts';
-import { placeTimeOfDay } from '../roc/place.ts';
+import { placeRadioPunch } from '../roc/place.ts';
 
 const HALF_DAY_S = 12 * 3600;
 /** As the SI bridge: ramp up, then retry at the last step for ever. */
@@ -114,30 +114,27 @@ export function createRadioSerialInput(opts: RadioSerialInputOpts): RadioSerialI
     }
     const time = autosendTimeOfDay(punch.clock);
     const subsec = punch.clock.subsec_256 ?? 0;
+    const payload = {
+      event_type: 'radio_punch',
+      source: 'serial',
+      idempotency_key: `serial:${punch.code}:${punch.card_number}:${time}:${subsec}`,
+      card_number: punch.card_number,
+      control_code: punch.code,
+      time_of_day: time,
+      received_at_ms: receivedAtMs,
+      date_mismatch: false,
+      subsec_256: subsec,
+      weekday: punch.clock.weekday,
+      station_mem_address: punch.mem_address,
+      port: path,
+    } as const;
     try {
       insertEvent(
         handle,
         nodeId,
         'radio_punch',
-        placeTimeOfDay(
-          time,
-          receivedAtMs,
-          competitionClockOffsetMin(comp.date, comp.clockOffsetMin)
-        ) + Math.round((subsec * 1000) / 256),
-        {
-          event_type: 'radio_punch',
-          source: 'serial',
-          idempotency_key: `serial:${punch.code}:${punch.card_number}:${time}:${subsec}`,
-          card_number: punch.card_number,
-          control_code: punch.code,
-          time_of_day: time,
-          received_at_ms: receivedAtMs,
-          date_mismatch: false,
-          subsec_256: subsec,
-          weekday: punch.clock.weekday,
-          station_mem_address: punch.mem_address,
-          port: path,
-        },
+        placeRadioPunch(payload, competitionClockOffsetMin(comp.date, comp.clockOffsetMin)),
+        payload,
         competitionId
       );
     } catch (e) {
