@@ -10,7 +10,7 @@ import { and, asc, eq } from 'drizzle-orm';
 
 import { classes, competitions, events } from '../db/schema.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
-import { placeTimeOfDay } from '../integrations/roc/place.ts';
+import { placeRadioPunch } from '../integrations/roc/place.ts';
 import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
 import { startMs } from '../projection/dnfMp.ts';
 import { parseRocControls } from '../integrations/roc/status.ts';
@@ -104,7 +104,7 @@ export default async function registerSpeakerRoutes(app: FastifyInstance): Promi
               {
                 card: p.card_number,
                 code: p.control_code,
-                timeMs: placeTimeOfDay(p.time_of_day, p.received_at_ms, offsetMin),
+                timeMs: placeRadioPunch(p, offsetMin),
               },
             ]
           : []

@@ -8,6 +8,7 @@
 // integrations/roc; everything else is epoch ms.
 
 import type { HalfDayClock } from '@fartola/sportident';
+import type { EventPayload } from '../../db/schema.ts';
 import { cardClockToEpochMs } from '../../projection/halfDayClockMath.ts';
 
 const HALF_DAY_S = 12 * 3600;
@@ -28,4 +29,15 @@ export function placeTimeOfDay(time: string, receivedAtMs: number, offsetMin: nu
     weekday: null,
   };
   return cardClockToEpochMs(clock, 'ROC', receivedAtMs, offsetMin);
+}
+
+/** Epoch ms of a stored radio punch: its time of day placed as above, plus
+ * the 1/256 s a serial record carries (ROC rows have whole seconds). Every
+ * reader of radio punches places them with this, so they agree. */
+export function placeRadioPunch(
+  p: Extract<EventPayload, { event_type: 'radio_punch' }>,
+  offsetMin: number
+): number {
+  const ms = placeTimeOfDay(p.time_of_day, p.received_at_ms, offsetMin);
+  return p.source === 'serial' ? ms + Math.round((p.subsec_256 * 1000) / 256) : ms;
 }

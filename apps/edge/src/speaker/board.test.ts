@@ -152,6 +152,32 @@ describe('speaker board', () => {
     assert.equal(b.classes[0]!.runners[0]!.passings[1], null);
   });
 
+  test('SOFT TR 4.20.7: a time at a radio control is rounded to whole seconds, half up', () => {
+    const b = buildSpeakerBoard(
+      input({
+        runners: [
+          runner({ id: 'a', card: 1 }),
+          runner({ id: 'b', card: 2 }),
+          runner({ id: 'c', card: 3 }),
+        ],
+        radio: [
+          // 10:00.25, 10:00.40 and 10:00.50 after the start.
+          { card: 1, code: 50, timeMs: T0 + 10 * MIN + 250 },
+          { card: 2, code: 50, timeMs: T0 + 10 * MIN + 400 },
+          { card: 3, code: 50, timeMs: T0 + 10 * MIN + 500 },
+        ],
+      })
+    );
+    assert.deepEqual(
+      b.classes[0]!.runners.map((r) => r.passings[0]),
+      [
+        { elapsed_ms: 10 * MIN, place: 1, behind_ms: 0 },
+        { elapsed_ms: 10 * MIN, place: 1, behind_ms: 0 },
+        { elapsed_ms: 10 * MIN + 1000, place: 3, behind_ms: 1000 },
+      ]
+    );
+  });
+
   test('a radio passing changes only its own class', () => {
     const base = input({
       runners: [

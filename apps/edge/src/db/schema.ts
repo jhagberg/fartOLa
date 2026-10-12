@@ -290,9 +290,9 @@ export type EventPayload =
       received_at_ms: number;
       /** The record carries no date to compare. */
       date_mismatch: false;
-      /** 1/256 s of the punch. In the key and in event_time_ms; the radio
-       * status and the speaker place radio punches on whole seconds, as card
-       * punches and ROC rows are. */
+      /** 1/256 s of the punch. Part of the key and of the placed time
+       * (roc/place.ts placeRadioPunch); the speaker rounds the running time
+       * it gives to whole seconds (SOFT TR 4.20.7). */
       subsec_256: number;
       /** Day of week on the station's clock, 0 = Sunday. */
       weekday: number | null;
