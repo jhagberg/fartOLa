@@ -78,6 +78,10 @@ export type {
 export { emitDiagnostic } from './output/diagnostics.ts';
 export { inferCardType } from './SiCard/cardTypeFromNumber.ts';
 
+// --- Autosend records (online controls, radio gateways) --------------------
+export { AutosendListener, decodeAutosendRecord } from './autosend.ts';
+export type { AutosendPunch, AutosendCounts, AutosendListenerOpts } from './autosend.ts';
+
 // --- Backup readout (Phase 2.1 Plan 06 — kvar-i-skogen) --------------------
 export {
   readBackupMemory,
