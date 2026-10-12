@@ -247,6 +247,18 @@ export type EventPayload =
       previous_started_at_ms: number;
     }
   | {
+      // Undo of a race_reset (events cannot be deleted). The reducer skips
+      // the resets it names, so the result is as if they never happened:
+      // reads made since the start they removed score again, also after a
+      // new race_started (earliest wins). `restored_started_at_ms` is what
+      // the route wrote to competitions.race_started_at_ms, kept for the
+      // audit trail; the reducer does not read it. Emitted by POST
+      // /api/competitions/:id/reset-race/undo.
+      event_type: 'race_reset_undone';
+      undoes: Array<{ node_id: string; local_seq: number }>;
+      restored_started_at_ms: number;
+    }
+  | {
       // ROC radio punch (roc.olresultat.se), received by integrations/roc.
       // NOT a card read: the reducer ignores it, results come from card
       // reads only. event_time_ms is the time of day placed on the
