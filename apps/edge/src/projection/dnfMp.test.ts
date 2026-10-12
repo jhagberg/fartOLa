@@ -14,7 +14,13 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
-import { detectStatus, matchCourse, startMs, type StartMethod } from './dnfMp.ts';
+import {
+  detectStatus,
+  matchCourse,
+  startMs,
+  startPunchWarning,
+  type StartMethod,
+} from './dnfMp.ts';
 import {
   clockToEpochMs,
   competitionClockOffsetMin,
@@ -463,12 +469,30 @@ describe('startMs — start method per class (SOFT TR 4.18.9 (2026-07-01))', () 
     ['auto', false, true, PUNCH], // open class / fri starttid (SOFT TR 7.4.3 (2026-07-01))
     ['auto', true, true, DRAWN],
     ['auto', false, false, null],
+    ['free_start', true, false, DRAWN],
+    ['free_start', false, true, PUNCH],
+    ['free_start', true, true, PUNCH],
+    ['free_start', false, false, null], // compatibility: null on old code too
   ];
   for (const [method, drawn, punch, want] of cases) {
     test(`${method}: start time ${drawn ? 'yes' : 'no'}, punch ${punch ? 'yes' : 'no'} → ${want === null ? 'none' : want === DRAWN ? 'start time' : 'punch'}`, () => {
       assert.equal(at(method, drawn, punch), want);
     });
   }
+
+  test('free_start: a punch 3 min after the drawn time is no late start', () => {
+    const warn = (startMethod: StartMethod) =>
+      startPunchWarning({
+        cardType: 'SIAC',
+        readAtMs: CTX.readAtMs,
+        clockOffsetMin: CTX.clockOffsetMin,
+        startMethod,
+        drawnStartMs: DRAWN,
+        start: hd(10 * 3600 + 180),
+      });
+    assert.deepEqual(warn('free_start'), { late_start_ms: null, early_start_ms: null });
+    assert.equal(warn('start_time').late_start_ms, 180_000); // contrast: a timed-from-drawn class warns
+  });
 });
 
 // SOFT TR 8.1.4 (kommentar): a punch entered by hand has no time. As MeOS

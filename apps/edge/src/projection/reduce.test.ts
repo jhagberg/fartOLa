@@ -1801,6 +1801,19 @@ describe('reduce — start method per class (02.1-14 Task 14)', () => {
     assert.deepEqual(warnings('start_time', START - 5), { late: null, early: 5_000 });
   });
 
+  test('free_start: drawn time and a punch 3 min later → timed from the punch, no late start', () => {
+    assert.deepEqual(warnings('free_start', START + 180), { late: null, early: null });
+    seqCounter = 0;
+    const a = reduce({
+      competition_id: 'comp-1',
+      events: [read(101, [p(31)], START + 180)],
+      competitors: [comp({ id: 'a', cardNumber: 101, startTimeMs: drawn })],
+      classes: [withMethod('free_start')],
+      courses: [course('cls-H21', [31])],
+    }).competitors.get('a')!;
+    assert.equal(a.elapsed_time_ms, (30 * 60 - 180) * 1000);
+  });
+
   test('no warnings when timed from the punch (start_punch, or no start time)', () => {
     assert.deepEqual(warnings('start_punch', START + 192), { late: null, early: null });
     assert.deepEqual(warnings('start_punch', START - 5), { late: null, early: null });

@@ -186,8 +186,9 @@ export type CompetitionPatchInput = z.infer<typeof CompetitionPatchInput>;
 /** 02.1-14 Task 14 — which start a class's running times are measured from:
  * 'auto' = the runner's start time when there is one, else the start punch;
  * 'start_time' = the start time only (start punch ignored, SOFT TR 4.18.9
- * (2026-07-01)); 'start_punch' = the start punch, else the start time (MeOS). */
-export const StartMethod = z.enum(['auto', 'start_time', 'start_punch']);
+ * (2026-07-01)); 'start_punch' = the start punch, else the start time (MeOS);
+ * 'free_start' = free start time, timed like 'start_punch' (ADR-0018). */
+export const StartMethod = z.enum(['auto', 'start_time', 'start_punch', 'free_start']);
 export type StartMethod = z.infer<typeof StartMethod>;
 
 export const ClassDTO = z.object({
