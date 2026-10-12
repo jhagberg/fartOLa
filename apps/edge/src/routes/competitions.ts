@@ -528,8 +528,11 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
   // Guard (2026-10-12): the reset is for a start made by mistake. When cards
   // have been read since the start, or a runner is scored from a finish
   // entered by hand, the race is real and those would stop counting:
-  // 409 { error: 'reads_since_start', reads } (both in the one count) unless
-  // the body says { force: true }. Undo: POST …/reset-race/undo.
+  // 409 { error: 'reads_since_start', reads, started_at_ms } (both in the one
+  // count) unless the body says { force: true, started_at_ms }, naming the
+  // start the warning was for. A body that names another start than the
+  // current one is 409 start_changed, forced or not: a confirmation is for
+  // the start the operator saw. Undo: POST …/reset-race/undo.
   app.post<{ Params: { id: string } }>('/api/competitions/:id/reset-race', async (req, reply) => {
     const { id: competitionId } = req.params;
     const existing = app.fartolaDb.db
@@ -542,9 +545,15 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
     if (existing.raceStartedAtMs === null) {
       return reply.code(200).send(competitionRowToDTO(existing));
     }
+    const body = (req.body ?? {}) as { force?: unknown; started_at_ms?: unknown };
+    if (body.started_at_ms !== undefined && body.started_at_ms !== existing.raceStartedAtMs) {
+      return reply.code(409).send({ error: 'start_changed' });
+    }
     const reads = takenByReset(competitionId, existing.raceStartedAtMs);
-    if (reads > 0 && (req.body as { force?: unknown } | null)?.force !== true) {
-      return reply.code(409).send({ error: 'reads_since_start', reads });
+    if (reads > 0 && !(body.force === true && body.started_at_ms !== undefined)) {
+      return reply
+        .code(409)
+        .send({ error: 'reads_since_start', reads, started_at_ms: existing.raceStartedAtMs });
     }
 
     const previousStartedAtMs = existing.raceStartedAtMs;

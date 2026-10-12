@@ -49,33 +49,42 @@
   let mode: Mode = $state('idle');
   let busy = $state(false);
   let err: string | null = $state(null);
-  // Read-outs since the start, once the edge has refused a plain reset.
+  // Read-outs since the start, once the edge has refused a plain reset, and
+  // the start that warning was for: "Återställ ändå" confirms that start.
   let readsAtRisk: number | null = $state(null);
+  let riskStartMs: number | null = null;
   let forceTicked = $state(false);
   let undo: ResetRaceUndo | null = $state(null);
+  let undoLoadFailed = $state(false);
+  // The newest request for the undo wins.
+  let undoLoads = 0;
 
   const activeId = $derived(active?.id ?? null);
   const startedAtMs = $derived(active?.race_started_at_ms ?? null);
+  function loadUndo(id: string): void {
+    const n = ++undoLoads;
+    getResetRaceUndo(id).then(
+      (r) => {
+        if (n !== undoLoads) return;
+        undo = r.undo;
+        undoLoadFailed = false;
+      },
+      () => {
+        if (n === undoLoads) undoLoadFailed = true;
+      }
+    );
+  }
   $effect(() => {
     // A start, reset or undo changes what there is to undo.
     void startedAtMs;
-    if (activeId === null) return;
-    let stale = false;
-    getResetRaceUndo(activeId).then(
-      (r) => {
-        if (!stale) undo = r.undo;
-      },
-      () => {}
-    );
-    return () => {
-      stale = true;
-    };
+    if (activeId !== null) loadUndo(activeId);
   });
 
   function toIdle(): void {
     mode = 'idle';
     err = null;
     readsAtRisk = null;
+    riskStartMs = null;
     forceTicked = false;
   }
 
@@ -85,6 +94,7 @@
     void activeId;
     toIdle();
     undo = null;
+    undoLoadFailed = false;
   });
 
   function formatHHMM(ms: number): string {
@@ -100,11 +110,10 @@
     busy = true;
     err = null;
     try {
-      await startRace(active.id);
-      // Refresh the cached list so the pill flips immediately for every
-      // consumer of activeCompetition (Sidebar pill, readout phase
-      // indicator, results header).
-      await activeCompetition.refreshList();
+      // The answer goes into the cached list, so the pill flips at once for
+      // every consumer of activeCompetition (Sidebar pill, readout phase
+      // indicator, results header) without a list refetch that may fail.
+      activeCompetition.update(await startRace(active.id));
       mode = 'idle';
     } catch (e) {
       err = (e as Error).message;
@@ -119,17 +128,35 @@
     const id = active.id;
     busy = true;
     err = null;
+    // A forced reset is for the start the warning named, a plain one for the
+    // start on screen; the edge refuses either when the start is another now.
+    const forced = readsAtRisk !== null;
     try {
-      await resetRace(id, readsAtRisk !== null);
-      await activeCompetition.refreshList();
+      activeCompetition.update(
+        await resetRace(id, forced ? riskStartMs : active.race_started_at_ms, forced)
+      );
       if (activeId === id) toIdle();
     } catch (e) {
       // An answer for a competition that is no longer the active one.
       if (activeId !== id) return;
-      const body = e instanceof ApiError ? (e.body as { error?: unknown; reads?: unknown }) : null;
-      if (body?.error === 'reads_since_start' && typeof body.reads === 'number') {
+      const body =
+        e instanceof ApiError
+          ? (e.body as { error?: unknown; reads?: unknown; started_at_ms?: unknown })
+          : null;
+      if (
+        body?.error === 'reads_since_start' &&
+        typeof body.reads === 'number' &&
+        typeof body.started_at_ms === 'number'
+      ) {
         readsAtRisk = body.reads;
+        riskStartMs = body.started_at_ms;
         forceTicked = false;
+      } else if (body?.error === 'start_changed') {
+        err = t('race.reset.startChanged');
+        readsAtRisk = null;
+        riskStartMs = null;
+        forceTicked = false;
+        void activeCompetition.refreshList();
       } else {
         err = (e as Error).message;
       }
@@ -144,8 +171,7 @@
     busy = true;
     err = null;
     try {
-      await undoResetRace(id, undo);
-      await activeCompetition.refreshList();
+      activeCompetition.update(await undoResetRace(id, undo));
       if (activeId !== id) return;
       undo = null;
       toIdle();
@@ -154,12 +180,7 @@
       if (e instanceof ApiError && (e.body as { error?: unknown })?.error === 'undo_changed') {
         // Not the undo the card described any more: show what it is now.
         err = t('race.undo.changed');
-        getResetRaceUndo(id).then(
-          (r) => {
-            if (activeId === id) undo = r.undo;
-          },
-          () => {}
-        );
+        loadUndo(id);
       } else {
         err = (e as Error).message;
       }
@@ -212,6 +233,18 @@
           data-testid="undo-reset-btn"
         >
           {t('race.undo.cta')}
+        </button>
+      {:else if undoLoadFailed}
+        <p class="undo-note" role="alert" data-testid="undo-reset-failed">
+          {t('race.undo.loadFailed')}
+        </p>
+        <button
+          type="button"
+          class="undo-btn"
+          onclick={() => activeId !== null && loadUndo(activeId)}
+          data-testid="undo-reset-retry"
+        >
+          {t('race.undo.retry')}
         </button>
       {/if}
     {:else if mode === 'confirm-start'}

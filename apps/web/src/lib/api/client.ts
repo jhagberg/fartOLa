@@ -212,14 +212,25 @@ export function startRace(id: string): Promise<CompetitionDTO> {
 
 /** Phase 2.1 — rollback the race-phase gate. Operator hits this when the
  * race was started by mistake (testing, demo). Idempotent: already-in-pre-
- * race returns the same row without writing a new event. When cards have
- * been read since the start (or a runner is scored from a finish entered
- * by hand) the edge answers 409 { error: 'reads_since_start', reads }
- * unless `force` is set. */
-export function resetRace(id: string, force = false): Promise<CompetitionDTO> {
+ * race returns the same row without writing a new event.
+ *
+ * `startedAtMs` is the start the operator confirmed the reset for; the edge
+ * answers 409 { error: 'start_changed' } when the race has another start
+ * now. When cards have been read since the start (or a runner is scored
+ * from a finish entered by hand) it answers 409
+ * { error: 'reads_since_start', reads, started_at_ms } unless `force` is
+ * set, with the start from that warning. */
+export function resetRace(
+  id: string,
+  startedAtMs: number | null,
+  force = false
+): Promise<CompetitionDTO> {
   return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/reset-race`, {
     method: 'POST',
-    body: force ? { force: true } : {},
+    body: {
+      ...(startedAtMs !== null ? { started_at_ms: startedAtMs } : {}),
+      ...(force ? { force: true } : {}),
+    },
   });
 }
 

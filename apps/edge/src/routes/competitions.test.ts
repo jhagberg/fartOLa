@@ -476,6 +476,8 @@ describe('competitions REST CRUD', () => {
     const column = () =>
       ctx.handle.db.select().from(competitions).where(eq(competitions.id, id)).get()!
         .raceStartedAtMs;
+    // "Återställ ändå": the confirmation names the start it was given for.
+    const forceReset = () => post('reset-race', { force: true, started_at_ms: column() });
     const eventCount = (eventType: string) =>
       ctx.handle.db.select().from(events).where(eq(events.eventType, eventType)).all().length;
     const undoInfo = async () =>
@@ -585,7 +587,7 @@ describe('competitions REST CRUD', () => {
 
     test('the loss: forced reset, start again → the read-out no longer counts', async () => {
       assert.equal(await status(), 'OK');
-      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await forceReset()).statusCode, 201);
       assert.equal((await post('start-race')).statusCode, 201);
       assert.equal(await status(), 'PEND');
     });
@@ -593,14 +595,37 @@ describe('competitions REST CRUD', () => {
     test('reset-race is refused when read-outs exist since the start, and says how many', async () => {
       const res = await post('reset-race');
       assert.equal(res.statusCode, 409);
-      assert.deepEqual(res.json(), { error: 'reads_since_start', reads: 1 });
+      assert.deepEqual(res.json(), { error: 'reads_since_start', reads: 1, started_at_ms: t1 });
       assert.equal(column(), t1);
       assert.equal(eventCount('race_reset'), 0);
       assert.equal(await status(), 'OK');
     });
 
+    // Codex review of PR 130, round 5: a confirmation names what was confirmed.
+    test('a forced reset names the start it was warned about: a stale one is refused', async () => {
+      // "force" alone is not a confirmation of anything.
+      const bare = await post('reset-race', { force: true });
+      assert.equal(bare.statusCode, 409);
+      assert.deepEqual(bare.json(), { error: 'reads_since_start', reads: 1, started_at_ms: t1 });
+      assert.equal(column(), t1);
+      // The warning was for the start at t1. Meanwhile the race is reset and
+      // started again (another operator, or an old request sent again).
+      assert.equal((await forceReset()).statusCode, 201);
+      await post('start-race');
+      const t3 = column()!;
+      const plain = await post('reset-race', { started_at_ms: t1 });
+      assert.equal(plain.statusCode, 409);
+      assert.deepEqual(plain.json(), { error: 'start_changed' });
+      await readNow(10);
+      const stale = await post('reset-race', { force: true, started_at_ms: t1 });
+      assert.equal(stale.statusCode, 409);
+      assert.deepEqual(stale.json(), { error: 'start_changed' });
+      assert.equal(column(), t3);
+      assert.equal(eventCount('race_reset'), 1);
+    });
+
     test('a start by mistake (no read-outs since) resets without force', async () => {
-      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await forceReset()).statusCode, 201);
       assert.equal((await post('start-race')).statusCode, 201);
       assert.equal((await post('reset-race')).statusCode, 201);
       assert.equal(column(), null);
@@ -608,7 +633,7 @@ describe('competitions REST CRUD', () => {
 
     test('undo after the reset restores the start and the read-out counts again', async () => {
       assert.equal(await preview(), null);
-      await post('reset-race', { force: true });
+      await forceReset();
       assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
       const ref = refOf((await undoInfo()).undo!);
       const res = await post('reset-race/undo', ref);
@@ -627,11 +652,11 @@ describe('competitions REST CRUD', () => {
     // Codex review of PR 130: the undo took no target, so a repeat walked back
     // one more reset.
     test('an undo names its reset: a repeated request does not go back to an older start', async () => {
-      await post('reset-race', { force: true });
+      await forceReset();
       await post('start-race');
       const tB = column()!;
       await readNow(10);
-      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await forceReset()).statusCode, 201);
       const shown = (await undoInfo()).undo!;
       assert.equal(shown.started_at_ms, tB);
       assert.equal((await post('reset-race/undo', refOf(shown))).statusCode, 201);
@@ -648,11 +673,11 @@ describe('competitions REST CRUD', () => {
     });
 
     test('a confirmation for an undo that is no longer the one offered is refused', async () => {
-      await post('reset-race', { force: true });
+      await forceReset();
       const stale = refOf((await undoInfo()).undo!);
       await post('start-race');
       await readNow(10);
-      await post('reset-race', { force: true });
+      await forceReset();
       const res = await post('reset-race/undo', stale);
       assert.equal(res.statusCode, 409);
       assert.deepEqual(res.json(), { error: 'undo_changed' });
@@ -663,7 +688,7 @@ describe('competitions REST CRUD', () => {
     });
 
     test('undo after reset and a new start: the earlier start wins, replay agrees', async () => {
-      await post('reset-race', { force: true });
+      await forceReset();
       await post('start-race');
       assert.equal(await status(), 'PEND');
       assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
@@ -677,7 +702,7 @@ describe('competitions REST CRUD', () => {
     });
 
     test('a second reset that took nothing away does not hide the first: undo takes back both', async () => {
-      await post('reset-race', { force: true });
+      await forceReset();
       await post('start-race');
       assert.equal((await post('reset-race')).statusCode, 201);
       assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
@@ -727,8 +752,8 @@ describe('competitions REST CRUD', () => {
 
       const refused = await post('reset-race');
       assert.equal(refused.statusCode, 409);
-      assert.deepEqual(refused.json(), { error: 'reads_since_start', reads: 2 });
-      await post('reset-race', { force: true });
+      assert.deepEqual(refused.json(), { error: 'reads_since_start', reads: 2, started_at_ms: t1 });
+      await forceReset();
       await post('start-race');
       assert.equal(await status('cmp-hand'), 'PEND');
       assert.deepEqual(await preview(), { started_at_ms: t1, reads: 2 });
@@ -768,8 +793,12 @@ describe('competitions REST CRUD', () => {
       assert.equal(set.statusCode, 201, set.body);
       assert.notEqual(await status('cmp-only'), 'PEND');
       assert.equal(eventCount('card_read'), 1); // the other competition's
-      assert.deepEqual((await post('reset-race')).json(), { error: 'reads_since_start', reads: 1 });
-      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.deepEqual((await post('reset-race')).json(), {
+        error: 'reads_since_start',
+        reads: 1,
+        started_at_ms: start,
+      });
+      assert.equal((await forceReset()).statusCode, 201);
       assert.equal(await status('cmp-only'), 'PEND');
       assert.deepEqual(await preview(), { started_at_ms: start, reads: 1 });
       assert.equal((await undoShown()).statusCode, 201);
@@ -837,7 +866,7 @@ describe('competitions REST CRUD', () => {
       });
       assert.equal(set.statusCode, 201, set.body);
       assert.notEqual(await status('cmp-late'), 'PEND');
-      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      assert.equal((await forceReset()).statusCode, 201);
       const offered = (await undoInfo()).undo!;
       assert.equal(offered.reads, 1);
       // The card turns up and is scanned before the race is started again.
@@ -863,8 +892,9 @@ describe('competitions REST CRUD', () => {
         assert.deepEqual((await post('reset-race')).json(), {
           error: 'reads_since_start',
           reads: 1,
+          started_at_ms: start,
         });
-        assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+        assert.equal((await forceReset()).statusCode, 201);
       } finally {
         now.mock.restore();
       }
