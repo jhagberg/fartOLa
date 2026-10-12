@@ -97,7 +97,7 @@ describe('RacePhaseControl', () => {
     await click('reset-race-btn');
     await click('reset-race-confirm');
     expect(posts.map((p) => p.body)).toEqual([{}]);
-    expect(text()).toContain('623 avläsningar har gjorts sedan starten');
+    expect(text()).toContain('623 avläsningar och måltider för hand sedan starten slutar räknas');
     expect(el('race-phase-pill')).toBeNull();
     const go = el<HTMLButtonElement>('reset-race-confirm')!;
     expect(go.textContent).toContain('Återställ ändå');
@@ -124,9 +124,13 @@ describe('RacePhaseControl', () => {
     undo = { started_at_ms: START, reads: 623 };
     startedAtMs = START + 3_600_000;
     await mountIt();
-    expect(el('undo-reset-note')!.textContent).toContain('623 avläsningar räknas inte');
+    expect(el('undo-reset-note')!.textContent).toContain(
+      '623 avläsningar och måltider för hand räknas inte'
+    );
     await click('undo-reset-btn');
-    expect(text()).toContain('Starten sätts tillbaka till 10:05 och 623 avläsningar räknas igen');
+    expect(text()).toContain(
+      'Starten sätts tillbaka till 10:05. 623 avläsningar och måltider för hand räknas igen'
+    );
     expect(posts).toEqual([]);
     await click('undo-reset-confirm');
     expect(posts).toEqual([{ url: '/api/competitions/c1/reset-race/undo', body: {} }]);
@@ -151,7 +155,7 @@ describe('RacePhaseControl', () => {
     await click('reset-race-btn');
     await click('reset-race-confirm');
     expect(posts.at(-1)).toEqual({ url: '/api/competitions/c2/reset-race', body: {} });
-    expect(text()).toContain('7 avläsningar har gjorts sedan starten');
+    expect(text()).toContain('7 avläsningar och måltider för hand sedan starten slutar räknas');
   });
 
   it('a refusal that arrives after a switch is not shown for the other competition', async () => {
