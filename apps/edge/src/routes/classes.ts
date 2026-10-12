@@ -194,6 +194,13 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
     const kind = kindOnCreate(parsed.data);
     if (kind.classKind !== null && kindNeedsAge(kind.classKind) && kind.ageClass === null)
       return reply.code(400).send({ error: 'age_class_required' });
+    // The name is unique in a competition (index classes_name_per_comp).
+    const taken = app.fartolaDb.db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(and(eq(classes.competitionId, id), eq(classes.name, parsed.data.name)))
+      .get();
+    if (taken) return reply.code(409).send({ error: 'class_name_taken' });
     const row: Class = {
       id: crypto.randomUUID(),
       competitionId: id,
