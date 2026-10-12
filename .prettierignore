@@ -16,3 +16,7 @@ pnpm-lock.yaml
 # are bench truth (committed as captured); never reformat.
 packages/sportident/tests/fixtures/jonas/*.expected.json
 
+
+# The speaker demo dataset: generated (fartOLa-tools/replay), kept on one
+# compact line.
+apps/web/src/demo/speaker-demo.json
