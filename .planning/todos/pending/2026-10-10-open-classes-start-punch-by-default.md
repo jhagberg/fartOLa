@@ -36,3 +36,13 @@ where: the field sits far down in Lottning, after the draw controls.
 Test: a confirmed open class with a few imported start times and the
 rest without is not listed in Kontroll; a confirmed age class at nivå 1-3
 still is (TR 7.4.2).
+
+## Seen again, 2026-10-12 (Jonas, local test)
+
+Inskolning showed up in Kontroll as missing start times until the class was
+drawn. On "Automatiskt" the class counts as drawn as soon as one runner has a
+start time (`classNeedsStartTimes`, preRaceCheck.ts), and then every other
+runner is listed. In the test data "Vit 2,0" had 1 start time among 22
+runners. The class kinds were not confirmed either (`class_kind` null for
+"Insk. 2,0", "Vit 2,0"), so a default by kind must also work from the name
+guess, or Kontroll must ask to confirm the kind first.
