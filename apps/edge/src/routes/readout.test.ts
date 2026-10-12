@@ -163,6 +163,7 @@ interface ReadoutBody {
     competitor_id: string | null;
     status: string;
     unmatched: boolean;
+    expected_codes: number[];
   }>;
   pending_unknown_cards: number[];
   voided_codes: number[];
@@ -216,6 +217,35 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.ok(body.current_read);
     assert.equal(body.current_read.competitor_id, competitorId);
     assert.equal(body.current_read.status, 'OK');
+  });
+
+  test('test 2h: a class sharing a course by class.courseId gets its expected codes', async () => {
+    // "H20/H35": the course points back to one class only (legacy
+    // course.classId); the other class reaches it through class.courseId.
+    seedCompetition(ctx.handle, 'comp-2h');
+    ctx.handle.db
+      .insert(classes)
+      .values({ id: 'cls-h35', competitionId: 'comp-2h', name: 'H35', courseId: 'crs-comp-2h' })
+      .run();
+    ctx.handle.db
+      .insert(competitors)
+      .values({
+        id: 'cmp-h35',
+        competitionId: 'comp-2h',
+        name: 'Bo',
+        club: 'Test',
+        classId: 'cls-h35',
+        cardNumber: 1428824,
+        consentAtMs: 1_000,
+        consentStatus: 'explicit',
+        scrubbedAtMs: null,
+      })
+      .run();
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-2h', 1428824, 100, 1);
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-2h/readout' });
+    const body = res.json() as ReadoutBody;
+    assert.equal(body.history[0]?.status, 'OK');
+    assert.deepEqual(body.history[0]?.expected_codes, [31]);
   });
 
   test('test 1b: voided_codes follows control_voided / control_unvoided', async () => {
