@@ -166,6 +166,7 @@
   "race.undo.body": "Starten sätts tillbaka till {{time}}. {{count}} avläsningar och måltider för hand räknas igen.",
   "race.undo.go": "Ja, ångra",
   "race.undo.undoing": "Ångrar…",
+  "race.undo.changed": "Det som kan ångras har ändrats. Läs texten igen och bekräfta, eller avbryt.",
 
   "runners.title": "Anmälda löpare",
   "runners.count": "{{count}} st",

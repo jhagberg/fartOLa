@@ -114,7 +114,8 @@
   }
 
   async function onConfirmReset(): Promise<void> {
-    if (active === null) return;
+    // `busy` also stops a second click that lands before the button is disabled.
+    if (active === null || busy) return;
     const id = active.id;
     busy = true;
     err = null;
@@ -138,18 +139,30 @@
   }
 
   async function onConfirmUndo(): Promise<void> {
-    if (active === null) return;
+    if (active === null || undo === null || busy) return;
     const id = active.id;
     busy = true;
     err = null;
     try {
-      await undoResetRace(id);
+      await undoResetRace(id, undo);
       await activeCompetition.refreshList();
       if (activeId !== id) return;
       undo = null;
       toIdle();
     } catch (e) {
-      if (activeId === id) err = (e as Error).message;
+      if (activeId !== id) return;
+      if (e instanceof ApiError && (e.body as { error?: unknown })?.error === 'undo_changed') {
+        // Not the undo the card described any more: show what it is now.
+        err = t('race.undo.changed');
+        getResetRaceUndo(id).then(
+          (r) => {
+            if (activeId === id) undo = r.undo;
+          },
+          () => {}
+        );
+      } else {
+        err = (e as Error).message;
+      }
     } finally {
       busy = false;
     }
@@ -307,7 +320,7 @@
             type="button"
             class="confirm-go"
             onclick={() => void onConfirmUndo()}
-            disabled={busy}
+            disabled={busy || undo === null}
             data-testid="undo-reset-confirm"
           >
             {busy ? t('race.undo.undoing') : t('race.undo.go')}

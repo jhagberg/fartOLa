@@ -18,7 +18,9 @@ describe('RacePhaseControl', () => {
   let component: ReturnType<typeof mount> | null = null;
   let startedAtMs: number | null;
   let readsSinceStart: number;
-  let undo: { started_at_ms: number; reads: number } | null;
+  let undo: { node_id: string; local_seq: number; started_at_ms: number; reads: number } | null;
+  // What the edge offers instead, once: the next undo is refused as changed.
+  let changedTo: typeof undo;
   let posts: Array<{ url: string; body: unknown }>;
   // Holds back the answer to a reset until released.
   let hold: Promise<void> | null;
@@ -42,6 +44,7 @@ describe('RacePhaseControl', () => {
     startedAtMs = START;
     readsSinceStart = 623;
     undo = null;
+    changedTo = null;
     posts = [];
     hold = null;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -63,12 +66,24 @@ describe('RacePhaseControl', () => {
           return json({ ...other, race_started_at_ms: null }, 201);
         }
         if (url.endsWith('/reset-race/undo')) {
+          if (changedTo !== null) {
+            undo = changedTo;
+            changedTo = null;
+            return json({ error: 'undo_changed' }, 409);
+          }
           startedAtMs = undo!.started_at_ms;
           undo = null;
         } else if (readsSinceStart > 0 && body.force !== true) {
           return json({ error: 'reads_since_start', reads: readsSinceStart }, 409);
         } else {
-          if (readsSinceStart > 0) undo = { started_at_ms: startedAtMs!, reads: readsSinceStart };
+          if (readsSinceStart > 0) {
+            undo = {
+              node_id: 'n1',
+              local_seq: 7,
+              started_at_ms: startedAtMs!,
+              reads: readsSinceStart,
+            };
+          }
           startedAtMs = null;
         }
         return json(comp(), 201);
@@ -121,7 +136,7 @@ describe('RacePhaseControl', () => {
 
   it('after a reset that took read-outs away, undo says what it restores and does it', async () => {
     // Reset at 10:05, started again later: the 623 read-outs do not count.
-    undo = { started_at_ms: START, reads: 623 };
+    undo = { node_id: 'n1', local_seq: 7, started_at_ms: START, reads: 623 };
     startedAtMs = START + 3_600_000;
     await mountIt();
     expect(el('undo-reset-note')!.textContent).toContain(
@@ -133,9 +148,50 @@ describe('RacePhaseControl', () => {
     );
     expect(posts).toEqual([]);
     await click('undo-reset-confirm');
-    expect(posts).toEqual([{ url: '/api/competitions/c1/reset-race/undo', body: {} }]);
+    // The request names the reset the operator saw.
+    expect(posts).toEqual([
+      { url: '/api/competitions/c1/reset-race/undo', body: { node_id: 'n1', local_seq: 7 } },
+    ]);
     expect(el('race-phase-pill')!.textContent).toContain('10:05');
     expect(el('undo-reset-btn')).toBeNull();
+  });
+
+  it('a double click on a confirm button sends one request', async () => {
+    undo = { node_id: 'n1', local_seq: 7, started_at_ms: START, reads: 623 };
+    startedAtMs = null;
+    await mountIt();
+    await click('undo-reset-btn');
+    el('undo-reset-confirm')!.click();
+    el('undo-reset-confirm')!.click();
+    await settle();
+    expect(posts).toHaveLength(1);
+    // And the forced reset.
+    posts = [];
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    await click('reset-race-force-check');
+    el('reset-race-confirm')!.click();
+    el('reset-race-confirm')!.click();
+    await settle();
+    expect(posts.map((p) => p.body)).toEqual([{}, { force: true }]);
+  });
+
+  it('an undo that is no longer the one shown is not made: the new text is shown instead', async () => {
+    undo = { node_id: 'n1', local_seq: 7, started_at_ms: START, reads: 623 };
+    changedTo = { node_id: 'n1', local_seq: 9, started_at_ms: START + 3_600_000, reads: 8 };
+    startedAtMs = null;
+    await mountIt();
+    await click('undo-reset-btn');
+    await click('undo-reset-confirm');
+    expect(text()).toContain('Det som kan ångras har ändrats');
+    expect(text()).toContain('Starten sätts tillbaka till 11:05. 8 avläsningar');
+    expect(el('race-phase-pill')).toBeNull();
+    await click('undo-reset-confirm');
+    expect(posts.map((p) => p.body)).toEqual([
+      { node_id: 'n1', local_seq: 7 },
+      { node_id: 'n1', local_seq: 9 },
+    ]);
+    expect(el('race-phase-pill')!.textContent).toContain('11:05');
   });
 
   // Codex review of PR 130: the warning and the tick belong to the
