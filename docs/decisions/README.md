@@ -46,3 +46,4 @@ choice was made, not how it was implemented. Current project state lives in
 | [0015](0015-helper-tools-in-private-repo.md)                          | Helper tools live in a private repo; fartOLa stays the product                                | accepted               | 2026-10-05 |
 | [0016](0016-simple-clear-ui-not-meos-parity.md)                       | Own simple UI, not MeOS's: you always see what will happen and what did                       | accepted               | 2026-10-06 |
 | [0017](0017-fixed-offset-competition-clock.md)                        | One fixed-offset competition clock per competition                                            | accepted               | 2026-10-07 |
+| [0018](0018-one-start-choice-per-class.md)                            | One start choice per class with three answers; Kontroll reads it instead of guessing          | accepted               | 2026-10-12 |
