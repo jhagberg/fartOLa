@@ -40,7 +40,10 @@ describe('speakerGrid', () => {
     [4, 2, 2],
     [5, 3, 2],
     [6, 3, 2],
+    [7, 4, 2],
+    [8, 4, 2],
     [9, 3, 3],
+    [10, 4, 3],
   ])('%i classes → %i×%i', (n, cols, rows) => {
     expect(speakerGrid(n)).toEqual({ cols, rows });
   });
