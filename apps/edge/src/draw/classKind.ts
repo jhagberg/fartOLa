@@ -13,7 +13,12 @@
 // name. A rule that refuses something needs a confirmed kind: one from
 // Eventor or the operator, not a bare name suggestion (kindConfirmed).
 
-import type { ClassKind, ClassKindSource, StartMethod } from '@fartola/shared-types';
+import type {
+  ClassKind,
+  ClassKindSource,
+  CompetitionLevel,
+  StartMethod,
+} from '@fartola/shared-types';
 
 export interface ClassKindSuggestion {
   kind: ClassKind;
@@ -114,8 +119,15 @@ export function kindNeedsAge(kind: ClassKind): boolean {
   return kind !== 'oppen' && kind !== 'inskolning';
 }
 
-/** The start choice a new class gets (ADR-0018). */
-export function defaultStartMethod(kind: ClassKind | null): StartMethod {
+/** The start choice a new class gets (ADR-0018): open classes and
+ * inskolning free start; an age class a drawn time at nivå 1-3 only, where
+ * free start is forbidden; otherwise the start punch. The level is the
+ * competition's when the class is created; a later change rewrites nothing. */
+export function defaultStartMethod(
+  kind: ClassKind | null,
+  level: CompetitionLevel | null
+): StartMethod {
   if (kind === 'oppen' || kind === 'inskolning') return 'free_start';
-  return kind === null ? 'start_punch' : 'start_time';
+  const strict = level === 'niva1' || level === 'niva2' || level === 'niva3';
+  return kind !== null && strict ? 'start_time' : 'start_punch';
 }

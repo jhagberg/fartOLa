@@ -111,22 +111,15 @@ function fixture(dir: string): void {
 }
 
 describe('replay script', () => {
-  test('imports, replays the reads; the start-punch runner is a SOFT difference, not a mismatch', async () => {
+  test('imports, replays the reads; a class made without a level starts from the punch (ADR-0018), so all 4 match', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'fartola-replay-'));
     try {
       fixture(dir);
       const report = await replay(dir);
       assert.deepEqual(report.mismatches, []);
-      assert.equal(report.equal, 3);
+      assert.equal(report.equal, 4);
       assert.equal(report.total, 4);
-      assert.deepEqual(
-        report.meosDifferences.map((d) => [d.card, d.expectedTime, d.gotTime, d.meosTime]),
-        [[8100004, 1194, 1200, 1194]]
-      );
-      const text = formatReport(report);
-      assert.match(text, /^3\/4 lika som officiella resultatet, 1 skillnad mot MeOS/);
-      assert.match(text, /Skillnad mot MeOS \(SOFT TR 4\.18\.9 \(2026-07-01\)\)/);
-      assert.match(text, /bricka 8100004: MeOS 19:54, fartOLa 20:00/);
+      assert.deepEqual(report.meosDifferences, []);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

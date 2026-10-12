@@ -1180,6 +1180,9 @@ describe('PATCH /api/competitions/:id/competitors/:competitorId/start-time', () 
   test('SOFT TR 4.18.9: a late start keeps the original start time; a new start set via PATCH (organiser error) is what the time runs from', async () => {
     const at = (sec: number): number => localToEpochMs('2026-05-22', sec);
     const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    // The time runs from the drawn start, so the class is "Lottad starttid"
+    // (a class made without a level starts from the punch, ADR-0018).
+    ctx.handle.db.update(classesTable).set({ startMethod: 'start_time' }).run();
     const created = await ctx.app.inject({
       method: 'POST',
       url: '/api/competitors',

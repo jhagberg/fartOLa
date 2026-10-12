@@ -18,6 +18,7 @@ import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import type { CompetitionLevel } from '@fartola/shared-types';
 
 import { openDatabase } from '../db/index.ts';
 import type { DbHandle } from '../db/index.ts';
@@ -171,25 +172,42 @@ describe('ingestCourseData', () => {
     assert.deepEqual(kinds, { H12: ['ungdom', 12, 'name'], 'D21 Elit': ['elit', 21, 'name'] });
   });
 
-  test('ADR-0018: imported classes get the start choice their kind implies', () => {
-    ingestCourseData(ctx.handle, ctx.competitionId, {
-      ...SAMPLE,
-      classes: [
-        { id: 'a', name: 'Inskolning', short_name: null },
-        { id: 'b', name: 'H21', short_name: null },
-        { id: 'c', name: 'Xyz', short_name: null },
-      ],
-      courses: SAMPLE.courses.map((c, i) => ({ ...c, class_id_ref: i === 0 ? 'a' : 'b' })),
-    });
-    const methods = Object.fromEntries(
+  test('ADR-0018: imported classes get the start choice their kind and the level imply', () => {
+    const methods = (level: CompetitionLevel | null) => {
+      ctx.handle.db.delete(classes).run();
       ctx.handle.db
-        .select()
-        .from(classes)
-        .where(eq(classes.competitionId, ctx.competitionId))
-        .all()
-        .map((r) => [r.name, r.startMethod])
-    );
-    assert.deepEqual(methods, { Inskolning: 'free_start', H21: 'start_time', Xyz: 'start_punch' });
+        .update(competitions)
+        .set({ level })
+        .where(eq(competitions.id, ctx.competitionId))
+        .run();
+      ingestCourseData(ctx.handle, ctx.competitionId, {
+        ...SAMPLE,
+        classes: [
+          { id: 'a', name: 'Inskolning', short_name: null },
+          { id: 'b', name: 'H21', short_name: null },
+          { id: 'c', name: 'Xyz', short_name: null },
+        ],
+        courses: SAMPLE.courses.map((c, i) => ({ ...c, class_id_ref: i === 0 ? 'a' : 'b' })),
+      });
+      return Object.fromEntries(
+        ctx.handle.db
+          .select()
+          .from(classes)
+          .where(eq(classes.competitionId, ctx.competitionId))
+          .all()
+          .map((r) => [r.name, r.startMethod])
+      );
+    };
+    assert.deepEqual(methods('niva2'), {
+      Inskolning: 'free_start',
+      H21: 'start_time',
+      Xyz: 'start_punch',
+    });
+    assert.deepEqual(methods(null), {
+      Inskolning: 'free_start',
+      H21: 'start_punch',
+      Xyz: 'start_punch',
+    });
   });
 
   test('test 2: re-running the same input is idempotent for classes + controls', () => {

@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 
 import type { DbHandle } from '../db/index.ts';
 import { defaultStartMethod, suggestClassKind } from '../draw/classKind.ts';
-import { classes, controls, courses, courseControls } from '../db/schema.ts';
+import { classes, competitions, controls, courses, courseControls } from '../db/schema.ts';
 import type { ParsedCourseData } from '../xml/parse.ts';
 
 export interface CourseImportResult {
@@ -98,6 +98,12 @@ function doIngest(
   // Pre-load all existing classes for this competition into a Map so we
   // hit the DB once for the lookup instead of N times. PR #3 Gemini
   // medium feedback. Same pattern as the clubs dedupe in entryImport.ts.
+  const level =
+    handle.db
+      .select({ level: competitions.level })
+      .from(competitions)
+      .where(eq(competitions.id, competitionId))
+      .get()?.level ?? null;
   const classIdByName = new Map<string, string>();
   const existingClasses = handle.db
     .select({ id: classes.id, name: classes.name })
@@ -127,7 +133,7 @@ function doIngest(
         name: c.name,
         shortName: c.short_name,
         noTiming: c.no_timing === true,
-        startMethod: defaultStartMethod(kind?.kind ?? null),
+        startMethod: defaultStartMethod(kind?.kind ?? null, level),
         classKind: kind?.kind ?? null,
         ageClass: kind?.ageClass ?? null,
         classKindSource: kind === null ? null : 'name',
