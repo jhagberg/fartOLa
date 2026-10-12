@@ -36,8 +36,23 @@ class FakeTransport extends EventEmitter implements ISerialTransport {
   sent: number[][] = [];
   closed = false;
   failOpen = false;
+  /** Set to hold close() until finishClose() is called. */
+  slowClose = false;
+  finishClose: () => void = () => undefined;
+  /** Set to hold open() until finishOpen() is called. */
+  slowOpen = false;
+  finishOpen: () => void = () => undefined;
   open(): Promise<void> {
-    return this.failOpen ? Promise.reject(new Error('no such port')) : Promise.resolve();
+    if (this.failOpen) return Promise.reject(new Error('no such port'));
+    if (!this.slowOpen) return Promise.resolve();
+    return new Promise((resolve) => {
+      // A port closed before it was open stays open once it opens: only a
+      // close after this point counts.
+      this.finishOpen = () => {
+        this.closed = false;
+        resolve();
+      };
+    });
   }
   send(bytes: number[]): Promise<void> {
     this.sent.push(bytes);
@@ -45,7 +60,10 @@ class FakeTransport extends EventEmitter implements ISerialTransport {
   }
   close(): Promise<void> {
     this.closed = true;
-    return Promise.resolve();
+    if (!this.slowClose) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.finishClose = resolve;
+    });
   }
 }
 
@@ -55,9 +73,12 @@ const FRAME_78 = [
   0x02, 0xd3, 0x0d, 0x00, 0x4e, 0x00, 0x7b, 0xf4, 0x40, 0x00, 0xa8, 0xb6, 0x40, 0x00, 0x02, 0x08,
 ];
 
-function frame78(): number[] {
-  const [hi, lo] = CRC16(FRAME_78.slice(1));
-  return [...FRAME_78, hi, lo, 0x03];
+function frame78(over: { tss?: number; mem?: number } = {}): number[] {
+  const body = [...FRAME_78];
+  if (over.tss !== undefined) body[12] = over.tss;
+  if (over.mem !== undefined) body[15] = over.mem;
+  const [hi, lo] = CRC16(body.slice(1));
+  return [...body, hi, lo, 0x03];
 }
 
 function radioEvents(handle: DbHandle) {
@@ -107,12 +128,13 @@ describe('serial radio input', () => {
     const rows = radioEvents(handle);
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.competitionId, COMP);
-    // 11:59:50 on the competition date, 10 s before it was received.
-    assert.equal(rows[0]!.eventTimeMs, NOON - 10_000);
+    // 11:59:50.25 on the competition date, just under 10 s before it was
+    // received.
+    assert.equal(rows[0]!.eventTimeMs, NOON - 10_000 + 250);
     assert.deepEqual(rows[0]!.p, {
       event_type: 'radio_punch',
       source: 'serial',
-      idempotency_key: 'serial:78:8123456:11:59:50',
+      idempotency_key: 'serial:78:8123456:11:59:50:64',
       card_number: 8123456,
       control_code: 78,
       time_of_day: '11:59:50',
@@ -142,6 +164,58 @@ describe('serial radio input', () => {
     assert.equal(i.status().duplicates, 1);
     assert.deepEqual(inserted, [COMP]);
     await i.stop();
+  });
+
+  test('two punches in the same second are two punches, placed by their fraction', async () => {
+    const handle = setup();
+    const { i, transports } = input(handle);
+    await i.start();
+    // 11:59:50.250 and 11:59:50.750, two records in the station's memory.
+    transports[0]!.emit('data', [
+      ...frame78({ tss: 64, mem: 0x08 }),
+      ...frame78({ tss: 192, mem: 0x10 }),
+    ]);
+    const rows = radioEvents(handle);
+    assert.equal(rows.length, 2);
+    assert.equal(i.status().duplicates, 0);
+    assert.deepEqual(rows.map((r) => r.eventTimeMs).sort(), [
+      NOON - 10_000 + 250,
+      NOON - 10_000 + 750,
+    ]);
+    await i.stop();
+  });
+
+  test('stop while a reconnect is closing the old port: the port is not reopened', async () => {
+    const handle = setup();
+    const first = new FakeTransport();
+    const second = new FakeTransport();
+    const { i, opened } = input(handle, { transports: [first, second], backoffMs: [5] });
+    await i.start();
+    first.slowClose = true;
+    first.emit('close'); // the reconnect, 5 ms later, starts by closing `first`
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(first.closed, true);
+    assert.equal(opened.length, 1);
+
+    await i.stop();
+    first.finishClose();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(opened.length, 1, 'no port opened after stop');
+    assert.equal(i.status().connected, false);
+  });
+
+  test('stop while the port is opening: the port is closed once it has opened', async () => {
+    const handle = setup();
+    const t = new FakeTransport();
+    t.slowOpen = true;
+    const { i } = input(handle, { transports: [t] });
+    const started = i.start();
+    await new Promise((r) => setTimeout(r, 5)); // now waiting in t.open()
+    await i.stop();
+    t.finishOpen();
+    await started;
+    assert.equal(t.closed, true);
+    assert.equal(i.status().connected, false);
   });
 
   test('no active competition: nothing stored, and the status says so', async () => {

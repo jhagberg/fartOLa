@@ -280,8 +280,8 @@ export type EventPayload =
       // kvar i skogen through the fields the two share.
       event_type: 'radio_punch';
       source: 'serial';
-      /** `serial:${code}:${card}:${time of day}`: a punch heard twice (two
-       * routers, a resend) is stored once. */
+      /** `serial:${code}:${card}:${time of day}:${1/256 s}`: a punch heard
+       * twice (two routers, a resend) is stored once. */
       idempotency_key: string;
       card_number: number;
       control_code: number;
@@ -290,7 +290,9 @@ export type EventPayload =
       received_at_ms: number;
       /** The record carries no date to compare. */
       date_mismatch: false;
-      /** 1/256 s of the punch. */
+      /** 1/256 s of the punch. In the key and in event_time_ms; the radio
+       * status and the speaker place radio punches on whole seconds, as card
+       * punches and ROC rows are. */
       subsec_256: number;
       /** Day of week on the station's clock, 0 = Sunday. */
       weekday: number | null;
