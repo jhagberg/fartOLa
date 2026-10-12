@@ -481,7 +481,50 @@ describe('competitions REST CRUD', () => {
     const undoInfo = async () =>
       (
         await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}/reset-race/undo` })
-      ).json() as { undo: { started_at_ms: number; reads: number } | null };
+      ).json() as {
+        undo: { node_id: string; local_seq: number; started_at_ms: number; reads: number } | null;
+      };
+    // What the screen shows before the undo: the start it restores and what counts again.
+    const preview = async () => {
+      const u = (await undoInfo()).undo;
+      return u && { started_at_ms: u.started_at_ms, reads: u.reads };
+    };
+    const refOf = (u: { node_id: string; local_seq: number }) => ({
+      node_id: u.node_id,
+      local_seq: u.local_seq,
+    });
+    // Confirm the undo the preview offers.
+    const undoShown = async () => post('reset-race/undo', refOf((await undoInfo()).undo!));
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    // A card read now (cmp-1's card), in a millisecond of its own.
+    const readNow = async (localSeq: number) => {
+      await tick();
+      const now = Date.now();
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId: 'test-node',
+          competitionId: id,
+          localSeq,
+          eventType: 'card_read',
+          eventTimeMs: now,
+          recordedAtMs: now,
+          payload: {
+            event_type: 'card_read',
+            card_number: 100,
+            card_type: 'SI10',
+            start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+            finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 700, weekday: null },
+            check: null,
+            clear: null,
+            punch_count: 0,
+            punches: [],
+            card_holder: null,
+          },
+        })
+        .run();
+      await tick();
+    };
 
     // The race started a minute ago and one runner has read out since.
     beforeEach(async () => {
@@ -564,26 +607,67 @@ describe('competitions REST CRUD', () => {
     });
 
     test('undo after the reset restores the start and the read-out counts again', async () => {
-      assert.deepEqual(await undoInfo(), { undo: null });
+      assert.equal(await preview(), null);
       await post('reset-race', { force: true });
-      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
-      const res = await post('reset-race/undo');
+      assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
+      const ref = refOf((await undoInfo()).undo!);
+      const res = await post('reset-race/undo', ref);
       assert.equal(res.statusCode, 201);
       assert.equal((res.json() as { race_started_at_ms: number }).race_started_at_ms, t1);
       assert.equal(column(), t1);
       assert.equal(await status(), 'OK');
-      // Nothing left to undo; a second call writes no event.
-      assert.deepEqual(await undoInfo(), { undo: null });
-      assert.equal((await post('reset-race/undo')).statusCode, 409);
+      assert.equal(await preview(), null);
+      // The same request again (lost answer, double click) writes no event.
+      const again = await post('reset-race/undo', ref);
+      assert.equal(again.statusCode, 200);
+      assert.equal((again.json() as { race_started_at_ms: number }).race_started_at_ms, t1);
       assert.equal(eventCount('race_reset_undone'), 1);
+    });
+
+    // Codex review of PR 130: the undo took no target, so a repeat walked back
+    // one more reset.
+    test('an undo names its reset: a repeated request does not go back to an older start', async () => {
+      await post('reset-race', { force: true });
+      await post('start-race');
+      const tB = column()!;
+      await readNow(10);
+      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      const shown = (await undoInfo()).undo!;
+      assert.equal(shown.started_at_ms, tB);
+      assert.equal((await post('reset-race/undo', refOf(shown))).statusCode, 201);
+      assert.equal(column(), tB);
+      assert.equal((await post('reset-race/undo', refOf(shown))).statusCode, 200);
+      assert.equal(column(), tB);
+      assert.equal(eventCount('race_reset_undone'), 1);
+      // Going back to the first start is a step of its own, with its own preview.
+      const older = (await undoInfo()).undo!;
+      assert.equal(older.started_at_ms, t1);
+      assert.notDeepEqual(refOf(older), refOf(shown));
+      assert.equal((await post('reset-race/undo', refOf(older))).statusCode, 201);
+      assert.equal(column(), t1);
+    });
+
+    test('a confirmation for an undo that is no longer the one offered is refused', async () => {
+      await post('reset-race', { force: true });
+      const stale = refOf((await undoInfo()).undo!);
+      await post('start-race');
+      await readNow(10);
+      await post('reset-race', { force: true });
+      const res = await post('reset-race/undo', stale);
+      assert.equal(res.statusCode, 409);
+      assert.deepEqual(res.json(), { error: 'undo_changed' });
+      assert.equal(column(), null);
+      assert.equal(eventCount('race_reset_undone'), 0);
+      // The undo names a reset: without one the request is not valid.
+      assert.equal((await post('reset-race/undo')).statusCode, 400);
     });
 
     test('undo after reset and a new start: the earlier start wins, replay agrees', async () => {
       await post('reset-race', { force: true });
       await post('start-race');
       assert.equal(await status(), 'PEND');
-      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
-      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
+      assert.equal((await undoShown()).statusCode, 201);
       assert.equal(column(), t1);
       assert.equal(await status(), 'OK');
       // The event log alone (no cached column) gives the live result.
@@ -596,8 +680,8 @@ describe('competitions REST CRUD', () => {
       await post('reset-race', { force: true });
       await post('start-race');
       assert.equal((await post('reset-race')).statusCode, 201);
-      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 1 } });
-      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.deepEqual(await preview(), { started_at_ms: t1, reads: 1 });
+      assert.equal((await undoShown()).statusCode, 201);
       assert.equal(column(), t1);
       assert.equal(await status(), 'OK');
       const input = loadCompetitionInputs(ctx.handle, id)!;
@@ -647,8 +731,8 @@ describe('competitions REST CRUD', () => {
       await post('reset-race', { force: true });
       await post('start-race');
       assert.equal(await status('cmp-hand'), 'PEND');
-      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: t1, reads: 2 } });
-      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.deepEqual(await preview(), { started_at_ms: t1, reads: 2 });
+      assert.equal((await undoShown()).statusCode, 201);
       assert.equal(await status('cmp-hand'), before);
     });
 
@@ -687,8 +771,8 @@ describe('competitions REST CRUD', () => {
       assert.deepEqual((await post('reset-race')).json(), { error: 'reads_since_start', reads: 1 });
       assert.equal((await post('reset-race', { force: true })).statusCode, 201);
       assert.equal(await status('cmp-only'), 'PEND');
-      assert.deepEqual(await undoInfo(), { undo: { started_at_ms: start, reads: 1 } });
-      assert.equal((await post('reset-race/undo')).statusCode, 201);
+      assert.deepEqual(await preview(), { started_at_ms: start, reads: 1 });
+      assert.equal((await undoShown()).statusCode, 201);
       assert.notEqual(await status('cmp-only'), 'PEND');
     });
 
@@ -704,10 +788,10 @@ describe('competitions REST CRUD', () => {
       ).id;
       assert.equal((await post('start-race')).statusCode, 201);
       assert.equal((await post('reset-race')).statusCode, 201);
-      assert.deepEqual(await undoInfo(), { undo: null });
-      const res = await post('reset-race/undo');
+      assert.equal(await preview(), null);
+      const res = await post('reset-race/undo', { node_id: 'test-node', local_seq: 99 });
       assert.equal(res.statusCode, 409);
-      assert.deepEqual(res.json(), { error: 'nothing_to_undo' });
+      assert.deepEqual(res.json(), { error: 'undo_changed' });
     });
   });
 

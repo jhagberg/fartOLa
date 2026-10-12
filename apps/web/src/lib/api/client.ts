@@ -226,6 +226,9 @@ export function resetRace(id: string, force = false): Promise<CompetitionDTO> {
 /** What undoing the reset would do: the start it restores and how many
  * read-outs (and finishes entered by hand) count again. */
 export interface ResetRaceUndo {
+  /** The reset the undo goes back to; sent back when the undo is confirmed. */
+  node_id: string;
+  local_seq: number;
   started_at_ms: number;
   reads: number;
 }
@@ -236,10 +239,16 @@ export function getResetRaceUndo(id: string): Promise<{ undo: ResetRaceUndo | nu
   return apiFetch(`/api/competitions/${encodeURIComponent(id)}/reset-race/undo`);
 }
 
-export function undoResetRace(id: string): Promise<CompetitionDTO> {
+/** Undo the reset the operator was shown. The edge answers 409
+ * { error: 'undo_changed' } when that is no longer the undo on offer, and
+ * does nothing more when it is already undone. */
+export function undoResetRace(
+  id: string,
+  target: Pick<ResetRaceUndo, 'node_id' | 'local_seq'>
+): Promise<CompetitionDTO> {
   return apiFetch<CompetitionDTO>(`/api/competitions/${encodeURIComponent(id)}/reset-race/undo`, {
     method: 'POST',
-    body: {},
+    body: { node_id: target.node_id, local_seq: target.local_seq },
   });
 }
 
