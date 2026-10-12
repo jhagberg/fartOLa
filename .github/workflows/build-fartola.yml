@@ -26,6 +26,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # As in ci.yml: the other packages take their types from
+      # packages/sportident/dist, which a fresh checkout does not have.
+      - run: pnpm --filter @fartola/sportident build
       - run: pnpm -r typecheck
       - run: pnpm -r test
       - name: Build tarball
