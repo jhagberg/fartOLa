@@ -86,7 +86,9 @@ export function boardAt(data: SpeakerDemoData, tMs: number): SpeakerBoard {
       elapsed_time_ms: result === null ? null : result * 1000,
       place: result === null ? null : 1 + others.filter((t) => t < result).length,
       behind_leader_ms: result === null ? null : (result - Math.min(...others)) * 1000,
-      finish_at_ms: result === null || start === null ? null : at(start + result),
+      // Never after the read-out: an event the speaker sees at T is not
+      // stamped later than T (a card clock can run ahead of the reader's).
+      finish_at_ms: result === null || start === null ? null : at(Math.min(start + result, r[5])),
     };
   });
   return buildSpeakerBoard({
@@ -175,6 +177,8 @@ export function createClock(
   const time = (): number =>
     Math.min(endMs, Math.max(startMs, playing ? anchor + (now() - anchorReal) * speed : anchor));
   const set = (tMs: number): void => {
+    // Ran to the end: stopped, so a jump back does not start it again.
+    if (time() >= endMs) playing = false;
     anchor = Math.min(endMs, Math.max(startMs, tMs));
     anchorReal = now();
   };
