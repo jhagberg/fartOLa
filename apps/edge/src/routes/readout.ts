@@ -243,14 +243,12 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         .get();
       const clockOffsetMin =
         comp === undefined ? null : competitionClockOffsetMin(comp.date, comp.clockOffsetMin);
-      const startMethodByClass = new Map(
-        app.fartolaDb.db
-          .select({ id: classes.id, startMethod: classes.startMethod })
-          .from(classes)
-          .where(eq(classes.competitionId, id))
-          .all()
-          .map((c) => [c.id, c.startMethod])
-      );
+      const classRows = app.fartolaDb.db
+        .select({ id: classes.id, startMethod: classes.startMethod, courseId: classes.courseId })
+        .from(classes)
+        .where(eq(classes.competitionId, id))
+        .all();
+      const startMethodByClass = new Map(classRows.map((c) => [c.id, c.startMethod]));
 
       // Phase 2.1 — build a class_id → expected_codes index so each
       // history row can carry the course's expected control list. Two
@@ -278,13 +276,18 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
         const codesByCourse = new Map<string, Array<{ orderIdx: number; code: number }>>();
         for (const c of courseRows) codesByCourse.set(c.id, []);
         for (const r of codeRows) codesByCourse.get(r.courseId)?.push(r);
-        for (const [courseId, codes] of codesByCourse) {
-          codes.sort((a, b) => a.orderIdx - b.orderIdx);
-          const course = courseRows.find((c) => c.id === courseId);
-          if (course?.classId !== undefined && course?.classId !== null) {
+        for (const codes of codesByCourse.values()) codes.sort((a, b) => a.orderIdx - b.orderIdx);
+        // class.courseId wins; the legacy course.classId pointer is the
+        // fallback, as in the projection (reduce.ts). Classes that share a
+        // course ("H20/H35") reach it through class.courseId only.
+        for (const cls of classRows) {
+          const course =
+            courseRows.find((c) => c.id === cls.courseId) ??
+            courseRows.find((c) => c.classId === cls.id);
+          if (course) {
             expectedByClassId.set(
-              course.classId,
-              codes.map((c) => c.code)
+              cls.id,
+              (codesByCourse.get(course.id) ?? []).map((c) => c.code)
             );
           }
         }
