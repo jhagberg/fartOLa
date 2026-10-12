@@ -52,3 +52,7 @@ client would let the edge answer "already done" instead of "changed".
   as `race_started` but ordered before it is scored live (the cached
   column is seeded) and not on a replay from events alone. That one is in
   `reduce.ts` and does need a replay.
+- The operator-mistake walker (`apps/edge/scripts/walk.ts`) finds the open
+  case (forced reset, undo, the same forced reset again) and the
+  same-millisecond read, and lists both as known (`walkChecks.ts`: `KNOWN`
+  and `SAME_MS`). Remove the entries with the fix; the walk then guards it.
