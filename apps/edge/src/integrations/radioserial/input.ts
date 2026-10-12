@@ -12,7 +12,8 @@
 // - Only the time of day is used, placed on the competition clock like a ROC
 //   time (roc/place.ts). The record carries no date.
 // - A punch heard twice (two routers, a resend) is stored once: the key is
-//   control, card and time of day.
+//   control, card and time of day to 1/256 s. Two punches in the same second
+//   are two punches.
 // - A gateway is silent between punches and sends no heartbeat we know of,
 //   so an open port only says the cable is in. Whether the radio network
 //   delivers is the watchdog's question (roc/watchdog.ts).
@@ -112,6 +113,7 @@ export function createRadioSerialInput(opts: RadioSerialInputOpts): RadioSerialI
       return;
     }
     const time = autosendTimeOfDay(punch.clock);
+    const subsec = punch.clock.subsec_256 ?? 0;
     try {
       insertEvent(
         handle,
@@ -121,17 +123,17 @@ export function createRadioSerialInput(opts: RadioSerialInputOpts): RadioSerialI
           time,
           receivedAtMs,
           competitionClockOffsetMin(comp.date, comp.clockOffsetMin)
-        ),
+        ) + Math.round((subsec * 1000) / 256),
         {
           event_type: 'radio_punch',
           source: 'serial',
-          idempotency_key: `serial:${punch.code}:${punch.card_number}:${time}`,
+          idempotency_key: `serial:${punch.code}:${punch.card_number}:${time}:${subsec}`,
           card_number: punch.card_number,
           control_code: punch.code,
           time_of_day: time,
           received_at_ms: receivedAtMs,
           date_mismatch: false,
-          subsec_256: punch.clock.subsec_256 ?? 0,
+          subsec_256: subsec,
           weekday: punch.clock.weekday,
           station_mem_address: punch.mem_address,
           port: path,
@@ -182,6 +184,8 @@ export function createRadioSerialInput(opts: RadioSerialInputOpts): RadioSerialI
   const open = async (): Promise<void> => {
     if (stopped) return;
     await teardown();
+    // stop() may have run while the old port was closing.
+    if (stopped) return;
     const t = openTransport(path);
     transport = t;
     const lost = (why: string): void => {
@@ -202,8 +206,12 @@ export function createRadioSerialInput(opts: RadioSerialInputOpts): RadioSerialI
       lost(e instanceof Error ? e.message : String(e));
       return;
     }
-    // stop() or a newer attempt took over while the port was opening.
-    if (transport !== t) return;
+    // stop() or a newer attempt took over while the port was opening: it
+    // could not close a port that was not open yet.
+    if (transport !== t) {
+      await t.close().catch(() => undefined);
+      return;
+    }
     t.on('close', () => lost('port closed'));
     const l = new AutosendListener(t);
     l.on('punch', (p) => {
