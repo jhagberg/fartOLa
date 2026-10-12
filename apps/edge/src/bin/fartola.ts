@@ -58,6 +58,7 @@ import { scheduleEventorBoot } from '../eventor/boot.ts';
 import { resolveSecret } from '../config/secrets.ts';
 import { createPushQueue } from '../integrations/liveresultat/queue.ts';
 import { createRocPoller } from '../integrations/roc/poller.ts';
+import { createRadioSerialInput } from '../integrations/radioserial/input.ts';
 import { resultsChannel } from '@fartola/shared-types';
 import { liveresultatConfig, liveresultatMopMeta } from '../routes/liveresultat.ts';
 
@@ -80,6 +81,9 @@ export interface CliOpts {
    * to a single entry with position=null. Duplicate paths are rejected at
    * startup. */
   serialPaths: SerialPathEntry[];
+  /** One entry per --radio-serial flag: ports listened to for autosend
+   * records (a jSh.Radio gateway, an SRR receiver). Never a reader's port. */
+  radioSerialPaths: string[];
   competitionId: string | null;
   /** Plan 17 — daily backup directory. Default './backups'. */
   backupDir: string;
@@ -140,6 +144,11 @@ Options:
                            Default /dev/ttyUSB0 when neither flag is given.
   --no-bridge              Skip SI bridge attach. Useful for offline tests,
                            UI dev, and CI where /dev/ttyUSB0 is unavailable.
+  --radio-serial <path>    Serial port of a radio gateway that passes on the
+                           stations' autosend records (jSh.Radio gateway on
+                           USB, SRR receiver). Listen only, 38400 baud.
+                           Repeatable. Must not be a --serial reader port;
+                           works with --no-bridge too.
   --competition-id <id>    Set the bridge's active competition at boot.
                            Equivalent to POST /api/sessions/active-competition
                            after listen. Overrides whatever the config table
@@ -194,6 +203,7 @@ export function parseArgs(argv: string[]): CliOpts {
     allowLan: false,
     noBridge: false,
     serialPaths: [], // filled after loop
+    radioSerialPaths: [],
     competitionId: null,
     backupDir: './backups',
     retentionDays: 30,
@@ -246,6 +256,10 @@ export function parseArgs(argv: string[]): CliOpts {
     } else if (a === '--serial-path' || a.startsWith('--serial-path=')) {
       const { value, consumed } = valueFor('--serial-path', a, i);
       legacySerialPath = value;
+      i += consumed;
+    } else if (a === '--radio-serial' || a.startsWith('--radio-serial=')) {
+      const { value, consumed } = valueFor('--radio-serial', a, i);
+      if (!opts.radioSerialPaths.includes(value)) opts.radioSerialPaths.push(value);
       i += consumed;
     } else if (a === '--no-bridge') {
       opts.noBridge = true;
@@ -307,6 +321,19 @@ export function parseArgs(argv: string[]): CliOpts {
       seen.set(absPath, entry);
     }
     opts.serialPaths = Array.from(seen.values());
+  }
+
+  // A reader is sent commands; a radio gateway must only be listened to.
+  if (!opts.noBridge) {
+    const readers = new Set(opts.serialPaths.map((e) => resolvePath(e.path)));
+    for (const p of opts.radioSerialPaths) {
+      if (readers.has(resolvePath(p))) {
+        throw new Error(
+          `--radio-serial '${p}' is also the SI reader's port. Give the reader ` +
+            `its own port with --serial <path>, or run with --no-bridge.`
+        );
+      }
+    }
   }
 
   return opts;
@@ -744,6 +771,28 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   app.rocPoller = rocPoller;
   rocPoller.start();
 
+  // Radio gateways on serial ports (--radio-serial). Their punches go to the
+  // active competition, read from the config table as the SI bridge does.
+  const radioSerialInputs = opts.radioSerialPaths.map((path) =>
+    createRadioSerialInput({
+      handle,
+      nodeId,
+      log: app.log,
+      path,
+      getActiveCompetitionId: () =>
+        handle.db
+          .select({ value: config.value })
+          .from(config)
+          .where(eq(config.key, 'active_competition_id'))
+          .get()?.value ??
+        app.activeCompetitionId ??
+        null,
+      onInserted: (id) => app.wsBroadcast(resultsChannel(id), { type: 'radio_punch', payload: {} }),
+    })
+  );
+  app.radioSerialInputs = radioSerialInputs;
+  for (const input of radioSerialInputs) void input.start();
+
   const shutdown = async (code: number): Promise<void> => {
     for (const lc of lifecycles) {
       try {
@@ -761,6 +810,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       rocPoller.stop();
     } catch {
       /* best-effort */
+    }
+    for (const input of radioSerialInputs) {
+      try {
+        await input.stop();
+      } catch {
+        /* best-effort */
+      }
     }
     try {
       backup.stop();

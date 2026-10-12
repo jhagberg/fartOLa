@@ -273,6 +273,34 @@ export type EventPayload =
       date_mismatch: boolean;
     }
   | {
+      // A punch from an SI station in autosend mode, heard on a serial port
+      // (a jSh.Radio gateway, an SRR receiver, an online station) by
+      // integrations/radioserial. Like the ROC punch above: not a card read,
+      // ignored by the reducer, read by the same radio status, speaker and
+      // kvar i skogen through the fields the two share.
+      event_type: 'radio_punch';
+      source: 'serial';
+      /** `serial:${code}:${card}:${time of day}`: a punch heard twice (two
+       * routers, a resend) is stored once. */
+      idempotency_key: string;
+      card_number: number;
+      control_code: number;
+      /** 'HH:MM:SS' on the station's clock (local wall clock, no zone). */
+      time_of_day: string;
+      received_at_ms: number;
+      /** The record carries no date to compare. */
+      date_mismatch: false;
+      /** 1/256 s of the punch. */
+      subsec_256: number;
+      /** Day of week on the station's clock, 0 = Sunday. */
+      weekday: number | null;
+      /** Address of the record in the station's backup memory (its record
+       * number). Stored for a later check for gaps per station; unused. */
+      station_mem_address: number;
+      /** The serial port it arrived on. */
+      port: string;
+    }
+  | {
       event_type: 'frame_error';
       reason: string;
       raw: string;

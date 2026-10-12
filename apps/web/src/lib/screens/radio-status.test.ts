@@ -11,6 +11,8 @@ import {
   formatDelay,
   latestOnly,
   radioControlView,
+  radioPanelShown,
+  radioSerialViews,
   rocLinkProblem,
   sortedRadioViews,
 } from './radio-status.ts';
@@ -55,6 +57,7 @@ function status(controls: RadioControlStatus[], poll: RadioStatus['poll'] = null
       heard_codes: [],
     },
     poll,
+    serial: [],
     now_ms: NOW,
     clock_offset_min: OFFSET,
     window_min: 20,
@@ -126,6 +129,50 @@ describe('radio view extras', () => {
     const pending = status([]);
     pending.settings.start_id = null;
     expect(baselineKey(pending).key).toBe('radio.baseline.pending');
+  });
+});
+
+describe('serial ports (jSh gateway and the like)', () => {
+  const port = (over: Partial<RadioStatus['serial'][number]>): RadioStatus['serial'][number] => ({
+    path: '/dev/ttyUSB1',
+    connected: true,
+    last_error: null,
+    last_punch_at: null,
+    punches: 0,
+    duplicates: 0,
+    no_competition: 0,
+    ignored: 0,
+    frame_errors: 0,
+    legacy_records: 0,
+    ...over,
+  });
+
+  it('the panel shows with ROC off when a port is listened to', () => {
+    const s = status([]);
+    s.settings.enabled = false;
+    expect(radioPanelShown(s)).toBe(false);
+    s.serial = [port({})];
+    expect(radioPanelShown(s)).toBe(true);
+  });
+
+  it('shows the last punch on the competition clock and no warning when all is well', () => {
+    const s = status([]);
+    s.serial = [port({ last_punch_at: NOW, punches: 3 })];
+    expect(radioSerialViews(s)).toEqual([
+      { path: '/dev/ttyUSB1', connected: true, lastPunch: '11:30:00', warnings: [] },
+    ]);
+  });
+
+  it('warns about legacy-protocol records and punches with no competition', () => {
+    const s = status([]);
+    s.serial = [port({ connected: false, legacy_records: 4, no_competition: 2 })];
+    const [v] = radioSerialViews(s);
+    expect(v?.connected).toBe(false);
+    expect(v?.lastPunch).toBeNull();
+    expect(v?.warnings).toEqual([
+      { key: 'radio.serial.legacy', n: 4 },
+      { key: 'radio.serial.noCompetition', n: 2 },
+    ]);
   });
 });
 

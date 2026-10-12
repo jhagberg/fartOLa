@@ -3,8 +3,9 @@
 // Radio controls (ROC input) — two endpoints:
 //
 //   GET /api/competitions/:id/radio/status
-//     Settings, poll health and the watchdog per radio control (see
-//     shared-types RadioStatus). Read-only.
+//     Settings, poll health, the serial ports listened to (--radio-serial)
+//     and the watchdog per radio control (see shared-types RadioStatus).
+//     Read-only.
 //
 //   PATCH /api/competitions/:id/radio/settings
 //     { enabled?, roc_competition_id?, start_id?, radio_controls?,
@@ -21,6 +22,7 @@ import { z } from 'zod';
 import { resultsChannel } from '@fartola/shared-types';
 
 import { competitions } from '../db/schema.ts';
+import type { RadioSerialInputHandle } from '../integrations/radioserial/input.ts';
 import type { RocPollerHandle } from '../integrations/roc/poller.ts';
 import { buildRadioStatus } from '../integrations/roc/status.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -43,7 +45,13 @@ const SettingsInput = z
 
 export default async function registerRadioRoutes(app: FastifyInstance): Promise<void> {
   const status = (id: string) =>
-    buildRadioStatus(app.fartolaDb, id, Date.now(), app.rocPoller?.status(id) ?? null);
+    buildRadioStatus(
+      app.fartolaDb,
+      id,
+      Date.now(),
+      app.rocPoller?.status(id) ?? null,
+      (app.radioSerialInputs ?? []).map((i) => i.status())
+    );
 
   app.get<{ Params: { id: string } }>('/api/competitions/:id/radio/status', async (req, reply) => {
     const out = status(req.params.id);
@@ -115,5 +123,8 @@ declare module 'fastify' {
     /** ROC poller. Decorated by bin/fartola.ts; absent in tests that build
      * the server without one. */
     rocPoller?: RocPollerHandle;
+    /** Serial radio inputs, one per --radio-serial. Decorated by
+     * bin/fartola.ts; absent in tests. */
+    radioSerialInputs?: RadioSerialInputHandle[];
   }
 }

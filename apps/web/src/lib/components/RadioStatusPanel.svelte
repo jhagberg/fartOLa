@@ -3,8 +3,9 @@
 
   Radio-control status where the readout operator works: one line per radio
   control with OK / Få stämplingar / Tyst as text plus an icon, a date
-  warning when ROC rows carry another date, and "senast hörd". Shown only
-  while ROC input is on. Polls the edge every 10 s; the watchdog itself lives
+  warning when ROC rows carry another date, and "senast hörd". Shown while
+  ROC input is on or a radio gateway's serial port is listened to (one line
+  per port). Polls the edge every 10 s; the watchdog itself lives
   server-side (integrations/roc/watchdog.ts). A speaker view is a later task.
 -->
 <script lang="ts">
@@ -13,7 +14,14 @@
   import Icon, { type IconName } from '#lib/ui/Icon.svelte';
   import { getRadioStatus } from '#lib/api/client.ts';
   import type { RadioControlStatus, RadioStatus } from '@fartola/shared-types';
-  import { baselineKey, latestOnly, rocLinkProblem, sortedRadioViews } from '#lib/screens/radio-status.ts';
+  import {
+    baselineKey,
+    latestOnly,
+    radioPanelShown,
+    radioSerialViews,
+    rocLinkProblem,
+    sortedRadioViews,
+  } from '#lib/screens/radio-status.ts';
 
   interface Props {
     competitionId: string;
@@ -60,11 +68,13 @@
   });
 
   const views = $derived(status ? sortedRadioViews(status) : []);
-  const baseline = $derived(status ? baselineKey(status) : null);
+  const rocOn = $derived(status?.settings.enabled === true);
+  const baseline = $derived(status && rocOn ? baselineKey(status) : null);
+  const ports = $derived(status ? radioSerialViews(status) : []);
   const linkProblem = $derived(status ? rocLinkProblem(status) : null);
 </script>
 
-{#if status?.settings.enabled}
+{#if status && radioPanelShown(status)}
   <section class="radio" data-testid="radio-panel" aria-label={t('radio.title')}>
     <header class="head">
       <h3>{t('radio.title')}</h3>
@@ -73,11 +83,35 @@
           <span data-testid="radio-link-problem"><Icon name="x" size={16} /> {t('radio.linkProblem')}</span>
         {:else if failed}
           <span><Icon name="x" size={16} /> {t('radio.loadError')}</span>
-        {:else}
+        {:else if rocOn}
           <span><Icon name="check" size={16} /> {t('radio.linkOk')}</span>
         {/if}
       </span>
     </header>
+    {#if ports.length > 0}
+      <ul>
+        {#each ports as p (p.path)}
+          <li data-testid="radio-serial" data-state={p.connected ? 'ok' : 'silent'}>
+            <span class="code">{t('radio.serial.name', { port: p.path })}</span>
+            <span class="state">
+              <Icon name={p.connected ? 'check' : 'x'} size={16} />
+              {t(p.connected ? 'radio.serial.connected' : 'radio.serial.notConnected')}
+            </span>
+            {#each p.warnings as w (w.key)}
+              <span class="state" data-testid="radio-serial-warning">
+                <Icon name="alert-triangle" size={16} />
+                {t(w.key, { n: w.n })}
+              </span>
+            {/each}
+            <span class="when muted">
+              {p.lastPunch === null
+                ? t('radio.serial.noPunch')
+                : t('radio.serial.lastPunch', { time: p.lastPunch })}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
     {#if baseline}
       <p class="baseline muted" data-testid="radio-baseline">
         {t(baseline.key, { id: baseline.id })}

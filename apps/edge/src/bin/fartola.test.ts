@@ -49,6 +49,31 @@ describe('parseArgs', () => {
     assert.throws(() => parseArgs(['--bogus']), /Unknown argument: --bogus/);
   });
 
+  test('--radio-serial is repeatable and separate from the reader ports', () => {
+    const opts = parseArgs([
+      '--serial',
+      '/dev/ttyUSB0',
+      '--radio-serial',
+      '/dev/ttyUSB1',
+      '--radio-serial=/dev/ttyUSB2',
+    ]);
+    assert.deepEqual(opts.radioSerialPaths, ['/dev/ttyUSB1', '/dev/ttyUSB2']);
+    assert.deepEqual(parseArgs([]).radioSerialPaths, []);
+  });
+
+  test('--radio-serial on a reader port is refused, also the default reader port', () => {
+    assert.throws(
+      () => parseArgs(['--serial', '/dev/ttyUSB1', '--radio-serial', '/dev/ttyUSB1']),
+      /also the SI reader's port/
+    );
+    assert.throws(() => parseArgs(['--radio-serial', '/dev/ttyUSB0']), /also the SI reader's port/);
+    // Without a reader the port is free.
+    assert.deepEqual(
+      parseArgs(['--no-bridge', '--radio-serial', '/dev/ttyUSB0']).radioSerialPaths,
+      ['/dev/ttyUSB0']
+    );
+  });
+
   // -----------------------------------------------------------------------
   // Plan 04 (D-02) — multi-serial --serial flag with path:position syntax
   // -----------------------------------------------------------------------

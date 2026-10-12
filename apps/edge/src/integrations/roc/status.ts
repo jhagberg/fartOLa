@@ -6,7 +6,7 @@
 
 import { and, eq, gte } from 'drizzle-orm';
 import type { HalfDayClock } from '@fartola/sportident';
-import type { RadioStatus } from '@fartola/shared-types';
+import type { RadioSerialStatus, RadioStatus } from '@fartola/shared-types';
 
 import { competitions, events } from '../../db/schema.ts';
 import type { DbHandle } from '../../db/index.ts';
@@ -36,7 +36,8 @@ export function buildRadioStatus(
   handle: DbHandle,
   competitionId: string,
   nowMs: number,
-  poll: RocPollStatus | null
+  poll: RocPollStatus | null,
+  serial: RadioSerialStatus[] = []
 ): RadioStatus | null {
   const comp = handle.db
     .select({
@@ -162,6 +163,7 @@ export function buildRadioStatus(
             last_error: poll.lastError,
             consecutive_failures: poll.consecutiveFailures,
           },
+    serial,
     now_ms: nowMs,
     clock_offset_min: offsetMin,
     window_min: WATCHDOG_DEFAULTS.windowMin,

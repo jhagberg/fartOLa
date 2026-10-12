@@ -107,6 +107,42 @@ describe('RadioStatusPanel', () => {
     expect(codes()).toEqual(['200']);
   });
 
+  it('with ROC off, a listened-to port shows the panel with one line for the port', async () => {
+    panelProps.competitionId = 'A';
+    component = mount(RadioStatusPanel, { target: document.body, props: panelProps });
+    await settle();
+    const s = status(78);
+    s.settings.enabled = false;
+    answers['A']!({
+      ...s,
+      serial: [
+        {
+          path: '/dev/ttyUSB1',
+          connected: false,
+          last_error: 'no such port',
+          last_punch_at: null,
+          punches: 0,
+          duplicates: 0,
+          no_competition: 0,
+          ignored: 0,
+          frame_errors: 0,
+          legacy_records: 3,
+        },
+      ],
+    });
+    await settle();
+    const line = document.querySelector('[data-testid="radio-serial"]');
+    expect(line?.getAttribute('data-state')).toBe('silent');
+    expect(line?.textContent).toContain('/dev/ttyUSB1');
+    expect(line?.textContent).toContain('Inte ansluten');
+    expect(line?.querySelector('[data-testid="radio-serial-warning"]')?.textContent).toContain(
+      'Legacy protocol'
+    );
+    // No ROC, so no word about the ROC link; the controls are still listed.
+    expect(document.querySelector('.head')?.textContent).not.toContain('ROC');
+    expect(document.querySelectorAll('[data-testid="radio-control"]').length).toBe(1);
+  });
+
   it.each([
     ['ok', 'OK', 'lucide-check'],
     ['few', 'Få stämplingar', 'lucide-triangle-alert'],
