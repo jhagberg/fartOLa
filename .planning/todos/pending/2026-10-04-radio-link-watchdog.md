@@ -140,13 +140,73 @@ Done, for ROC input (roc.olresultat.se):
 - [ ] Not done: sound/alert and phone push, speaker view (later task).
 - [ ] Not done: per-sender delay ("Leveranstid från ROC"); ROC rows carry no
   sender name.
-- [ ] Not done: jSh/SRR radio input (gateway model, protocol, heartbeat).
+- [ ] Not done: jSh/SRR radio input. Gateway and protocol are known now,
+  see "jSh.Radio gateway" below; nothing is built.
 - [ ] Not done: tune thresholds on real data; prefill the control lists from
   the course file.
 
+## jSh.Radio gateway: what we know (2026-10-12)
+
+Sources: radio.jsh.de, the settings template and hotkey list shipped with
+jSh's free "jSh.Radio controller" (text files only; the program was not
+run or taken apart), and SPORTident's PC Programmer's Guide 5, chapter 5.
+
+- **Connection.** One jSh.Radio Gateway outputs every punch. USB-B as a
+  virtual serial port at 38400 baud with SPORTident's BSM7-USB driver, or
+  RS232, or Bluetooth SPP. It is not an SI station: it passes the
+  stations' bytes through unchanged and answers no SI commands.
+- **What arrives.** Extended-protocol autosend records, command 0xD3:
+  station code, card number, day and half-day byte, 12 h time, 1/256 s,
+  and the record's address in the station's backup memory. jSh's own
+  program also knows a longer 0xD3 variant that carries the station mode
+  and says only SIAC punches have it, so read the length byte and do not
+  assume 13 bytes. Card number 8000000 is a SIAC indicator, not a punch:
+  drop it.
+- **Lost punches per unit.** The guide says the backup address is meant as
+  a record number, so the receiver can see a gap. That needs the station
+  to have stored the punch; with "send last record" the SIAC sends and
+  the station stores nothing, so expect it to work for contact punches
+  only. Check on the bench.
+- **No heartbeat described.** Neither the site nor the settings describe
+  one in the data from the gateway. jSh's program has a 10-minute
+  watchdog, a "send source heartbeat" command and test punches to the
+  receiving program; what the heartbeat sends is not documented. Until
+  a bench test says otherwise, silence is ambiguous and the coverage
+  check against read-out cards is what tells a dead link from a quiet
+  control.
+- **Radio status.** The mesh is TinyMesh (Radiocrafts); jSh's program
+  asks the gateway for status in TinyMesh packet mode. Radiocrafts
+  publishes that format. It means sending to the gateway, so it is a
+  later step and needs a borrowed gateway.
+- **Station settings jSh requires:** Autosend on; Extended protocol on
+  (SI-Config+: "Legacy protocol" off); for SIAC Air+ "Radio: Send last
+  record" (SI-Config: "SIAC radio last rec"). fartOLa can already read
+  the first two from a coupled unit (byte 0x74, bits 0 and 1,
+  `BaseSiStation.ts`); the third is not in the guide. A check "is this
+  unit set up for radio" belongs in the station menu
+  (`2026-06-01-sportident-config-menu.md`).
+- **Other ways in.** jSh's program can forward to SIRAP (TCP 10001, as
+  MeOS and OLA take it). Its settings also name ROC's `getpunches_v4`
+  with `showunitid=1`, which may give the "per-sender" item above what
+  it lacks.
+
+To build (none of it exists; `SiMainStation.ts` dropped the autosend
+listener):
+
+1. A passive listener: open the port, never send, parse frames with the
+   existing parser and CRC, decode 0xD3. It must not run `SiMainStation`,
+   which sends commands when it connects.
+2. Widen `radio_punch` beyond `source: 'roc'` and feed the same status
+   and watchdog; deduplicate with ROC on (card, code, time of day).
+3. Port choice in the settings, so the listener and the read-out station
+   never take each other's port; reconnect and warn when the port is gone.
+4. In the edge process like the ROC poller (already independent of any
+   screen); golden frames and the DM replay for tests; a BSM7/BS8 in
+   autosend + extended protocol on USB stands in for the gateway.
+
 ## Open questions
 
-- Exact gateway model and protocol (SH Radio Gateway → SIRAP / TCP?
-  serial?). Does it send a heartbeat we can watch, so a silent link is
-  noticed even when no runner passes?
+- Borrow a jSh gateway and a router for a bench test. Does the record
+  from a SIAC through SRR carry a usable backup address, and do SRR
+  heartbeats (0xA7) pass through the mesh?
 - Threshold tuning: a quiet control late in the day must not page anyone.
