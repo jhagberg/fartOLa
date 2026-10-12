@@ -10,6 +10,8 @@
 // build if that file, or anything it imports, starts to need Node or a
 // server package: such code must not end up in a browser bundle.
 
+import { builtinModules } from 'node:module';
+
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -20,6 +22,7 @@ const noServerCode: Plugin = {
     const bare = !/^[./\0]/.test(id);
     if (
       id.startsWith('node:') ||
+      builtinModules.includes(id) ||
       (bare && importer?.includes('/apps/edge/') && id !== '@fartola/shared-types')
     )
       this.error(`${importer} imports ${id}: server code must not reach the demo bundle`);
