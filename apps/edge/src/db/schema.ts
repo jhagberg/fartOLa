@@ -517,9 +517,10 @@ export const classes = sqliteTable(
     noTiming: integer('no_timing', { mode: 'boolean' }).notNull().default(false),
     /** 02.1-14 Task 14 — which start the running time is measured from
      * (dnfMp.startMs): 'auto' (start time if any, else start punch),
-     * 'start_time' (start punch ignored), 'start_punch' (MeOS default).
+     * 'start_time' (start punch ignored), 'start_punch' (MeOS default),
+     * 'free_start' (free start time, timed like start_punch; ADR-0018).
      * Replaces Task 11's ignore_start_punch (migration 0014). */
-    startMethod: text('start_method', { enum: ['auto', 'start_time', 'start_punch'] })
+    startMethod: text('start_method', { enum: ['auto', 'start_time', 'start_punch', 'free_start'] })
       .notNull()
       .default('auto'),
     /** SOFT class category (ClassKind, TR 3.4.6/3.4.9). Suggested from

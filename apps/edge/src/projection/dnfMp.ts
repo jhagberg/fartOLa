@@ -39,7 +39,7 @@ import type { NdjsonPunch, HalfDayClock } from '@fartola/sportident';
 import type { Class } from '../db/types.ts';
 import { cardClockToEpochMs } from './halfDayClockMath.ts';
 
-/** 'auto' | 'start_time' | 'start_punch' — classes.start_method. */
+/** 'auto' | 'start_time' | 'start_punch' | 'free_start' — classes.start_method. */
 export type StartMethod = Class['startMethod'];
 
 export interface DetectInput {
@@ -217,7 +217,8 @@ function startPunchMs(input: StartInput): number | null {
  *                  oRunner.cpp:1331-1344; SOFT TR 4.18.16 (2026-07-01)).
  *   - auto:        start_time when the runner has a start time, else the
  *                  punch (fri starttid in open classes, SOFT TR 7.4.3
- *                  (2026-07-01)). */
+ *                  (2026-07-01)).
+ *   - free_start:  as start_punch (ADR-0018). */
 export function startMs(input: StartInput): number | null {
   const source = startSource(input);
   return source === 'drawn' ? input.drawnStartMs : source === 'punch' ? startPunchMs(input) : null;
@@ -231,6 +232,7 @@ export function startSource(input: StartInput): 'drawn' | 'punch' | null {
   switch (input.startMethod) {
     case 'start_time':
       return drawn !== null ? 'drawn' : null;
+    case 'free_start':
     case 'start_punch':
       return punch !== null ? 'punch' : drawn !== null ? 'drawn' : null;
     case 'auto':
@@ -250,7 +252,12 @@ export function startPunchWarning(input: StartInput): {
   early_start_ms: number | null;
 } {
   const none = { late_start_ms: null, early_start_ms: null };
-  if (input.start === null || input.drawnStartMs === null || input.startMethod === 'start_punch') {
+  if (
+    input.start === null ||
+    input.drawnStartMs === null ||
+    input.startMethod === 'start_punch' ||
+    input.startMethod === 'free_start'
+  ) {
     return none;
   }
   const diff = startPunchMs(input)! - input.drawnStartMs;
