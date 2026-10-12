@@ -13,6 +13,7 @@
 #   bash scripts/run-local.sh --no-bridge     # run with NO SI reader (UI only)
 #   bash scripts/run-local.sh --serial /dev/ttyUSB1        # different reader port
 #   bash scripts/run-local.sh --serial /dev/ttyUSB0:left --serial /dev/ttyUSB1:right  # two readers
+#   bash scripts/run-local.sh --serial /dev/ttyUSB0 --radio-serial /dev/ttyUSB1   # reader + jSh.Radio gateway (listen only)
 #
 # Any flag this script doesn't recognise is passed straight through to the
 # `fartola` bin (see `fartola --help`), so --competition-id, --retention-days,
