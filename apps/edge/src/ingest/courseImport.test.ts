@@ -171,6 +171,27 @@ describe('ingestCourseData', () => {
     assert.deepEqual(kinds, { H12: ['ungdom', 12, 'name'], 'D21 Elit': ['elit', 21, 'name'] });
   });
 
+  test('ADR-0018: imported classes get the start choice their kind implies', () => {
+    ingestCourseData(ctx.handle, ctx.competitionId, {
+      ...SAMPLE,
+      classes: [
+        { id: 'a', name: 'Inskolning', short_name: null },
+        { id: 'b', name: 'H21', short_name: null },
+        { id: 'c', name: 'Xyz', short_name: null },
+      ],
+      courses: SAMPLE.courses.map((c, i) => ({ ...c, class_id_ref: i === 0 ? 'a' : 'b' })),
+    });
+    const methods = Object.fromEntries(
+      ctx.handle.db
+        .select()
+        .from(classes)
+        .where(eq(classes.competitionId, ctx.competitionId))
+        .all()
+        .map((r) => [r.name, r.startMethod])
+    );
+    assert.deepEqual(methods, { Inskolning: 'free_start', H21: 'start_time', Xyz: 'start_punch' });
+  });
+
   test('test 2: re-running the same input is idempotent for classes + controls', () => {
     ingestCourseData(ctx.handle, ctx.competitionId, SAMPLE);
     const r2 = ingestCourseData(ctx.handle, ctx.competitionId, SAMPLE);

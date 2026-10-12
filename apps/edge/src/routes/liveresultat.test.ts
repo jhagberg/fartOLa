@@ -248,6 +248,12 @@ describe('liveresultat credentials (SOFT TR 7.7.1)', () => {
       payload: { name: 'H21' },
     });
     const classId = (cls.json() as { id: string }).id;
+    // The runners are timed from the card's start punch; a new class is drawn (ADR-0018).
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/competitions/${id}/classes/${classId}`,
+      payload: { start_method: 'start_punch' },
+    });
     for (const [name, card] of [
       ['Anna Andersson', 101],
       ['Bo Berg', 102],

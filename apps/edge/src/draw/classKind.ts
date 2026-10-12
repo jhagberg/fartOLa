@@ -13,7 +13,7 @@
 // name. A rule that refuses something needs a confirmed kind: one from
 // Eventor or the operator, not a bare name suggestion (kindConfirmed).
 
-import type { ClassKind, ClassKindSource } from '@fartola/shared-types';
+import type { ClassKind, ClassKindSource, StartMethod } from '@fartola/shared-types';
 
 export interface ClassKindSuggestion {
   kind: ClassKind;
@@ -112,4 +112,10 @@ export function pursuitBanned(kind: ClassKind, ageClass: number | null): boolean
 /** Kinds whose rules depend on the D/H age (everything but the open classes). */
 export function kindNeedsAge(kind: ClassKind): boolean {
   return kind !== 'oppen' && kind !== 'inskolning';
+}
+
+/** The start choice a new class gets (ADR-0018). */
+export function defaultStartMethod(kind: ClassKind | null): StartMethod {
+  if (kind === 'oppen' || kind === 'inskolning') return 'free_start';
+  return kind === null ? 'start_punch' : 'start_time';
 }

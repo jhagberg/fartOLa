@@ -1049,6 +1049,8 @@ describe('competitions REST CRUD', () => {
       });
       classIds.push((res.json() as { id: string }).id);
     }
+    // Timed from the card's start punch; a new class is drawn (ADR-0018).
+    ctx.handle.db.update(classes).set({ startMethod: 'start_punch' }).run();
     // D21 has its own 900 s; the competition max time is 600 s.
     assert.equal(
       (await set(`/api/competitions/${id}/classes/${classIds[1]}`, { maxTimeSec: 900 })).statusCode,

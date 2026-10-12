@@ -50,9 +50,18 @@ export interface PreRaceRunner {
   card_number: number | null;
 }
 
+export interface StartChoiceConflict {
+  class_id: string;
+  class_name: string;
+  runners: number;
+  reason: 'free_start_forbidden' | 'free_start_required';
+  free_start_offer: boolean;
+}
+
 export interface PreRaceCheck {
   no_card: PreRaceRunner[];
-  no_start_time: PreRaceRunner[];
+  no_start_time: Array<PreRaceRunner & { free_start_offer: boolean }>;
+  start_choice_conflicts: StartChoiceConflict[];
   no_club: PreRaceRunner[];
   no_name: PreRaceRunner[];
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
@@ -63,16 +72,14 @@ export interface PreRaceCheck {
 }
 
 /**
- * Whether every runner in the class must have a start time before the race.
- *   - A confirmed age class at nivå 1-3: yes, whatever the start method.
- *     Free start time is not allowed there (TR 7.4.2), so the start order
- *     is drawn even when the time runs from the start punch, which is
- *     itself allowed (TR 4.18.16).
- *   - Otherwise start_method 'start_time': yes; 'start_punch': no.
- *   - 'auto': yes when the class is drawn (a first start, or any runner
- *     already has a start time). Open classes and inskolning may use free
- *     start time (TR 7.4.3). A class whose kind is not confirmed yet is
- *     not flagged as an age class.
+ * Whether every runner in the class must have a start time before the race
+ * (ADR-0018).
+ *   - A confirmed age class at nivå 1-3: yes, whatever is stored (TR 7.4.2).
+ *   - A confirmed open class or inskolning at nivå 1-3: no, whatever is
+ *     stored (TR 7.4.3); the conflict list reports a stored drawn answer.
+ *   - Otherwise 'free_start': no; 'start_time' and 'start_punch': yes.
+ *   - 'auto' (older competitions): yes when the class is drawn (a first
+ *     start, or any runner already has a start time).
  */
 export function classNeedsStartTimes(
   cls: Pick<ClassRow, 'startMethod' | 'firstStartMs' | 'classKind' | 'classKindSource'>,
@@ -80,8 +87,9 @@ export function classNeedsStartTimes(
   anyRunnerHasStartTime: boolean
 ): boolean {
   if (freeStartForbidden(cls, level)) return true;
-  if (cls.startMethod === 'start_punch') return false;
-  if (cls.startMethod === 'start_time') return true;
+  if (freeStartRequired(cls, level)) return false;
+  if (cls.startMethod === 'free_start') return false;
+  if (cls.startMethod === 'start_time' || cls.startMethod === 'start_punch') return true;
   return cls.firstStartMs !== null || anyRunnerHasStartTime;
 }
 
@@ -96,6 +104,44 @@ export function freeStartForbidden(
     cls.classKind !== 'oppen' &&
     cls.classKind !== 'inskolning' &&
     (level === 'niva1' || level === 'niva2' || level === 'niva3')
+  );
+}
+
+/** A confirmed open class or inskolning at nivå 1-3, which takes only free
+ * start time (TR 7.4.3, 3.4.9). */
+export function freeStartRequired(
+  cls: Pick<ClassRow, 'classKind' | 'classKindSource'>,
+  level: Level
+): boolean {
+  return (
+    kindConfirmed(cls) &&
+    (cls.classKind === 'oppen' || cls.classKind === 'inskolning') &&
+    (level === 'niva1' || level === 'niva2' || level === 'niva3')
+  );
+}
+
+/** "Fri start" may be offered from Kontroll: the race has not started and
+ * nothing of the class can be rescored. A reset race keeps hand-set
+ * statuses and reads, and an identity scan before the start keeps its
+ * punches, so "not started" alone is not enough. */
+export function freeStartOffer(
+  cls: Pick<ClassRow, 'classKind' | 'classKindSource'>,
+  level: Level,
+  raceStartedAtMs: number | null | undefined,
+  runnersOfClass: Array<
+    Pick<CompetitorView, 'card_read_history' | 'manual_finish_ms' | 'manual_status'>
+  >
+): boolean {
+  return (
+    (raceStartedAtMs ?? null) === null &&
+    !freeStartForbidden(cls, level) &&
+    runnersOfClass.every(
+      (v) =>
+        v.card_read_history.length === 0 &&
+        v.manual_finish_ms === null &&
+        // A withdrawn runner (Återbud, Ej start) has no time to rescore.
+        (v.manual_status === null || !willStart({ manual_status: v.manual_status }))
+    )
   );
 }
 
@@ -133,9 +179,16 @@ export function preRaceCheck(
     card_number: v.card_number,
   });
 
+  const allOfClass = new Map<string, CompetitorView[]>();
+  for (const v of state.competitors.values())
+    allOfClass.set(v.class_id, [...(allOfClass.get(v.class_id) ?? []), v]);
+  const offer = (cls: ClassRow) =>
+    freeStartOffer(cls, level, input.race_started_at_ms, allOfClass.get(cls.id) ?? []);
+
   const out: PreRaceCheck = {
     no_card: [],
     no_start_time: [],
+    start_choice_conflicts: [],
     no_club: [],
     no_name: [],
     card_too_small: [],
@@ -154,7 +207,7 @@ export function preRaceCheck(
       cls !== undefined &&
       classNeedsStartTimes(cls, level, drawn.has(v.class_id))
     ) {
-      out.no_start_time.push(row(v));
+      out.no_start_time.push({ ...row(v), free_start_offer: offer(cls) });
     }
     if (v.club === null || v.club.trim() === '') out.no_club.push(row(v));
     if (v.name.trim().length < 2) out.no_name.push(row(v));
@@ -168,6 +221,21 @@ export function preRaceCheck(
   }
   for (const cls of [...input.classes].sort((a, b) => a.name.localeCompare(b.name, 'sv'))) {
     const runners = runnersPerClass.get(cls.id) ?? 0;
+    // Stored answers the rules now refuse; also when every runner has a time.
+    const reason =
+      cls.startMethod === 'free_start' && freeStartForbidden(cls, level)
+        ? 'free_start_forbidden'
+        : cls.startMethod !== 'free_start' && freeStartRequired(cls, level)
+          ? 'free_start_required'
+          : null;
+    if (runners > 0 && reason !== null)
+      out.start_choice_conflicts.push({
+        class_id: cls.id,
+        class_name: cls.name,
+        runners,
+        reason,
+        free_start_offer: offer(cls),
+      });
     if (runners > 0 && !codesByClass.has(cls.id)) {
       out.classes_without_course.push({ class_id: cls.id, class_name: cls.name, runners });
     }
