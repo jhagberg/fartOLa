@@ -189,10 +189,10 @@ describe('POST /api/competitions/:id/competitors/:competitorId/manual-dnf', () =
 
   test('test 7 (PATTERNS S-2 broadcast spy): manual-dnf records readout:<comp> envelope', async () => {
     const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
-    // Drop any prior recorded envelopes (the competitor seed POST did not
-    // emit a card_bound since no card_number was provided, so the buffer
-    // should already be empty — assert to keep the spy contract tight).
-    assert.equal(ctx.recorded.length, 0);
+    // The competitor seed POST did not emit a card_bound since no
+    // card_number was provided — assert to keep the spy contract tight. A
+    // results_update from the seed's markDirty may have arrived already.
+    assert.equal(ctx.recorded.filter((r) => r.envelope.type !== 'results_update').length, 0);
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/api/competitions/${competitionId}/competitors/${competitorId}/manual-dnf`,

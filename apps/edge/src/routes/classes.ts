@@ -226,6 +226,8 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       ...kind,
     };
     app.fartolaDb.db.insert(classes).values(row).run();
+    // The projection lists results per class: it must get the new one.
+    app.projectionStore.markDirty(id);
     return reply.code(201).send(classRowToDTO(row));
   });
 
