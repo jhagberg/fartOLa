@@ -18,7 +18,7 @@ import {
   prepareLottningLoadError,
   prepareLottningStartChoiceConflict,
 } from './helpers/lottning.ts';
-import { prepareKontrollNoStart } from './helpers/prerace.ts';
+import { prepareKontrollNoStart, prepareKontrollStartChoice } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import {
@@ -237,6 +237,12 @@ function screensFor({ id, regId, kvId, imId, exId }: Ids, request: APIRequestCon
       `/competition/${id}/kontroll`,
       (p) => p.getByTestId('prerace-view'),
       (p) => prepareKontrollNoStart(p, request),
+    ],
+    [
+      'kontroll start choice conflicts',
+      `/competition/${id}/kontroll`,
+      (p) => p.getByTestId('prerace-view'),
+      (p) => prepareKontrollStartChoice(p, request),
     ],
     [
       'lottning empty',

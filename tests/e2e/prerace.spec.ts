@@ -11,7 +11,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { BASE, seedCompetition, simulateRead } from './helpers/seed.ts';
-import { seedNoStartTimes } from './helpers/prerace.ts';
+import { addStartChoiceConflicts, seedNoStartTimes } from './helpers/prerace.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -96,9 +96,9 @@ test('the runners list filters on projected status and keeps the filter in the U
 });
 
 test.describe('classes without start times (Task 8)', () => {
-  const HELP = 'Öppen klass: välj Startstämpling i Lottning om klassen inte ska lottas.';
+  const HELP = 'Öppen klass: välj Fri start om klassen inte ska lottas.';
 
-  test('each class links to its place in Lottning, and no button changes the class here', async ({
+  test('each class links to Lotta klassen, and Fri start is offered before the race', async ({
     page,
     request,
   }) => {
@@ -107,13 +107,89 @@ test.describe('classes without start times (Task 8)', () => {
     const links = page.getByTestId('prerace-class-link');
     await expect(links).toHaveCount(2, { timeout: 20_000 });
     for (const name of ['H21', 'D21']) {
-      const link = links.filter({ hasText: name }).getByRole('link', { name: /Öppna i Lottning/ });
+      const link = links.filter({ hasText: name }).getByRole('link', { name: /Lotta klassen/ });
       await expect(link).toHaveAttribute('href', `/competition/${id}/lottning?klass=${ids[name]}`);
     }
-    await expect(links.getByRole('button')).toHaveCount(0);
+    await expect(links.getByRole('button', { name: 'Fri start' })).toHaveCount(2);
+    await expect(links.first()).toContainText(
+      'Fri start: tiden räknas från startstämplingen och klassen behöver ingen startlista.'
+    );
   });
 
-  test('an open class says to choose Startstämpling in Lottning; a timed class does not', async ({
+  test('Fri start sets free start, says so with a link back, and the class leaves the list', async ({
+    page,
+    request,
+  }) => {
+    const { id, ids } = await seedNoStartTimes(request);
+    const patches: unknown[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'PATCH' && r.url().includes('/classes/')) patches.push(r.postDataJSON());
+    });
+    await page.goto(`/competition/${id}/kontroll`);
+    const links = page.getByTestId('prerace-class-link');
+    await expect(links).toHaveCount(2, { timeout: 20_000 });
+    await links
+      .filter({ hasText: 'H21' })
+      .getByRole('button', { name: /Fri start/ })
+      .click();
+    const done = page.getByTestId('prerace-free-start-done');
+    await expect(done).toContainText('H21 har nu fri start.');
+    await expect(done.getByRole('link', { name: 'Ändra i Lottning' })).toHaveAttribute(
+      'href',
+      `/competition/${id}/lottning?klass=${ids['H21']}`
+    );
+    await expect(links).toHaveCount(1);
+    await expect(links).toContainText('D21');
+    expect(patches).toEqual([{ start_method: 'free_start', only_if_offered: true }]);
+  });
+
+  test('a class the race has already read says so when Fri start is refused', async ({
+    page,
+    request,
+  }) => {
+    const { id } = await seedNoStartTimes(request);
+    await page.route('**/api/competitions/*/classes/*', (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 409, json: { error: 'class_has_results' } })
+        : route.continue()
+    );
+    await page.goto(`/competition/${id}/kontroll`);
+    const links = page.getByTestId('prerace-class-link');
+    await expect(links).toHaveCount(2, { timeout: 20_000 });
+    await links
+      .filter({ hasText: 'H21' })
+      .getByRole('button', { name: /Fri start/ })
+      .click();
+    await expect(links.filter({ hasText: 'H21' })).toContainText(
+      'Klassen har redan avläsningar eller resultat. Ändra i Lottning.'
+    );
+    await expect(page.getByTestId('prerace-free-start-done')).toHaveText('');
+  });
+
+  test('classes whose stored start choice the rules refuse are listed with a way out', async ({
+    page,
+    request,
+  }) => {
+    const { id, ids } = await seedNoStartTimes(request);
+    await addStartChoiceConflicts(request, id, ids);
+    await page.goto(`/competition/${id}/kontroll`);
+    const section = page.getByTestId('prerace-section-startChoice');
+    await expect(section).toContainText(
+      'H16: fri start är inte tillåten i åldersklass på nivå 1–3 (TR 7.4.2). Välj Lottad starttid.',
+      { timeout: 20_000 }
+    );
+    await expect(section).toContainText(
+      'D21: öppen klass ska ha fri starttid på nivå 1–3 (TR 7.4.3). Välj Fri start.'
+    );
+    await expect(section.getByRole('link', { name: /Ändra i Lottning/ })).toHaveCount(2);
+    await section.getByRole('button', { name: /Fri start/ }).click();
+    await expect(page.getByTestId('prerace-free-start-done')).toContainText(
+      'D21 har nu fri start.'
+    );
+    await expect(section).not.toContainText('D21');
+  });
+
+  test('an open class says to choose Fri start; a timed class does not', async ({
     page,
     request,
   }) => {

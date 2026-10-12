@@ -1388,6 +1388,8 @@ export function patchClass(
     no_timing?: boolean;
     start_method?: StartMethod;
     start_name?: string | null;
+    /** Refused with 409 class_has_results unless the server still offers it. */
+    only_if_offered?: boolean;
   }
 ): Promise<{ ok: true }> {
   return apiFetch(

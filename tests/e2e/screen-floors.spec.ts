@@ -53,7 +53,7 @@ import {
   prepareLottningLoadError,
   prepareLottningStartChoiceConflict,
 } from './helpers/lottning.ts';
-import { prepareKontrollNoStart } from './helpers/prerace.ts';
+import { prepareKontrollNoStart, prepareKontrollStartChoice } from './helpers/prerace.ts';
 import { prepareInfo, prepareInfoFeesReloadError, prepareInfoLocked } from './helpers/info.ts';
 import { prepareRunnersAdd, prepareRunnersEdit, prepareRunnersList } from './helpers/runners.ts';
 import {
@@ -343,10 +343,16 @@ const SCREENS: Screen[] = [
     prepare: async (page, _id, request) => prepareLottningPursuitReading(page, request),
   },
   {
-    name: 'Kontroll, klasser utan starttid med länk till Lottning',
+    name: 'Kontroll, klasser utan starttid, Fri start och resultatrad',
     url: (id) => `/competition/${id}/kontroll`,
     ready: (p) => p.getByTestId('prerace-view'),
     prepare: async (page, _id, request) => prepareKontrollNoStart(page, request),
+  },
+  {
+    name: 'Kontroll, klasser där startvalet inte följer reglerna',
+    url: (id) => `/competition/${id}/kontroll`,
+    ready: (p) => p.getByTestId('prerace-view'),
+    prepare: async (page, _id, request) => prepareKontrollStartChoice(page, request),
   },
   {
     name: 'Lottning, klass utan starttider',
