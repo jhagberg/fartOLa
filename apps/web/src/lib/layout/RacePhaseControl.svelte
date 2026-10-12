@@ -21,10 +21,23 @@
 
   Hidden entirely when no competition is active (no point dangling
   the CTA before the operator has chosen scope).
+
+  The reset is for a start made by mistake. When cards have been read
+  since the start the edge refuses it (409 reads_since_start): the
+  confirm step then says how many read-outs stop counting and needs a
+  tick before "Återställ ändå". A reset that took read-outs away can be
+  undone from here, also after a new start and after a reload.
 -->
 <script lang="ts">
   import { activeCompetition } from '../stores/activeCompetition.svelte.ts';
-  import { startRace, resetRace } from '../api/client.ts';
+  import {
+    ApiError,
+    getResetRaceUndo,
+    resetRace,
+    startRace,
+    undoResetRace,
+    type ResetRaceUndo,
+  } from '../api/client.ts';
   import { t } from '../i18n/index.ts';
 
   const active = $derived(activeCompetition.value);
@@ -32,10 +45,39 @@
     active !== null && active.race_started_at_ms !== null
   );
 
-  type Mode = 'idle' | 'confirm-start' | 'confirm-reset';
+  type Mode = 'idle' | 'confirm-start' | 'confirm-reset' | 'confirm-undo';
   let mode: Mode = $state('idle');
   let busy = $state(false);
   let err: string | null = $state(null);
+  // Read-outs since the start, once the edge has refused a plain reset.
+  let readsAtRisk: number | null = $state(null);
+  let forceTicked = $state(false);
+  let undo: ResetRaceUndo | null = $state(null);
+
+  const activeId = $derived(active?.id ?? null);
+  const startedAtMs = $derived(active?.race_started_at_ms ?? null);
+  $effect(() => {
+    // A start, reset or undo changes what there is to undo.
+    void startedAtMs;
+    if (activeId === null) return;
+    let stale = false;
+    getResetRaceUndo(activeId).then(
+      (r) => {
+        if (!stale) undo = r.undo;
+      },
+      () => {}
+    );
+    return () => {
+      stale = true;
+    };
+  });
+
+  function toIdle(): void {
+    mode = 'idle';
+    err = null;
+    readsAtRisk = null;
+    forceTicked = false;
+  }
 
   function formatHHMM(ms: number): string {
     const d = new Date(ms);
@@ -68,9 +110,31 @@
     busy = true;
     err = null;
     try {
-      await resetRace(active.id);
+      await resetRace(active.id, readsAtRisk !== null);
       await activeCompetition.refreshList();
-      mode = 'idle';
+      toIdle();
+    } catch (e) {
+      const body = e instanceof ApiError ? (e.body as { error?: unknown; reads?: unknown }) : null;
+      if (body?.error === 'reads_since_start' && typeof body.reads === 'number') {
+        readsAtRisk = body.reads;
+        forceTicked = false;
+      } else {
+        err = (e as Error).message;
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function onConfirmUndo(): Promise<void> {
+    if (active === null) return;
+    busy = true;
+    err = null;
+    try {
+      await undoResetRace(active.id);
+      undo = null;
+      await activeCompetition.refreshList();
+      toIdle();
     } catch (e) {
       err = (e as Error).message;
     } finally {
@@ -111,6 +175,19 @@
           {t('race.start.cta')}
         </button>
       {/if}
+      {#if undo !== null}
+        <p class="undo-note" data-testid="undo-reset-note">
+          {t('race.undo.note', { time: formatHHMM(undo.started_at_ms), count: undo.reads })}
+        </p>
+        <button
+          type="button"
+          class="undo-btn"
+          onclick={() => (mode = 'confirm-undo')}
+          data-testid="undo-reset-btn"
+        >
+          {t('race.undo.cta')}
+        </button>
+      {/if}
     {:else if mode === 'confirm-start'}
       <div class="confirm-card" role="dialog" aria-labelledby="race-confirm-title">
         <p id="race-confirm-title" class="confirm-title">
@@ -144,20 +221,32 @@
           <p class="confirm-err" role="alert">{err}</p>
         {/if}
       </div>
-    {:else}
+    {:else if mode === 'confirm-reset'}
       <div class="confirm-card danger" role="dialog" aria-labelledby="race-reset-title">
         <p id="race-reset-title" class="confirm-title">
           {t('race.reset.title')}
         </p>
-        <p class="confirm-body">{t('race.reset.body')}</p>
+        {#if readsAtRisk === null}
+          <p class="confirm-body">{t('race.reset.body')}</p>
+        {:else}
+          <p class="confirm-body" role="alert">
+            {t('race.reset.readsBody', { count: readsAtRisk })}
+          </p>
+          <label class="confirm-check">
+            <input
+              type="checkbox"
+              bind:checked={forceTicked}
+              disabled={busy}
+              data-testid="reset-race-force-check"
+            />
+            {t('race.reset.forceCheck')}
+          </label>
+        {/if}
         <div class="confirm-actions">
           <button
             type="button"
             class="confirm-cancel"
-            onclick={() => {
-              mode = 'idle';
-              err = null;
-            }}
+            onclick={toIdle}
             disabled={busy}
             data-testid="reset-race-cancel"
           >
@@ -167,10 +256,48 @@
             type="button"
             class="confirm-go danger"
             onclick={() => void onConfirmReset()}
-            disabled={busy}
+            disabled={busy || (readsAtRisk !== null && !forceTicked)}
             data-testid="reset-race-confirm"
           >
-            {busy ? t('race.reset.resetting') : t('race.reset.go')}
+            {busy
+              ? t('race.reset.resetting')
+              : readsAtRisk === null
+                ? t('race.reset.go')
+                : t('race.reset.force')}
+          </button>
+        </div>
+        {#if err}
+          <p class="confirm-err" role="alert">{err}</p>
+        {/if}
+      </div>
+    {:else}
+      <div class="confirm-card" role="dialog" aria-labelledby="race-undo-title">
+        <p id="race-undo-title" class="confirm-title">
+          {t('race.undo.title')}
+        </p>
+        {#if undo !== null}
+          <p class="confirm-body">
+            {t('race.undo.body', { time: formatHHMM(undo.started_at_ms), count: undo.reads })}
+          </p>
+        {/if}
+        <div class="confirm-actions">
+          <button
+            type="button"
+            class="confirm-cancel"
+            onclick={toIdle}
+            disabled={busy}
+            data-testid="undo-reset-cancel"
+          >
+            {t('race.confirm.cancel')}
+          </button>
+          <button
+            type="button"
+            class="confirm-go"
+            onclick={() => void onConfirmUndo()}
+            disabled={busy}
+            data-testid="undo-reset-confirm"
+          >
+            {busy ? t('race.undo.undoing') : t('race.undo.go')}
           </button>
         </div>
         {#if err}
@@ -228,7 +355,23 @@
   .start-btn:hover {
     background: var(--accent-strong);
   }
-  .reset-btn {
+  .undo-note {
+    margin: 0;
+    font-size: var(--fs-label);
+    color: var(--fg);
+    line-height: 1.4;
+  }
+  .confirm-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: var(--hit);
+    font-size: var(--fs-label);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .reset-btn,
+  .undo-btn {
     width: 100%;
     min-height: var(--hit);
     padding: 0 var(--space-md);
@@ -245,6 +388,13 @@
     background: var(--bg-sunken);
     color: var(--dnf);
     border-color: var(--dnf);
+  }
+  .undo-btn {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .undo-btn:hover {
+    background: var(--bg-sunken);
   }
   .confirm-card {
     padding: var(--space-sm);
