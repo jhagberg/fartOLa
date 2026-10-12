@@ -201,7 +201,44 @@ describe('PreRaceCheckView', () => {
     patches[0]!.answer(json({ ok: true }));
     await settle();
     expect(checkHeld).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('har nu fri start');
+  });
+
+  it('a save finishing while another load runs still clears its busy state and shows its outcome', async () => {
+    await loaded(check({ no_start_time: [runner('a', 'h21')] }));
+    freeButtons()[0]!.click();
+    await settle();
+    document.querySelector<HTMLButtonElement>('[data-testid="prerace-rerun"]')!.click();
+    await settle();
+    checkHeld[1]!(json(check({ no_start_time: [runner('a', 'h21')] })));
+    await settle();
+    patches[0]!.answer(json({ ok: true }));
+    await settle();
+    expect(document.querySelector('[role="status"]')!.textContent).toContain(
+      'H21 har nu fri start.'
+    );
+    checkHeld[2]!(json(check({ no_start_time: [runner('a', 'h21')] })));
+    await settle();
+    expect(freeButtons()[0]!.disabled).toBe(false);
+  });
+
+  it('two saves answered in reverse order both show their outcome and leave no button disabled', async () => {
+    await loaded(check({ no_start_time: [runner('a', 'h21'), runner('b', 'd21')] }));
+    freeButtons()[0]!.click();
+    freeButtons()[1]!.click();
+    await settle();
+    expect(patches).toHaveLength(2);
+    patches[1]!.answer(json({ error: 'class_has_results' }, 409));
+    await settle();
+    patches[0]!.answer(json({ ok: true }));
+    await settle();
+    for (const h of checkHeld.slice(1))
+      h(json(check({ no_start_time: [runner('a', 'h21'), runner('b', 'd21')] })));
+    await settle();
+    expect(document.querySelector('[role="status"]')!.textContent).toContain(
+      'H21 har nu fri start.'
+    );
+    expect(document.body.textContent).toContain('Klassen har redan avläsningar');
+    expect(freeButtons().every((b) => !b.disabled)).toBe(true);
   });
 
   it('start_choice_conflicts show as their own section with the rule text', async () => {
