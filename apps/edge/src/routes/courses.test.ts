@@ -362,6 +362,28 @@ describe('voided-controls routes (02.1-14 Task 5)', () => {
     assert.deepEqual(after.json(), { control_codes: [] });
   });
 
+  test('a new course for a class re-scores the projection the server holds', async () => {
+    const debounced = () => new Promise((r) => setTimeout(r, 80)); // past the 50 ms debounce
+    const { compId, runnerId } = await seedRunnerMissing32();
+    await debounced(); // the recompute the new runner asked for is done
+    assert.equal(status(compId, runnerId), 'MP'); // the server now holds a projection
+    const classId = ctx.handle.sqlite
+      .prepare<[string], { class_id: string }>('SELECT class_id FROM competitors WHERE id = ?')
+      .get(runnerId)!.class_id;
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/courses`,
+      payload: {
+        name: 'Röd',
+        class_id: classId,
+        controls: [31, 33].map((control_code, order_idx) => ({ control_code, order_idx })),
+      },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+    await debounced();
+    assert.equal(ctx.app.projectionStore.get(compId)?.competitors.get(runnerId)?.status, 'OK');
+  });
+
   test('bad code → 400; unknown competition → 404', async () => {
     const compId = await newCompetition(ctx.app);
     for (const bad of ['abc', '0', '-3', '3.5']) {

@@ -190,6 +190,8 @@ export default async function registerCourses(app: FastifyInstance): Promise<voi
         app.fartolaDb.db.insert(courseControls).values(ccRowsToInsert).run();
       }
     })();
+    // A class pointed at the new course is scored against it from now on.
+    if (parsed.data.class_id) app.projectionStore.markDirty(competitionId);
 
     // Echo the created row as a CourseDTO with the controls list in order.
     const sortedControls: CourseControlDTO[] = [...parsed.data.controls]
