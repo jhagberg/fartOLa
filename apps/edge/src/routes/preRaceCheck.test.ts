@@ -12,7 +12,11 @@ import { buildServer } from '../server.ts';
 import { openDatabase, type DbHandle } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import { classes, competitors, controls, courseControls, courses, events } from '../db/schema.ts';
-import { classNeedsStartTimes, type PreRaceCheck } from '../projection/preRaceCheck.ts';
+import {
+  classNeedsStartTimes,
+  freeStartOffer,
+  type PreRaceCheck,
+} from '../projection/preRaceCheck.ts';
 
 const COMP = 'comp-prc';
 const hd = (ms: number) => ({
@@ -295,6 +299,29 @@ describe('GET /api/competitions/:id/pre-race-check', () => {
   });
 });
 
+describe('freeStartOffer, one clause at a time', () => {
+  type Runner = Parameters<typeof freeStartOffer>[3][number];
+  const none: Runner = { card_read_history: [], manual_finish_ms: null, manual_status: null };
+  const open = { classKind: 'oppen', classKindSource: 'operator' } as const;
+  const offer = (
+    runner: Partial<Runner>,
+    race: number | null = null,
+    cls: Parameters<typeof freeStartOffer>[0] = open
+  ) => freeStartOffer(cls, 'niva2', race, [{ ...none, ...runner }]);
+  const read = [{}] as unknown as Runner['card_read_history'];
+
+  test('only a hand-set status of a runner who starts, a read, a manual finish, a started race or a forbidden free start refuses', () => {
+    assert.equal(offer({}), true);
+    assert.equal(offer({ manual_status: 'DNF' }), false);
+    assert.equal(offer({ manual_finish_ms: 5 }), false);
+    assert.equal(offer({ manual_status: 'CANCEL' }), true);
+    assert.equal(offer({ manual_status: 'DNS' }), true);
+    assert.equal(offer({ manual_status: 'CANCEL', card_read_history: read }), false);
+    assert.equal(offer({}, 5), false);
+    assert.equal(offer({}, null, { classKind: 'senior', classKindSource: 'operator' }), false);
+  });
+});
+
 describe('start choice conflicts and the shortcut (ADR-0018)', () => {
   let app: FastifyInstance;
   let handle: DbHandle;
@@ -494,10 +521,17 @@ describe('start choice conflicts and the shortcut (ADR-0018)', () => {
     // The drawn time is 1 000 s; the start punch comes 3 min later.
     read(row.cardNumber!, 1_180_000);
     ev('manual_status_set', { competitor_id: 'r2', status: 'DNF', reason: 'hand' });
+    // While started: r1 is scored with its drawn time, r2 is hand-set to DNF.
+    const started = JSON.parse(startOf()) as Array<[string, number | null, string]>;
+    assert.equal(started.find((v) => v[0] === 'r1')![1], 1_000_000);
+    assert.notEqual(started.find((v) => v[0] === 'r1')![2], 'PEND');
+    assert.equal(started.find((v) => v[0] === 'r2')![2], 'DNF');
     handle.sqlite
       .prepare(`UPDATE competitions SET race_started_at_ms = NULL WHERE id = ?`)
       .run(COMP);
     const before = startOf();
+    // After the reset the hand-set status and the drawn time are still there.
+    assert.equal((JSON.parse(before) as Array<[string, number, string]>)[1]![2], 'DNF');
     const body = await check();
     assert.deepEqual(
       body.start_choice_conflicts.map((c) => [c.class_id, c.free_start_offer]),

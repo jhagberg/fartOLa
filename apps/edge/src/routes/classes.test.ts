@@ -261,22 +261,47 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.deepEqual([chosen.class_kind, chosen.class_kind_source], ['inskolning', 'operator']);
   });
 
-  test('ADR-0018: a new class gets the start choice its kind implies', async () => {
-    const created = async (payload: Record<string, unknown>) =>
+  test('ADR-0018: a new class gets the start choice its kind and the level imply', async () => {
+    const created = async (name: string) =>
       (
-        await ctx.app.inject({
-          method: 'POST',
-          url: `/api/competitions/${ctx.competitionId}/classes`,
-          payload,
-        })
-      ).json() as { start_method: string };
-    assert.equal((await created({ name: 'Inskolning' })).start_method, 'free_start');
-    assert.equal((await created({ name: 'H35' })).start_method, 'start_time');
-    assert.equal((await created({ name: 'Xyz' })).start_method, 'start_punch');
-    assert.equal(
-      (await created({ name: 'Xyz2', class_kind: 'oppen', age_class: null })).start_method,
-      'free_start'
-    );
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: `/api/competitions/${ctx.competitionId}/classes`,
+            payload: { name },
+          })
+        ).json() as { start_method: string }
+      ).start_method;
+    const level = (l: string | null) =>
+      ctx.handle.sqlite
+        .prepare('UPDATE competitions SET level = ? WHERE id = ?')
+        .run(l, ctx.competitionId);
+    level('niva2');
+    assert.equal(await created('Inskolning'), 'free_start');
+    assert.equal(await created('H35'), 'start_time');
+    assert.equal(await created('Xyz'), 'start_punch');
+    const names = ['H40', 'H45', 'H50'];
+    for (const [i, l] of ['niva4', 'traning', null].entries()) {
+      level(l);
+      assert.equal(await created(names[i]!), 'start_punch');
+    }
+  });
+
+  test('PATCH only_if_offered alone → 400, not 500; auto is refused for a class that must have free start', async () => {
+    const url = `/api/competitions/${ctx.competitionId}/classes/${ctx.classId}`;
+    const lone = await ctx.app.inject({ method: 'PATCH', url, payload: { only_if_offered: true } });
+    assert.equal(lone.statusCode, 400);
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET level = ? WHERE id = ?')
+      .run('niva2', ctx.competitionId);
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'oppen', classKindSource: 'operator' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    const auto = await ctx.app.inject({ method: 'PATCH', url, payload: { start_method: 'auto' } });
+    assert.equal(auto.statusCode, 409);
+    assert.deepEqual(auto.json(), { error: 'free_start_required' });
   });
 
   test("SOFT TR 3.4.2: kinds preview — Eventor's ClassTypeId over the name; PUT confirms (source operator)", async (t) => {

@@ -69,8 +69,11 @@ const PatchClassInput = z
     start_name: z.string().trim().max(60).nullable().optional(),
   })
   .strict()
-  .refine((b) => Object.values(b).some((v) => v !== undefined), {
+  .refine((b) => Object.entries(b).some(([k, v]) => k !== 'only_if_offered' && v !== undefined), {
     message: 'maxTimeSec, no_timing, start_method, bib_prefix, bib_base or start_name required',
+  })
+  .refine((b) => b.only_if_offered === undefined || b.start_method !== undefined, {
+    message: 'only_if_offered needs start_method',
   });
 
 /** The kind a new class gets: the operator's when given, else the SOFT-name
@@ -164,7 +167,8 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       if (start_method === 'free_start' && freeStartForbidden(classRow, classRow.level))
         return reply.code(409).send({ error: 'free_start_forbidden' });
       if (
-        (start_method === 'start_time' || start_method === 'start_punch') &&
+        start_method !== undefined &&
+        start_method !== 'free_start' &&
         freeStartRequired(classRow, classRow.level)
       )
         return reply.code(409).send({ error: 'free_start_required' });
@@ -214,7 +218,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       return reply.code(400).send(issuesToErrors(parsed.error.issues));
     }
     const compRow = app.fartolaDb.db
-      .select({ id: competitions.id })
+      .select({ id: competitions.id, level: competitions.level })
       .from(competitions)
       .where(eq(competitions.id, id))
       .get();
@@ -242,7 +246,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       // 02.1-14 Task 4: assigned by course import / course creation.
       courseId: null,
       noTiming: false,
-      startMethod: defaultStartMethod(kind.classKind),
+      startMethod: defaultStartMethod(kind.classKind, compRow.level),
       bibPrefix: null,
       bibBase: null,
       startName: null,

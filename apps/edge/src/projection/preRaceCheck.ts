@@ -7,6 +7,9 @@
 //   - no_card: no card bound (SOFT TR 4.18.10, the runner brings a card).
 //   - no_start_time: no start time in a class that needs one
 //     (classNeedsStartTimes below).
+//   - start_choice_conflicts: a class whose stored start choice the rules now
+//     refuse (free start in an age class, a drawn answer in an open class at
+//     nivå 1-3), listed whether or not its runners have start times.
 //   - no_club: no club (TR 7.5.4, the start list shows the club). A
 //     club-less entry ("Klubblös") is listed too; the operator decides.
 //   - no_name: a name under two characters (TR 7.5.1, an entry without a
