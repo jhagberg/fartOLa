@@ -110,18 +110,16 @@ the answer within what the rules allow for the class and level.
 
 A new answer changes the times for the whole class, also for runners
 already read out, because the class is scored again. Lottning says so
-when the race has started. A save carries the value the screen had seen
-and is refused if someone changed the answer in between.
+when the race has started.
 
 ### The shortcut in Kontroll
 
 Before the race has started, a class with runners without a start time
 gets two controls: "Lotta klassen", a link to Lottning, and "Fri start",
-which sets free start and shows the result with "Ångra". Kontroll does
-not offer "Fri start" where TR 7.4.2 forbids it. Once the race has
-started it offers only the link, since the change would rescore results.
-"Ångra" puts back the value stored before and is refused if the answer
-was changed again in between.
+which sets free start, says what it did and links to Lottning, where the
+answer can be changed again. Kontroll does not offer "Fri start" where
+TR 7.4.2 forbids it. Once the race has started it offers only the link,
+since the change would rescore results.
 
 ### Older competitions
 
@@ -149,9 +147,8 @@ the shortcut.
   no time until the runner gets a start time or the class gets another
   answer. Kontroll shows it before the race, and the punches are stored,
   so nothing is lost.
-- Bad, because "Ångra" in Kontroll works only while the page is open.
-  ADR-0016 rule 2 asks for a lasting list of recent changes, and this is
-  not one. The answer can always be seen and changed in Lottning.
+- Neutral, because the shortcut has no undo of its own. The answer is
+  a visible setting, and the operator changes it back in Lottning.
 - Neutral, because the setting stays in Lottning. A column on
   Tävlingsinfo (option E) can come later without changing the model.
 
