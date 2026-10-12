@@ -25,6 +25,8 @@
     listClasses,
     listCompetitors,
     listHiredCards,
+    patchClass,
+    ApiError,
     type PreRaceCheck,
   } from '#lib/api/client.ts';
   import type { ClassDTO, CompetitorDTO } from '@fartola/shared-types';
@@ -55,7 +57,15 @@
   const tab = $derived(page.url.searchParams.get('vy') === 'brickor' ? 'cards' : 'check');
   const query = $derived(page.url.searchParams.get('q') ?? '');
 
+  /** Only the newest load writes state; an older answer landing late is dropped. */
+  let loadGen = 0;
+  /** Classes whose "Fri start" save is in flight, the error on a class row, the last success. */
+  let busy = $state<Set<string>>(new Set());
+  let rowError = $state<Record<string, string>>({});
+  let freeStartDone = $state<{ id: string; name: string } | null>(null);
+
   async function loadAll(): Promise<void> {
+    const gen = ++loadGen;
     loadError = null;
     try {
       const [checkRes, compRes, classRes, hiredRes] = await Promise.all([
@@ -64,20 +74,54 @@
         listClasses(competitionId),
         listHiredCards(competitionId),
       ]);
+      if (gen !== loadGen) return;
       check = checkRes;
       competitors = compRes.competitors;
       classes = classRes.classes;
       cardRows = buildCardRows(compRes.competitors, hiredRes, classRes.classes);
     } catch {
-      loadError = t('prerace.loadError');
+      if (gen === loadGen) loadError = t('prerace.loadError');
     } finally {
-      loading = false;
+      if (gen === loadGen) loading = false;
     }
   }
 
   onMount(() => {
     void loadAll();
+    return () => {
+      loadGen++; // a late load or save writes nothing after the page is left
+    };
   });
+
+  async function freeStart(classId: string, className: string): Promise<void> {
+    const gen = loadGen;
+    busy = new Set(busy).add(classId);
+    delete rowError[classId];
+    try {
+      await patchClass(competitionId, classId, { start_method: 'free_start', only_if_offered: true });
+      if (gen !== loadGen) return;
+      delete rowError[classId];
+      freeStartDone = { id: classId, name: className };
+    } catch (e) {
+      if (gen !== loadGen) return;
+      const code = e instanceof ApiError ? (e.body as { error?: string } | null)?.error : undefined;
+      if (code === 'class_has_results') rowError[classId] = t('prerace.freeStart.hasResults');
+      else if (code === 'free_start_forbidden') rowError[classId] = t('prerace.freeStart.forbidden');
+      else {
+        console.error(e);
+        rowError[classId] = t('common.unknownError');
+      }
+      freeStartDone = null;
+    } finally {
+      if (gen === loadGen) {
+        const next = new Set(busy);
+        next.delete(classId);
+        busy = next;
+      }
+    }
+    // The class left the list, or the server says what changed: ask again.
+    if (gen === loadGen) void loadAll();
+  }
 
   function setParams(next: Record<string, string | null>): void {
     const u = new URL(page.url.href);
@@ -105,7 +149,13 @@
     soft?: boolean;
     action?: { label: string; href: string };
     /** The classes the rows belong to, each with its way into Lottning. */
-    classLinks?: Array<{ id: string; name: string; href: string; open: boolean }>;
+    classLinks?: Array<{
+      id: string;
+      name: string;
+      href: string;
+      open: boolean;
+      offer: boolean;
+    }>;
   }
 
   const competitorById = $derived(new Map(competitors.map((c) => [c.id, c])));
@@ -155,6 +205,7 @@
           name: r.class_name,
           href: `${base}/lottning?klass=${encodeURIComponent(r.class_id)}`,
           open: kind === 'oppen' || kind === 'inskolning',
+          offer: r.free_start_offer,
         },
       ];
     });
@@ -232,7 +283,12 @@
     ];
   });
 
-  const issueCount = $derived(sections.reduce((n, s) => n + (s.soft ? 0 : s.rows.length), 0));
+  const conflicts = $derived(check?.start_choice_conflicts ?? []);
+  const lottningHref = (classId: string): string =>
+    `/competition/${encodeURIComponent(competitionId)}/lottning?klass=${encodeURIComponent(classId)}`;
+  const issueCount = $derived(
+    sections.reduce((n, s) => n + (s.soft ? 0 : s.rows.length), 0) + conflicts.length
+  );
   const visibleCards = $derived(filterCardRows(cardRows, query));
 
   function toggleAll(key: string): void {
@@ -294,6 +350,16 @@
       </Button>
     </div>
 
+    <div role="status" data-testid="prerace-free-start-done">
+      {#if freeStartDone}
+        <p class="done">
+          <Icon name="check" size={20} />
+          {t('prerace.freeStart.done', { class: freeStartDone.name })}
+          <a class="link" href={lottningHref(freeStartDone.id)}>{t('prerace.freeStart.change')}</a>
+        </p>
+      {/if}
+    </div>
+
     {#each sections as s (s.key)}
       {@const shown = expanded.has(s.key) ? s.rows : s.rows.slice(0, SHOW)}
       <section class="card" data-testid={`prerace-section-${s.key}`}>
@@ -321,6 +387,13 @@
                     aria-label={t('prerace.noStart.openClass', { class: c.name })}
                     >{t('prerace.noStart.open')}</a
                   >
+                  {#if c.offer}
+                    {@render freeStartButton(c.id, c.name)}
+                    <p class="meta">{t('prerace.freeStart.help')}</p>
+                  {/if}
+                  {#if rowError[c.id]}
+                    <p class="err" data-testid="prerace-free-start-error">{rowError[c.id]}</p>
+                  {/if}
                   {#if c.open}
                     <p class="meta" data-testid="prerace-open-class-help">
                       {t('prerace.noStart.openHelp')}
@@ -369,6 +442,45 @@
         {/if}
       </section>
     {/each}
+
+    {#if conflicts.length > 0}
+      <section class="card" data-testid="prerace-section-startChoice">
+        <header class="section-head">
+          <Icon name="alert-triangle" size={20} />
+          <h2>
+            {t('prerace.startChoice.title')}:
+            <span class="mono" data-testid="prerace-count">{conflicts.length}</span>
+          </h2>
+        </header>
+        <p class="rule">{t('prerace.startChoice.rule')}</p>
+        <ul class="rows class-links">
+          {#each conflicts as c (c.class_id)}
+            <li class="class-link" data-testid="prerace-start-choice-row">
+              <span class="name">
+                {t(
+                  c.reason === 'free_start_forbidden'
+                    ? 'prerace.startChoice.forbidden'
+                    : 'prerace.startChoice.required',
+                  { class: c.class_name }
+                )}
+              </span>
+              <a
+                class="link"
+                href={lottningHref(c.class_id)}
+                aria-label={t('prerace.freeStart.changeClass', { class: c.class_name })}
+                >{t('prerace.freeStart.change')}</a
+              >
+              {#if c.free_start_offer}
+                {@render freeStartButton(c.class_id, c.class_name)}
+              {/if}
+              {#if rowError[c.class_id]}
+                <p class="err">{rowError[c.class_id]}</p>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
   {:else}
     <div class="search-wrap">
       <span class="search-icon" aria-hidden="true"><Icon name="search" size={18} /></span>
@@ -436,6 +548,18 @@
     {/if}
   {/if}
 </section>
+
+{#snippet freeStartButton(classId: string, className: string)}
+  <Button
+    variant="secondary"
+    disabled={busy.has(classId)}
+    aria-label={t('prerace.freeStart.buttonClass', { class: className })}
+    onclick={() => void freeStart(classId, className)}
+    data-testid="prerace-free-start"
+  >
+    {t('prerace.freeStart.button')}
+  </Button>
+{/snippet}
 
 <EditCompetitorModal
   open={editTarget !== null}
@@ -625,6 +749,18 @@
     justify-content: space-between;
     gap: 0 var(--space-md);
     padding: var(--space-xs) var(--space-md);
+  }
+  .done {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs);
+    margin: 0;
+    font-weight: 600;
+  }
+  .class-link .err {
+    flex-basis: 100%;
+    padding-bottom: var(--space-xs);
   }
   .class-link .meta {
     flex-basis: 100%;
