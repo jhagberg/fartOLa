@@ -2,7 +2,8 @@
 //
 // SpeakerView's live wiring in jsdom with a fake fetch and WebSocket:
 //   - a board response that overtakes an older one is not overwritten by it;
-//   - leaving the page while the first load is pending opens no socket.
+//   - leaving the page while the first load is pending opens no socket;
+//   - with a feed (the public demo) nothing is fetched and no socket opens.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -107,5 +108,33 @@ describe('SpeakerView live wiring', () => {
     await settle();
     await settle();
     expect(FakeWebSocket.all).toHaveLength(0);
+  });
+
+  it('with a feed it shows that board and its classes, and asks the server for nothing', async () => {
+    localStorage.clear();
+    const fed = {
+      clock_offset_min: 120,
+      classes: ['D21', 'H21', 'H35'].map((name, i) => ({
+        class_id: `k${i}`,
+        class_name: name,
+        controls: [],
+        runners: [],
+      })),
+      events: [],
+    };
+    component = mount(SpeakerView, {
+      target: document.body,
+      props: {
+        competitionId: 'demo',
+        feed: { name: 'Demotävlingen', board: fed, nowMs: 0, classes: ['H21', 'D21'] },
+      },
+    });
+    await settle();
+    flushSync();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(FakeWebSocket.all).toHaveLength(0);
+    expect(document.body.textContent).toContain('Demotävlingen');
+    const panels = [...document.querySelectorAll('[data-testid="spk-panel"] h2')];
+    expect(panels.map((h) => h.textContent)).toEqual(['D21', 'H21']);
   });
 });
