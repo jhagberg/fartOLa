@@ -245,6 +245,12 @@ export type EventPayload =
       // apply; subsequent card_reads return to identity-scan semantics.
       event_type: 'race_reset';
       previous_started_at_ms: number;
+      /** How many results the reset took away (cards read since the start,
+       * runners timed by hand), counted when it was made. More than 0: the
+       * reset hit a real race and can be undone. The reducer does not read
+       * it. Absent on events from before the undo existed: those cannot be
+       * undone. */
+      took?: number;
     }
   | {
       // Undo of a race_reset (events cannot be deleted). The reducer skips

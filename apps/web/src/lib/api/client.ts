@@ -224,7 +224,7 @@ export function resetRace(id: string, force = false): Promise<CompetitionDTO> {
 }
 
 /** What undoing the reset would do: the start it restores and how many
- * read-outs (and finishes entered by hand) count again. */
+ * read-outs (and finishes entered by hand) that reset took away. */
 export interface ResetRaceUndo {
   /** The reset the undo goes back to; sent back when the undo is confirmed. */
   node_id: string;

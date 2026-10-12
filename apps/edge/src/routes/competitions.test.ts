@@ -19,7 +19,7 @@
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-04-PLAN.md task 1
 
-import { describe, test, beforeEach, afterEach } from 'node:test';
+import { describe, test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -774,6 +774,104 @@ describe('competitions REST CRUD', () => {
       assert.deepEqual(await preview(), { started_at_ms: start, reads: 1 });
       assert.equal((await undoShown()).statusCode, 201);
       assert.notEqual(await status('cmp-only'), 'PEND');
+    });
+
+    // Codex review of PR 130, round 4: what a reset took away is recorded when
+    // it is made, so later history cannot change it.
+    const ownCompetition = async (): Promise<{ classId: string; start: number }> => {
+      id = (
+        (
+          await ctx.app.inject({
+            method: 'POST',
+            url: '/api/competitions',
+            payload: { name: 'Own', date: '2026-10-04' },
+          })
+        ).json() as { id: string }
+      ).id;
+      const classId = ((await post('classes', { name: 'H21' })).json() as { id: string }).id;
+      assert.equal((await post('start-race')).statusCode, 201);
+      return { classId, start: column()! };
+    };
+    const cardRead = (nodeId: string, localSeq: number, cardNumber: number, atMs: number) =>
+      ctx.handle.db
+        .insert(events)
+        .values({
+          nodeId,
+          competitionId: id,
+          localSeq,
+          eventType: 'card_read',
+          eventTimeMs: atMs,
+          recordedAtMs: atMs,
+          payload: {
+            event_type: 'card_read',
+            card_number: cardNumber,
+            card_type: 'SI10',
+            start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null },
+            finish: { half_day: 0, seconds_in_half_day: 9 * 3600 + 700, weekday: null },
+            check: null,
+            clear: null,
+            punch_count: 0,
+            punches: [],
+            card_holder: null,
+          },
+        })
+        .run();
+
+    test('a card scanned after the reset does not take the undo away from a runner timed by hand', async () => {
+      const { classId, start } = await ownCompetition();
+      ctx.handle.db
+        .insert(competitors)
+        .values({
+          id: 'cmp-late',
+          competitionId: id,
+          name: 'Doris',
+          classId,
+          cardNumber: 200,
+          startTimeMs: start + 1_000,
+        })
+        .run();
+      const set = await ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${id}/competitors/cmp-late/manual-finish`,
+        payload: { finish_ms: start + 600_000, reason: 'bricka saknas' },
+      });
+      assert.equal(set.statusCode, 201, set.body);
+      assert.notEqual(await status('cmp-late'), 'PEND');
+      assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      const offered = (await undoInfo()).undo!;
+      assert.equal(offered.reads, 1);
+      // The card turns up and is scanned before the race is started again.
+      await tick();
+      cardRead('node-b', 1, 200, Date.now());
+      assert.deepEqual((await undoInfo()).undo, offered);
+      assert.equal((await post('reset-race/undo', refOf(offered))).statusCode, 201);
+      assert.notEqual(await status('cmp-late'), 'PEND');
+    });
+
+    test('a card read in the same millisecond as the reset, ordered before it, can be undone', async () => {
+      const { classId, start } = await ownCompetition();
+      ctx.handle.db
+        .insert(competitors)
+        .values({ id: 'cmp-same', competitionId: id, name: 'Eva', classId, cardNumber: 300 })
+        .run();
+      const at = start + 10;
+      // local_seq 1 on its own node: before the reset in the reducer's order.
+      cardRead('node-b', 1, 300, at);
+      assert.equal(await status('cmp-same'), 'OK');
+      const now = mock.method(Date, 'now', () => at);
+      try {
+        assert.deepEqual((await post('reset-race')).json(), {
+          error: 'reads_since_start',
+          reads: 1,
+        });
+        assert.equal((await post('reset-race', { force: true })).statusCode, 201);
+      } finally {
+        now.mock.restore();
+      }
+      assert.equal(await status('cmp-same'), 'PEND');
+      assert.deepEqual(await preview(), { started_at_ms: start, reads: 1 });
+      assert.equal((await undoShown()).statusCode, 201);
+      assert.equal(await status('cmp-same'), 'OK');
     });
 
     test('a reset after a start by mistake has nothing to undo', async () => {
