@@ -604,6 +604,90 @@ describe('lottning route', () => {
     assert.equal((await get()).without_start_time, 0);
   });
 
+  test('ADR-0018: GET lottning carries start_method and free_start_required', async () => {
+    const get = async () =>
+      (
+        (
+          await ctx.app.inject({
+            method: 'GET',
+            url: `/api/competitions/${ctx.competitionId}/lottning/${ctx.classId}`,
+          })
+        ).json() as { class: { start_method: string; free_start_required: boolean } }
+      ).class;
+    assert.deepEqual(
+      [(await get()).start_method, (await get()).free_start_required],
+      ['auto', false]
+    );
+    ctx.handle.db
+      .update(competitions)
+      .set({ level: 'niva2' })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    ctx.handle.db
+      .update(classes)
+      .set({ classKind: 'oppen', ageClass: null, startMethod: 'start_time' })
+      .where(eq(classes.id, ctx.classId))
+      .run();
+    assert.deepEqual(
+      [(await get()).start_method, (await get()).free_start_required],
+      ['start_time', true]
+    );
+  });
+
+  test('ADR-0018: a free-start class, or an open one at nivå 1-3, is not drawn: 409, nothing written', async () => {
+    const attempt = async (setup: () => void) => {
+      setup();
+      const res = await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 });
+      assert.equal(res.statusCode, 409, res.body);
+      assert.deepEqual(res.json(), { error: 'free_start_class' });
+      const times = ctx.handle.db
+        .select({ t: competitors.startTimeMs })
+        .from(competitors)
+        .where(eq(competitors.classId, ctx.classId))
+        .all();
+      assert.ok(times.every((r) => r.t === null));
+      assert.equal(
+        ctx.handle.db.select().from(events).where(eq(events.eventType, 'start_times_set')).all()
+          .length,
+        0
+      );
+    };
+    await attempt(() =>
+      ctx.handle.db
+        .update(classes)
+        .set({ startMethod: 'free_start' })
+        .where(eq(classes.id, ctx.classId))
+        .run()
+    );
+    await attempt(() => {
+      ctx.handle.db
+        .update(classes)
+        .set({
+          startMethod: 'start_punch',
+          classKind: 'oppen',
+          classKindSource: 'operator',
+          ageClass: null,
+        })
+        .where(eq(classes.id, ctx.classId))
+        .run();
+      ctx.handle.db
+        .update(competitions)
+        .set({ level: 'niva1' })
+        .where(eq(competitions.id, ctx.competitionId))
+        .run();
+    });
+    // At nivå 4 the same open class may be drawn.
+    ctx.handle.db
+      .update(competitions)
+      .set({ level: 'niva4' })
+      .where(eq(competitions.id, ctx.competitionId))
+      .run();
+    assert.equal(
+      (await post({ mode: 'SOFT', firstStartMs: at(10), intervalSec: 60 })).statusCode,
+      201
+    );
+  });
+
   // ---- M1 helpers --------------------------------------------------------
   const post = (payload: Record<string, unknown>) =>
     ctx.app.inject({

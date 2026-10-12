@@ -261,6 +261,24 @@ describe('classes route (PATCH maxTimeSec)', () => {
     assert.deepEqual([chosen.class_kind, chosen.class_kind_source], ['inskolning', 'operator']);
   });
 
+  test('ADR-0018: a new class gets the start choice its kind implies', async () => {
+    const created = async (payload: Record<string, unknown>) =>
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: `/api/competitions/${ctx.competitionId}/classes`,
+          payload,
+        })
+      ).json() as { start_method: string };
+    assert.equal((await created({ name: 'Inskolning' })).start_method, 'free_start');
+    assert.equal((await created({ name: 'H35' })).start_method, 'start_time');
+    assert.equal((await created({ name: 'Xyz' })).start_method, 'start_punch');
+    assert.equal(
+      (await created({ name: 'Xyz2', class_kind: 'oppen', age_class: null })).start_method,
+      'free_start'
+    );
+  });
+
   test("SOFT TR 3.4.2: kinds preview — Eventor's ClassTypeId over the name; PUT confirms (source operator)", async (t) => {
     ctx.handle.db
       .update(competitions)

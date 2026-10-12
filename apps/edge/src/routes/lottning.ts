@@ -55,7 +55,7 @@ import { drawSimultaneous } from '../draw/simultaneous.ts';
 import { drawSOFT } from '../draw/soft.ts';
 import { controlsByClass, startClashes } from '../draw/startClash.ts';
 import { normalIntervalSec } from '../draw/startRules.ts';
-import { freeStartForbidden, willStart } from '../projection/preRaceCheck.ts';
+import { freeStartForbidden, freeStartRequired, willStart } from '../projection/preRaceCheck.ts';
 import { DrawError } from '../draw/types.ts';
 import type { DrawResult, DrawRunner } from '../draw/types.ts';
 import { closingTime } from './_closingTime.ts';
@@ -211,6 +211,7 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
         maxTimeSec: classes.maxTimeSec,
         classKind: classes.classKind,
         classKindSource: classes.classKindSource,
+        startMethod: classes.startMethod,
         ageClass: classes.ageClass,
         courseId: classes.courseId,
         bibPrefix: classes.bibPrefix,
@@ -305,6 +306,9 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
       if (!classRow) {
         return reply.code(404).send({ error: 'class_not_found' });
       }
+      // ADR-0018: a free-start class is not drawn, stored or required by TR 7.4.3.
+      if (classRow.startMethod === 'free_start' || freeStartRequired(classRow, classRow.level))
+        return reply.code(409).send({ error: 'free_start_class' });
       const refused = refusal(body, classRow, classRow.level);
       if (refused !== null) {
         const { status, ...rest } = refused;
@@ -607,6 +611,8 @@ export default async function registerLottningRoutes(app: FastifyInstance): Prom
           // SOFT TR 7.4.2: start times required (no free start order); false
           // while the kind is unconfirmed or the level unset.
           free_start_banned: freeStartForbidden(classRow, classRow.level),
+          free_start_required: freeStartRequired(classRow, classRow.level),
+          start_method: classRow.startMethod,
           without_start_time: withoutStart,
           // SOFT TR 7.5.4: the start list's class fields.
           bib_prefix: classRow.bibPrefix,

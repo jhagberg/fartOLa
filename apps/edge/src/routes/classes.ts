@@ -23,7 +23,12 @@ import { ClassCreateInput, ClassKind, StartMethod, type ClassDTO } from '@fartol
 import { competitions, classes } from '../db/schema.ts';
 import type { Class } from '../db/types.ts';
 import { resolveSecret } from '../config/secrets.ts';
-import { kindNeedsAge, suggestClassKind } from '../draw/classKind.ts';
+import { defaultStartMethod, kindNeedsAge, suggestClassKind } from '../draw/classKind.ts';
+import {
+  freeStartForbidden,
+  freeStartOffer,
+  freeStartRequired,
+} from '../projection/preRaceCheck.ts';
 import { fetchEventorClassTypes } from '../eventor/eventClasses.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { maxTimeLocked } from './_maxTime.ts';
@@ -56,6 +61,8 @@ const PatchClassInput = z
     maxTimeSec: z.number().int().positive().nullable().optional(),
     no_timing: z.boolean().optional(),
     start_method: StartMethod.optional(),
+    // Kontroll's shortcut: refuse unless nothing of the class can be rescored.
+    only_if_offered: z.boolean().optional(),
     // SOFT TR 7.5.4: bib numbering (OLA's prefix and base) and start place.
     bib_prefix: z.string().trim().max(8).nullable().optional(),
     bib_base: z.number().int().nonnegative().max(99999).nullable().optional(),
@@ -137,8 +144,15 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
 
       // Cross-competition pre-flight.
       const classRow = app.fartolaDb.db
-        .select({ id: classes.id })
+        .select({
+          id: classes.id,
+          classKind: classes.classKind,
+          classKindSource: classes.classKindSource,
+          level: competitions.level,
+          raceStartedAtMs: competitions.raceStartedAtMs,
+        })
         .from(classes)
+        .innerJoin(competitions, eq(competitions.id, classes.competitionId))
         .where(and(eq(classes.id, classId), eq(classes.competitionId, competitionId)))
         .get();
       if (!classRow) {
@@ -146,6 +160,21 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       }
 
       const { maxTimeSec, no_timing, start_method, bib_prefix, bib_base, start_name } = parsed.data;
+      // ADR-0018: what the rules refuse, on a confirmed kind at nivå 1-3.
+      if (start_method === 'free_start' && freeStartForbidden(classRow, classRow.level))
+        return reply.code(409).send({ error: 'free_start_forbidden' });
+      if (
+        (start_method === 'start_time' || start_method === 'start_punch') &&
+        freeStartRequired(classRow, classRow.level)
+      )
+        return reply.code(409).send({ error: 'free_start_required' });
+      if (start_method !== undefined && parsed.data.only_if_offered === true) {
+        const runners = [
+          ...(app.projectionStore.recomputeNow(competitionId)?.competitors.values() ?? []),
+        ].filter((v) => v.class_id === classId);
+        if (!freeStartOffer(classRow, classRow.level, classRow.raceStartedAtMs, runners))
+          return reply.code(409).send({ error: 'class_has_results' });
+      }
       const orNull = (v: string | null) => (v === null || v === '' ? null : v);
       // SOFT TR 4.21.2: no max time change after the first start.
       if (maxTimeSec !== undefined && maxTimeLocked(app.fartolaDb, competitionId, Date.now())) {
@@ -213,7 +242,7 @@ export default async function registerClasses(app: FastifyInstance): Promise<voi
       // 02.1-14 Task 4: assigned by course import / course creation.
       courseId: null,
       noTiming: false,
-      startMethod: 'auto',
+      startMethod: defaultStartMethod(kind.classKind),
       bibPrefix: null,
       bibBase: null,
       startName: null,

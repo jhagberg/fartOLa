@@ -1313,6 +1313,8 @@ export interface LottningResponse {
     /** SOFT TR 7.4.2: free start time banned (false while the kind is
      * unconfirmed or the level unset). */
     free_start_banned?: boolean | null;
+    free_start_required?: boolean | null;
+    start_method?: StartMethod | null;
     /** Named runners of the class without a start time. */
     without_start_time?: number;
     /** SOFT TR 7.5.4: bib numbering, start place and course length. */
@@ -1463,7 +1465,10 @@ export interface PreRaceRunner {
 /** What is still wrong before the first start (edge projection/preRaceCheck.ts). */
 export interface PreRaceCheck {
   no_card: PreRaceRunner[];
-  no_start_time: PreRaceRunner[];
+  /** `free_start_offer`: "Fri start" may be set from Kontroll (nothing of the class can be rescored). */
+  no_start_time: Array<PreRaceRunner & { free_start_offer: boolean }>;
+  /** Classes whose stored start choice the rules now refuse (ADR-0018). */
+  start_choice_conflicts: PreRaceStartChoiceConflict[];
   no_club: PreRaceRunner[];
   no_name: PreRaceRunner[];
   card_too_small: Array<PreRaceRunner & { capacity: number; controls: number }>;
@@ -1474,6 +1479,14 @@ export interface PreRaceCheck {
    * the same minute (HH:MM); the first-control list is a warning. */
   start_clashes: PreRaceStartClash[];
   first_control_clashes: PreRaceStartClash[];
+}
+
+export interface PreRaceStartChoiceConflict {
+  class_id: string;
+  class_name: string;
+  runners: number;
+  reason: 'free_start_forbidden' | 'free_start_required';
+  free_start_offer: boolean;
 }
 
 export interface PreRaceStartClash {

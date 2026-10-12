@@ -26,7 +26,7 @@ import { and, eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 
 import type { DbHandle } from '../db/index.ts';
-import { suggestClassKind } from '../draw/classKind.ts';
+import { defaultStartMethod, suggestClassKind } from '../draw/classKind.ts';
 import { classes, controls, courses, courseControls } from '../db/schema.ts';
 import type { ParsedCourseData } from '../xml/parse.ts';
 
@@ -127,6 +127,7 @@ function doIngest(
         name: c.name,
         shortName: c.short_name,
         noTiming: c.no_timing === true,
+        startMethod: defaultStartMethod(kind?.kind ?? null),
         classKind: kind?.kind ?? null,
         ageClass: kind?.ageClass ?? null,
         classKindSource: kind === null ? null : 'name',
