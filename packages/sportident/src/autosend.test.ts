@@ -143,12 +143,54 @@ describe('AutosendListener', () => {
     assert.deepEqual(errors, ['crc_mismatch']);
   });
 
-  test('a stray STX does not swallow the record after it', () => {
+  test('a record whose own bytes look like a small frame survives any split', () => {
+    // SN0 TD TH TL TSS MEM2 = 02 28 00 28 00 03: STX, a command, length 0,
+    // its two-byte CRC and ETX. Whole, the record decodes; the listener must
+    // not take those six bytes for a frame when the record arrives in two
+    // chunks.
+    const tricky = record({
+      code: 78,
+      sn: [0x00, 0x7b, 0xf4, 0x02],
+      td: 0x28,
+      seconds: 0x0028,
+      tss: 0,
+      mem: 0x030000,
+    });
+    assert.equal(decodeAutosendRecord(tricky)?.card_number, 8123394);
+    const bytes = frame(tricky);
+    for (let cut = 1; cut < bytes.length; cut++) {
+      const { transport, punches } = listen();
+      transport.emit('data', bytes.slice(0, cut));
+      transport.emit('data', bytes.slice(cut));
+      assert.equal(punches.length, 1, `split after byte ${cut}`);
+    }
+  });
+
+  test('a stray STX does not swallow the records after it', async () => {
     // STX, a command and a length byte of 40: the parser waits for 46 bytes
-    // and would take the real record as that frame's data.
-    const { transport, punches } = listen();
+    // and would take the real records as that frame's data. When no more
+    // bytes come, the records inside are found.
+    const { transport, listener, punches } = listen(10);
     transport.emit('data', [proto.STX, 0x99, 40, ...frame(SIAC_AM), ...frame(SIAC_AM)]);
+    assert.equal(punches.length, 0);
+    await new Promise((r) => setTimeout(r, 40));
     assert.equal(punches.length, 2);
+    listener.stop();
+  });
+
+  test('a stray STX whose false frame fills up loses no record either', () => {
+    // 46 bytes are there at once: the false frame fails its CRC and the
+    // records inside it are found straight away.
+    const { transport, punches } = listen();
+    transport.emit('data', [
+      proto.STX,
+      0x99,
+      40,
+      ...frame(SIAC_AM),
+      ...frame(SIAC_AM),
+      ...frame(SIAC_AM),
+    ]);
+    assert.equal(punches.length, 3);
   });
 
   test('a half frame that never completes is dropped after staleMs', async () => {
