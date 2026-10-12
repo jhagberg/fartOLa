@@ -79,6 +79,14 @@
     forceTicked = false;
   }
 
+  // A confirm step, a read count or a tick belongs to the competition it was
+  // given for: none of it carries over when another one becomes active.
+  $effect(() => {
+    void activeId;
+    toIdle();
+    undo = null;
+  });
+
   function formatHHMM(ms: number): string {
     const d = new Date(ms);
     return `${d.getHours().toString().padStart(2, '0')}:${d
@@ -107,13 +115,16 @@
 
   async function onConfirmReset(): Promise<void> {
     if (active === null) return;
+    const id = active.id;
     busy = true;
     err = null;
     try {
-      await resetRace(active.id, readsAtRisk !== null);
+      await resetRace(id, readsAtRisk !== null);
       await activeCompetition.refreshList();
-      toIdle();
+      if (activeId === id) toIdle();
     } catch (e) {
+      // An answer for a competition that is no longer the active one.
+      if (activeId !== id) return;
       const body = e instanceof ApiError ? (e.body as { error?: unknown; reads?: unknown }) : null;
       if (body?.error === 'reads_since_start' && typeof body.reads === 'number') {
         readsAtRisk = body.reads;
@@ -128,15 +139,17 @@
 
   async function onConfirmUndo(): Promise<void> {
     if (active === null) return;
+    const id = active.id;
     busy = true;
     err = null;
     try {
-      await undoResetRace(active.id);
-      undo = null;
+      await undoResetRace(id);
       await activeCompetition.refreshList();
+      if (activeId !== id) return;
+      undo = null;
       toIdle();
     } catch (e) {
-      err = (e as Error).message;
+      if (activeId === id) err = (e as Error).message;
     } finally {
       busy = false;
     }
