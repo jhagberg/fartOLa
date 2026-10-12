@@ -30,3 +30,7 @@ upload, "Länka om" after closing the sheet) still duplicates.
 - Edge: importing the same EntryList twice with a cardless runner
   inserts that runner once; a runner whose card changed between imports
   is updated, not duplicated.
+- 2026-10-12: the first case is a todo test, "the entry list again adds no
+  runner", in `apps/edge/scripts/walk.test.ts`; the operator-mistake
+  walker lists it as known (`KNOWN` in `walkChecks.ts`). Remove both
+  marks when this is fixed.

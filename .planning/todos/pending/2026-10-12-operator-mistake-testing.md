@@ -126,3 +126,26 @@ first.
 2. Slip specs (layer 2): the template, then a handful of cheap agents.
 3. Operator agents (layer 3): the command tool, then runs of ten agents.
    Decide how many runs after seeing what layers 1 and 2 found.
+
+## Status 2026-10-12: layer 1 is built
+
+- Where: `apps/edge/scripts/walk.ts` (the script; its header has the
+  commands), `walkWorld.ts` (server, fake clock, synthetic competition),
+  `walkOps.ts` (the steps), `walkChecks.ts` (checks 1-9 and the lists they
+  rest on), `walk.test.ts` (a fixed walk of 60 steps in `pnpm test`).
+  Check 10 stays a manual replay (ADR-0014).
+- Calibrated on the commit before PR 130 (`b923de3e`): five of six seeds
+  met the reset fault within 250 steps, each shrunk to three steps (start,
+  read, reset). That sequence is now a test.
+- Found on main and fixed: a 500 for a class name that is taken; a new
+  class, a runner entered without a card and a new course for a class did
+  not reach the projection the server holds.
+- Found and written down: a changed card number takes a read-out runner's
+  result away (`2026-10-12-card-change-drops-result.md`).
+- Found again, already written down: the entry list twice
+  (`2026-10-11-import-dedupe-cardless-runners.md`), the forced reset sent
+  again after its undo and the read in the start's millisecond
+  (`2026-10-12-race-phase-revision.md`).
+- Not a check yet: results that get worse while the number of runners
+  with a result stays the same (OK to MP after another course file, or a
+  change of class).
