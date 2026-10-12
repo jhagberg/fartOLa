@@ -93,8 +93,8 @@ type AutosendEvents = {
 };
 
 export interface AutosendListenerOpts {
-  /** A half frame with no new bytes for this long is dropped (default 1 s;
-   * a whole frame takes under 0.1 s at 38400 baud). */
+  /** A half frame with no new bytes for this long is given up on (default
+   * 1 s; a whole frame takes under 0.1 s at 38400 baud). */
   staleMs?: number;
 }
 
@@ -154,21 +154,22 @@ export class AutosendListener extends (EventEmitter as new () => TypedEventEmitt
         this.buffer = r.remainder;
         continue;
       }
-      // An unfinished frame at the head. If a whole frame follows inside it,
-      // the head was noise.
-      const next = this.nextFrameStart(buf);
-      if (next > 0) {
-        this.giveUp('truncated', buf.slice(0, next));
-        this.buffer = buf.slice(next);
-        continue;
-      }
+      // An unfinished frame at the head: wait for the rest. Its bytes are
+      // not searched for frames yet; a real record can hold bytes that look
+      // like a small frame.
       break;
     }
     if (this.buffer.length > 0) {
       this.staleTimer = setTimeout(() => {
         this.staleTimer = null;
-        this.giveUp('truncated', this.buffer);
-        this.buffer = [];
+        // The rest never came, so the head was noise. Go on at the first
+        // whole frame inside it, if there is one.
+        const buf = this.buffer;
+        const next = this.nextFrameStart(buf);
+        const consumed = next > 0 ? next : buf.length;
+        this.giveUp('truncated', buf.slice(0, consumed));
+        this.buffer = buf.slice(consumed);
+        this.drain();
       }, this.staleMs);
     }
   }
