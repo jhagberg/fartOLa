@@ -78,13 +78,13 @@ The choice is called "Så startar klassen" and is stored in
 
 The refusals apply at nivå 1–3 and to a confirmed class kind. A kind that
 is only suggested from the class name refuses nothing, as elsewhere in
-fartOLa (`kindConfirmed`); Kontroll already asks for it to be confirmed.
+fartOLa (`kindConfirmed`); the operator confirms the kind in Lottning.
 
 - An age class cannot take free start (TR 7.4.2).
 - An open class takes only free start. TR 7.4.3 reads "I öppen klass ska
   startordningen fri starttid tillämpas", and inskolning counts as an open
   class (TR 3.4.9).
-- A class stored as free start cannot be drawn.
+- A class that has free start, or must have it, cannot be drawn.
 
 At nivå 4 the organiser has a free hand (TR 3.3.1), and a training race
 is outside the levels. There every class may take any answer, so a
@@ -95,7 +95,8 @@ A stored answer can become wrong later, when the kind is confirmed or the
 level is set after the answer was chosen. fartOLa does not rewrite the
 answer then, because that would change times. Kontroll lists the class as
 a conflict until the operator picks an allowed answer, whether or not its
-runners have start times.
+runners have start times. An older open class without a choice (`auto`)
+is such a conflict at nivå 1–3.
 
 ### Defaults for a new class
 
@@ -114,12 +115,17 @@ when the race has started.
 
 ### The shortcut in Kontroll
 
-Before the race has started, a class with runners without a start time
-gets two controls: "Lotta klassen", a link to Lottning, and "Fri start",
-which sets free start, says what it did and links to Lottning, where the
-answer can be changed again. Kontroll does not offer "Fri start" where
-TR 7.4.2 forbids it. Once the race has started it offers only the link,
-since the change would rescore results.
+A class with runners without a start time gets "Lotta klassen", a link
+to Lottning. It also gets "Fri start", which sets free start, says what
+it did and links to Lottning, where the answer can be changed again.
+
+"Fri start" is offered only when nothing of the class can be rescored:
+the race has not started, and no runner of the class has a card read, a
+manual finish or a hand-set status. A race that was started and reset
+keeps such data, so "not started" alone is not enough. The server decides
+this, both when it builds the list and when it takes the click, so a page
+left open cannot change results. Kontroll does not offer "Fri start"
+where TR 7.4.2 forbids it.
 
 ### Older competitions
 
@@ -128,7 +134,9 @@ stays a valid value with its per-runner meaning. No new class gets it,
 and the screen shows such a class as not chosen. An existing class with
 Startstämpling keeps its times, and Kontroll now treats it as a class
 with a start list. If it is a free-start class, the operator says so with
-the shortcut.
+the shortcut or in Lottning. Choosing free start does not remove start
+times the class already has: they stay, and a runner without a start
+punch is timed from them.
 
 ### Consequences
 
