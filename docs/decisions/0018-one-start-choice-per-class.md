@@ -77,21 +77,26 @@ and names the training case instead of leaving it to be worked out.
   - The stored answer can become wrong later: the kind is confirmed, or
     the level is set, after free start was chosen. Nothing is rewritten
     then, since that would change times. Kontroll lists the class itself
-    as a conflict ("fri start är inte tillåten här") until the operator
-    picks another answer, whether or not its runners have start times.
+    as a conflict until the operator picks an allowed answer, whether or
+    not its runners have start times.
   - A kind that is only suggested from the name does not refuse anything,
     as elsewhere (`kindConfirmed`); Kontroll already asks for the kind to
     be confirmed.
-  - TR 7.4.3 says an open class has free start time. The operator may
-    still choose a drawn answer for an open class (a training race that
-    wants to spread the start); at nivå 1–3 Lottning says that the rule
-    asks for free start. The rule row stays "delvis".
+  - TR 7.4.3: "I öppen klass ska startordningen fri starttid tillämpas",
+    and inskolning counts as an open class (TR 3.4.9). So at nivå 1–3 a
+    confirmed open class or inskolning takes only "Fri start med
+    startstämpling": the two drawn answers are refused, and a stored drawn
+    answer shows as a conflict in Kontroll, in the same way as free start
+    in an age class. At nivå 4 the organiser has a free hand (TR 3.3.1),
+    and a training race is outside the levels: there every class may take
+    any answer, so a training race can draw "Gul" to spread the start and
+    still time from the start punch.
 - **Defaults for a new class**, from the class kind (confirmed or
   suggested from the name): open and inskolning get `free_start`; an age
   class gets `start_time`; a class whose kind is unknown gets
   `start_punch`, which times a runner from whichever start exists, and
-  Kontroll asks. The operator can change the answer for any class, also a
-  confirmed inskolning.
+  Kontroll asks. The operator can change the answer within what the rules allow
+  for the class and level.
 - **Changing the answer changes times for the whole class**, also for
   runners already read out (the class is scored again). Lottning says so
   when the race has started. The answer is saved with the value the
