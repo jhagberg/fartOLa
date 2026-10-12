@@ -59,6 +59,8 @@
 
   /** Only the newest load writes state; an older answer landing late is dropped. */
   let loadGen = 0;
+  /** False once the page is left: a late save writes nothing. */
+  let alive = true;
   /** Classes whose "Fri start" save is in flight, the error on a class row, the last success. */
   let busy = $state<Set<string>>(new Set());
   let rowError = $state<Record<string, string>>({});
@@ -89,21 +91,19 @@
   onMount(() => {
     void loadAll();
     return () => {
-      loadGen++; // a late load or save writes nothing after the page is left
+      alive = false;
+      loadGen++; // a late load writes nothing after the page is left
     };
   });
 
   async function freeStart(classId: string, className: string): Promise<void> {
-    const gen = loadGen;
     busy = new Set(busy).add(classId);
     delete rowError[classId];
     try {
       await patchClass(competitionId, classId, { start_method: 'free_start', only_if_offered: true });
-      if (gen !== loadGen) return;
-      delete rowError[classId];
-      freeStartDone = { id: classId, name: className };
+      if (alive) freeStartDone = { id: classId, name: className };
     } catch (e) {
-      if (gen !== loadGen) return;
+      if (!alive) return;
       const code = e instanceof ApiError ? (e.body as { error?: string } | null)?.error : undefined;
       if (code === 'class_has_results') rowError[classId] = t('prerace.freeStart.hasResults');
       else if (code === 'free_start_forbidden') rowError[classId] = t('prerace.freeStart.forbidden');
@@ -111,16 +111,15 @@
         console.error(e);
         rowError[classId] = t('common.unknownError');
       }
-      freeStartDone = null;
     } finally {
-      if (gen === loadGen) {
+      if (alive) {
         const next = new Set(busy);
         next.delete(classId);
         busy = next;
       }
     }
     // The class left the list, or the server says what changed: ask again.
-    if (gen === loadGen) void loadAll();
+    if (alive) void loadAll();
   }
 
   function setParams(next: Record<string, string | null>): void {
@@ -392,7 +391,7 @@
                     <p class="meta">{t('prerace.freeStart.help')}</p>
                   {/if}
                   {#if rowError[c.id]}
-                    <p class="err" data-testid="prerace-free-start-error">{rowError[c.id]}</p>
+                    <p class="err" role="alert" data-testid="prerace-free-start-error">{rowError[c.id]}</p>
                   {/if}
                   {#if c.open}
                     <p class="meta" data-testid="prerace-open-class-help">
@@ -474,7 +473,7 @@
                 {@render freeStartButton(c.class_id, c.class_name)}
               {/if}
               {#if rowError[c.class_id]}
-                <p class="err">{rowError[c.class_id]}</p>
+                <p class="err" role="alert">{rowError[c.class_id]}</p>
               {/if}
             </li>
           {/each}
