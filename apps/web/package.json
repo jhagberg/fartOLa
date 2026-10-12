@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "vite dev --port 5173",
     "build": "vite build",
+    "dev:demo": "vite --config vite.demo.config.ts --port 5180",
+    "build:demo": "vite build --config vite.demo.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

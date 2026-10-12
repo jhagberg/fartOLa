@@ -62,3 +62,6 @@ docs/guide-meos.pdf
 # names, club names from real events). Gitignored per T-02.1-28.
 # Real-event dumps go here; synthetic fixtures live in test source files.
 apps/edge/test-fixtures/meos-*.sql
+
+# The public speaker demo, built by the Pages workflow (apps/web build:demo)
+docs/speaker-demo/

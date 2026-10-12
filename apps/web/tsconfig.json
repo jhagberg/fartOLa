@@ -1,7 +1,7 @@
 {
   "extends": ["$app/tsconfig", "../../tsconfig.json"],
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "../..",
     "types": ["$app/types", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.svelte"]

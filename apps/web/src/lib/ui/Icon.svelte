@@ -30,6 +30,7 @@
   import Mic from '@lucide/svelte/icons/mic';
   import Minimize from '@lucide/svelte/icons/minimize';
   import Minus from '@lucide/svelte/icons/minus';
+  import Pause from '@lucide/svelte/icons/pause';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Play from '@lucide/svelte/icons/play';
   import Plus from '@lucide/svelte/icons/plus';
@@ -74,6 +75,7 @@
     'arrow-left-right': ArrowLeftRight,
     minus: Minus,
     play: Play,
+    pause: Pause,
     'folder-open': FolderOpen,
     'corner-down-right': CornerDownRight,
     'credit-card': CreditCard,
