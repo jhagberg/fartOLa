@@ -106,20 +106,28 @@ function fixture(dir: string): void {
   );
   writeFileSync(
     path.join(dir, 'manifest.json'),
-    JSON.stringify({ source: { event: 'Prov', date: '2026-10-03' } })
+    // nivå 2: the age classes get a drawn start time (ADR-0018), as on a real race day.
+    JSON.stringify({ source: { event: 'Prov', date: '2026-10-03', level: 'niva2' } })
   );
 }
 
 describe('replay script', () => {
-  test('imports, replays the reads; a class made without a level starts from the punch (ADR-0018), so all 4 match', async () => {
+  test('imports, replays the reads; the start-punch runner is a SOFT difference, not a mismatch', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'fartola-replay-'));
     try {
       fixture(dir);
       const report = await replay(dir);
       assert.deepEqual(report.mismatches, []);
-      assert.equal(report.equal, 4);
+      assert.equal(report.equal, 3);
       assert.equal(report.total, 4);
-      assert.deepEqual(report.meosDifferences, []);
+      assert.deepEqual(
+        report.meosDifferences.map((d) => [d.card, d.expectedTime, d.gotTime, d.meosTime]),
+        [[8100004, 1194, 1200, 1194]]
+      );
+      const text = formatReport(report);
+      assert.match(text, /^3\/4 lika som officiella resultatet, 1 skillnad mot MeOS/);
+      assert.match(text, /Skillnad mot MeOS \(SOFT TR 4\.18\.9 \(2026-07-01\)\)/);
+      assert.match(text, /bricka 8100004: MeOS 19:54, fartOLa 20:00/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

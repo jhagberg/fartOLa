@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { CardReadEvent } from '@fartola/sportident';
+import type { CompetitionLevel } from '@fartola/shared-types';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
@@ -118,7 +119,9 @@ export async function replay(
   opts: { meosStart?: boolean } = {}
 ): Promise<ReplayReport> {
   const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf-8')) as {
-    source: { event: string; date: string };
+    // level: the competition's SOFT level; it decides the start choice a
+    // new age class gets (ADR-0018). Left out = no level, as before.
+    source: { event: string; date: string; level?: CompetitionLevel };
   };
   const reads = readFileSync(path.join(dir, 'readouts.ndjson'), 'utf-8')
     .split('\n')
@@ -137,6 +140,10 @@ export async function replay(
     });
     const competitionId = (created.json() as { id: string }).id;
     const base = `/api/competitions/${competitionId}`;
+    if (manifest.source.level !== undefined) {
+      // Before the imports: the level decides each new class's start choice.
+      await app.inject({ method: 'PATCH', url: base, payload: { level: manifest.source.level } });
+    }
     const imports = {
       courses: await upload(app, `${base}/import`, path.join(dir, 'CourseData.xml')),
       entries: await upload(app, `${base}/import`, path.join(dir, 'EntryList.xml')),
