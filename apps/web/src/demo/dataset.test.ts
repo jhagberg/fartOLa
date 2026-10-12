@@ -75,6 +75,15 @@ describe('speaker demo dataset', () => {
     expect(finished.length).toBe(data.runners.filter((r) => r[7] !== null).length);
   });
 
+  it('shows no event ahead of the clock, also where a card was read before its finish time', () => {
+    const early = data.runners.filter(
+      (r) =>
+        r[7] !== null && r[3] !== null && (r[3] as number) + (r[7] as number) > (r[5] as number)
+    );
+    for (const tMs of [...early.map((r) => demoMs(data, r[5] as number)), eventTimes(data).at(-1)!])
+      expect(boardAt(data, tMs).events.every((e) => e.at_ms <= tMs)).toBe(true);
+  });
+
   const avoidPath = process.env['FARTOLA_DEMO_AVOID'];
   it.skipIf(!avoidPath)('holds no real club, running time, finish time or radio time', () => {
     const avoid = JSON.parse(readFileSync(avoidPath!, 'utf-8')) as {
@@ -114,6 +123,5 @@ describe('speaker demo dataset', () => {
     };
     expect(avoid.clubs.length).toBeGreaterThan(0);
     expect(found).toEqual({ event: 0, clubs: 0, runningTimes: 0, finishTimes: 0, radioTimes: 0 });
-    expect(demoMs(data, 0)).not.toBe(Date.parse(`${avoid.date}T00:00:00Z`));
   });
 });

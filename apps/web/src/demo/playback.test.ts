@@ -88,6 +88,16 @@ describe('boardAt', () => {
     expect(after.passings[0]!.elapsed_ms).toBe(700_000);
   });
 
+  it('a finish is never stamped later than the read-out that made it known', () => {
+    // Runner A's card says 1800 s, but it is read 1700 s after the start.
+    const early = structuredClone(data);
+    early.runners[0]![5] = 10 * H + 1700;
+    const board = boardAt(early, at(1700));
+    const finish = board.events.find((e) => e.kind === 'finish' && e.competitor_id === '0')!;
+    expect(finish.at_ms).toBe(at(1700));
+    expect(finish.elapsed_ms).toBe(1_800_000);
+  });
+
   it('a status shows when it was set', () => {
     expect(h21(at(2999)).runners[3]!.status).toBe('PEND');
     expect(h21(at(3000)).runners[3]!.status).toBe('DNS');
@@ -179,6 +189,18 @@ describe('playback clock', () => {
     expect(clock.time()).toBe(target);
     expect(clock.time()).toBe(straight.clock.time());
     expect(source(clock.time())).toEqual(boardAt(data, target));
+  });
+
+  it('stays stopped after the end when the viewer jumps back', () => {
+    const { clock, pass } = fake();
+    clock.setSpeed(60);
+    clock.play();
+    pass(10 * 60_000);
+    expect(clock.playing).toBe(false);
+    clock.seek(at(100));
+    pass(5000);
+    expect(clock.playing).toBe(false);
+    expect(clock.time()).toBe(at(100));
   });
 
   it('a jump outside the day lands on its edge', () => {
