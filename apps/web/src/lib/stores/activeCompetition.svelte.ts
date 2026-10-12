@@ -73,6 +73,12 @@ export const activeCompetition = {
       // Soft fail — old list stays visible.
     }
   },
+  /** Put a competition the backend just returned into the cached list (a
+   * start, reset or undo), so the screen shows it without a list refetch
+   * that may fail. */
+  update(competition: CompetitionDTO): void {
+    _list = _list.map((c) => (c.id === competition.id ? competition : c));
+  },
   /** Switch the active competition. Calls the backend so the bridge
    * and other tabs see the same value. Throws on backend error so the
    * caller can surface a toast / disable the affected control. */

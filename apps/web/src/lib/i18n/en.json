@@ -166,6 +166,9 @@
   "race.undo.body": "The start goes back to {{time}}. {{count}} card reads and finish times entered by hand count again.",
   "race.undo.go": "Yes, undo",
   "race.undo.undoing": "Undoing…",
+  "race.reset.startChanged": "The race start has changed since you opened this. Cancel and start over.",
+  "race.undo.loadFailed": "Could not check whether a reset can be undone.",
+  "race.undo.retry": "Try again",
   "race.undo.changed": "What can be undone has changed. Read the text again and confirm, or cancel.",
 
   "runners.title": "Registered runners",

@@ -24,6 +24,9 @@ describe('RacePhaseControl', () => {
   let posts: Array<{ url: string; body: unknown }>;
   // Holds back the answer to a reset until released.
   let hold: Promise<void> | null;
+  // The competition list and the undo preview can be made to fail.
+  let listFails: boolean;
+  let undoFails: boolean;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -47,6 +50,8 @@ describe('RacePhaseControl', () => {
     changedTo = null;
     posts = [];
     hold = null;
+    listFails = false;
+    undoFails = false;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown, status = 200) =>
@@ -58,11 +63,13 @@ describe('RacePhaseControl', () => {
       // A second competition, started and with read-outs of its own.
       const other = { id: 'c2', name: 'Other', race_started_at_ms: START };
       if (init?.method === 'POST' && url.includes('/reset-race')) {
-        const body = JSON.parse(String(init.body)) as { force?: boolean };
+        const body = JSON.parse(String(init.body)) as { force?: boolean; started_at_ms?: number };
         posts.push({ url, body });
         if (hold) await hold;
         if (url.includes('/c2/')) {
-          if (body.force !== true) return json({ error: 'reads_since_start', reads: 7 }, 409);
+          if (body.force !== true) {
+            return json({ error: 'reads_since_start', reads: 7, started_at_ms: START }, 409);
+          }
           return json({ ...other, race_started_at_ms: null }, 201);
         }
         if (url.endsWith('/reset-race/undo')) {
@@ -73,8 +80,13 @@ describe('RacePhaseControl', () => {
           }
           startedAtMs = undo!.started_at_ms;
           undo = null;
+        } else if (body.started_at_ms !== startedAtMs) {
+          return json({ error: 'start_changed' }, 409);
         } else if (readsSinceStart > 0 && body.force !== true) {
-          return json({ error: 'reads_since_start', reads: readsSinceStart }, 409);
+          return json(
+            { error: 'reads_since_start', reads: readsSinceStart, started_at_ms: startedAtMs },
+            409
+          );
         } else {
           if (readsSinceStart > 0) {
             undo = {
@@ -89,8 +101,12 @@ describe('RacePhaseControl', () => {
         return json(comp(), 201);
       }
       if (url.endsWith('/c2/reset-race/undo')) return json({ undo: null });
-      if (url.endsWith('/reset-race/undo')) return json({ undo });
-      if (url === '/api/competitions') return json({ competitions: [comp(), other] });
+      if (url.endsWith('/reset-race/undo')) {
+        return undoFails ? json({ error: 'boom' }, 500) : json({ undo });
+      }
+      if (url === '/api/competitions') {
+        return listFails ? json({ error: 'boom' }, 500) : json({ competitions: [comp(), other] });
+      }
       return json({});
     }) as unknown as typeof fetch;
   });
@@ -111,7 +127,7 @@ describe('RacePhaseControl', () => {
     await mountIt();
     await click('reset-race-btn');
     await click('reset-race-confirm');
-    expect(posts.map((p) => p.body)).toEqual([{}]);
+    expect(posts.map((p) => p.body)).toEqual([{ started_at_ms: START }]);
     expect(text()).toContain('623 avläsningar och måltider för hand sedan starten slutar räknas');
     expect(el('race-phase-pill')).toBeNull();
     const go = el<HTMLButtonElement>('reset-race-confirm')!;
@@ -120,7 +136,11 @@ describe('RacePhaseControl', () => {
     await click('reset-race-force-check');
     expect(go.disabled).toBe(false);
     await click('reset-race-confirm');
-    expect(posts.map((p) => p.body)).toEqual([{}, { force: true }]);
+    // The forced reset names the start the warning was for.
+    expect(posts.map((p) => p.body)).toEqual([
+      { started_at_ms: START },
+      { started_at_ms: START, force: true },
+    ]);
     expect(el('race-phase-pill')!.textContent).toContain('Före tävling');
   });
 
@@ -129,7 +149,7 @@ describe('RacePhaseControl', () => {
     await mountIt();
     await click('reset-race-btn');
     await click('reset-race-confirm');
-    expect(posts.map((p) => p.body)).toEqual([{}]);
+    expect(posts.map((p) => p.body)).toEqual([{ started_at_ms: START }]);
     expect(el('race-phase-pill')!.textContent).toContain('Före tävling');
     expect(el('undo-reset-btn')).toBeNull();
   });
@@ -173,7 +193,10 @@ describe('RacePhaseControl', () => {
     el('reset-race-confirm')!.click();
     el('reset-race-confirm')!.click();
     await settle();
-    expect(posts.map((p) => p.body)).toEqual([{}, { force: true }]);
+    expect(posts.map((p) => p.body)).toEqual([
+      { started_at_ms: START },
+      { started_at_ms: START, force: true },
+    ]);
   });
 
   it('an undo that is no longer the one shown is not made: the new text is shown instead', async () => {
@@ -210,7 +233,10 @@ describe('RacePhaseControl', () => {
     // Asked again for c2, it gets its own warning with its own count.
     await click('reset-race-btn');
     await click('reset-race-confirm');
-    expect(posts.at(-1)).toEqual({ url: '/api/competitions/c2/reset-race', body: {} });
+    expect(posts.at(-1)).toEqual({
+      url: '/api/competitions/c2/reset-race',
+      body: { started_at_ms: START },
+    });
     expect(text()).toContain('7 avläsningar och måltider för hand sedan starten slutar räknas');
   });
 
@@ -228,6 +254,46 @@ describe('RacePhaseControl', () => {
     expect(text()).not.toContain('623 avläsningar');
     expect(el('reset-race-force-check')).toBeNull();
     expect(el('race-phase-pill')!.textContent).toContain('Tävling pågår');
+  });
+
+  // Codex review of PR 130, round 5.
+  it('a forced reset for a start that has changed since the warning is refused and says so', async () => {
+    await mountIt();
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    await click('reset-race-force-check');
+    // Someone else resets and starts the race again: another start now.
+    startedAtMs = START + 3_600_000;
+    await click('reset-race-confirm');
+    expect(posts.at(-1)!.body).toEqual({ started_at_ms: START, force: true });
+    expect(startedAtMs).toBe(START + 3_600_000);
+    expect(text()).toContain('Tävlingsstarten har ändrats');
+    expect(el('reset-race-force-check')).toBeNull();
+  });
+
+  it('a reset that went through shows at once, also when the competition list cannot be fetched', async () => {
+    await mountIt();
+    listFails = true;
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    await click('reset-race-force-check');
+    await click('reset-race-confirm');
+    expect(el('race-phase-pill')!.textContent).toContain('Före tävling');
+    expect(el('undo-reset-note')!.textContent).toContain('623 avläsningar');
+    expect(el('undo-reset-btn')).not.toBeNull();
+  });
+
+  it('a failure to read what can be undone is shown, with a way to try again', async () => {
+    undo = { node_id: 'n1', local_seq: 7, started_at_ms: START, reads: 623 };
+    startedAtMs = null;
+    undoFails = true;
+    await mountIt();
+    expect(el('undo-reset-btn')).toBeNull();
+    expect(el('undo-reset-failed')!.textContent).toContain('Kunde inte läsa');
+    undoFails = false;
+    await click('undo-reset-retry');
+    expect(el('undo-reset-failed')).toBeNull();
+    expect(el('undo-reset-note')!.textContent).toContain('623 avläsningar');
   });
 
   it('sv + en have the same race texts', async () => {
