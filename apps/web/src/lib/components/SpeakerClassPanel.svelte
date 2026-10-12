@@ -79,7 +79,7 @@
   {/if}
 
   {#if panel.rows.length > 0}
-    <table class="tbl">
+    <table class="tbl" style:--cols={cls.controls.length + 1}>
       <thead>
         <tr>
           <th scope="col">{t('spk.name')}</th>
@@ -233,6 +233,7 @@
     font-feature-settings: 'tnum' 1;
   }
   .tbl {
+    --cols: 1;
     width: 100%;
     border-collapse: collapse;
   }
@@ -256,16 +257,17 @@
   }
   /* A narrow panel (four in a row on a 1920 px screen): three radio
      controls and the finish do not fit beside the name, so the name gets
-     the line above the times. Every column stays in sight and no name
-     breaks in the middle of a word. */
+     the line above the times. Every row has the same columns, each wide
+     enough for a place and a time ("10. 16:19"), so a time stays under
+     its heading; a panel too narrow for them scrolls sideways. */
   @container (max-width: 520px) {
     .tbl tr {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(var(--cols), minmax(5.4em, 1fr));
     }
     .tbl .who,
     .tbl thead th:first-child {
-      flex: 0 0 100%;
+      grid-column: 1 / -1;
       flex-direction: row;
       flex-wrap: wrap;
       align-items: baseline;
@@ -275,7 +277,6 @@
     }
     .tbl td,
     .tbl thead .num {
-      flex: 1 1 0;
       padding-left: 0;
     }
   }
