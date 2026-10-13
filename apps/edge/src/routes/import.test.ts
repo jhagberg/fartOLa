@@ -31,7 +31,8 @@ import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitors, events } from '../db/schema.ts';
+import { competitors, events, type EventPayload } from '../db/schema.ts';
+import { insertEvent } from '../si/eventInserter.ts';
 import type { Competitor } from '../db/types.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -741,6 +742,320 @@ describe('POST /api/competitions/:id/import/startlist', () => {
         .find((c) => c.name === name)!;
     return { compId, byName };
   }
+
+  // -------------------------------------------------------------------------
+  // A read-out runner keeps the card (routes/_cardResult.ts), and what the
+  // import changes can be undone whole. Synthetic runners.
+  // -------------------------------------------------------------------------
+
+  const ANNA_CARD = 7501853;
+  const FILE_CARD = 8000001;
+  const START_ISO = '2026-05-19T10:00:00Z';
+
+  /** The start list from before the day: Anna with another card and a bib. */
+  const annaFile = (siCard = FILE_CARD, bib = '12'): Buffer =>
+    buildStartListXmlBuffer([
+      {
+        className: 'H21',
+        persons: [
+          {
+            given: 'Anna',
+            family: 'Andersson',
+            club: 'StorTuna OK',
+            siCard,
+            bib,
+            startTimeIso: START_ISO,
+          },
+        ],
+      },
+    ]);
+  const importStarts = (compId: string, bytes: Buffer) =>
+    uploadFile(ctx.app, `/api/competitions/${compId}/import/startlist`, 'startlist.xml', bytes);
+
+  /** Start the race (once) and read `card` out. */
+  async function readOut(compId: string, card: number): Promise<void> {
+    await ctx.app.inject({ method: 'POST', url: `/api/competitions/${compId}/start-race` });
+    const clock = (sec: number) => ({
+      half_day: 0 as const,
+      seconds_in_half_day: sec,
+      weekday: null,
+    });
+    insertEvent(
+      ctx.handle,
+      ensureNodeId(ctx.handle),
+      'card_read',
+      Date.now(),
+      {
+        event_type: 'card_read',
+        card_number: card,
+        card_type: 'SI10',
+        start: clock(36_000),
+        finish: clock(36_600),
+        check: null,
+        clear: null,
+        punch_count: 0,
+        punches: [],
+        card_holder: null,
+      },
+      compId
+    );
+    ctx.app.projectionStore.markDirty(compId);
+  }
+  const statusOf = (compId: string, id: string): string =>
+    ctx.app.projectionStore.recomputeNow(compId)!.competitors.get(id)!.status;
+  const eventsOf = (compId: string, type: string) =>
+    ctx.handle.db
+      .select()
+      .from(events)
+      .where(eq(events.competitionId, compId))
+      .all()
+      .filter((e) => e.eventType === type);
+  /** Undo the newest start-time change (the import, or its undo). */
+  async function undoNewest(compId: string) {
+    const items = (
+      await ctx.app.inject({
+        method: 'GET',
+        url: `/api/competitions/${compId}/start-times/history`,
+      })
+    ).json().items as Array<{ node_id: string; local_seq: number; cards: number; bibs: number }>;
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/start-times/undo`,
+      payload: { node_id: items[0]!.node_id, local_seq: items[0]!.local_seq },
+    });
+    return { item: items[0]!, statusCode: res.statusCode, body: res.json() };
+  }
+  const patch = (id: string, payload: object) =>
+    ctx.app.inject({ method: 'PATCH', url: `/api/competitors/${id}/profile`, payload });
+
+  test('a runner who has read out keeps the card: the file is not followed, and the answer says so', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    await readOut(compId, ANNA_CARD);
+    assert.notEqual(statusOf(compId, anna.id), 'PEND');
+
+    const res = await importStarts(compId, annaFile());
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    const body = res.body as Record<string, unknown>;
+    assert.equal(body['card_updated'], 0);
+    assert.equal(body['exact'], 0);
+    assert.equal(body['card_kept'], 1);
+    assert.deepEqual(body['cardsKept'], [
+      {
+        row: 1,
+        competitor_id: anna.id,
+        name: 'Anna Andersson',
+        class: 'H21',
+        card: ANNA_CARD,
+        file_card: FILE_CARD,
+        reads: 1,
+        reason: 'has_result',
+      },
+    ]);
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.notEqual(statusOf(compId, anna.id), 'PEND');
+    // The row is still hers: the start time and the bib are taken.
+    assert.equal(byName('Anna Andersson').startTimeMs, Date.parse(START_ISO));
+    assert.equal(byName('Anna Andersson').bib, '12');
+    assert.equal(eventsOf(compId, 'card_bound').length, 0);
+  });
+
+  test('a card the import changes is a card_bound event with the previous card, recorded on the import', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    const res = await importStarts(compId, annaFile());
+    assert.equal((res.body as { card_updated: number }).card_updated, 1);
+
+    const binds = eventsOf(compId, 'card_bound');
+    assert.equal(binds.length, 1);
+    const bind = binds[0]!.payload as Extract<EventPayload, { event_type: 'card_bound' }>;
+    assert.equal(bind.competitor_id, anna.id);
+    assert.equal(bind.card_number, FILE_CARD);
+    assert.equal(bind.previous_card_number, ANNA_CARD);
+
+    const set = eventsOf(compId, 'start_times_set').at(-1)!.payload as Extract<
+      EventPayload,
+      { event_type: 'start_times_set' }
+    >;
+    assert.equal(set.cause, 'start_list_import');
+    assert.deepEqual(set.card_changes, [
+      {
+        competitor_id: anna.id,
+        card_number: FILE_CARD,
+        previous_card_number: ANNA_CARD,
+        local_seq: binds[0]!.localSeq,
+      },
+    ]);
+    assert.deepEqual(set.bib_changes, [{ competitor_id: anna.id, bib: '12', previous_bib: null }]);
+  });
+
+  test('undoing the import puts back start times, card numbers and bibs; undoing that undo gives the import again', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const before = byName('Anna Andersson');
+    await importStarts(compId, annaFile());
+    const imported = byName('Anna Andersson');
+    assert.equal(imported.cardNumber, FILE_CARD);
+    const bindSeq = eventsOf(compId, 'card_bound')[0]!.localSeq;
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.item.cards, 1);
+    assert.equal(undo.item.bibs, 1);
+    assert.equal(undo.statusCode, 201, JSON.stringify(undo.body));
+    assert.equal(undo.body.changed, 1);
+    assert.equal(undo.body.cards, 1);
+    assert.equal(undo.body.bibs, 1);
+    const back = byName('Anna Andersson');
+    assert.equal(back.cardNumber, before.cardNumber);
+    assert.equal(back.bib, before.bib);
+    assert.equal(back.startTimeMs, before.startTimeMs);
+    // The card is put back as an event that points at the import's.
+    const compensating = eventsOf(compId, 'card_bound').at(-1)!;
+    const payload = compensating.payload as Extract<EventPayload, { event_type: 'card_bound' }>;
+    assert.equal(payload.card_number, ANNA_CARD);
+    assert.equal(payload.previous_card_number, FILE_CARD);
+    assert.equal(payload.undoes?.local_seq, bindSeq);
+
+    // Twice is once: the import's event is undone.
+    const again = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/start-times/undo`,
+      payload: { node_id: undo.item.node_id, local_seq: undo.item.local_seq },
+    });
+    assert.equal(again.statusCode, 409);
+    assert.equal(again.json().error, 'already_undone');
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+
+    const redo = await undoNewest(compId);
+    assert.equal(redo.statusCode, 201, JSON.stringify(redo.body));
+    const again2 = byName('Anna Andersson');
+    assert.equal(again2.cardNumber, FILE_CARD);
+    assert.equal(again2.bib, '12');
+    assert.equal(again2.startTimeMs, imported.startTimeMs);
+  });
+
+  test('the undo is refused when a runner has read out with the card the import gave', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    await importStarts(compId, annaFile());
+    await readOut(compId, FILE_CARD);
+    assert.notEqual(statusOf(compId, anna.id), 'PEND');
+    const eventsBefore = eventsOf(compId, 'start_times_set').length;
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 409);
+    assert.equal(undo.body.error, 'has_result');
+    assert.deepEqual(undo.body.competitor_ids, [anna.id]);
+    const now = byName('Anna Andersson');
+    assert.equal(now.cardNumber, FILE_CARD);
+    assert.equal(now.bib, '12');
+    assert.equal(now.startTimeMs, Date.parse(START_ISO));
+    assert.notEqual(statusOf(compId, anna.id), 'PEND');
+    assert.equal(eventsOf(compId, 'start_times_set').length, eventsBefore);
+  });
+
+  test('the undo takes back a read-out the import itself attached: it is an unknown card again', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    // The file's card was read before the import: an unknown card.
+    await readOut(compId, FILE_CARD);
+    assert.equal(statusOf(compId, anna.id), 'PEND');
+    await importStarts(compId, annaFile());
+    assert.notEqual(statusOf(compId, anna.id), 'PEND');
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 201, JSON.stringify(undo.body));
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(statusOf(compId, anna.id), 'PEND');
+  });
+
+  test('a status set by hand is kept: a file card read in a race that was reset since is not taken', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    const base = `/api/competitions/${compId}`;
+    const status = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/competitors/${anna.id}/status`,
+      payload: { status: 'MAX', reason: 'över maxtid' },
+    });
+    assert.equal(status.statusCode, 201, status.body);
+    await readOut(compId, FILE_CARD);
+    const warned = await ctx.app.inject({ method: 'POST', url: `${base}/reset-race` });
+    assert.equal(warned.statusCode, 409, warned.body);
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/reset-race`,
+      payload: { force: true, started_at_ms: warned.json().started_at_ms },
+    });
+    assert.equal(reset.statusCode, 201, reset.body);
+    assert.equal(statusOf(compId, anna.id), 'MAX');
+
+    const body = (await importStarts(compId, annaFile())).body as Record<string, unknown>;
+    assert.equal(body['card_updated'], 0);
+    assert.deepEqual(
+      (body['cardsKept'] as Array<Record<string, unknown>>).map((k) => [k['card'], k['reads']]),
+      [[ANNA_CARD, 0]]
+    );
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(statusOf(compId, anna.id), 'MAX');
+  });
+
+  test('the undo is refused when a card or a bib was changed again, or the old one is taken', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    const bo = byName('Bo Berg');
+    assert.equal((await patch(anna.id, { bib: '5' })).statusCode, 200);
+    await importStarts(compId, annaFile());
+    const refused = async (error: string) => {
+      const undo = await undoNewest(compId);
+      assert.equal(undo.statusCode, 409, JSON.stringify(undo.body));
+      assert.equal(undo.body.error, error);
+      assert.deepEqual(undo.body.competitor_ids, [anna.id]);
+      assert.equal(byName('Anna Andersson').startTimeMs, Date.parse(START_ISO));
+    };
+
+    await patch(anna.id, { card_number: 8000009 });
+    await refused('card_changed_since');
+    await patch(anna.id, { card_number: FILE_CARD });
+
+    await patch(bo.id, { card_number: ANNA_CARD });
+    await refused('card_taken');
+    await patch(bo.id, { card_number: null });
+
+    await patch(anna.id, { bib: '99' });
+    await refused('bib_changed_since');
+    await patch(anna.id, { bib: '12' });
+
+    await patch(bo.id, { bib: '5' });
+    await refused('bib_taken');
+    await patch(bo.id, { bib: null });
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 201, JSON.stringify(undo.body));
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(byName('Anna Andersson').bib, '5');
+  });
+
+  test('the same file twice is once; a file that only changes a card is still one change that can be undone', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    await importStarts(compId, annaFile(ANNA_CARD));
+    const count = () => ctx.handle.db.select().from(events).all().length;
+    const once = count();
+    const second = (await importStarts(compId, annaFile(ANNA_CARD))).body as Record<string, number>;
+    assert.equal(second['exact'], 1);
+    assert.equal(count(), once);
+
+    // Same start and bib, another card.
+    const third = (await importStarts(compId, annaFile())).body as Record<string, number>;
+    assert.equal(third['card_updated'], 1);
+    assert.equal(byName('Anna Andersson').cardNumber, FILE_CARD);
+    const undo = await undoNewest(compId);
+    assert.equal(undo.item.cards, 1);
+    assert.equal(undo.statusCode, 201, JSON.stringify(undo.body));
+    assert.equal(undo.body.changed, 0);
+    assert.equal(undo.body.cards, 1);
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(byName('Anna Andersson').startTimeMs, Date.parse(START_ISO));
+  });
 
   test("startlist: two rows with the same card don't overwrite each other's start", async () => {
     const { compId, byName } = await seedAnnaAndBo();

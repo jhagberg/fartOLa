@@ -13,6 +13,11 @@
 //     02.1-14 Task 6: a card that does not match but name + club does is a
 //     changed/rented card — matched, card_number updated, reported in
 //     cardUpdates; every other unapplied row is listed in `skipped`.
+//     A runner who has read out keeps the card (routes/_cardResult.ts): the
+//     row's start and bib are taken, the card is not, and the row is listed
+//     in cardsKept. Each card the import does change is a card_bound event,
+//     and the import's start_times_set event records the cards and bibs it
+//     changed, so POST …/start-times/undo puts back all of it.
 //
 //   POST /api/competitions/:id/import/startlist/confirm — Idempotent endpoint
 //     that applies operator-confirmed fuzzy matches. Re-confirming an already-
@@ -73,6 +78,7 @@ import { smallestGapMs } from '../draw/remaining.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
+import { readsOnCard, resultGone } from './_cardResult.ts';
 import { StartTimeMs } from './competitors.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -131,14 +137,33 @@ export interface CardUpdate {
   card: number;
 }
 
+/** A runner matched by name + club who has a result the file's card would
+ * take away: the card was not taken (routes/_cardResult.ts). */
+export interface CardKept {
+  row: number;
+  competitor_id: string;
+  name: string;
+  class: string;
+  /** The card the runner has and keeps (null: none). */
+  card: number | null;
+  file_card: number;
+  /** Reads of the kept card that count in the race; 0 for a status set by
+   * hand that a read of the file's card would clear. */
+  reads: number;
+  reason: 'has_result';
+}
+
 export interface StartListMatchResult {
   exact: number;
   fuzzy: number;
   /** Rows not applied; equals skipped.length. */
   unmatched: number;
   card_updated: number;
+  /** Rows applied without their card; equals cardsKept.length. */
+  card_kept: number;
   fuzzyMatches: FuzzyMatch[];
   cardUpdates: CardUpdate[];
+  cardsKept: CardKept[];
   skipped: SkippedImportRow[];
 }
 
@@ -331,11 +356,12 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
       }
 
       // Exact matches that need start_time_ms (and, for a changed card,
-      // card_number) written.
+      // card_number) written. `kept`: matched by name + club, card left.
       const exactWrites: Array<{
         id: string;
         startTimeMs: number;
         cardNumber?: number;
+        kept?: CardKept;
         entry: (typeof entries)[number];
       }> = [];
 
@@ -405,6 +431,27 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
                 );
           if (byNameClub.length === 1 && byNameClub[0] !== undefined) {
             const target = byNameClub[0];
+            // A runner who has read out keeps the card and the result; the
+            // file is older than the read-out (routes/_cardResult.ts, a).
+            const reads = readsOnCard(app.fartolaDb, competitionId, target.cardNumber);
+            if (reads > 0 && target.cardNumber !== null) {
+              exactWrites.push({
+                id: target.id,
+                startTimeMs: entry.startTimeMs,
+                kept: {
+                  row: entry.row,
+                  competitor_id: target.id,
+                  name: target.name,
+                  class: entry.className,
+                  card: target.cardNumber,
+                  file_card: entry.siCard,
+                  reads,
+                  reason: 'has_result',
+                },
+                entry,
+              });
+              continue;
+            }
             // D-11: a card already held by someone else cannot be taken.
             if (cardMatches.some((c) => c.id !== target.id)) {
               skip('duplicate_card');
@@ -472,6 +519,33 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         if (update !== -1) cardUpdates.splice(update, 1);
         skipRow(w.entry, 'duplicate_runner');
       }
+      // A runner with a result who would have none with the file's card
+      // keeps the card too (routes/_cardResult.ts, b).
+      const gone = resultGone(
+        app.fartolaDb,
+        competitionId,
+        new Map(
+          exactWrites.flatMap((w) => (w.cardNumber === undefined ? [] : [[w.id, w.cardNumber]]))
+        )
+      );
+      for (const w of exactWrites) {
+        if (w.cardNumber === undefined || !gone.has(w.id)) continue;
+        const [update] = cardUpdates.splice(
+          cardUpdates.findIndex((u) => u.row === w.entry.row),
+          1
+        );
+        w.kept = {
+          row: w.entry.row,
+          competitor_id: w.id,
+          name: update!.name,
+          class: update!.class,
+          card: update!.previous_card,
+          file_card: w.cardNumber,
+          reads: 0,
+          reason: 'has_result',
+        };
+        delete w.cardNumber;
+      }
       // A dropped card change no longer frees its runner's old card, which a
       // later row may have taken. Replay the remaining changes in row order
       // against the cards actually held; one that takes a held card is
@@ -499,7 +573,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         cardOf.set(w.id, w.cardNumber);
       }
       skipped.sort((a, b) => a.row - b.row);
-      const exactCount = exactWrites.filter((w) => w.cardNumber === undefined).length;
+      const cardsKept = exactWrites.flatMap((w) => (w.kept === undefined ? [] : [w.kept]));
+      const exactCount = exactWrites.filter(
+        (w) => w.cardNumber === undefined && w.kept === undefined
+      ).length;
 
       // SOFT TR 7.5.4: the file's bibs (BibNumber) for the runners it
       // matched. A bib given twice, or held by a runner who keeps it, is
@@ -527,47 +604,25 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         }
       }
 
-      // Write exact matches in a single transaction: cards on the row, start
-      // times as one start_times_set event (ADR-0003 update 2026-10).
+      // Write exact matches as one start_times_set event (ADR-0003 update
+      // 2026-10) that also records the cards and bibs changed with them,
+      // each card as a card_bound event of its own: one transaction, and one
+      // undo for all of it (POST …/start-times/undo).
       if (exactWrites.length > 0) {
-        app.fartolaDb.sqlite.transaction(() => {
-          for (const w of exactWrites) {
-            if (w.cardNumber === undefined) continue;
-            app.fartolaDb.db
-              .update(competitorsTable)
-              .set({ cardNumber: w.cardNumber })
-              .where(
-                and(
-                  eq(competitorsTable.id, w.id),
-                  eq(competitorsTable.competitionId, competitionId)
-                )
-              )
-              .run();
-          }
-          // Clear first, so a bib moving between two runners never collides.
-          for (const id of bibOf.keys())
-            app.fartolaDb.db
-              .update(competitorsTable)
-              .set({ bib: null })
-              .where(eq(competitorsTable.id, id))
-              .run();
-          for (const [id, bib] of bibOf)
-            app.fartolaDb.db
-              .update(competitorsTable)
-              .set({ bib })
-              .where(eq(competitorsTable.id, id))
-              .run();
-          const changes = exactWrites.map((w) => ({
-            competitorId: w.id,
-            startTimeMs: w.startTimeMs,
-          }));
-          writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
-            cause: 'start_list_import',
-            classId: null,
-            changes,
-            classGrids: gridsAfter(changes),
-          });
-        })();
+        const changes = exactWrites.map((w) => ({
+          competitorId: w.id,
+          startTimeMs: w.startTimeMs,
+        }));
+        writeStartTimes(app.fartolaDb, app.fartolaNodeId, competitionId, {
+          cause: 'start_list_import',
+          classId: null,
+          changes,
+          classGrids: gridsAfter(changes),
+          cardChanges: exactWrites.flatMap((w) =>
+            w.cardNumber === undefined ? [] : [{ competitorId: w.id, cardNumber: w.cardNumber }]
+          ),
+          bibChanges: [...bibOf].map(([competitorId, bib]) => ({ competitorId, bib })),
+        });
       }
       app.projectionStore.markDirty(competitionId);
 
@@ -576,8 +631,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         fuzzy: fuzzyMatches.length,
         unmatched: skipped.length,
         card_updated: cardUpdates.length,
+        card_kept: cardsKept.length,
         fuzzyMatches,
         cardUpdates,
+        cardsKept,
         skipped,
       };
       return reply.code(201).send(result);
