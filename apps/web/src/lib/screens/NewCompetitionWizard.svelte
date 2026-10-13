@@ -37,7 +37,7 @@
   import WizardStep1 from './WizardStep1.svelte';
   import WizardStep2 from './WizardStep2.svelte';
   import { validDate } from './wizardDate.ts';
-  import type { CompetitionLevel } from '@fartola/shared-types';
+  import { CompetitionLevel } from '@fartola/shared-types';
 
   interface Props {
     /** Where Avbryt routes to. Defaults to `/` so Home → wizard →
@@ -55,16 +55,22 @@
   }
 
   const DRAFT_KEY = 'fartola-wizard-draft';
-  function loadDraft(): { name: string; date: string; eventorId: string } {
-    const empty = { name: '', date: '', eventorId: '' };
+  function loadDraft(): {
+    name: string;
+    date: string;
+    eventorId: string;
+    level: CompetitionLevel | null;
+  } {
+    const empty = { name: '', date: '', eventorId: '', level: null };
     try {
       const raw = sessionStorage.getItem(DRAFT_KEY);
       if (!raw) return empty;
-      const d = JSON.parse(raw) as Partial<typeof empty>;
+      const d = JSON.parse(raw) as Partial<Record<keyof typeof empty, unknown>>;
       return {
         name: typeof d.name === 'string' ? d.name : '',
         date: typeof d.date === 'string' ? d.date : '',
         eventorId: typeof d.eventorId === 'string' ? d.eventorId : '',
+        level: CompetitionLevel.safeParse(d.level).success ? (d.level as CompetitionLevel) : null,
       };
     } catch {
       return empty;
@@ -85,7 +91,7 @@
   /** The raw text typed in the Eventor ID field (lives here for the draft). */
   let eventorIdInput = $state(draft.eventorId);
   /** ADR-0018: asked before the courses import; null sends no level. */
-  let level: CompetitionLevel | null = $state(null);
+  let level: CompetitionLevel | null = $state(draft.level);
   let submitting = $state(false);
   let pendingFile: File | null = $state(null);
   let preview: PreviewMeta | null = $state(null);
@@ -107,7 +113,7 @@
   const dateInvalid = $derived(date !== '' && !validDate(date));
   const canAdvanceFromStep1 = $derived(name.trim().length > 0 && validDate(date));
   $effect(() => {
-    const d = { name, date, eventorId: eventorIdInput };
+    const d = { name, date, eventorId: eventorIdInput, level };
     try {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
     } catch {

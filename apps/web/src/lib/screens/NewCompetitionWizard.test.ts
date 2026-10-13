@@ -81,4 +81,20 @@ describe('wizard level (ADR-0018)', () => {
   it('sends null when no level is chosen', async () => {
     expect((await create(null)).level).toBeNull();
   });
+
+  it('keeps the chosen level in the draft, as name and date', async () => {
+    sessionStorage.clear();
+    component = mount(NewCompetitionWizard, { target: document.body });
+    await settle();
+    const select = byId<HTMLSelectElement>('wiz-level');
+    select.value = 'niva3';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    void unmount(component);
+    document.body.innerHTML = '';
+    component = mount(NewCompetitionWizard, { target: document.body });
+    await settle();
+    expect(byId<HTMLSelectElement>('wiz-level').value).toBe('niva3');
+    sessionStorage.clear();
+  });
 });
