@@ -13,6 +13,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { useDrawnStarts } from './helpers/seed.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.resolve(__dirname, '../../apps/edge/test/fixtures');
@@ -39,6 +40,7 @@ async function setupCompetition(request: APIRequestContext): Promise<string> {
     });
     expect(res.status(), `${file}: ${await res.text()}`).toBe(201);
   }
+  await useDrawnStarts(request, id);
   return id;
 }
 

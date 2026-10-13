@@ -52,6 +52,21 @@ export async function seedCompetition(
   return { competitionId: id };
 }
 
+/** Every class takes a drawn start list with the time from the start punch,
+ * what a class made without a level got before ADR-0018. A competition made
+ * without a level now gives its classes free start; screens that draw say
+ * otherwise. */
+export async function useDrawnStarts(request: APIRequestContext, id: string): Promise<void> {
+  const res = await request.get(`${BASE}/api/competitions/${id}/classes`);
+  const { classes } = (await res.json()) as { classes: Array<{ id: string }> };
+  for (const c of classes) {
+    const patched = await request.patch(`${BASE}/api/competitions/${id}/classes/${c.id}`, {
+      data: { start_method: 'start_punch' },
+    });
+    expect(patched.status(), await patched.text()).toBe(200);
+  }
+}
+
 const clock = (s: number) => ({ seconds_in_half_day: s, half_day: 0, weekday: null });
 
 /** Punch `codes` in order, 2 min apart, starting 10:00:00 unless given. */
