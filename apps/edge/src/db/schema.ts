@@ -369,6 +369,22 @@ export type EventPayload =
       }>;
       /** cause 'undo': the start_times_set event this one reverses. */
       undoes?: { node_id: string; local_seq: number };
+      /** The card numbers a start-list import (or its undo) changed with the
+       * starts, in the order they were written, each with the local_seq of
+       * its card_bound / card_unbound event. Recorded when the change is
+       * made; the undo reads only this (routes/startTimes.ts). */
+      card_changes?: Array<{
+        competitor_id: string;
+        card_number: number | null;
+        previous_card_number: number | null;
+        local_seq: number;
+      }>;
+      /** The bibs changed with the starts, likewise. */
+      bib_changes?: Array<{
+        competitor_id: string;
+        bib: string | null;
+        previous_bib: string | null;
+      }>;
       /** A pursuit draw: start of the restart block (omstart, SOFT TR
        * 7.4.1); a runner starting at or after it is in the block. */
       restart_ms?: number;

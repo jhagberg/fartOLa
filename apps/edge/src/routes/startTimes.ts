@@ -11,12 +11,23 @@
 //        new event with cause 'undo'. 409 start_changed_since when a runner's
 //        start was changed again afterwards (undo that change first);
 //        409 already_undone; 404 when there is no such event.
+//        A start-list import also changed card numbers and bibs; its event
+//        records them (card_changes, bib_changes) and the undo puts them
+//        back from that record, whole or nothing: 409 card_changed_since /
+//        bib_changed_since when a runner no longer has what the import
+//        gave, 409 card_taken / bib_taken when another runner has the old
+//        one now, and 409 has_result when a runner has read out with the
+//        card the import gave, since the import (routes/_cardResult.ts: the
+//        result stays; a read-out the import itself attached goes back to
+//        being an unknown card).
+//        Each of them lists competitor_ids.
 
 import type { FastifyInstance } from 'fastify';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { classes, competitors, events, type EventPayload } from '../db/schema.ts';
+import { readsOnCard } from './_cardResult.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { gridsOf, writeStartTimes } from '../db/startTimes.ts';
 
@@ -51,6 +62,8 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
         cause: e.payload.cause,
         class_id: e.payload.class_id,
         changed: e.payload.changes.length,
+        cards: e.payload.card_changes?.length ?? 0,
+        bibs: e.payload.bib_changes?.length ?? 0,
         undone: undone.has(`${e.nodeId}:${e.localSeq}`),
       })),
     };
@@ -78,19 +91,66 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
         return reply.code(409).send({ error: 'already_undone' });
 
       // Only if every runner still has the start this event gave them.
-      const now = new Map(
-        app.fartolaDb.db
-          .select({ id: competitors.id, startTimeMs: competitors.startTimeMs })
-          .from(competitors)
-          .where(eq(competitors.competitionId, competitionId))
-          .all()
-          .map((r) => [r.id, r.startTimeMs])
-      );
+      const rows = app.fartolaDb.db
+        .select({
+          id: competitors.id,
+          startTimeMs: competitors.startTimeMs,
+          cardNumber: competitors.cardNumber,
+          bib: competitors.bib,
+        })
+        .from(competitors)
+        .where(eq(competitors.competitionId, competitionId))
+        .all();
+      const now = new Map(rows.map((r) => [r.id, r.startTimeMs]));
       const moved = target.payload.changes
         .filter((c) => now.get(c.competitor_id) !== c.start_time_ms)
         .map((c) => c.competitor_id);
       if (moved.length > 0)
         return reply.code(409).send({ error: 'start_changed_since', competitor_ids: moved });
+
+      // The same for the cards and bibs an import changed, and the old ones
+      // must be free: held by nobody, or by a runner this undo moves off it.
+      const cards = target.payload.card_changes ?? [];
+      const bibs = target.payload.bib_changes ?? [];
+      const rowOf = new Map(rows.map((r) => [r.id, r]));
+      const inCards = new Set(cards.map((c) => c.competitor_id));
+      const inBibs = new Set(bibs.map((b) => b.competitor_id));
+      // No await from here to the write: the reads counted are the reads
+      // there are when the cards move.
+      const refusals: Array<[string, ReadonlyArray<{ competitor_id: string }>]> = [
+        [
+          'card_changed_since',
+          cards.filter((c) => rowOf.get(c.competitor_id)?.cardNumber !== c.card_number),
+        ],
+        ['bib_changed_since', bibs.filter((b) => rowOf.get(b.competitor_id)?.bib !== b.bib)],
+        [
+          'has_result',
+          cards.filter(
+            (c) => readsOnCard(app.fartolaDb, competitionId, c.card_number, c.local_seq) > 0
+          ),
+        ],
+        [
+          'card_taken',
+          cards.filter(
+            (c) =>
+              c.previous_card_number !== null &&
+              rows.some((r) => r.cardNumber === c.previous_card_number && !inCards.has(r.id))
+          ),
+        ],
+        [
+          'bib_taken',
+          bibs.filter(
+            (b) =>
+              b.previous_bib !== null &&
+              rows.some((r) => r.bib === b.previous_bib && !inBibs.has(r.id))
+          ),
+        ],
+      ];
+      const refusal = refusals.find(([, runners]) => runners.length > 0);
+      if (refusal !== undefined)
+        return reply
+          .code(409)
+          .send({ error: refusal[0], competitor_ids: refusal[1].map((r) => r.competitor_id) });
 
       // Every class grid the event set must still be the one it set: a
       // later draw, late-entrant placement or import changed it otherwise,
@@ -121,11 +181,23 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
           intervalSec: g.previous_interval_sec,
         })),
         undoes: { node_id, local_seq },
+        // Backwards: the way the cards were changed, taken in reverse, never
+        // gives two runners one card.
+        cardChanges: cards.toReversed().map((c) => {
+          const undoes = { node_id: target.nodeId, local_seq: c.local_seq };
+          return c.previous_card_number === null
+            ? { competitorId: c.competitor_id, cardNumber: null, undoes }
+            : { competitorId: c.competitor_id, cardNumber: c.previous_card_number, undoes };
+        }),
+        bibChanges: bibs.map((b) => ({ competitorId: b.competitor_id, bib: b.previous_bib })),
       });
       app.projectionStore.markDirty(competitionId);
-      return reply
-        .code(201)
-        .send({ local_seq: written?.local_seq ?? null, changed: written?.changed ?? 0 });
+      return reply.code(201).send({
+        local_seq: written?.local_seq ?? null,
+        changed: written?.changed ?? 0,
+        cards: written?.cards ?? 0,
+        bibs: written?.bibs ?? 0,
+      });
     }
   );
 }

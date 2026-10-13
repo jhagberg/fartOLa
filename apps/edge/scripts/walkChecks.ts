@@ -184,20 +184,7 @@ export const KNOWN: ReadonlyArray<{
     name: 'a changed card number takes the result away without a warning',
     where: '.planning/todos/pending/2026-10-12-card-change-drops-result.md',
     id: 'results-fell',
-    url: /\/api\/competitors(\/[^/]+\/profile)?$|\/import\/startlist$|\/card-binds\/undo$/,
-  },
-  {
-    name: 'the start list import has no way back for card numbers and bibs',
-    where: '.planning/todos/pending/2026-10-12-card-change-drops-result.md',
-    id: 'way-back-differs',
-    url: /\/import\/startlist$/,
-    msg: /\.(card_number|bib): /,
-  },
-  {
-    name: 'the start list import has no way back for card numbers and bibs',
-    where: '.planning/todos/pending/2026-10-12-card-change-drops-result.md',
-    id: 'no-way-back',
-    url: /\/import\/startlist$/,
+    url: /\/api\/competitors(\/[^/]+\/profile)?$|\/card-binds\/undo$/,
   },
   {
     name: 'a forced reset sent again after its undo resets the race again',

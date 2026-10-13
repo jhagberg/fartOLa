@@ -30,6 +30,8 @@ export function gridsOf(p: StartTimesSet): ClassGrids {
   ];
 }
 
+type EventRef = { node_id: string; local_seq: number };
+
 export interface StartTimeWrite {
   cause: StartTimeCause;
   classId: string | null;
@@ -43,11 +45,29 @@ export interface StartTimeWrite {
     intervalSec: number | null;
   }>;
   undoes?: { node_id: string; local_seq: number };
+  /** Card numbers changed with the starts (start-list import and its undo),
+   * applied in this order: each is a card_bound (or card_unbound) event of
+   * its own, and the start event records them (payload card_changes). A
+   * card is cleared only by an undo, which names the bind it takes back. */
+  cardChanges?: ReadonlyArray<
+    | { competitorId: string; cardNumber: number; undoes?: EventRef }
+    | { competitorId: string; cardNumber: null; undoes: EventRef }
+  >;
+  /** Bibs changed with the starts (payload bib_changes). */
+  bibChanges?: ReadonlyArray<{ competitorId: string; bib: string | null }>;
   /** A pursuit draw's restart block start (payload restart_ms). */
   restartMs?: number;
   /** A draw that overrode a start clash: the operator's reason (payload
    * start_clash_reason). */
   startClashReason?: string;
+}
+
+/** What a write changed: runners with a new start, card number, bib. */
+export interface StartTimesWritten {
+  local_seq: number;
+  changed: number;
+  cards: number;
+  bibs: number;
 }
 
 /** A competitor id that is not in the competition. Nothing was written. */
@@ -60,17 +80,17 @@ export class UnknownCompetitor extends Error {
 }
 
 /** Write the changes as one start_times_set event plus the cache. Changes
- * that keep a runner's start are dropped; with nothing left (and no grid
- * change) no event is written and the result is null. Throws
- * UnknownCompetitor before writing anything. The caller marks the
+ * that keep a runner's start (card, bib) are dropped; with nothing left (and
+ * no grid change) no event is written and the result is null. Throws
+ * UnknownCompetitor, and then nothing is written. The caller marks the
  * projection dirty. */
 export function writeStartTimes(
   handle: DbHandle,
   nodeId: string,
   competitionId: string,
   write: StartTimeWrite
-): { local_seq: number; changed: number } | null {
-  let result: { local_seq: number; changed: number } | null = null;
+): StartTimesWritten | null {
+  let result: StartTimesWritten | null = null;
   handle.sqlite.transaction(() => {
     // A competitor named twice gets the last value (one change per runner,
     // so undo can restore it).
@@ -131,13 +151,85 @@ export function writeStartTimes(
       const set = setGrid(g.classId, g);
       return set === undefined ? [] : [{ class_id: g.classId, ...set }];
     });
-    if (changes.length === 0 && classGrid === undefined && classGrids.length === 0) return;
+
+    // Cards and bibs: the previous value is read here, in the transaction
+    // that changes it, and recorded in the event for the undo.
+    const now = Date.now();
+    const rowOf = (id: string) => {
+      const row = handle.db
+        .select({
+          card: competitors.cardNumber,
+          bib: competitors.bib,
+          consentAtMs: competitors.consentAtMs,
+        })
+        .from(competitors)
+        .where(and(eq(competitors.competitionId, competitionId), eq(competitors.id, id)))
+        .get();
+      if (row === undefined) throw new UnknownCompetitor(id);
+      return row;
+    };
+    const cardChanges = (write.cardChanges ?? []).flatMap((c) => {
+      const row = rowOf(c.competitorId);
+      if (row.card === c.cardNumber) return [];
+      handle.db
+        .update(competitors)
+        .set({ cardNumber: c.cardNumber })
+        .where(eq(competitors.id, c.competitorId))
+        .run();
+      const payload: EventPayload =
+        c.cardNumber === null
+          ? {
+              event_type: 'card_unbound',
+              competitor_id: c.competitorId,
+              // Not null: it differs from the new card, which is null.
+              card_number: row.card as number,
+              undoes: c.undoes,
+            }
+          : {
+              event_type: 'card_bound',
+              competitor_id: c.competitorId,
+              card_number: c.cardNumber,
+              walkup: false,
+              consent_at_ms: row.consentAtMs ?? now,
+              previous_card_number: row.card,
+              ...(c.undoes !== undefined ? { undoes: c.undoes } : {}),
+            };
+      const bound = insertEvent(handle, nodeId, payload.event_type, now, payload, competitionId);
+      return [
+        {
+          competitor_id: c.competitorId,
+          card_number: c.cardNumber,
+          previous_card_number: row.card,
+          local_seq: bound.local_seq,
+        },
+      ];
+    });
+    const bibChanges = (write.bibChanges ?? []).flatMap((b) => {
+      const previous = rowOf(b.competitorId).bib;
+      return previous === b.bib
+        ? []
+        : [{ competitor_id: b.competitorId, bib: b.bib, previous_bib: previous }];
+    });
+    // Clear first, so a bib moving between two runners never collides.
+    const setBib = (id: string, bib: string | null) =>
+      handle.db.update(competitors).set({ bib }).where(eq(competitors.id, id)).run();
+    for (const b of bibChanges) setBib(b.competitor_id, null);
+    for (const b of bibChanges) if (b.bib !== null) setBib(b.competitor_id, b.bib);
+
+    if (
+      changes.length === 0 &&
+      classGrid === undefined &&
+      classGrids.length === 0 &&
+      cardChanges.length === 0 &&
+      bibChanges.length === 0
+    )
+      return;
 
     const r = insertEvent(
       handle,
       nodeId,
       'start_times_set',
-      Date.now(),
+      now,
       {
         event_type: 'start_times_set',
         cause: write.cause,
@@ -146,6 +238,8 @@ export function writeStartTimes(
         ...(classGrid !== undefined ? { class_grid: classGrid } : {}),
         ...(classGrids.length > 0 ? { class_grids: classGrids } : {}),
         ...(write.undoes !== undefined ? { undoes: write.undoes } : {}),
+        ...(cardChanges.length > 0 ? { card_changes: cardChanges } : {}),
+        ...(bibChanges.length > 0 ? { bib_changes: bibChanges } : {}),
         ...(write.restartMs !== undefined ? { restart_ms: write.restartMs } : {}),
         ...(write.startClashReason !== undefined
           ? { start_clash_reason: write.startClashReason }
@@ -159,7 +253,12 @@ export function writeStartTimes(
         .set({ startTimeMs: c.start_time_ms })
         .where(eq(competitors.id, c.competitor_id))
         .run();
-    result = { local_seq: r.local_seq, changed: changes.length };
+    result = {
+      local_seq: r.local_seq,
+      changed: changes.length,
+      cards: cardChanges.length,
+      bibs: bibChanges.length,
+    };
   })();
   return result;
 }

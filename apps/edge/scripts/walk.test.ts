@@ -237,34 +237,29 @@ describe('found by the walk, not fixed', () => {
     }
   );
 
-  test(
-    'the start list again, after a card was changed on the day, keeps the result',
-    {
-      todo: CARD_TODO,
-    },
-    async () => {
-      const r = await race();
-      try {
-        // The runner's card failed: a new one at the read-out, and a read.
-        await r.send('POST', '/api/competitors', {
-          competition_id: r.id,
-          replace_card_for_competitor_id: r.runner,
-          card_number: 8300001,
-        });
-        await r.read(8300001);
-        assert.equal(r.status(), 'OK');
-        // The start list from before the day still names the old card.
-        const res = await r.upload(
-          `/api/competitions/${r.id}/import/startlist`,
-          startListXml([ALVA])
-        );
-        assert.equal(res.statusCode, 201, res.body);
-        assert.equal(r.status(), 'OK', `card_updated: ${res.json().card_updated}`);
-      } finally {
-        await r.close();
-      }
+  test('the start list again, after a card was changed on the day, keeps the result', async () => {
+    const r = await race();
+    try {
+      // The runner's card failed: a new one at the read-out, and a read.
+      await r.send('POST', '/api/competitors', {
+        competition_id: r.id,
+        replace_card_for_competitor_id: r.runner,
+        card_number: 8300001,
+      });
+      await r.read(8300001);
+      assert.equal(r.status(), 'OK');
+      // The start list from before the day still names the old card.
+      const res = await r.upload(
+        `/api/competitions/${r.id}/import/startlist`,
+        startListXml([ALVA])
+      );
+      assert.equal(res.statusCode, 201, res.body);
+      assert.equal(r.status(), 'OK', `card_updated: ${res.json().card_updated}`);
+      assert.equal(res.json().card_kept, 1);
+    } finally {
+      await r.close();
     }
-  );
+  });
 
   test(
     'the entry list again adds no runner',
