@@ -44,6 +44,7 @@ const settle = async (): Promise<void> => {
   flushSync();
 };
 
+let classList: Array<{ id: string; class_kind: string }>;
 let checkHeld: Array<(r: Response) => void>;
 let patches: Array<{ url: string; body: unknown; answer: (r: Response) => void }>;
 const json = (body: unknown, status = 200) =>
@@ -55,6 +56,7 @@ describe('PreRaceCheckView', () => {
   beforeEach(() => {
     checkHeld = [];
     patches = [];
+    classList = [];
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/pre-race-check')) return new Promise<Response>((r) => checkHeld.push(r));
@@ -63,7 +65,7 @@ describe('PreRaceCheckView', () => {
           patches.push({ url, body: JSON.parse(String(init.body)), answer })
         );
       if (url.endsWith('/competitors')) return json({ competitors: [] });
-      if (url.endsWith('/classes')) return json({ classes: [] });
+      if (url.endsWith('/classes')) return json({ classes: classList });
       return json({ open: [], returned: [] });
     }) as unknown as typeof fetch;
   });
@@ -154,6 +156,17 @@ describe('PreRaceCheckView', () => {
     );
     expect(status.querySelector('a')!.textContent).toBe('Ändra i Lottning');
     expect(document.querySelectorAll('[data-testid="prerace-class-link"]')).toHaveLength(0);
+  });
+
+  it('the open-class help shows only where Fri start is offered', async () => {
+    classList = [{ id: 'o1', class_kind: 'oppen' }];
+    await loaded(check({ no_start_time: [runner('a', 'o1', false)] }));
+    expect(document.querySelector('[data-testid="prerace-open-class-help"]')).toBeNull();
+    void unmount(component!);
+    document.body.innerHTML = '';
+    checkHeld = [];
+    await loaded(check({ no_start_time: [runner('a', 'o1', true)] }));
+    expect(document.querySelector('[data-testid="prerace-open-class-help"]')).not.toBeNull();
   });
 
   it('a save for one class does not block another class button', async () => {

@@ -893,7 +893,7 @@
   "lottning.startChoice.failed": "Valet sparades inte. Försök igen.",
   "lottning.drawHint.freeStart": "Klassen har fri start. Välj Lottad starttid för att lotta.",
   "lottning.drawHint.required": "Öppen klass ska ha fri starttid på nivå 1–3 och lottas inte.",
-  "lottning.freeStartNote": "Fri start: löparna tidtas från startstämpeln, så klassen behöver ingen lottning.",
+  "lottning.freeStartNote": "Fri start: tiden räknas från startstämplingen, så klassen behöver ingen startlista.",
   "clock.nextDay": "{{time}} (dagen efter)",
   "lottning.closingMoved": "Målet stänger nu {{to}} (var {{from}}). Uppdatera PM (TR 4.16.3).",
   "lottning.startName": "Startplats",
