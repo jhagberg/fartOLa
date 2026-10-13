@@ -459,7 +459,7 @@ describe('LottningView (mounted)', () => {
     document.body.innerHTML = '';
     h12Start = 'free_start';
     await mountView();
-    expect($('lottning-start-note')!.textContent).toContain('Fri start: löparna tidtas');
+    expect($('lottning-start-note')!.textContent).toContain('behöver ingen startlista');
   });
 
   it('a reload of the same class keeps the interval the operator typed', async () => {
