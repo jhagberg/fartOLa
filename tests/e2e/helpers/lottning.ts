@@ -5,7 +5,7 @@
 // loads or the action that reads them; every changed element is asserted
 // visible at the end of its state.
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
-import { BASE, seedCompetition } from './seed.ts';
+import { BASE, seedCompetition, useDrawnStarts } from './seed.ts';
 
 const LOTTNING = '**/api/competitions/*/lottning/*';
 
@@ -13,6 +13,7 @@ const LOTTNING = '**/api/competitions/*/lottning/*';
  * draw and save, which would change what the shared one shows other screens. */
 async function ownLottning(page: Page, request: APIRequestContext): Promise<string> {
   const { competitionId } = await seedCompetition(request, { controls: 8, start: false });
+  await useDrawnStarts(request, competitionId);
   await page.goto(`/competition/${competitionId}/lottning`);
   await expect(page.getByTestId('lottning-view')).toBeVisible();
   return competitionId;
