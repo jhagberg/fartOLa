@@ -1,10 +1,9 @@
 // Authored for fartola. Not ported from upstream.
 //
-// Vitest coverage for the per-class "Starttid räknas från" select in
-// LottningView (02.1-14 Task 14, replaces Task 11's "Ej startstämpling"
-// checkbox). Pure-helper style like CompetitionInfoView.test.ts: i18n keys
-// + the client call the select makes. Below: the M1 draw modes (pure body
-// builder, and the mounted view with a routed fake fetch).
+// Vitest coverage for LottningView: the "Så startar klassen" choice (ADR-0018:
+// i18n keys, the client call, the rule text and the conflict), then the M1
+// draw modes (pure body builder, and the mounted view with a routed fake
+// fetch).
 
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
@@ -1173,6 +1172,13 @@ describe('LottningView (mounted)', () => {
       expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('true');
       await pick('free_start');
       expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('false');
+    });
+
+    it('a required class stored as auto (an older competition) shows the conflict', async () => {
+      h12Start = 'auto';
+      h12Class = { free_start_required: true };
+      await mountView();
+      expect($('lottning-start-method-rule')!.getAttribute('data-conflict')).toBe('true');
     });
 
     it('without the rule flags all three answers are open', async () => {
