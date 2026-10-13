@@ -17,23 +17,31 @@
 //        409 not_undoable (a bind with no old card logged, or an undo);
 //        409 already_undone; 409 card_changed_since when the competitor's
 //        card was changed again (undo that first); 409 card_taken when
-//        another competitor now holds the old card.
+//        another competitor now holds the old card; 409 has_result when
+//        the competitor has read out with the new card since the change,
+//        unless the body's lose_result names what is lost
+//        (routes/_cardResult.ts).
 //
 // Reads attach by the competitors' current card numbers, so after the undo
-// the read made with the new card is an unknown card again.
+// the read the change attached is an unknown card again.
 
 import type { FastifyInstance } from 'fastify';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { readoutChannel } from '@fartola/shared-types';
+import { LoseResult, readoutChannel } from '@fartola/shared-types';
 import { competitors, events, type EventPayload } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import { rankEnteredRunners } from '../projection/enteredRunners.ts';
+import { resultLost } from './_cardResult.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 const UndoInput = z
-  .object({ node_id: z.string().min(1), local_seq: z.number().int().positive() })
+  .object({
+    node_id: z.string().min(1),
+    local_seq: z.number().int().positive(),
+    lose_result: LoseResult.optional(),
+  })
   .strict();
 
 type CardBound = Extract<EventPayload, { event_type: 'card_bound' }>;
@@ -100,6 +108,14 @@ export default async function registerCardBindsRoutes(app: FastifyInstance): Pro
       if (!row) return reply.code(404).send({ error: 'competitor_not_found' });
       if (row.cardNumber !== bind.card_number)
         return reply.code(409).send({ error: 'card_changed_since' });
+
+      const lost = resultLost(
+        app.fartolaDb,
+        row,
+        { afterSeq: target.localSeq },
+        parsed.data.lose_result
+      );
+      if (lost !== null) return reply.code(409).send(lost);
 
       const previous = bind.previous_card_number;
       if (previous !== null) {

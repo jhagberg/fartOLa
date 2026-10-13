@@ -433,7 +433,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
             const target = byNameClub[0];
             // A runner who has read out keeps the card and the result; the
             // file is older than the read-out (routes/_cardResult.ts, a).
-            const reads = readsOnCard(app.fartolaDb, competitionId, target.cardNumber);
+            const { reads } = readsOnCard(app.fartolaDb, competitionId, target.cardNumber);
             if (reads > 0 && target.cardNumber !== null) {
               exactWrites.push({
                 id: target.id,

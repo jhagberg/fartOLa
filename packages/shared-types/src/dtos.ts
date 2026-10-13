@@ -312,6 +312,22 @@ export type CompetitorDTO = z.infer<typeof CompetitorDTO>;
  * through `issuesToErrors` unchanged so the SvelteKit form sees the
  * same { path, code, message } shape as the structural failures.
  */
+/** What a card change takes from a runner (edge routes/_cardResult.ts): the
+ * card the runner has and the local_seq of the event that gave it (0: none),
+ * the runner's status, how many reads of the card count in the race and the
+ * local_seq of the newest (0: none). The 409 has_result carries it, and the
+ * request that goes on sends it back unchanged as its confirmation. */
+export const LoseResult = z
+  .object({
+    card_number: POSITIVE_INT.nullable(),
+    card_seq: z.number().int().min(0),
+    status: z.string(),
+    reads: z.number().int().min(0),
+    last_read_seq: z.number().int().min(0),
+  })
+  .strict();
+export type LoseResult = z.infer<typeof LoseResult>;
+
 export const CompetitorCreateInput = z
   .object({
     competition_id: UUID,
@@ -345,6 +361,9 @@ export const CompetitorCreateInput = z
      * competitor's card_number (operator-corrected misread) instead of
      * creating a new row. consent_at_ms is preserved. */
     replace_card_for_competitor_id: UUID.optional(),
+    /** Replace mode: confirms that the result the runner has with the
+     * present card is lost (409 has_result). */
+    lose_result: LoseResult.optional(),
     /** Phase 2.0 D-HB-1 / Plan 02-02 — when true, the route ALSO writes
      * a `hired_cards` row inside the same transaction as the competitor
      * INSERT. Default false preserves the Phase 1 wire shape exactly. */

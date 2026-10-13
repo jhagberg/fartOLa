@@ -1,10 +1,10 @@
 // Authored for fartola. Not ported from upstream.
 //
 // The walk in the test suite: one short fixed walk, the sequences that
-// calibrate the checks, and the findings that are written down but not fixed
-// (as todo tests through the plain routes: they fail today and do not fail
-// the suite; when one passes, remove its `todo` and its KNOWN entry in
-// walkChecks.ts).
+// calibrate the checks, and the findings through the plain routes: the fixed
+// ones as tests, the ones written down but not fixed as todo tests (they
+// fail today and do not fail the suite; when one passes, remove its `todo`
+// and its KNOWN entry in walkChecks.ts).
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -186,56 +186,44 @@ async function race() {
   };
 }
 
-const CARD_TODO = '.planning/todos/pending/2026-10-12-card-change-drops-result.md';
-
-describe('found by the walk, not fixed', () => {
-  test(
-    '"Ändra": a new card number for a runner who has read out keeps the result or is refused',
-    {
-      todo: CARD_TODO,
-    },
-    async () => {
-      const r = await race();
-      try {
-        await r.read(8100001);
-        assert.equal(r.status(), 'OK');
-        const res = await r.send('PATCH', `/api/competitors/${r.runner}/profile`, {
-          card_number: 8100099,
-        });
-        assert.ok(
-          res.statusCode === 409 || r.status() === 'OK',
-          `${res.statusCode}, ${r.status()}`
-        );
-      } finally {
-        await r.close();
-      }
-    }
-  );
-
-  test(
-    '"Byt bricka": a new card for a runner who has read out keeps the result or is refused',
-    {
-      todo: CARD_TODO,
-    },
-    async () => {
-      const r = await race();
-      try {
-        await r.read(8100001);
-        assert.equal(r.status(), 'OK');
-        const res = await r.send('POST', '/api/competitors', {
+// The fault of 2026-10-12, a changed card number takes a read-out runner's
+// result away (routes/_cardResult.ts).
+describe('found by the walk and fixed', () => {
+  for (const [name, change] of [
+    [
+      '"Ändra": a new card number',
+      (r: Awaited<ReturnType<typeof race>>, extra: object) =>
+        r.send('PATCH', `/api/competitors/${r.runner}/profile`, { card_number: 8100099, ...extra }),
+    ],
+    [
+      '"Byt bricka": a new card',
+      (r: Awaited<ReturnType<typeof race>>, extra: object) =>
+        r.send('POST', '/api/competitors', {
           competition_id: r.id,
           replace_card_for_competitor_id: r.runner,
           card_number: 8300001,
-        });
-        assert.ok(
-          res.statusCode === 409 || r.status() === 'OK',
-          `${res.statusCode}, ${r.status()}`
-        );
+          ...extra,
+        }),
+    ],
+  ] as const) {
+    test(`${name} for a runner who has read out is refused, and taken when what is lost is confirmed`, async () => {
+      const r = await race();
+      try {
+        await r.read(8100001);
+        assert.equal(r.status(), 'OK');
+        const res = await change(r, {});
+        assert.equal(res.statusCode, 409, res.body);
+        assert.equal(res.json().error, 'has_result');
+        assert.equal(res.json().lose_result.card_number, 8100001);
+        assert.equal(r.status(), 'OK');
+        const confirmed = await change(r, { lose_result: res.json().lose_result });
+        assert.equal(confirmed.statusCode, 200, confirmed.body);
+        assert.equal(r.status(), 'PEND');
       } finally {
         await r.close();
       }
-    }
-  );
+    });
+  }
 
   test('the start list again, after a card was changed on the day, keeps the result', async () => {
     const r = await race();
@@ -260,7 +248,9 @@ describe('found by the walk, not fixed', () => {
       await r.close();
     }
   });
+});
 
+describe('found by the walk, not fixed', () => {
   test(
     'the entry list again adds no runner',
     {

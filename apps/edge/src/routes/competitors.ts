@@ -42,6 +42,9 @@
 //        SELECT returns a structured response instead of a raw constraint
 //        error). If the same competitor already holds this card_number,
 //        the UPDATE is a no-op but the card_bound event is still emitted.
+//        A competitor whose result the change would take away → 409
+//        has_result, unless body.lose_result names what is lost
+//        (routes/_cardResult.ts).
 //     4. In a single sqlite.transaction:
 //          - UPDATE competitors SET card_number=? WHERE id=?.
 //          - Insert events row eventType='card_bound' + payload preserving
@@ -83,9 +86,11 @@ import {
   paysYouthFee,
   readoutChannel,
 } from '@fartola/shared-types';
+import { LoseResult } from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
 import { UnknownCompetitor, writeStartTimes } from '../db/startTimes.ts';
 import type { Competitor } from '../db/types.ts';
+import { resultLost } from './_cardResult.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
 // C-M4 — PATCH /api/competitors/:id consent-confirmation body schema.
@@ -101,7 +106,9 @@ const PatchConsentSchema = z.object({
 // Operator-driven edits to an existing competitor row — name, club, class
 // assignment, card number or bib (SOFT TR 7.5.4; '' or null clears it). Each
 // field is optional; an empty body is a 200 no-op. Card-number changes emit a card_bound event so the projection
-// can re-match pending reads to the corrected card.
+// can re-match pending reads to the corrected card. A card change that would
+// take the runner's result away is 409 has_result unless lose_result names
+// what is lost (routes/_cardResult.ts).
 const PatchProfileSchema = z
   .object({
     name: z.string().trim().min(2).max(200).optional(),
@@ -111,6 +118,7 @@ const PatchProfileSchema = z
     bib: z.string().trim().max(16).nullable().optional(),
     paid_amount: z.number().int().min(0).max(100000).optional(),
     paid_method: z.enum(['cash', 'swish']).nullable().optional(),
+    lose_result: LoseResult.optional(),
   })
   .strict();
 
@@ -316,6 +324,13 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
             .code(409)
             .send({ error: 'card_taken', existing_competitor_id: collision.id });
         }
+        const lost = resultLost(
+          app.fartolaDb,
+          target,
+          { newCard: newCardNumber },
+          input.lose_result
+        );
+        if (lost !== null) return reply.code(409).send(lost);
       }
 
       // (5r) Atomic UPDATE + card_bound event. consent_at_ms preserved.
@@ -772,6 +787,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
           return reply.code(409).send({ error: 'card_already_bound' });
         }
       }
+      const lost = resultLost(app.fartolaDb, row, { newCard: candidate }, parsed.data.lose_result);
+      if (lost !== null) return reply.code(409).send(lost);
       update.cardNumber = candidate;
     }
     if (parsed.data.bib !== undefined) {
@@ -819,6 +836,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
               card_number: newCard,
               walkup: false,
               consent_at_ms: row.consentAtMs ?? now,
+              // Logged so the change can be undone (card-binds/undo).
+              previous_card_number: row.cardNumber,
             },
           })
           .run();
