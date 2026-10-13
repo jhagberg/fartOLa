@@ -37,6 +37,7 @@
   import WizardStep1 from './WizardStep1.svelte';
   import WizardStep2 from './WizardStep2.svelte';
   import { validDate } from './wizardDate.ts';
+  import type { CompetitionLevel } from '@fartola/shared-types';
 
   interface Props {
     /** Where Avbryt routes to. Defaults to `/` so Home → wizard →
@@ -83,6 +84,8 @@
   let date = $state(draft.date);
   /** The raw text typed in the Eventor ID field (lives here for the draft). */
   let eventorIdInput = $state(draft.eventorId);
+  /** ADR-0018: asked before the courses import; null sends no level. */
+  let level: CompetitionLevel | null = $state(null);
   let submitting = $state(false);
   let pendingFile: File | null = $state(null);
   let preview: PreviewMeta | null = $state(null);
@@ -205,6 +208,7 @@
         // Plan 11 — pass Eventor linkage through to the atomic POST so
         // the row is linked from creation without a separate PATCH.
         ...(eventorEventId !== null ? { eventor_event_id: eventorEventId } : {}),
+        level,
       });
       if (result.ok) {
         clearDraft();
@@ -306,6 +310,8 @@
           preimportedFile={pendingFile}
           onnamechange={setName}
           ondatechange={setDate}
+          {level}
+          onlevelchange={(v) => (level = v)}
           onquickstart={acceptQuickstart}
           onquickstartclear={clearQuickstart}
           oneventorquickstart={acceptEventorQuickstart}

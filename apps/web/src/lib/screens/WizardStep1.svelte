@@ -34,6 +34,9 @@
   import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
   import { getEventorEvent } from '#lib/api/client.ts';
   import { ApiError } from '#lib/api/client.ts';
+  import type { CompetitionLevel } from '@fartola/shared-types';
+
+  const LEVEL_OPTIONS: CompetitionLevel[] = ['niva1', 'niva2', 'niva3', 'niva4', 'traning'];
 
   interface PreviewMeta {
     filename: string;
@@ -51,6 +54,9 @@
     preimportedFile: File | null;
     onnamechange: (v: string) => void;
     ondatechange: (v: string) => void;
+    /** The competition level; null = not chosen. */
+    level: CompetitionLevel | null;
+    onlevelchange: (v: CompetitionLevel | null) => void;
     /** Quickstart callback. Fires once per successful import. The
      * wizard sets pendingFile + preview + name + date in one shot, so
      * Step 2 sees the file as already-loaded and the form fields show
@@ -76,6 +82,8 @@
     preimportedFile,
     onnamechange,
     ondatechange,
+    level,
+    onlevelchange,
     onquickstart,
     onquickstartclear,
     oneventorquickstart,
@@ -415,6 +423,24 @@
       </p>
     {/if}
     <small class="muted small" id="wiz-date-helper">{t('wiz.date.helper')}</small>
+  </div>
+  <div class="field">
+    <label for="wiz-level">{t('wiz.level')}</label>
+    <select
+      id="wiz-level"
+      class="input"
+      value={level ?? ''}
+      aria-describedby="wiz-level-help"
+      onchange={(e) =>
+        onlevelchange((e.currentTarget.value || null) as CompetitionLevel | null)}
+      data-testid="wiz-level"
+    >
+      <option value="">{t('wiz.level.none')}</option>
+      {#each LEVEL_OPTIONS as lvl (lvl)}
+        <option value={lvl}>{t(`info.level.${lvl}`)}</option>
+      {/each}
+    </select>
+    <small class="muted small" id="wiz-level-help">{t('wiz.level.help')}</small>
   </div>
 </div>
 

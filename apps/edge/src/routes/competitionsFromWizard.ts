@@ -49,6 +49,8 @@ import crypto from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 
+import { CompetitionLevel } from '@fartola/shared-types';
+
 import { competitions } from '../db/schema.ts';
 import { parseIofXml } from '../xml/parse.ts';
 import { validateXml } from '../xml/validate.ts';
@@ -67,6 +69,9 @@ const FromWizardSchema = z.object({
    * When present, stored on the competition row so ImportRunnersView can
    * show the linked-event card and the competition list can show the chip. */
   eventor_event_id: z.number().int().positive().nullable().optional(),
+  /** ADR-0018 — the competition level, stored before the courses import so
+   * the new classes get their default start choice from it. */
+  level: CompetitionLevel.nullable().optional(),
 });
 
 const MAX_DECODED_BYTES = 5 * 1024 * 1024;
@@ -85,7 +90,7 @@ export default async function registerCompetitionsFromWizard(app: FastifyInstanc
     if (!parsed.success) {
       return reply.code(400).send(issuesToErrors(parsed.error.issues));
     }
-    const { name, date, xml_file, eventor_event_id } = parsed.data;
+    const { name, date, xml_file, eventor_event_id, level } = parsed.data;
 
     if (xml_file.name.includes('..') || isAbsolute(xml_file.name)) {
       return reply.code(400).send({ error: 'bad_filename' });
@@ -148,6 +153,7 @@ export default async function registerCompetitionsFromWizard(app: FastifyInstanc
             createdAtMs: now,
             // Plan 11 — persist Eventor linkage from the wizard quickstart path.
             eventorEventId: eventor_event_id ?? null,
+            level: level ?? null,
           })
           .run();
         if (parsedXml.kind === 'CourseData') {
