@@ -433,6 +433,10 @@ describe('POST /api/competitions/:id/import/startlist', () => {
       payload: { name: 'H21', class_kind: 'senior', age_class: 21 },
     });
     const classId = (cls.json() as { id: string }).id;
+    // No level: a new class is free start; this test draws, so it needs a drawn start.
+    ctx.handle.sqlite
+      .prepare("UPDATE classes SET start_method = 'start_time' WHERE id = ?")
+      .run(classId);
     const cards = [7001, 7002, 7003];
     cards.forEach((card, i) =>
       ctx.handle.db
@@ -506,6 +510,10 @@ describe('POST /api/competitions/:id/import/startlist', () => {
       payload: { name: 'H21', class_kind: 'senior', age_class: 21 },
     });
     const classId = (cls.json() as { id: string }).id;
+    // No level: a new class is free start; this test draws, so it needs a drawn start.
+    ctx.handle.sqlite
+      .prepare("UPDATE classes SET start_method = 'start_time' WHERE id = ?")
+      .run(classId);
     const cards = [7101, 7102, 7103];
     cards.forEach((card, i) =>
       ctx.handle.db

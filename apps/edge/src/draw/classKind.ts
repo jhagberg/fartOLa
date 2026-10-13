@@ -119,15 +119,16 @@ export function kindNeedsAge(kind: ClassKind): boolean {
   return kind !== 'oppen' && kind !== 'inskolning';
 }
 
-/** The start choice a new class gets (ADR-0018): open classes and
- * inskolning free start; an age class a drawn time at nivå 1-3 only, where
- * free start is forbidden; otherwise the start punch. The level is the
+/** The start choice a new class gets (ADR-0018). At nivå 1-3, where free
+ * start is forbidden in age classes: an age class a drawn time, a class of
+ * unknown kind the start punch, open classes and inskolning free start.
+ * Everywhere else (nivå 4, training, no level) free start. The level is the
  * competition's when the class is created; a later change rewrites nothing. */
 export function defaultStartMethod(
   kind: ClassKind | null,
   level: CompetitionLevel | null
 ): StartMethod {
-  if (kind === 'oppen' || kind === 'inskolning') return 'free_start';
   const strict = level === 'niva1' || level === 'niva2' || level === 'niva3';
-  return kind !== null && strict ? 'start_time' : 'start_punch';
+  if (!strict || kind === 'oppen' || kind === 'inskolning') return 'free_start';
+  return kind === null ? 'start_punch' : 'start_time';
 }

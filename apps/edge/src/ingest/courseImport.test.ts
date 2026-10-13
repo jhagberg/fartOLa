@@ -205,8 +205,8 @@ describe('ingestCourseData', () => {
     });
     assert.deepEqual(methods(null), {
       Inskolning: 'free_start',
-      H21: 'start_punch',
-      Xyz: 'start_punch',
+      H21: 'free_start',
+      Xyz: 'free_start',
     });
   });
 

@@ -283,7 +283,7 @@ describe('classes route (PATCH maxTimeSec)', () => {
     const names = ['H40', 'H45', 'H50'];
     for (const [i, l] of ['niva4', 'traning', null].entries()) {
       level(l);
-      assert.equal(await created(names[i]!), 'start_punch');
+      assert.equal(await created(names[i]!), 'free_start');
     }
   });
 
