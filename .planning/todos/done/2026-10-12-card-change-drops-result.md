@@ -71,3 +71,25 @@ To decide; the pieces:
 
 The three todo tests in `walk.test.ts` pass without `todo`, the `KNOWN`
 entries that name this file are removed, and a longer walk still passes.
+
+## Fixed 2026-10-13
+
+The rule is written where it lives, `apps/edge/src/routes/_cardResult.ts`:
+a runner who has a result keeps it.
+
+- 1 and 2 ("Ändra", "Byt bricka"): 409 `has_result` with `lose_result`
+  (the card, the card change that gave it, the status, the reads). The
+  change goes through only when the request sends that `lose_result` back
+  unchanged. "Ändra" shows the warning under the card field with its own
+  button; "Byt bricka" refuses and says where the card can be changed.
+- 3 (undo of a card change): takes back what the change attached; a read
+  made with the new card since is the same 409. The notice refuses and
+  says where the card can be changed.
+- 4 (start list again): the import leaves the card of a runner whose
+  result it would take and lists the row in `cardsKept`. A card it does
+  change is a `card_bound` event with the previous number, and the
+  import's `start_times_set` event records the cards and bibs changed, so
+  the start-time undo puts back all of it. The undo is refused after a
+  read with the import's card since.
+
+Left for later: `2026-10-13-card-change-leftovers.md`.

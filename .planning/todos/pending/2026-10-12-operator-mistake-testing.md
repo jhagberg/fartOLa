@@ -141,7 +141,12 @@ first.
   class, a runner entered without a card and a new course for a class did
   not reach the projection the server holds.
 - Found and written down: a changed card number takes a read-out runner's
-  result away (`2026-10-12-card-change-drops-result.md`).
+  result away (`2026-10-12-card-change-drops-result.md`). Fixed
+  2026-10-13; the walk now also confirms such a warning at a later step
+  (`loseConfirm`).
+- Found 2026-10-13 and written down: a DQ set before the read-out keeps
+  the punches, a DQ set after it does not
+  (`2026-10-13-dq-before-read-keeps-punches.md`).
 - Found again, already written down: the entry list twice
   (`2026-10-11-import-dedupe-cardless-runners.md`), the forced reset sent
   again after its undo and the read in the start's millisecond
