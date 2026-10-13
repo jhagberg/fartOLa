@@ -579,7 +579,7 @@
     if (freeStartRequired)
       return {
         key: 'lottning.startChoice.required',
-        conflict: selectedStartMethod === 'start_time' || selectedStartMethod === 'start_punch',
+        conflict: selectedStartMethod !== 'free_start',
       };
     return null;
   });
