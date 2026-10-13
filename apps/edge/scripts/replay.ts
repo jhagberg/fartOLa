@@ -142,7 +142,14 @@ export async function replay(
     const base = `/api/competitions/${competitionId}`;
     if (manifest.source.level !== undefined) {
       // Before the imports: the level decides each new class's start choice.
-      await app.inject({ method: 'PATCH', url: base, payload: { level: manifest.source.level } });
+      const patched = await app.inject({
+        method: 'PATCH',
+        url: base,
+        payload: { level: manifest.source.level },
+      });
+      if (patched.statusCode !== 200) {
+        throw new Error(`setting the level failed: ${patched.statusCode} ${patched.body}`);
+      }
     }
     const imports = {
       courses: await upload(app, `${base}/import`, path.join(dir, 'CourseData.xml')),
