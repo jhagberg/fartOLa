@@ -893,7 +893,7 @@
   "lottning.startChoice.failed": "The choice was not saved. Try again.",
   "lottning.drawHint.freeStart": "The class has free start. Choose Drawn start time to draw.",
   "lottning.drawHint.required": "An open class should have free start time at level 1–3 and is not drawn.",
-  "lottning.freeStartNote": "Free start: runners are timed from the start punch, so the class needs no draw.",
+  "lottning.freeStartNote": "Free start: the time counts from the start punch, so the class needs no start list.",
   "clock.nextDay": "{{time}} (next day)",
   "lottning.closingMoved": "The finish now closes at {{to}} (was {{from}}). Update the PM (TR 4.16.3).",
   "lottning.startName": "Start place",

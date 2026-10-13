@@ -393,7 +393,7 @@
                   {#if rowError[c.id]}
                     <p class="err" role="alert" data-testid="prerace-free-start-error">{rowError[c.id]}</p>
                   {/if}
-                  {#if c.open}
+                  {#if c.open && c.offer}
                     <p class="meta" data-testid="prerace-open-class-help">
                       {t('prerace.noStart.openHelp')}
                     </p>
