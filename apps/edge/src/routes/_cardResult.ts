@@ -23,13 +23,15 @@
 //     the same card given again, another read, another status, a reset) the
 //     confirmation is for something else and the answer is the same 409,
 //     with lose_result as it is now.
-//   - The undo of a card change takes back what the change gave, also the
-//     read-out it attached. What it may not take in silence is a read made
-//     with the new card SINCE the change (a), or a result the runner has
-//     without the new card that the OLD card's reads would clear (b,
-//     counted from the runner with no card, so that the read-out the change
-//     attached is not held against the undo). One runner at a time that is
-//     the same 409 and the same confirmation.
+//   - The undo of a card change gives back what was there before it. It
+//     takes back what the change gave: the read-out it attached, and a
+//     status set by hand that came back into view when the old card's reads
+//     left the runner. What it may not take in silence is what came SINCE
+//     the change: a read made with the new card (a), or a result the runner
+//     has without the new card that the OLD card's reads would clear, when
+//     the runner's result was changed by hand, or the old card was read,
+//     since the change (b). One runner at a time that is the same 409 and
+//     the same confirmation.
 //   - Many runners at once (the start list import and its undo) never carry
 //     the confirmation: the import leaves such a runner's card as it is and
 //     lists the row in its answer; the undo is refused. The one-runner
@@ -105,10 +107,39 @@ function statusesWith(
   return (id) => state.competitors.get(id)?.status ?? 'PEND';
 }
 
+/** For the undo of the card change stored as event `seq`: whether, since
+ * then, the old card was read or anything was stored about the runner
+ * (a status, a finish, a punch by hand) other than a card change. */
+export function touchedSince(
+  handle: DbHandle,
+  competitionId: string,
+  runnerId: string,
+  previousCard: number | null,
+  seq: number
+): boolean {
+  return (
+    handle.db
+      .select({ n: count() })
+      .from(events)
+      .where(
+        and(
+          eq(events.competitionId, competitionId),
+          gt(events.localSeq, seq),
+          sql`((${events.eventType} = 'card_read'
+                AND json_extract(${events.payload}, '$.card_number') = ${previousCard})
+            OR (${events.eventType} NOT IN ('card_bound', 'card_unbound')
+                AND json_extract(${events.payload}, '$.competitor_id') = ${runnerId}))`
+        )
+      )
+      .get()!.n > 0
+  );
+}
+
 /** Rule b: of the runners in `cardOf` (runner id → new card), those who
  * have a result now and would have none with the new cards. The reducer
  * decides. `from`: compare with these cards instead of the stored ones (an
- * undo: the runners with no card, see the rule). */
+ * undo: the runners with no card, so that a read-out the change attached
+ * is not counted as a result). */
 export function resultGone(
   handle: DbHandle,
   competitionId: string,
@@ -126,9 +157,8 @@ export function resultGone(
 /** The 409 body when a card change would take a result from `runner` and
  * `confirmed` is not exactly what would be lost; null to go on. `newCard`:
  * the card the runner gets. `undoOf`: the change is the undo of the card
- * change stored as that event (see the rule: reads since it, and rule b
- * from the runner with no card). Call it in the same tick as the write (no
- * await in between). */
+ * change stored as that event (see the rule: only what came since it).
+ * Call it in the same tick as the write (no await in between). */
 export function resultLost(
   handle: DbHandle,
   runner: { id: string; competitionId: string; name: string; cardNumber: number | null },
@@ -138,12 +168,14 @@ export function resultLost(
   const reads = readsOnCard(handle, runner.competitionId, runner.cardNumber, change.undoOf ?? 0);
   const lost =
     reads.reads > 0 ||
-    resultGone(
-      handle,
-      runner.competitionId,
-      new Map([[runner.id, change.newCard]]),
-      change.undoOf === undefined ? undefined : new Map([[runner.id, null]])
-    ).has(runner.id);
+    ((change.undoOf === undefined ||
+      touchedSince(handle, runner.competitionId, runner.id, change.newCard, change.undoOf)) &&
+      resultGone(
+        handle,
+        runner.competitionId,
+        new Map([[runner.id, change.newCard]]),
+        change.undoOf === undefined ? undefined : new Map([[runner.id, null]])
+      ).has(runner.id));
   if (!lost) return null;
   const lose: LoseResult = {
     card_number: runner.cardNumber,

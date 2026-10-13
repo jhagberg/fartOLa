@@ -18,9 +18,9 @@
 //        gave, 409 card_taken / bib_taken when another runner has the old
 //        one now, and 409 has_result when a runner has read out with the
 //        card the import gave, since the import, or has a status set by
-//        hand that the old card's reads would clear (routes/_cardResult.ts:
-//        the result stays; a read-out the import itself attached goes back
-//        to being an unknown card).
+//        hand that the old card's reads would clear, when the status or
+//        that read came since the import (routes/_cardResult.ts: the
+//        result stays; what the import itself gave is taken back).
 //        Each of them lists competitor_ids.
 
 import type { FastifyInstance } from 'fastify';
@@ -28,7 +28,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { classes, competitors, events, type EventPayload } from '../db/schema.ts';
-import { readsOnCard, resultGone } from './_cardResult.ts';
+import { readsOnCard, resultGone, touchedSince } from './_cardResult.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 import { gridsOf, writeStartTimes } from '../db/startTimes.ts';
 
@@ -118,13 +118,30 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
       const inBibs = new Set(bibs.map((b) => b.competitor_id));
       // No await from here to the write: the reads counted are the reads
       // there are when the cards move. `gone`: rule b of _cardResult.ts for
-      // an undo, the old cards compared with no card.
-      const gone = resultGone(
-        app.fartolaDb,
-        competitionId,
-        new Map(cards.map((c) => [c.competitor_id, c.previous_card_number])),
-        new Map(cards.map((c) => [c.competitor_id, null]))
+      // an undo, the old cards compared with no card, for the runners
+      // something was stored about since the import.
+      const touched = new Set(
+        cards
+          .filter((c) =>
+            touchedSince(
+              app.fartolaDb,
+              competitionId,
+              c.competitor_id,
+              c.previous_card_number,
+              c.local_seq
+            )
+          )
+          .map((c) => c.competitor_id)
       );
+      const gone =
+        touched.size === 0
+          ? touched
+          : resultGone(
+              app.fartolaDb,
+              competitionId,
+              new Map(cards.map((c) => [c.competitor_id, c.previous_card_number])),
+              new Map(cards.map((c) => [c.competitor_id, null]))
+            );
       const refusals: Array<[string, ReadonlyArray<{ competitor_id: string }>]> = [
         [
           'card_changed_since',
@@ -135,7 +152,7 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
           'has_result',
           cards.filter(
             (c) =>
-              gone.has(c.competitor_id) ||
+              (touched.has(c.competitor_id) && gone.has(c.competitor_id)) ||
               readsOnCard(app.fartolaDb, competitionId, c.card_number, c.local_seq).reads > 0
           ),
         ],

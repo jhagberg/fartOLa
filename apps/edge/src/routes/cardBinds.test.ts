@@ -541,6 +541,36 @@ describe('a card change that takes a result away is refused until it is confirme
     assert.equal(statusOf(EVA), 'PEND');
   });
 
+  test('undo of a card change: a status the change itself brought back into view is taken back with it', async () => {
+    // EVA has DNS by hand and reads out; the race is reset: not read out.
+    ctx.handle.sqlite.prepare('UPDATE competitions SET race_started_at_ms = NULL').run();
+    const base = `/api/competitions/${COMP}`;
+    const status = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/competitors/${EVA}/status`,
+      payload: { status: 'DNS', reason: 'kom inte' },
+    });
+    assert.equal(status.statusCode, 201, status.body);
+    const started = await ctx.app.inject({ method: 'POST', url: `${base}/start-race` });
+    readNow(OLD, Date.now());
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/reset-race`,
+      payload: { force: true, started_at_ms: started.json().race_started_at_ms },
+    });
+    assert.equal(reset.statusCode, 201, reset.body);
+    assert.equal(statusOf(EVA), 'PEND');
+
+    // Without the old card's read the status by hand shows again.
+    const ev = await rebind(ctx.app, EVA, NEW);
+    assert.equal(statusOf(EVA), 'DNS');
+    // Nothing has happened since: the undo gives back what was there.
+    const back = await undo(ctx.app, ev);
+    assert.equal(back.statusCode, 201, back.body);
+    assert.equal(cardOf(EVA), OLD);
+    assert.equal(statusOf(EVA), 'PEND');
+  });
+
   test('undo of a card change: a read with the new card since is not taken without the confirmation', async () => {
     const ev = await rebind(ctx.app, EVA, NEW);
     readNow(NEW);
