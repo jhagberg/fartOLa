@@ -1514,6 +1514,10 @@ export interface StartTimeHistoryItem {
   class_id: string | null;
   /** How many runners' start times it changed. */
   changed: number;
+  /** How many card numbers and bibs it changed with them (a start-list
+   * import and its undo). */
+  cards: number;
+  bibs: number;
   undone: boolean;
 }
 
@@ -1524,13 +1528,16 @@ export function getStartTimeHistory(
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/start-times/history`);
 }
 
-/** POST …/start-times/undo — puts back the start times one change replaced,
- * all or nothing. 409 start_changed_since (competitor_ids), already_undone,
+/** POST …/start-times/undo — puts back the start times one change replaced
+ * (and the card numbers and bibs of a start-list import), all or nothing.
+ * 409 with competitor_ids: start_changed_since, card_changed_since,
+ * bib_changed_since, card_taken, bib_taken, has_result (a runner has read
+ * out with the card the import gave); 409 already_undone,
  * grid_changed_since, clock_shift_not_undoable; 404 when it is gone. */
 export function undoStartTimes(
   competitionId: string,
   ref: { node_id: string; local_seq: number }
-): Promise<{ local_seq: number | null; changed: number }> {
+): Promise<{ local_seq: number | null; changed: number; cards: number; bibs: number }> {
   return apiFetch(`/api/competitions/${encodeURIComponent(competitionId)}/start-times/undo`, {
     method: 'POST',
     body: ref,

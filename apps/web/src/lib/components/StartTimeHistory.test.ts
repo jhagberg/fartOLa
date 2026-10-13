@@ -21,6 +21,8 @@ const row = (over: Partial<StartTimeHistoryItem>): StartTimeHistoryItem => ({
   cause: 'draw',
   class_id: 'h21',
   changed: 12,
+  cards: 0,
+  bibs: 0,
   undone: false,
   ...over,
 });
@@ -42,6 +44,24 @@ describe('start-time history helpers', () => {
       'history.err.gridChangedSince'
     );
     expect(undoErrorOf(err({ error: 'already_undone' })).key).toBe('history.err.alreadyUndone');
+  });
+
+  it('a refused undo of a start-list import says why, in sv and en', async () => {
+    const sv = (await import('../i18n/sv.json')).default as Record<string, string>;
+    const en = (await import('../i18n/en.json')).default as Record<string, string>;
+    const keyOf = (error: string) =>
+      undoErrorOf(new ApiError(409, 'x', { error, competitor_ids: ['a'] }, ''));
+    for (const [error, key] of [
+      ['has_result', 'history.err.hasResult'],
+      ['card_changed_since', 'history.err.cardChangedSince'],
+      ['bib_changed_since', 'history.err.bibChangedSince'],
+      ['card_taken', 'history.err.cardTaken'],
+      ['bib_taken', 'history.err.bibTaken'],
+    ] as const) {
+      expect(keyOf(error)).toEqual({ key, vars: { count: 1 } });
+      expect(sv[key], key).toBeTruthy();
+      expect(en[key], key).toBeTruthy();
+    }
   });
 
   it('sv + en name every cause', async () => {
@@ -83,7 +103,7 @@ describe('StartTimeHistory (mounted)', () => {
       row({ local_seq: 2, cause: 'clock_shift', class_id: null, changed: 40 }),
       row({ local_seq: 1, cause: 'draw', class_id: 'h21', changed: 12 }),
     ];
-    undoAnswer = { status: 201, body: { local_seq: 4, changed: 1 } };
+    undoAnswer = { status: 201, body: { local_seq: 4, changed: 1, cards: 0, bibs: 0 } };
     undoBodies = [];
     onUndone.mockReset();
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -142,6 +162,19 @@ describe('StartTimeHistory (mounted)', () => {
       'Ångrat: 1 löpare fick tillbaka sin tidigare starttid.'
     );
     expect(rows()[0]!.querySelector('[data-testid="history-undone"]')!.textContent).toBe('Ångrad');
+  });
+
+  it('an import row counts the card numbers and bibs, and its undo says they were put back', async () => {
+    items = [row({ local_seq: 5, cause: 'start_list_import', class_id: null, cards: 2, bibs: 3 })];
+    undoAnswer = { status: 201, body: { local_seq: 6, changed: 12, cards: 2, bibs: 3 } };
+    await mountIt();
+    expect(rows()[0]!.textContent).toContain('2 bricknummer');
+    expect(rows()[0]!.textContent).toContain('3 nummerlappar');
+    rows()[0]!.querySelector<HTMLButtonElement>('[data-testid="history-undo"]')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid="history-done"]')!.textContent).toBe(
+      'Ångrat: 12 löpare fick tillbaka sin tidigare starttid. Även 2 bricknummer och 3 nummerlappar sattes tillbaka.'
+    );
   });
 
   it('a refused undo is explained next to that change, and nothing is undone', async () => {
