@@ -18,10 +18,10 @@
 //        409 already_undone; 409 card_changed_since when the competitor's
 //        card was changed again (undo that first); 409 card_taken when
 //        another competitor now holds the old card; 409 has_result when
-//        the competitor has read out with the new card since the change,
-//        or has a status set by hand that the old card's reads would
-//        clear and one of the two came since the change, unless the body's
-//        lose_result names what is lost (routes/_cardResult.ts).
+//        something came since the change (a read of either card, a status,
+//        finish or punch by hand) and the old card would take or replace
+//        what the competitor has, unless the body's lose_result names it
+//        (routes/_cardResult.ts).
 //
 // Reads attach by the competitors' current card numbers, so after the undo
 // the read the change attached is an unknown card again.
@@ -110,14 +110,6 @@ export default async function registerCardBindsRoutes(app: FastifyInstance): Pro
       if (row.cardNumber !== bind.card_number)
         return reply.code(409).send({ error: 'card_changed_since' });
 
-      const lost = resultLost(
-        app.fartolaDb,
-        row,
-        { newCard: bind.previous_card_number, undoOf: target.localSeq },
-        parsed.data.lose_result
-      );
-      if (lost !== null) return reply.code(409).send(lost);
-
       const previous = bind.previous_card_number;
       if (previous !== null) {
         const holder = app.fartolaDb.db
@@ -130,6 +122,13 @@ export default async function registerCardBindsRoutes(app: FastifyInstance): Pro
         if (holder && holder.id !== row.id)
           return reply.code(409).send({ error: 'card_taken', existing_competitor_id: holder.id });
       }
+      const lost = resultLost(
+        app.fartolaDb,
+        row,
+        { newCard: previous, undoOf: target.localSeq },
+        parsed.data.lose_result
+      );
+      if (lost !== null) return reply.code(409).send(lost);
 
       const now = Date.now();
       const undoes = { node_id, local_seq };

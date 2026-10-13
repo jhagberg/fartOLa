@@ -13,9 +13,9 @@
 //     02.1-14 Task 6: a card that does not match but name + club does is a
 //     changed/rented card — matched, card_number updated, reported in
 //     cardUpdates; every other unapplied row is listed in `skipped`.
-//     A runner who has read out keeps the card (routes/_cardResult.ts): the
-//     row's start and bib are taken, the card is not, and the row is listed
-//     in cardsKept. Each card the import does change is a card_bound event,
+//     A runner whose result the file's card would take or replace keeps
+//     the card (routes/_cardResult.ts): the row's start and bib are taken,
+//     the card is not, and the row is listed in cardsKept. Each card the import does change is a card_bound event,
 //     and the import's start_times_set event records the cards and bibs it
 //     changed, so POST …/start-times/undo puts back all of it.
 //
@@ -78,7 +78,7 @@ import { smallestGapMs } from '../draw/remaining.ts';
 import { ingestCourseData } from '../ingest/courseImport.ts';
 import { ingestEntryList, type SkippedImportRow } from '../ingest/entryImport.ts';
 import { autoBindNewCompetitors } from '../projection/auto-bind.ts';
-import { readsOnCard, resultGone } from './_cardResult.ts';
+import { readsOnCard, resultChanged } from './_cardResult.ts';
 import { StartTimeMs } from './competitors.ts';
 import { issuesToErrors } from './_zod-errors.ts';
 
@@ -138,7 +138,7 @@ export interface CardUpdate {
 }
 
 /** A runner matched by name + club who has a result the file's card would
- * take away: the card was not taken (routes/_cardResult.ts). */
+ * take away or replace: the card was not taken (routes/_cardResult.ts). */
 export interface CardKept {
   row: number;
   competitor_id: string;
@@ -148,7 +148,7 @@ export interface CardKept {
   card: number | null;
   file_card: number;
   /** Reads of the kept card that count in the race; 0 for a status set by
-   * hand that a read of the file's card would clear. */
+   * hand that a read of the file's card would clear or replace. */
   reads: number;
   reason: 'has_result';
 }
@@ -431,27 +431,6 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
                 );
           if (byNameClub.length === 1 && byNameClub[0] !== undefined) {
             const target = byNameClub[0];
-            // A runner who has read out keeps the card and the result; the
-            // file is older than the read-out (routes/_cardResult.ts, a).
-            const { reads } = readsOnCard(app.fartolaDb, competitionId, target.cardNumber);
-            if (reads > 0 && target.cardNumber !== null) {
-              exactWrites.push({
-                id: target.id,
-                startTimeMs: entry.startTimeMs,
-                kept: {
-                  row: entry.row,
-                  competitor_id: target.id,
-                  name: target.name,
-                  class: entry.className,
-                  card: target.cardNumber,
-                  file_card: entry.siCard,
-                  reads,
-                  reason: 'has_result',
-                },
-                entry,
-              });
-              continue;
-            }
             // D-11: a card already held by someone else cannot be taken.
             if (cardMatches.some((c) => c.id !== target.id)) {
               skip('duplicate_card');
@@ -519,9 +498,10 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
         if (update !== -1) cardUpdates.splice(update, 1);
         skipRow(w.entry, 'duplicate_runner');
       }
-      // A runner with a result who would have none with the file's card
-      // keeps the card too (routes/_cardResult.ts, b).
-      const gone = resultGone(
+      // A runner who has a result that the file's card would take or replace
+      // keeps the card: the file is older than the result
+      // (routes/_cardResult.ts).
+      const gone = resultChanged(
         app.fartolaDb,
         competitionId,
         new Map(
@@ -541,7 +521,7 @@ export default async function registerImportRoutes(app: FastifyInstance): Promis
           class: update!.class,
           card: update!.previous_card,
           file_card: w.cardNumber,
-          reads: 0,
+          reads: readsOnCard(app.fartolaDb, competitionId, update!.previous_card).reads,
           reason: 'has_result',
         };
         delete w.cardNumber;
