@@ -13,7 +13,8 @@
 //   4  nothing gets worse in silence: fewer runners have a result only
 //      after a request on the list MAY_LOWER, confirmed where it asks for
 //      it; and the server does not act on a confirmation that is older than
-//      what it confirms (walkOps.ts notes when each one was given)
+//      what it confirms (walkOps.ts notes when each one was given, or what
+//      it was given for)
 //   5  a step that names its way back gets the state back with it, and a
 //      step that took results away names one
 //   6  twice is once: the step's writing requests sent again change nothing
@@ -154,6 +155,28 @@ export const MAY_LOWER: ReadonlyArray<{
     why: 'the competition clock changes: a finish entered by hand keeps its clock time (ADR-0017) and can land before the race start',
   },
   {
+    method: 'PATCH',
+    url: /\/api\/competitors\/[^/]+\/profile$/,
+    when: (b) => b?.lose_result !== undefined,
+    why: '"Ändra" of a card, confirmed for the result it takes away (routes/_cardResult.ts)',
+  },
+  {
+    method: 'POST',
+    url: /\/api\/competitors$/,
+    when: (b) => b?.lose_result !== undefined,
+    why: '"Byt bricka", confirmed for the result it takes away',
+  },
+  {
+    method: 'POST',
+    url: /\/card-binds\/undo$/,
+    why: 'the undo of a card change takes back the read-out the change attached; a read made since needs lose_result (routes/cardBinds.test.ts)',
+  },
+  {
+    method: 'POST',
+    url: /\/start-times\/undo$/,
+    why: 'the undo of a start list import takes back the cards it gave, and with them a read-out it attached; it is refused after a read made since (routes/import.test.ts)',
+  },
+  {
     method: 'POST',
     url: /\/unread-dns\/undo$/,
     noWayBack: true,
@@ -180,12 +203,6 @@ export const KNOWN: ReadonlyArray<{
   url?: RegExp;
   msg?: RegExp;
 }> = [
-  {
-    name: 'a changed card number takes the result away without a warning',
-    where: '.planning/todos/pending/2026-10-12-card-change-drops-result.md',
-    id: 'results-fell',
-    url: /\/api\/competitors(\/[^/]+\/profile)?$|\/card-binds\/undo$/,
-  },
   {
     name: 'a forced reset sent again after its undo resets the race again',
     where: '.planning/todos/pending/2026-10-12-race-phase-revision.md',

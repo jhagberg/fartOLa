@@ -15,35 +15,43 @@
 //          card, but a read of the new card made in a race that was reset
 //          since clears it and scores nothing.
 //   - One runner at a time ("Ändra", "Byt bricka"): refused with 409
-//     has_result, which names the runner, the card and how many reads would
-//     stop counting. It goes through only when the request says
-//     lose_result { card_number, reads } with exactly those values. A
-//     confirmation for another card or another number of reads (a read came
-//     in since, the card was changed since) is refused the same way, with
-//     the values as they are now.
+//     has_result { competitor_id, name, lose_result }. lose_result names
+//     what is lost: the card the runner has and the card change that gave
+//     it, the runner's status, how many reads of the card count and which
+//     is the newest. The request goes through only when it sends that
+//     lose_result back unchanged. When any of it has changed (another card,
+//     the same card given again, another read, another status, a reset) the
+//     confirmation is for something else and the answer is the same 409,
+//     with lose_result as it is now.
 //   - The undo of a card change takes back what the change gave, also the
 //     read-out it attached. What it may not take in silence is a read made
 //     with the new card SINCE the change: one runner at a time that is the
-//     same 409 and the same confirmation.
+//     same 409 and the same confirmation (reads since the change).
 //   - Many runners at once (the start list import and its undo) never carry
 //     the confirmation: the import leaves such a runner's card as it is and
 //     lists the row in its answer; the undo is refused. The one-runner
 //     requests are the way to do it on purpose.
+//   - A request that changes nothing (the runner has that card already) is
+//     not asked about and not refused, so the same request sent twice
+//     leaves what one leaves.
 //
 // "In the race" is what the reset of a race counts (routes/competitions.ts,
 // takenByReset): reads at or after the race start. Before the start, and
 // after a reset, no read is scored.
 
-import { and, count, eq, gt, gte, sql } from 'drizzle-orm';
-import { z } from 'zod';
+import { isDeepStrictEqual } from 'node:util';
+import { and, count, eq, gt, gte, inArray, max, sql } from 'drizzle-orm';
+
+import type { LoseResult } from '@fartola/shared-types';
 
 import type { DbHandle } from '../db/index.ts';
 import { competitions, events } from '../db/schema.ts';
 import { loadCompetitionInputs } from '../projection/loader.ts';
 import { reduce } from '../projection/reduce.ts';
 
-/** How many reads of `cardNumber` count in the race now; with `afterSeq`,
- * only those stored after that event (a card change).
+/** The reads of `cardNumber` that count in the race now: how many, and the
+ * local_seq of the newest (0: none). With `afterSeq`, only those stored
+ * after that event (a card change).
  * shortcut: local_seq orders the events of one node, which is all there is
  * today; compare across nodes when edge-to-edge sync is built (ADR-0004). */
 export function readsOnCard(
@@ -51,16 +59,17 @@ export function readsOnCard(
   competitionId: string,
   cardNumber: number | null,
   afterSeq = 0
-): number {
-  if (cardNumber === null) return 0;
+): { reads: number; last_read_seq: number } {
+  const none = { reads: 0, last_read_seq: 0 };
+  if (cardNumber === null) return none;
   const startMs = handle.db
     .select({ t: competitions.raceStartedAtMs })
     .from(competitions)
     .where(eq(competitions.id, competitionId))
     .get()?.t;
-  if (startMs === null || startMs === undefined) return 0;
-  return handle.db
-    .select({ n: count() })
+  if (startMs === null || startMs === undefined) return none;
+  const row = handle.db
+    .select({ reads: count(), last: max(events.localSeq) })
     .from(events)
     .where(
       and(
@@ -71,60 +80,55 @@ export function readsOnCard(
         sql`json_extract(${events.payload}, '$.card_number') = ${cardNumber}`
       )
     )
-    .get()!.n;
+    .get()!;
+  return { reads: row.reads, last_read_seq: row.last ?? 0 };
+}
+
+/** The projection of the competition as stored, with some runners' cards
+ * changed (runner id → card). Nothing is written. */
+function statusesWith(
+  handle: DbHandle,
+  competitionId: string,
+  cardOf: ReadonlyMap<string, number | null>
+): (id: string) => string {
+  const input = loadCompetitionInputs(handle, competitionId);
+  if (input === null) return () => 'PEND';
+  const state = reduce({
+    ...input,
+    competitors: input.competitors.map((c) =>
+      cardOf.has(c.id) ? { ...c, cardNumber: cardOf.get(c.id)! } : c
+    ),
+  });
+  return (id) => state.competitors.get(id)?.status ?? 'PEND';
 }
 
 /** Rule b: of the runners in `cardOf` (runner id → new card), those who
  * have a result now and would have none with the new cards. The reducer
- * decides, on the stored data with the cards changed; nothing is written. */
+ * decides. */
 export function resultGone(
   handle: DbHandle,
   competitionId: string,
   cardOf: ReadonlyMap<string, number | null>
 ): Set<string> {
-  const input = cardOf.size === 0 ? null : loadCompetitionInputs(handle, competitionId);
-  if (input === null) return new Set();
-  const before = reduce(input).competitors;
-  const withResult = [...cardOf.keys()].filter(
-    (id) => (before.get(id)?.status ?? 'PEND') !== 'PEND'
-  );
+  if (cardOf.size === 0) return new Set();
+  const before = statusesWith(handle, competitionId, new Map());
+  const withResult = [...cardOf.keys()].filter((id) => before(id) !== 'PEND');
   if (withResult.length === 0) return new Set();
-  const after = reduce({
-    ...input,
-    competitors: input.competitors.map((c) =>
-      cardOf.has(c.id) ? { ...c, cardNumber: cardOf.get(c.id)! } : c
-    ),
-  }).competitors;
-  return new Set(withResult.filter((id) => after.get(id)?.status === 'PEND'));
+  const after = statusesWith(handle, competitionId, cardOf);
+  return new Set(withResult.filter((id) => after(id) === 'PEND'));
 }
 
-/** The confirmation of a one-runner card change: the card the runner has
- * and how many of its reads stop counting, as the 409 has_result named
- * them (no card, or no reads: rule b). */
-export const LoseResult = z
-  .object({
-    card_number: z.number().int().positive().nullable(),
-    reads: z.number().int().min(0),
-  })
-  .strict();
-
 /** The 409 body when a card change would take a result from `runner` and
- * `confirmed` does not name exactly that; null to go on. `newCard`: the
- * card the runner gets (rule a and b). `afterSeq`: the change is the undo
- * of the card change stored as that event, and only reads since it count.
- * Call it in the same tick as the write (no await in between). */
+ * `confirmed` is not exactly what would be lost; null to go on. `newCard`:
+ * the card the runner gets (rule a and b). `afterSeq`: the change is the
+ * undo of the card change stored as that event, and only reads since it
+ * count. Call it in the same tick as the write (no await in between). */
 export function resultLost(
   handle: DbHandle,
   runner: { id: string; competitionId: string; name: string; cardNumber: number | null },
   change: { newCard: number | null } | { afterSeq: number },
-  confirmed: z.infer<typeof LoseResult> | undefined
-): {
-  error: 'has_result';
-  competitor_id: string;
-  name: string;
-  card_number: number | null;
-  reads: number;
-} | null {
+  confirmed: LoseResult | undefined
+): { error: 'has_result'; competitor_id: string; name: string; lose_result: LoseResult } | null {
   const reads = readsOnCard(
     handle,
     runner.competitionId,
@@ -132,18 +136,31 @@ export function resultLost(
     'afterSeq' in change ? change.afterSeq : 0
   );
   const lost =
-    reads > 0 ||
+    reads.reads > 0 ||
     ('newCard' in change &&
       resultGone(handle, runner.competitionId, new Map([[runner.id, change.newCard]])).has(
         runner.id
       ));
   if (!lost) return null;
-  if (confirmed?.card_number === runner.cardNumber && confirmed.reads === reads) return null;
-  return {
-    error: 'has_result',
-    competitor_id: runner.id,
-    name: runner.name,
+  const lose: LoseResult = {
     card_number: runner.cardNumber,
-    reads,
+    // The newest card change of the runner: a change made and taken back
+    // since the warning is not the state the warning was for.
+    card_seq:
+      handle.db
+        .select({ seq: max(events.localSeq) })
+        .from(events)
+        .where(
+          and(
+            eq(events.competitionId, runner.competitionId),
+            inArray(events.eventType, ['card_bound', 'card_unbound']),
+            sql`json_extract(${events.payload}, '$.competitor_id') = ${runner.id}`
+          )
+        )
+        .get()?.seq ?? 0,
+    status: statusesWith(handle, runner.competitionId, new Map())(runner.id),
+    ...reads,
   };
+  if (isDeepStrictEqual(confirmed, lose)) return null;
+  return { error: 'has_result', competitor_id: runner.id, name: runner.name, lose_result: lose };
 }

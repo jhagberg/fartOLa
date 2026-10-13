@@ -319,6 +319,220 @@ describe('POST /api/competitions/:id/card-binds/undo', () => {
   });
 });
 
+// A runner who has a result keeps it (routes/_cardResult.ts): "Ändra",
+// "Byt bricka" and the undo of a card change, one runner at a time.
+describe('a card change that takes a result away is refused until it is confirmed', () => {
+  let ctx: Ctx;
+  beforeEach(async () => {
+    ctx = await boot();
+    seed(ctx.handle, { H21: [31, 32, 33] });
+    addRunner(ctx.handle, EVA, 'H21', OLD);
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    ctx.handle.close();
+  });
+
+  /** A read stored now, after everything stored so far. */
+  const readNow = (card: number, atMs?: number): void => {
+    const top = ctx.handle.db
+      .select()
+      .from(events)
+      .all()
+      .reduce((m, e) => Math.max(m, e.localSeq), seq);
+    seq = top;
+    addRead(ctx.handle, ctx.nodeId, card, [31, 32, 33], true, atMs);
+  };
+  const statusOf = (id: string): string =>
+    ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get(id)!.status;
+  const cardOf = (id: string): number | null =>
+    ctx.handle.db.select().from(competitors).where(eq(competitors.id, id)).get()!.cardNumber;
+  /** The newest stored event: the read just made. */
+  const topSeq = (): number =>
+    ctx.handle.db
+      .select()
+      .from(events)
+      .all()
+      .reduce((m, e) => Math.max(m, e.localSeq), 0);
+  const HAS_RESULT = (
+    card: number,
+    status: string,
+    reads: number,
+    lastReadSeq: number,
+    cardSeq = 0
+  ) => ({
+    error: 'has_result',
+    competitor_id: EVA,
+    name: `Runner ${EVA}`,
+    lose_result: {
+      card_number: card,
+      card_seq: cardSeq,
+      status,
+      reads,
+      last_read_seq: lastReadSeq,
+    },
+  });
+
+  const edit = (payload: object) =>
+    ctx.app.inject({ method: 'PATCH', url: `/api/competitors/${EVA}/profile`, payload });
+  const replace = (payload: object) =>
+    ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: { competition_id: COMP, replace_card_for_competitor_id: EVA, ...payload },
+    });
+
+  for (const [name, change] of [
+    ['"Ändra", another card', (extra: object) => edit({ card_number: NEW, ...extra })],
+    ['"Ändra", no card', (extra: object) => edit({ card_number: null, ...extra })],
+    ['"Byt bricka"', (extra: object) => replace({ card_number: NEW, ...extra })],
+  ] as const) {
+    test(`${name}: refused with what would be lost; confirmed for exactly that, it goes through`, async () => {
+      readNow(OLD);
+      assert.equal(statusOf(EVA), 'OK');
+
+      const refused = await change({});
+      assert.equal(refused.statusCode, 409, refused.body);
+      assert.deepEqual(refused.json(), HAS_RESULT(OLD, 'OK', 1, topSeq()));
+      assert.equal(cardOf(EVA), OLD);
+      assert.equal(statusOf(EVA), 'OK');
+      const seen = refused.json().lose_result;
+
+      // A confirmation for another card, for another status, or from before
+      // a read that has come in since, is not a confirmation of this.
+      for (const other of [
+        { ...seen, card_number: NEW },
+        { ...seen, card_seq: 7 },
+        { ...seen, status: 'MP' },
+        { ...seen, last_read_seq: seen.last_read_seq - 1 },
+      ]) {
+        const res = await change({ lose_result: other });
+        assert.equal(res.statusCode, 409, JSON.stringify(other));
+        assert.deepEqual(res.json().lose_result, seen);
+      }
+      readNow(OLD);
+      const stale = await change({ lose_result: seen });
+      assert.equal(stale.statusCode, 409);
+      assert.deepEqual(stale.json(), HAS_RESULT(OLD, 'OK', 2, topSeq()));
+      assert.equal(cardOf(EVA), OLD);
+      assert.equal(statusOf(EVA), 'OK');
+
+      const body = { lose_result: stale.json().lose_result };
+      const done = await change(body);
+      assert.equal(done.statusCode, 200, done.body);
+      assert.notEqual(cardOf(EVA), OLD);
+      assert.equal(statusOf(EVA), 'PEND');
+
+      // Twice is once: the same request again changes nothing.
+      const card = cardOf(EVA);
+      const again = await change(body);
+      assert.equal(again.statusCode, 200, again.body);
+      assert.equal(cardOf(EVA), card);
+      assert.equal(statusOf(EVA), 'PEND');
+
+      // Taken back, the result is there again; the old confirmation is for
+      // the state before the change and is not taken a second time.
+      assert.equal((await edit({ card_number: OLD })).statusCode, 200);
+      assert.equal(statusOf(EVA), 'OK');
+      const late = await change(body);
+      assert.equal(late.statusCode, 409, late.body);
+      assert.equal(cardOf(EVA), OLD);
+      assert.equal(statusOf(EVA), 'OK');
+    });
+  }
+
+  test('"Ändra" logs the card the runner had, so the change can be undone and the result is back', async () => {
+    readNow(OLD);
+    const seen = (await edit({ card_number: NEW })).json().lose_result;
+    const done = await edit({ card_number: NEW, lose_result: seen });
+    assert.equal(done.statusCode, 200, done.body);
+    const bind = ctx.handle.db
+      .select()
+      .from(events)
+      .all()
+      .find((e) => e.eventType === 'card_bound')!;
+    assert.equal(
+      (bind.payload as Extract<EventPayload, { event_type: 'card_bound' }>).previous_card_number,
+      OLD
+    );
+    const back = await undo(ctx.app, { node_id: bind.nodeId, local_seq: bind.localSeq });
+    assert.equal(back.statusCode, 201, back.body);
+    assert.equal(cardOf(EVA), OLD);
+    assert.equal(statusOf(EVA), 'OK');
+  });
+
+  test('a runner who has not read out, or whose reads are from before the race: no question', async () => {
+    assert.equal((await edit({ card_number: NEW })).statusCode, 200);
+    assert.equal((await replace({ card_number: OLD })).statusCode, 200);
+    // Not started: a read is an identity scan and nothing is scored.
+    readNow(OLD);
+    ctx.handle.sqlite.prepare('UPDATE competitions SET race_started_at_ms = NULL').run();
+    assert.equal(statusOf(EVA), 'PEND');
+    assert.equal((await edit({ card_number: NEW })).statusCode, 200);
+  });
+
+  test('a status set by hand that a read of the new card would clear: refused, and named with no reads', async () => {
+    // EVA has MAX by hand; NEW is read in a race that is then reset.
+    ctx.handle.sqlite.prepare('UPDATE competitions SET race_started_at_ms = NULL').run();
+    const base = `/api/competitions/${COMP}`;
+    const status = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/competitors/${EVA}/status`,
+      payload: { status: 'MAX', reason: 'över maxtid' },
+    });
+    assert.equal(status.statusCode, 201, status.body);
+    const started = await ctx.app.inject({ method: 'POST', url: `${base}/start-race` });
+    readNow(NEW, Date.now());
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/reset-race`,
+      payload: { force: true, started_at_ms: started.json().race_started_at_ms },
+    });
+    assert.equal(reset.statusCode, 201, reset.body);
+    assert.equal(statusOf(EVA), 'MAX');
+
+    const refused = await replace({ card_number: NEW });
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.deepEqual(refused.json(), HAS_RESULT(OLD, 'MAX', 0, 0));
+    assert.equal(statusOf(EVA), 'MAX');
+    const done = await replace({ card_number: NEW, lose_result: refused.json().lose_result });
+    assert.equal(done.statusCode, 200, done.body);
+    assert.equal(statusOf(EVA), 'PEND');
+  });
+
+  test('undo of a card change: a read with the new card since is not taken without the confirmation', async () => {
+    const ev = await rebind(ctx.app, EVA, NEW);
+    readNow(NEW);
+    assert.equal(statusOf(EVA), 'OK');
+
+    const refused = await undo(ctx.app, ev);
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.deepEqual(refused.json(), HAS_RESULT(NEW, 'OK', 1, topSeq(), ev.local_seq));
+    assert.equal(cardOf(EVA), NEW);
+    assert.equal(statusOf(EVA), 'OK');
+
+    readNow(NEW);
+    const send = (lose: unknown) =>
+      ctx.app.inject({
+        method: 'POST',
+        url: `/api/competitions/${COMP}/card-binds/undo`,
+        payload: { node_id: ev.node_id, local_seq: ev.local_seq, lose_result: lose },
+      });
+    const stale = await send(refused.json().lose_result);
+    assert.equal(stale.statusCode, 409);
+    assert.deepEqual(stale.json(), HAS_RESULT(NEW, 'OK', 2, topSeq(), ev.local_seq));
+
+    const done = await send(stale.json().lose_result);
+    assert.equal(done.statusCode, 201, done.body);
+    assert.equal(cardOf(EVA), OLD);
+    assert.equal(statusOf(EVA), 'PEND');
+    const again = await send(stale.json().lose_result);
+    assert.equal(again.statusCode, 409);
+    assert.equal(again.json().error, 'already_undone');
+    assert.equal(cardOf(EVA), OLD);
+  });
+});
+
 interface EnteredRunner {
   competitor_id: string;
   name: string;

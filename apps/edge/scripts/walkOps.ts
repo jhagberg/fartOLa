@@ -33,6 +33,7 @@ import {
   rng,
   send,
   startListXml,
+  type Sent,
   type Step,
   type WayBack,
   type World,
@@ -85,6 +86,58 @@ function phaseOf(w: World, id: string, types: string[]): number {
     )
     .get(id, ...types) as { seq: number | null };
   return row.seq ?? 0;
+}
+
+/** A card change sent as an operator who reads the warning and goes on:
+ * when the answer is 409 has_result (routes/_cardResult.ts), the same
+ * request again with the lose_result the answer named. The way back of a
+ * card change may need it. */
+async function sendLosing(w: World, method: string, url: string, body: Any): Promise<Sent> {
+  const res = await send(w, method, url, body);
+  return res.status === 409 && res.json?.error === 'has_result'
+    ? send(w, method, url, { ...body, lose_result: res.json.lose_result })
+    : res;
+}
+const cardOf = (w: World, runner: string): number | null =>
+  (
+    w.handle.sqlite
+      .prepare('SELECT card_number AS card FROM competitors WHERE id = ?')
+      .get(runner) as { card: number | null } | undefined
+  )?.card ?? null;
+/** What a lose_result was given for, read from the database and not from
+ * the server's answer: the runner's card and newest card change, the newest
+ * read of the card, and the runner's status. */
+function resultState(w: World, id: string, runner: string): string {
+  const newest = (where: string, value: unknown): number | null =>
+    (
+      w.handle.sqlite
+        .prepare(`SELECT max(local_seq) AS seq FROM events WHERE competition_id = ? AND ${where}`)
+        .get(id, value) as { seq: number | null }
+    ).seq;
+  const card = cardOf(w, runner);
+  return JSON.stringify([
+    card,
+    newest(
+      `event_type IN ('card_bound', 'card_unbound') AND json_extract(payload, '$.competitor_id') = ?`,
+      runner
+    ),
+    newest(`event_type = 'card_read' AND json_extract(payload, '$.card_number') = ?`, card),
+    fresh(w, id).competitors.get(runner)?.status,
+  ]);
+}
+/** Note a card change the server refused with 409 has_result, for
+ * loseConfirm: the same request with the lose_result it named. */
+function noteLoss(w: World, id: string, res: Sent): void {
+  if (res.status !== 409 || res.json?.error !== 'has_result') return;
+  const runner = res.json.competitor_id;
+  w.notes['lose'] = {
+    id,
+    runner,
+    method: res.method,
+    url: res.url,
+    body: { ...(res.body as object), lose_result: res.json.lose_result },
+    state: resultState(w, id, runner),
+  };
 }
 
 /** The newest start-time event, to tell whether a step wrote one. */
@@ -360,6 +413,7 @@ export const OPS: Record<string, Op> = {
         replace_card_for_competitor_id: p.r.id,
         card_number: 8300000 + (s.b % 30),
       });
+      noteLoss(w, p.id, res);
       const e = res.json?.card_event;
       if (res.status !== 200 || !e) return;
       w.notes['bind'] = {
@@ -385,15 +439,37 @@ export const OPS: Record<string, Op> = {
         node_id: n.node_id,
         local_seq: n.local_seq,
       });
+      noteLoss(w, n.id, res);
       // The way back from the undo is to change the card again.
       if (res.status === 201) {
         return (copy) =>
-          send(copy, 'POST', '/api/competitors', {
+          sendLosing(copy, 'POST', '/api/competitors', {
             competition_id: n.id,
             replace_card_for_competitor_id: n.runner,
             card_number: n.card,
           });
       }
+    },
+  },
+  /** Confirm the warning of a card change seen earlier, however long ago:
+   * the request again, with the lose_result the warning named. The way back
+   * is to give the runner the card from before again. */
+  loseConfirm: {
+    w: 6,
+    run: async (w) => {
+      const n = w.notes['lose'];
+      if (!n) return;
+      const stale = resultState(w, n.id, n.runner) !== n.state;
+      const status = (): string => fresh(w, n.id).competitors.get(n.runner)?.status ?? 'PEND';
+      const had = status();
+      const card = cardOf(w, n.runner);
+      const res = await send(w, n.method, n.url, n.body);
+      if (res.status >= 300) return;
+      if (stale && had !== 'PEND' && status() === 'PEND') {
+        w.stale.push('a card change confirmed for a result that has changed since');
+      }
+      return (copy) =>
+        sendLosing(copy, 'PATCH', `/api/competitors/${n.runner}/profile`, { card_number: card });
     },
   },
   /** The "Ändra" dialog. The way back is to type the old value again. */
@@ -418,8 +494,9 @@ export const OPS: Record<string, Op> = {
       const [field, value] = change[s.k!]!;
       const url = `/api/competitors/${p.r.id}/profile`;
       const res = await send(w, 'PATCH', url, { [field]: value });
+      noteLoss(w, p.id, res);
       if (res.status === 200 && field !== 'paid_amount') {
-        return (copy) => send(copy, 'PATCH', url, { [field]: p.r[field] });
+        return (copy) => sendLosing(copy, 'PATCH', url, { [field]: p.r[field] });
       }
     },
   },
@@ -812,10 +889,18 @@ export const OPS: Record<string, Op> = {
     run: async (w) => {
       const n = w.notes['startUndo'];
       if (!n) return;
-      await send(w, 'POST', `${baseOf(n.id)}/start-times/undo`, {
+      const res = await send(w, 'POST', `${baseOf(n.id)}/start-times/undo`, {
         node_id: n.node_id,
         local_seq: n.local_seq,
       });
+      // The way back from an undo is to undo the event it wrote.
+      if (res.status === 201 && res.json.local_seq !== null) {
+        return (copy) =>
+          send(copy, 'POST', `${baseOf(n.id)}/start-times/undo`, {
+            node_id: n.node_id,
+            local_seq: res.json.local_seq,
+          });
+      }
     },
   },
   /** "Fastställ saknade starttider": take every suggestion. */

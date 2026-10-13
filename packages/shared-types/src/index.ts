@@ -73,6 +73,7 @@ export {
   HiredCardReturnResponse,
   HiredCardOpen,
   HealthDTO,
+  LoseResult,
 } from './dtos.ts';
 export type { EventorLookupResult } from './dtos.ts';
 

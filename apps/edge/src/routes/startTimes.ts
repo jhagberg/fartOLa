@@ -126,7 +126,7 @@ export default async function registerStartTimesRoutes(app: FastifyInstance): Pr
         [
           'has_result',
           cards.filter(
-            (c) => readsOnCard(app.fartolaDb, competitionId, c.card_number, c.local_seq) > 0
+            (c) => readsOnCard(app.fartolaDb, competitionId, c.card_number, c.local_seq).reads > 0
           ),
         ],
         [
