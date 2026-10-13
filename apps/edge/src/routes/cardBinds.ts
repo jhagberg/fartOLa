@@ -19,7 +19,8 @@
 //        card was changed again (undo that first); 409 card_taken when
 //        another competitor now holds the old card; 409 has_result when
 //        the competitor has read out with the new card since the change,
-//        unless the body's lose_result names what is lost
+//        or has a status set by hand that the old card's reads would
+//        clear, unless the body's lose_result names what is lost
 //        (routes/_cardResult.ts).
 //
 // Reads attach by the competitors' current card numbers, so after the undo
@@ -112,7 +113,7 @@ export default async function registerCardBindsRoutes(app: FastifyInstance): Pro
       const lost = resultLost(
         app.fartolaDb,
         row,
-        { afterSeq: target.localSeq },
+        { newCard: bind.previous_card_number, undoOf: target.localSeq },
         parsed.data.lose_result
       );
       if (lost !== null) return reply.code(409).send(lost);
