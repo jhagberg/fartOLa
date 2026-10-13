@@ -271,4 +271,30 @@ describe('found by the walk, not fixed', () => {
       }
     }
   );
+
+  test(
+    'a DQ taken back and set again leaves the runner as before',
+    {
+      todo: '.planning/todos/pending/2026-10-13-dq-before-read-keeps-punches.md',
+    },
+    async () => {
+      const r = await race();
+      try {
+        const path = `/api/competitions/${r.id}/competitors/${r.runner}`;
+        const dq = () => r.send('POST', `${path}/status`, { status: 'DQ', reason: 'Tjuvstart' });
+        const punches = (): number =>
+          r.app.projectionStore.recomputeNow(r.id)!.competitors.get(r.runner)!.latest_punches
+            .length;
+        // Disqualified first, read out afterwards: the punches are shown.
+        assert.equal((await dq()).statusCode, 201);
+        await r.read(8100001);
+        const before = punches();
+        assert.equal((await r.send('POST', `${path}/clear-status`)).statusCode, 201);
+        assert.equal((await dq()).statusCode, 201);
+        assert.equal(punches(), before);
+      } finally {
+        await r.close();
+      }
+    }
+  );
 });
