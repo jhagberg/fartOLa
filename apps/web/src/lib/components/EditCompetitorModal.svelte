@@ -10,6 +10,14 @@
   so the parent can refetch competitors and update its derived shapes.
   Errors surface inline; the modal stays open on 4xx.
 
+  A new card number for a runner who has a result is refused by the server
+  (409 has_result): the result would no longer count. The warning says so
+  under the card field and has its own button, "Byt bricknummer ändå", which
+  sends the change again with what the warning named. "Spara" never sends
+  that confirmation (a double click must not confirm), and the warning
+  belongs to one runner and one typed card number: it is gone when either
+  changes.
+
   This is the operator's correction surface — distinct from:
   - The walk-up modal (creates new competitors).
   - The C-M4 consent toast (flips consent_status only).
@@ -31,10 +39,11 @@
   import {
     ApiError,
     editCompetitorProfile,
+    hasResultOf,
     setManualStatus,
     type CompetitorProfilePatch,
   } from '#lib/api/client.ts';
-  import type { CompetitorDTO, ClassDTO } from '@fartola/shared-types';
+  import type { CompetitorDTO, ClassDTO, LoseResult } from '@fartola/shared-types';
 
   interface Props {
     open: boolean;
@@ -61,6 +70,17 @@
   let fieldErrors: Partial<Record<FieldName, string>> = $state({});
   /** A failure that belongs to no field (the save itself). */
   let error: string | null = $state(null);
+  /** The server's warning that the card change takes a result away, and
+   * the runner and typed card number it was given for. Cleared when the
+   * card field is typed in and when another runner is shown. */
+  let lose = $state<{ runnerId: string; card: string; name: string; result: LoseResult } | null>(
+    null
+  );
+  const loseShown = $derived(
+    lose !== null && lose.runnerId === competitor?.id && lose.card === cardNumber.trim()
+      ? lose
+      : null
+  );
   let confirmingWithdraw = $state(false);
   let withdrawing = $state(false);
   /** Bumped when a correction changes the result: the read block fetches again. */
@@ -83,6 +103,7 @@
       paid = String(competitor?.paid_amount ?? 0);
       fieldErrors = {};
       error = null;
+      lose = null;
       confirmingWithdraw = false;
     });
   });
@@ -98,7 +119,8 @@
     onClose();
   }
 
-  async function save(): Promise<void> {
+  /** `confirmed`: what the warning named, from its own button only. */
+  async function save(confirmed?: LoseResult): Promise<void> {
     if (!competitor || saving) return;
     error = null;
     const errors: Partial<Record<FieldName, string>> = {};
@@ -120,6 +142,7 @@
       errors.card = t('edit.err.card');
     } else if (parsedCard !== competitor.card_number) {
       patch.card_number = parsedCard;
+      if (confirmed !== undefined) patch.lose_result = confirmed;
     }
     const parsedPaid = paid.trim() === '' ? 0 : Number(paid.trim());
     if (!Number.isInteger(parsedPaid) || parsedPaid < 0) errors.paid = t('edit.err.paid');
@@ -131,13 +154,18 @@
       return;
     }
     saving = true;
+    const runnerId = competitor.id;
+    const card = cardNumber.trim();
     try {
-      const res = await editCompetitorProfile(competitor.id, patch);
+      const res = await editCompetitorProfile(runnerId, patch);
       onSaved(res.competitor);
       onClose();
     } catch (e) {
       const code = e instanceof ApiError ? (e.body as { error?: string } | undefined)?.error : null;
-      if (code === 'card_already_bound') {
+      const warned = hasResultOf(e);
+      if (warned !== null) {
+        lose = { runnerId, card, name: warned.name, result: warned.lose_result };
+      } else if (code === 'card_already_bound') {
         fieldErrors = { card: t('walk.err.cardTaken', { card: String(parsedCard ?? '') }) };
       } else if (code === 'class_not_in_competition') {
         fieldErrors = { class: t('edit.err.class') };
@@ -267,7 +295,10 @@
           bind:value={cardNumber}
           data-testid="edit-card"
           autocomplete="off"
-          oninput={() => clearError('card')}
+          oninput={() => {
+            clearError('card');
+            lose = null;
+          }}
           aria-invalid={fieldErrors.card ? 'true' : undefined}
           aria-describedby={fieldErrors.card ? 'edit-card-error' : undefined}
         />
@@ -275,6 +306,22 @@
           <p class="err" role="alert" id="edit-card-error" data-testid="edit-card-error">
             {fieldErrors.card}
           </p>
+        {/if}
+        {#if loseShown}
+          <div class="lose" role="alert" data-testid="edit-lose-result">
+            <p>
+              <Icon name="alert-triangle" size={18} />
+              {t('edit.loseResult.body', { name: loseShown.name })}
+            </p>
+            <Button
+              variant="danger"
+              onclick={() => void save(loseShown.result)}
+              disabled={saving || withdrawing}
+              data-testid="edit-lose-confirm"
+            >
+              {t('edit.loseResult.confirm')}
+            </Button>
+          </div>
         {/if}
       </Field>
       <Field label={t('edit.paid')} htmlFor="edit-paid">
@@ -389,6 +436,18 @@
   .err {
     color: var(--dnf);
     font-size: var(--fs-label);
+    margin: 0;
+  }
+  .lose {
+    display: grid;
+    gap: var(--space-xs);
+    justify-items: start;
+    padding: var(--space-sm);
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    font-size: var(--fs-body);
+  }
+  .lose p {
     margin: 0;
   }
   .divider {

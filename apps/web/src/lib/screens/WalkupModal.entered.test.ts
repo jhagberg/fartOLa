@@ -39,6 +39,8 @@ let entries: unknown[];
 let posts: Array<{ url: string; body: Record<string, unknown> }>;
 /** When set, the replacement POST waits until the test releases it. */
 let holdPost: { release: () => void } | null;
+/** When set, the replacement POST is answered with this 409. */
+let refusePost: unknown;
 
 function installFetch(): void {
   posts = [];
@@ -57,6 +59,7 @@ function installFetch(): void {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       posts.push({ url, body });
       if (holdPost) await new Promise<void>((r) => (holdPost!.release = r));
+      if (refusePost) return json(refusePost, 409);
       return json({
         id: body['replace_card_for_competitor_id'],
         name: 'Eva Ek',
@@ -99,6 +102,7 @@ describe('WalkupModal — is the runner entered?', () => {
   beforeEach(() => {
     entries = [runner(EVA, 'Eva Ek', 1111111, true), runner(BO, 'Bo Berg', null, false)];
     holdPost = null;
+    refusePost = null;
     installFetch();
   });
   afterEach(() => {
@@ -137,6 +141,20 @@ describe('WalkupModal — is the runner entered?', () => {
       card_event: { node_id: 'n', local_seq: 7, previous_card_number: 1111111 },
     });
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it('the runner already has a result: the card is not changed, and the step says where it can be', async () => {
+    refusePost = { error: 'has_result', competitor_id: EVA, name: 'Eva Ek', lose_result: {} };
+    await open();
+    all('entered-suggestion')[0]!.click();
+    await settle();
+    q('entered-save')!.click();
+    await settle();
+    expect(document.body.textContent).toContain(
+      'Eva Ek har redan ett resultat, och det skulle försvinna med den här brickan. Brickan är inte bytt.'
+    );
+    expect(onRebound).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('dismissed while the replacement is saving: the late answer does not close the next card', async () => {

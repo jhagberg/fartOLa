@@ -5,7 +5,7 @@
 // Synthetic data only (helpers/seed.ts).
 
 import { test, expect } from '@playwright/test';
-import { seedCompetition, simulateRead } from './helpers/seed.ts';
+import { BASE, seedCompetition, simulateRead } from './helpers/seed.ts';
 import { seedRunners } from './helpers/runners.ts';
 import {
   expectPanelLoaded,
@@ -75,6 +75,37 @@ test('a manual punch refetches the block: för hand, and the status follows', as
   await expect(block.locator('[data-testid=punch-grid] [data-state=manual]')).toHaveCount(1);
   await expect(block.locator('[data-testid=punch-grid] [data-state=miss]')).toHaveCount(0);
   await expect(block.getByTestId('edit-read-status')).toContainText('Godkänd');
+});
+
+test('a new card number for a runner who has read out: warned first, changed only on purpose', async ({
+  page,
+  request,
+}) => {
+  const { id, annaId } = await seedAnnaMispunch(request, null);
+  const cardNow = async (): Promise<number | null> =>
+    (
+      (await (
+        await request.get(`${BASE}/api/competitions/${id}/competitors/${annaId}`)
+      ).json()) as { card_number: number | null }
+    ).card_number;
+  await openEditFor(page, id, 'Anna');
+  await expect(page.getByTestId('edit-read-status')).toContainText('Felstämplad', {
+    timeout: 20_000,
+  });
+  await page.getByTestId('edit-card').fill('7509999');
+  await page.getByTestId('edit-save-btn').click();
+  const warning = page.getByTestId('edit-lose-result');
+  await expect(warning).toContainText('har redan ett resultat');
+  await expect(warning).toContainText('Inget är ändrat än');
+  expect(await cardNow()).toBe(7_501_853);
+  // "Spara" once more asks once more; it is not the confirmation.
+  await page.getByTestId('edit-save-btn').click();
+  await expect(warning).toBeVisible();
+  expect(await cardNow()).toBe(7_501_853);
+
+  await warning.getByTestId('edit-lose-confirm').click();
+  await expect(page.getByTestId('edit-read')).toHaveCount(0);
+  expect(await cardNow()).toBe(7_509_999);
 });
 
 test('never read says so, with the card and the rental', async ({ page, request }) => {

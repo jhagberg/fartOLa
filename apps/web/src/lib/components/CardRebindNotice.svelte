@@ -4,11 +4,13 @@
   What a card replacement did, with undo (ADR-0016 rule 2): "Bricka bytt för
   <namn>: <gammalt> → <nytt>" and "Ångra". Stays until the operator closes
   it, so the undo does not fade away. Undo gives the runner the old card
-  back (POST /api/competitions/:id/card-binds/undo); the read made with the
-  new card is an unknown card again.
+  back (POST /api/competitions/:id/card-binds/undo); the read the change
+  attached is an unknown card again. When the runner has read out with the
+  new card since the change, the server refuses (409 has_result) and the
+  notice says so: that result is not taken from here.
 -->
 <script lang="ts">
-  import { ApiError, undoCardRebind, type CardRebind } from '#lib/api/client.ts';
+  import { ApiError, hasResultOf, undoCardRebind, type CardRebind } from '#lib/api/client.ts';
   import { t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/Button.svelte';
 
@@ -55,11 +57,13 @@
         errorFor = {
           key: k,
           msg:
-            code === 'card_changed_since'
-              ? t('ro.rebind.err.changed')
-              : code === 'card_taken'
-                ? t('ro.rebind.err.taken', { card: old })
-                : t('err.network'),
+            hasResultOf(e) !== null
+              ? t('ro.rebind.err.hasResult', { name: rebind.name })
+              : code === 'card_changed_since'
+                ? t('ro.rebind.err.changed')
+                : code === 'card_taken'
+                  ? t('ro.rebind.err.taken', { card: old })
+                  : t('err.network'),
         };
       }
     } finally {
