@@ -333,15 +333,42 @@ describe('a card change that takes a result away is refused until it is confirme
     ctx.handle.close();
   });
 
-  /** A read stored now, after everything stored so far. */
-  const readNow = (card: number, atMs?: number): void => {
-    const top = ctx.handle.db
+  /** The test's own events are stored after everything stored so far. */
+  const syncSeq = (): void => {
+    seq = ctx.handle.db
       .select()
       .from(events)
       .all()
       .reduce((m, e) => Math.max(m, e.localSeq), seq);
-    seq = top;
-    addRead(ctx.handle, ctx.nodeId, card, [31, 32, 33], true, atMs);
+  };
+  /** A read stored now. */
+  const readNow = (card: number, atMs?: number, codes = [31, 32, 33]): void => {
+    syncSeq();
+    addRead(ctx.handle, ctx.nodeId, card, codes, true, atMs);
+  };
+  /** A status set by hand for EVA, stored now and timed in the series of
+   * the reads (addRead): "a status, then a read" is that order for the
+   * reducer whatever the wall clock says. */
+  const setStatus = (status: 'DNS' | 'MAX' | 'DQ'): void => {
+    syncSeq();
+    seq += 1;
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: ctx.nodeId,
+        localSeq: seq,
+        competitionId: COMP,
+        eventType: 'manual_status_set',
+        eventTimeMs: READ_AT_MS + seq,
+        recordedAtMs: READ_AT_MS + seq,
+        payload: {
+          event_type: 'manual_status_set',
+          competitor_id: EVA,
+          status,
+          reason: 'satt för hand',
+        },
+      })
+      .run();
   };
   const statusOf = (id: string): string =>
     ctx.app.projectionStore.recomputeNow(COMP)!.competitors.get(id)!.status;
@@ -438,6 +465,134 @@ describe('a card change that takes a result away is refused until it is confirme
       assert.equal(late.statusCode, 409, late.body);
       assert.equal(cardOf(EVA), OLD);
       assert.equal(statusOf(EVA), 'OK');
+    });
+  }
+
+  // The one rule, case by case: what EVA has on OLD, whether NEW has been
+  // read (an unknown card until now), and whether the change must ask.
+  // 'DNS, NEW read first': the status was set after that read and wins over
+  // it, so nothing changes.
+  // `after`: the status once the change is made (confirmed where it asks).
+  const FORWARD: ReadonlyArray<[what: string, newRead: boolean, asks: boolean, after: string]> = [
+    ['nothing', false, false, 'PEND'],
+    ['nothing', true, false, 'OK'],
+    ['DNS', false, false, 'DNS'],
+    ['DNS', true, true, 'OK'],
+    ['MAX', true, true, 'OK'],
+    ['DQ', true, false, 'DQ'],
+    ['DNS, NEW read first', true, false, 'DNS'],
+    ['OK', false, true, 'PEND'],
+    ['OK', true, true, 'OK'],
+    ['MP', false, true, 'PEND'],
+  ];
+  for (const [route, change] of [
+    ['"Ändra"', (extra: object) => edit({ card_number: NEW, ...extra })],
+    ['"Byt bricka"', (extra: object) => replace({ card_number: NEW, ...extra })],
+  ] as const) {
+    for (const [what, newRead, asks, after] of FORWARD) {
+      test(`${route}, runner has ${what}, new card ${newRead ? 'read' : 'not read'}: ${asks ? 'asks' : 'no question'}`, async () => {
+        if (what === 'DNS, NEW read first') readNow(NEW);
+        if (what === 'OK') readNow(OLD);
+        else if (what === 'MP') readNow(OLD, undefined, [31]);
+        else if (what !== 'nothing') setStatus(what.slice(0, 3).trim() as 'DNS');
+        if (newRead && what !== 'DNS, NEW read first') readNow(NEW);
+        const before = statusOf(EVA);
+
+        let res = await change({});
+        if (asks) {
+          assert.equal(res.statusCode, 409, res.body);
+          assert.equal(res.json().error, 'has_result');
+          assert.equal(res.json().lose_result.status, before);
+          assert.equal(cardOf(EVA), OLD);
+          assert.equal(statusOf(EVA), before);
+          res = await change({ lose_result: res.json().lose_result });
+        }
+        assert.equal(res.statusCode, 200, res.body);
+        assert.equal(cardOf(EVA), NEW);
+        assert.equal(statusOf(EVA), after);
+      });
+    }
+  }
+
+  // The undo of OLD → NEW: what came since the change decides.
+  const UNDO: ReadonlyArray<[what: string, since: () => void, asks: boolean, after: string]> = [
+    ['nothing since', () => {}, false, 'PEND'],
+    ['DNS by hand since, old card not read', () => setStatus('DNS'), false, 'DNS'],
+    [
+      'DNS by hand since, then the old card read',
+      () => {
+        setStatus('DNS');
+        readNow(OLD);
+      },
+      true,
+      'OK',
+    ],
+    [
+      'MAX by hand since, then the old card read with a control missing',
+      () => {
+        setStatus('MAX');
+        readNow(OLD, undefined, [31]);
+      },
+      true,
+      'MP',
+    ],
+    [
+      'DQ by hand since, then the old card read',
+      () => {
+        setStatus('DQ');
+        readNow(OLD);
+      },
+      false,
+      'DQ',
+    ],
+    [
+      'only a consent confirmed since',
+      () => {
+        ctx.handle.db
+          .insert(events)
+          .values({
+            nodeId: ctx.nodeId,
+            localSeq: 900_000,
+            competitionId: COMP,
+            eventType: 'consent_confirmed',
+            eventTimeMs: Date.now(),
+            recordedAtMs: Date.now(),
+            payload: {
+              event_type: 'consent_confirmed',
+              competitor_id: EVA,
+              prior_consent_status: 'pending_first_read',
+            },
+          })
+          .run();
+      },
+      false,
+      'PEND',
+    ],
+  ];
+  for (const [what, since, asks, after] of UNDO) {
+    test(`undo of a card change, ${what}: ${asks ? 'asks' : 'no question'}`, async () => {
+      const ev = await rebind(ctx.app, EVA, NEW);
+      since();
+      const before = statusOf(EVA);
+      const send = (lose?: unknown) =>
+        ctx.app.inject({
+          method: 'POST',
+          url: `/api/competitions/${COMP}/card-binds/undo`,
+          payload: { node_id: ev.node_id, local_seq: ev.local_seq, lose_result: lose },
+        });
+
+      let res = await send();
+      if (asks) {
+        assert.equal(res.statusCode, 409, res.body);
+        assert.equal(res.json().error, 'has_result');
+        assert.equal(res.json().lose_result.status, before);
+        assert.equal(cardOf(EVA), NEW);
+        assert.equal(statusOf(EVA), before);
+        res = await send(res.json().lose_result);
+      }
+      assert.equal(res.statusCode, 201, res.body);
+      assert.equal(cardOf(EVA), OLD);
+      assert.equal(statusOf(EVA), after);
     });
   }
 

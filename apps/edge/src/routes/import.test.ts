@@ -999,6 +999,58 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     assert.equal(statusOf(compId, anna.id), 'MAX');
   });
 
+  const setStatus = async (compId: string, id: string, status: string): Promise<void> => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/competitions/${compId}/competitors/${id}/status`,
+      payload: { status, reason: 'satt för hand' },
+    });
+    assert.equal(res.statusCode, 201, res.body);
+  };
+
+  test('a status set by hand is kept when the file card has been read: the read would replace it', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    await setStatus(compId, anna.id, 'DNS');
+    await readOut(compId, FILE_CARD);
+    assert.equal(statusOf(compId, anna.id), 'DNS');
+
+    const body = (await importStarts(compId, annaFile())).body as Record<string, unknown>;
+    assert.equal(body['card_updated'], 0);
+    assert.equal(body['card_kept'], 1);
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(statusOf(compId, anna.id), 'DNS');
+  });
+
+  test('the undo is refused when the old card, read since, would replace a status set by hand since', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    await importStarts(compId, annaFile());
+    await setStatus(compId, anna.id, 'DNS');
+    // The card she no longer has is read in the race: an unknown card.
+    await readOut(compId, ANNA_CARD);
+    assert.equal(statusOf(compId, anna.id), 'DNS');
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 409, JSON.stringify(undo.body));
+    assert.equal(undo.body.error, 'has_result');
+    assert.deepEqual(undo.body.competitor_ids, [anna.id]);
+    assert.equal(byName('Anna Andersson').cardNumber, FILE_CARD);
+    assert.equal(statusOf(compId, anna.id), 'DNS');
+  });
+
+  test('the undo goes through when a status was set by hand since and the old card was never read', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    await importStarts(compId, annaFile());
+    await setStatus(compId, anna.id, 'DNS');
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 201, JSON.stringify(undo.body));
+    assert.equal(byName('Anna Andersson').cardNumber, ANNA_CARD);
+    assert.equal(statusOf(compId, anna.id), 'DNS');
+  });
+
   test('the undo is refused when the old card would clear a status set by hand (read in a race reset since)', async () => {
     const { compId, byName } = await seedAnnaAndBo();
     const anna = byName('Anna Andersson');
