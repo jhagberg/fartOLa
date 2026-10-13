@@ -102,21 +102,22 @@ is such a conflict at nivå 1–3.
 ### Defaults for a new class
 
 The default follows the class kind, confirmed or suggested from the
-name, and for an age class also the level of the competition:
+name, and the level of the competition:
 
-- Open classes and inskolning get free start.
-- An age class at nivå 1–3 gets "Lottad starttid", which is what TR 7.4.2
+- At nivå 1–3, an age class gets "Lottad starttid", which is what TR 7.4.2
   asks for: the start order is drawn, and a runner without a start time
-  is not timed from the start punch.
-- An age class at nivå 4, at a training race or with no level set gets
-  "Lottad starttid och startstämpling". The organiser has a free hand
-  there, and a small race that never draws its classes still gets a time
-  for everyone who punched the start.
-- A class of unknown kind gets "Lottad starttid och startstämpling" too.
+  is not timed from the start punch. A class of unknown kind gets "Lottad
+  starttid och startstämpling", so Kontroll asks about its missing start
+  times. Open classes and inskolning get free start.
+- At nivå 4, at a training race or with no level set, every class gets
+  free start. The organiser has a free hand there, Kontroll stays quiet
+  about start times, and everyone who punched the start gets a time. To
+  spread the start, the operator picks a drawn answer and draws.
 
-The level is read when the class is created. Setting the level later
-does not change classes that already exist. The operator can change the
-answer within what the rules allow for the class and level.
+The level is read when the class is created, so "Ny tävling" asks for the
+level before it imports the courses. Setting the level later does not
+change classes that already exist. The operator can change the answer
+within what the rules allow for the class and level.
 
 ### Changing the answer
 
@@ -133,7 +134,8 @@ it did and links to Lottning, where the answer can be changed again.
 "Fri start" is offered only when nothing of the class can be rescored:
 the race has not started, and no runner of the class has a card read, a
 manual finish or a hand-set status. A withdrawn runner (Återbud, Ej
-start) does not count, since nothing about that runner is timed. A race that was started and reset
+start) without a card read does not count, since nothing about that
+runner is timed. A race that was started and reset
 keeps such data, so "not started" alone is not enough. The server decides
 this, both when it builds the list and when it takes the click, so a page
 left open cannot change results. Kontroll does not offer "Fri start"
@@ -162,6 +164,8 @@ punch is timed from them.
 - Bad, because Startstämpling changes meaning for Kontroll: an existing
   class with it is now listed when a runner lacks a start time. This is
   intended, but it is a change.
+- Bad, because at nivå 4 and at a training race a new class has free
+  start, so drawing it takes one more choice in Lottning first.
 - Bad, because a new age class at nivå 1–3 no longer falls back to the
   start punch for a runner without a start time. The result shows "saknar
   start" and no time until the runner gets a start time or the class gets
