@@ -27,6 +27,7 @@ import type {
   ClassDTO,
   ClassCreateInput,
   ClassKind,
+  CompetitionLevel,
   ClassKindSource,
   StartMethod,
   CourseDTO,
@@ -291,6 +292,8 @@ export interface CreateFromWizardInput {
   xml_file: { name: string; content_base64: string };
   /** Plan 11 — optional Eventor event ID to link on creation. */
   eventor_event_id?: number | null;
+  /** ADR-0018 — stored before the courses import; sets the classes' start choice. */
+  level?: CompetitionLevel | null;
 }
 
 export interface CreateFromWizardOk {

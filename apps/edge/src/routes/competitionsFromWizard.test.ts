@@ -35,12 +35,14 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { eq } from 'drizzle-orm';
+
 import { buildServer } from '../server.ts';
 import { openDatabase } from '../db/index.ts';
 import { ensureNodeId } from '../db/node-id.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { FastifyInstance } from 'fastify';
-import { competitions } from '../db/schema.ts';
+import { classes, competitions } from '../db/schema.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, '..', '..', 'test', 'fixtures');
@@ -108,6 +110,41 @@ describe('POST /api/competitions/from-wizard (C-H3 atomic)', () => {
     assert.equal(body.controls_created, 4);
     assert.equal(body.courses_created, 2);
     assert.equal(countCompetitions(ctx.handle), before + 1);
+  });
+
+  test('ADR-0018: the level is stored before the import, so the classes get their start choice from it', async () => {
+    const xml = readFileSync(
+      path.join(FIXTURE_DIR, 'iof30-coursedata-sample.xml'),
+      'utf8'
+    ).replaceAll('D21', 'Öppen 3');
+    const content_base64 = Buffer.from(xml).toString('base64');
+    const methods = async (level?: string) => {
+      const res = await postFromWizard(ctx.app, {
+        name: 'Nivå',
+        date: '2026-05-22',
+        xml_file: { name: 'course.xml', content_base64 },
+        ...(level ? { level } : {}),
+      });
+      assert.equal(res.statusCode, 201);
+      const id = (res.body as { competition_id: string }).competition_id;
+      return Object.fromEntries(
+        ctx.handle.db
+          .select()
+          .from(classes)
+          .where(eq(classes.competitionId, id))
+          .all()
+          .map((r) => [r.name, r.startMethod])
+      );
+    };
+    assert.deepEqual(await methods('niva2'), { H21: 'start_time', 'Öppen 3': 'free_start' });
+    assert.deepEqual(await methods(), { H21: 'free_start', 'Öppen 3': 'free_start' });
+    const bad = await postFromWizard(ctx.app, {
+      name: 'x',
+      date: '2026-05-22',
+      xml_file: { name: 'c.xml', content_base64 },
+      level: 'niva9',
+    });
+    assert.equal(bad.statusCode, 400);
   });
 
   test('test 2 (C-H3 early-exit rollback): XSD-invalid CourseData → 400; competitions count unchanged', async () => {
