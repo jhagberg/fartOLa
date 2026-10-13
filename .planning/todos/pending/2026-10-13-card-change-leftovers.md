@@ -28,7 +28,10 @@ a result:
    place.** When the runner has a result they refuse and say that the card
    is changed under Anmälda, Redigera, where the warning has its own
    button. A confirm step in these two places is screen design
-   (ADR-0016).
+   (ADR-0016). It is felt most by a runner set to DNS by hand who then
+   reads out with another card than the entry has: the read would replace
+   the DNS, so "Byt bricka" refuses and the card is changed under
+   Redigera.
 3. **No screen imports a start list.** `POST …/import/startlist` is used
    by the replay script and by tests only. When a screen is built it must
    show `cardsKept` (the rows whose card was left, and why) next to
