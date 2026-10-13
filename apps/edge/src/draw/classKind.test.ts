@@ -3,7 +3,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { kindConfirmed, pursuitBanned, suggestClassKind } from './classKind.ts';
+import { defaultStartMethod, kindConfirmed, pursuitBanned, suggestClassKind } from './classKind.ts';
 
 const asTuple = (name: string, type: number | null = null) => {
   const s = suggestClassKind(name, type);
@@ -76,5 +76,23 @@ describe('suggestClassKind (SOFT TR 3.4.6, TR 3.4.9)', () => {
     // An age class with an unknown age cannot show it is outside D/H10-12.
     assert.equal(pursuitBanned('ungdom', null), true);
     assert.equal(pursuitBanned('senior', null), true);
+  });
+});
+
+describe('defaultStartMethod (ADR-0018)', () => {
+  test('nivå 1-3: age class drawn, unknown kind start punch, open free', () => {
+    for (const l of ['niva1', 'niva2', 'niva3'] as const) {
+      assert.equal(defaultStartMethod('senior', l), 'start_time');
+      assert.equal(defaultStartMethod(null, l), 'start_punch');
+      assert.equal(defaultStartMethod('oppen', l), 'free_start');
+      assert.equal(defaultStartMethod('inskolning', l), 'free_start');
+    }
+  });
+  test('nivå 4, training and no level: free start for every kind', () => {
+    for (const l of ['niva4', 'traning', null] as const) {
+      for (const k of ['senior', 'oppen', null] as const) {
+        assert.equal(defaultStartMethod(k, l), 'free_start');
+      }
+    }
   });
 });
