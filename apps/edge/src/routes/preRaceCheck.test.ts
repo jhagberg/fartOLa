@@ -352,7 +352,7 @@ describe('start choice conflicts and the shortcut (ADR-0018)', () => {
       .run();
   const setLevel = (level: string) =>
     handle.sqlite.prepare(`UPDATE competitions SET level = ? WHERE id = ?`).run(level, COMP);
-  const ev = (eventType: string, payload: Record<string, unknown>) =>
+  const ev = (eventType: string, payload: Record<string, unknown>, atMs?: number) =>
     handle.db
       .insert(events)
       .values({
@@ -360,23 +360,27 @@ describe('start choice conflicts and the shortcut (ADR-0018)', () => {
         localSeq: ++seq,
         competitionId: COMP,
         eventType,
-        eventTimeMs: seq,
-        recordedAtMs: seq,
+        eventTimeMs: atMs ?? seq,
+        recordedAtMs: atMs ?? seq,
         payload: { event_type: eventType, ...payload },
       } as typeof events.$inferInsert)
       .run();
-  const read = (card: number, startAtMs: number | null = null) =>
-    ev('card_read', {
-      card_number: card,
-      card_type: 'SI10',
-      start: startAtMs === null ? null : hd(startAtMs),
-      finish: startAtMs === null ? null : hd(startAtMs + 600_000),
-      check: null,
-      clear: null,
-      punch_count: 0,
-      punches: [],
-      card_holder: null,
-    });
+  const read = (card: number, startAtMs: number | null = null, atMs?: number) =>
+    ev(
+      'card_read',
+      {
+        card_number: card,
+        card_type: 'SI10',
+        start: startAtMs === null ? null : hd(startAtMs),
+        finish: startAtMs === null ? null : hd(startAtMs + 600_000),
+        check: null,
+        clear: null,
+        punch_count: 0,
+        punches: [],
+        card_holder: null,
+      },
+      atMs
+    );
   const patch = (classId: string, payload: object) =>
     app.inject({ method: 'PATCH', url: `/api/competitions/${COMP}/classes/${classId}`, payload });
   const stored = (classId: string) =>
@@ -488,7 +492,7 @@ describe('start choice conflicts and the shortcut (ADR-0018)', () => {
     );
     assert.equal(stored('o'), 'free_start');
     handle.db.update(classes).set({ startMethod: 'start_time' }).run();
-    handle.sqlite.prepare(`UPDATE competitions SET race_started_at_ms = 5 WHERE id = ?`).run(COMP);
+    await app.inject({ method: 'POST', url: `/api/competitions/${COMP}/start-race` });
     const res = await patch('o', { start_method: 'free_start', only_if_offered: true });
     assert.equal(res.statusCode, 409);
     assert.deepEqual(res.json(), { error: 'class_has_results' });
@@ -517,18 +521,20 @@ describe('start choice conflicts and the shortcut (ADR-0018)', () => {
       .from(competitors)
       .all()
       .find((c) => c.id === 'r1')!;
-    handle.sqlite.prepare(`UPDATE competitions SET race_started_at_ms = 5 WHERE id = ?`).run(COMP);
+    await app.inject({ method: 'POST', url: `/api/competitions/${COMP}/start-race` });
     // The drawn time is 1 000 s; the start punch comes 3 min later.
-    read(row.cardNumber!, 1_180_000);
-    ev('manual_status_set', { competitor_id: 'r2', status: 'DNF', reason: 'hand' });
+    read(row.cardNumber!, 1_180_000, Date.now() + 1000);
+    ev(
+      'manual_status_set',
+      { competitor_id: 'r2', status: 'DNF', reason: 'hand' },
+      Date.now() + 2000
+    );
     // While started: r1 is scored with its drawn time, r2 is hand-set to DNF.
     const started = JSON.parse(startOf()) as Array<[string, number | null, string]>;
     assert.equal(started.find((v) => v[0] === 'r1')![1], 1_000_000);
     assert.notEqual(started.find((v) => v[0] === 'r1')![2], 'PEND');
     assert.equal(started.find((v) => v[0] === 'r2')![2], 'DNF');
-    handle.sqlite
-      .prepare(`UPDATE competitions SET race_started_at_ms = NULL WHERE id = ?`)
-      .run(COMP);
+    await app.inject({ method: 'POST', url: `/api/competitions/${COMP}/reset-race` });
     const before = startOf();
     // After the reset the hand-set status and the drawn time are still there.
     assert.equal((JSON.parse(before) as Array<[string, number, string]>)[1]![2], 'DNF');
