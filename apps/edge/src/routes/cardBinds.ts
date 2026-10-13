@@ -20,8 +20,8 @@
 //        another competitor now holds the old card; 409 has_result when
 //        the competitor has read out with the new card since the change,
 //        or has a status set by hand that the old card's reads would
-//        clear, unless the body's lose_result names what is lost
-//        (routes/_cardResult.ts).
+//        clear and one of the two came since the change, unless the body's
+//        lose_result names what is lost (routes/_cardResult.ts).
 //
 // Reads attach by the competitors' current card numbers, so after the undo
 // the read the change attached is an unknown card again.
