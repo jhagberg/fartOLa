@@ -21,6 +21,7 @@
   import { formatClockTime } from '@fartola/shared-types';
   import {
     ApiError,
+    hasResultOf,
     getEnteredRunners,
     replaceCard,
     type CardRebind,
@@ -131,8 +132,11 @@
       onRebound(done);
     } catch (e) {
       const body = e instanceof ApiError ? (e.body as { error?: string } | undefined) : undefined;
+      const warned = hasResultOf(e);
       error =
-        body?.error === 'card_taken'
+        warned !== null
+          ? t('walk.entered.err.hasResult', { name: warned.name })
+          : body?.error === 'card_taken'
           ? t('walk.err.cardTaken', { card: String(cardNumber) })
           : body?.error === 'hyrbricka_contact_required'
             ? t('walk.err.hyrbrickaContact')

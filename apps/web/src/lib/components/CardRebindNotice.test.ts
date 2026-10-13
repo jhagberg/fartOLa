@@ -103,6 +103,26 @@ describe('CardRebindNotice', () => {
     expect(q('card-rebind-undo')).not.toBeNull();
   });
 
+  it('a read with the new card since: says the result would be lost and where to change it', async () => {
+    installFetch(409, {
+      error: 'has_result',
+      competitor_id: 'eva',
+      name: 'Eva Ek',
+      lose_result: {},
+    });
+    component = mount(CardRebindNotice, {
+      target: document.body,
+      props: { competitionId: 'comp-1', rebind, onClose: vi.fn() },
+    });
+    await settle();
+    q('card-rebind-undo')!.click();
+    await settle();
+    expect(q('card-rebind-notice')?.textContent).toContain(
+      'Eva Ek har läst ut med den nya brickan efter bytet, och det resultatet skulle försvinna. Bytet är inte ångrat.'
+    );
+    expect(q('card-rebind-undo')).not.toBeNull();
+  });
+
   it('says why when the card has been changed again since', async () => {
     installFetch(409, { error: 'card_changed_since' });
     component = mount(CardRebindNotice, {

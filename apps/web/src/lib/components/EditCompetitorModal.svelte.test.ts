@@ -2,7 +2,8 @@
 //
 // EditCompetitorModal: a new competitor object for the same runner (every
 // card read on /readout hands one in) keeps a half-typed edit; a failed save
-// says something plain and logs the raw error.
+// says something plain and logs the raw error; a card change that takes a
+// result away is shown first and confirmed with its own button.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
@@ -35,12 +36,39 @@ const props = $state({ competitor: runner() });
 
 describe('EditCompetitorModal', () => {
   let component: ReturnType<typeof mount> | null = null;
-  let patchFails: 'network' | 'server';
+  let patchFails: 'network' | 'server' | 'has_result';
+  let patches: Array<Record<string, unknown>>;
+  /** When set, a PATCH waits until the test releases it. */
+  let hold: { release: () => void } | null;
+  const onSaved = vi.fn();
+  const LOSE = { card_number: 1234, card_seq: 0, status: 'OK', reads: 1, last_read_seq: 9 };
 
   beforeEach(() => {
     patchFails = 'server';
+    patches = [];
+    hold = null;
+    onSaved.mockReset();
     global.fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        patches.push(body);
+        if (hold) await new Promise<void>((r) => (hold!.release = r));
+        if (patchFails === 'has_result') {
+          const json = (b: unknown, status: number) =>
+            new Response(JSON.stringify(b), {
+              status,
+              headers: { 'content-type': 'application/json' },
+            });
+          return body['lose_result'] === undefined
+            ? json(
+                { error: 'has_result', competitor_id: 'r1', name: 'Anna Test', lose_result: LOSE },
+                409
+              )
+            : json(
+                { ok: true, competitor: runner({ card_number: body['card_number'] as number }) },
+                200
+              );
+        }
         if (patchFails === 'network') throw new TypeError('Failed to fetch');
         return new Response(JSON.stringify({ error: 'boom' }), {
           status: 500,
@@ -60,7 +88,7 @@ describe('EditCompetitorModal', () => {
         competitionId: 'c1',
         classes: [{ id: 'h21', name: 'H21' }] as never,
         onClose: () => {},
-        onSaved: () => {},
+        onSaved,
       },
     });
   });
@@ -106,6 +134,65 @@ describe('EditCompetitorModal', () => {
     await settle();
     expect(q('edit-error')!.textContent).toBe('Något gick fel');
     expect(log).toHaveBeenCalled();
+  });
+
+  const typeCard = async (value: string) => {
+    const el = q<HTMLInputElement>('edit-card')!;
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+  };
+
+  it('a new card for a runner with a result: warned first, and only the warning confirms', async () => {
+    patchFails = 'has_result';
+    await settle();
+    await typeCard('5678');
+    expect(q('edit-lose-result')).toBeNull();
+    q<HTMLButtonElement>('edit-save-btn')!.click();
+    await settle();
+    expect(q('edit-lose-result')!.textContent).toContain(
+      'Anna Test har redan ett resultat. Byter du bricknummer gäller resultatet inte längre för Anna Test.'
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+
+    // "Spara" again (a double click) asks again; it does not confirm.
+    q<HTMLButtonElement>('edit-save-btn')!.click();
+    await settle();
+    expect(patches).toEqual([{ card_number: 5678 }, { card_number: 5678 }]);
+    expect(onSaved).not.toHaveBeenCalled();
+
+    // The warning's own button sends what the warning named, once: a
+    // second click while the request is on its way sends nothing.
+    hold = { release: () => {} };
+    q<HTMLButtonElement>('edit-lose-confirm')!.click();
+    q<HTMLButtonElement>('edit-lose-confirm')!.click();
+    await settle();
+    expect(patches.slice(2)).toEqual([{ card_number: 5678, lose_result: LOSE }]);
+    hold.release();
+    await settle();
+    expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it('the warning is for one runner and one card number: gone when either changes', async () => {
+    patchFails = 'has_result';
+    await settle();
+    await typeCard('5678');
+    q<HTMLButtonElement>('edit-save-btn')!.click();
+    await settle();
+    expect(q('edit-lose-result')).not.toBeNull();
+
+    await typeCard('5679');
+    expect(q('edit-lose-result')).toBeNull();
+    // Typed back: asked again, not confirmed from memory.
+    await typeCard('5678');
+    expect(q('edit-lose-result')).toBeNull();
+    q<HTMLButtonElement>('edit-save-btn')!.click();
+    await settle();
+    expect(q('edit-lose-result')).not.toBeNull();
+
+    props.competitor = runner({ id: 'r2', name: 'Bo Annan', card_number: 4321 });
+    await settle();
+    expect(q('edit-lose-result')).toBeNull();
   });
 
   it('a network failure says so in plain words', async () => {

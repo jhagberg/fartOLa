@@ -39,6 +39,7 @@ import type {
   HiredCardsListResponse,
   HiredCardReturnResponse,
   HealthDTO,
+  LoseResult,
   RadioStatus,
   SpeakerBoard,
 } from '@fartola/shared-types';
@@ -61,6 +62,15 @@ export class ApiError extends Error {
     this.body = body;
     this.text = text;
   }
+}
+
+/** A card change the server refused because it takes the runner's result
+ * away (409 has_result, edge routes/_cardResult.ts): the runner's name and
+ * what is lost. Sent back unchanged as `lose_result`, it confirms the
+ * change. Null for any other error. */
+export function hasResultOf(e: unknown): { name: string; lose_result: LoseResult } | null {
+  const body = e instanceof ApiError ? (e.body as { error?: string } | null) : null;
+  return body?.error === 'has_result' ? (body as { name: string; lose_result: LoseResult }) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +576,9 @@ export interface CompetitorProfilePatch {
   bib?: string | null;
   /** Whole kronor paid at the desk; 0 = nothing. */
   paid_amount?: number;
+  /** With card_number: confirms the result the change takes away, as the
+   * 409 has_result named it (hasResultOf). */
+  lose_result?: LoseResult;
 }
 
 export function editCompetitorProfile(
