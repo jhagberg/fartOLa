@@ -4,9 +4,10 @@
   "Ändringar av starttider": the latest changes to start times (draws, late
   entrants, hand edits, missing starts, imports, clock shifts, undos),
   newest first, each with an "Ångra" button. Undo puts back what that change
-  replaced, whole or nothing; when the server refuses (a runner or the
-  class's grid changed again since, or a clock shift) the reason is shown
-  next to that change (ADR-0016 rule 2: undo rather than "are you sure?",
+  replaced (for a start-list import also card numbers and bibs, which the
+  row counts), whole or nothing; when the server refuses (a runner or the
+  class's grid changed again since, a runner has read out with the card an
+  import gave, or a clock shift) the reason is shown next to that change (ADR-0016 rule 2: undo rather than "are you sure?",
   and recent changes stay in a list). Logic lives in
   screens/start-time-history.ts.
 -->
@@ -88,7 +89,11 @@
         node_id: item.node_id,
         local_seq: item.local_seq,
       });
-      doneText = t('history.undone', { count: res.changed });
+      doneText =
+        t('history.undone', { count: res.changed }) +
+        (res.cards > 0 || res.bibs > 0
+          ? ' ' + t('history.undoneCards', { cards: res.cards, bibs: res.bibs })
+          : '');
       onUndone?.();
       await load();
     } catch (e) {
@@ -122,6 +127,12 @@
             <strong>{t(`history.cause.${item.cause}`)}</strong>
             <span>{classText(item.class_id)}</span>
             <span class="muted">{t('history.changed', { count: item.changed })}</span>
+            {#if item.cards > 0}
+              <span class="muted">{t('history.cards', { count: item.cards })}</span>
+            {/if}
+            {#if item.bibs > 0}
+              <span class="muted">{t('history.bibs', { count: item.bibs })}</span>
+            {/if}
           </div>
           <div class="action">
             {#if item.undone}
