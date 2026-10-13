@@ -999,6 +999,37 @@ describe('POST /api/competitions/:id/import/startlist', () => {
     assert.equal(statusOf(compId, anna.id), 'MAX');
   });
 
+  test('the undo is refused when the old card would clear a status set by hand (read in a race reset since)', async () => {
+    const { compId, byName } = await seedAnnaAndBo();
+    const anna = byName('Anna Andersson');
+    const base = `/api/competitions/${compId}`;
+    await importStarts(compId, annaFile());
+    assert.equal(byName('Anna Andersson').cardNumber, FILE_CARD);
+    const status = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/competitors/${anna.id}/status`,
+      payload: { status: 'MAX', reason: 'över maxtid' },
+    });
+    assert.equal(status.statusCode, 201, status.body);
+    // The card she no longer has is read, and the race is reset.
+    await readOut(compId, ANNA_CARD);
+    const warned = await ctx.app.inject({ method: 'POST', url: `${base}/reset-race` });
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/reset-race`,
+      payload: { force: true, started_at_ms: warned.json().started_at_ms },
+    });
+    assert.equal(reset.statusCode, 201, reset.body);
+    assert.equal(statusOf(compId, anna.id), 'MAX');
+
+    const undo = await undoNewest(compId);
+    assert.equal(undo.statusCode, 409, JSON.stringify(undo.body));
+    assert.equal(undo.body.error, 'has_result');
+    assert.deepEqual(undo.body.competitor_ids, [anna.id]);
+    assert.equal(byName('Anna Andersson').cardNumber, FILE_CARD);
+    assert.equal(statusOf(compId, anna.id), 'MAX');
+  });
+
   test('the undo is refused when a card or a bib was changed again, or the old one is taken', async () => {
     const { compId, byName } = await seedAnnaAndBo();
     const anna = byName('Anna Andersson');

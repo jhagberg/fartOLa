@@ -500,6 +500,47 @@ describe('a card change that takes a result away is refused until it is confirme
     assert.equal(statusOf(EVA), 'PEND');
   });
 
+  test('undo of a card change: a status set by hand that the old card would clear is not taken without the confirmation', async () => {
+    // EVA gets NEW and MAX by hand; OLD is read in a race that is then reset.
+    ctx.handle.sqlite.prepare('UPDATE competitions SET race_started_at_ms = NULL').run();
+    const base = `/api/competitions/${COMP}`;
+    const ev = await rebind(ctx.app, EVA, NEW);
+    const status = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/competitors/${EVA}/status`,
+      payload: { status: 'MAX', reason: 'över maxtid' },
+    });
+    assert.equal(status.statusCode, 201, status.body);
+    const started = await ctx.app.inject({ method: 'POST', url: `${base}/start-race` });
+    readNow(OLD, Date.now());
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/reset-race`,
+      payload: { force: true, started_at_ms: started.json().race_started_at_ms },
+    });
+    assert.equal(reset.statusCode, 201, reset.body);
+    assert.equal(statusOf(EVA), 'MAX');
+
+    const refused = await undo(ctx.app, ev);
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.deepEqual(refused.json(), HAS_RESULT(NEW, 'MAX', 0, 0, ev.local_seq));
+    assert.equal(cardOf(EVA), NEW);
+    assert.equal(statusOf(EVA), 'MAX');
+
+    const done = await ctx.app.inject({
+      method: 'POST',
+      url: `${base}/card-binds/undo`,
+      payload: {
+        node_id: ev.node_id,
+        local_seq: ev.local_seq,
+        lose_result: refused.json().lose_result,
+      },
+    });
+    assert.equal(done.statusCode, 201, done.body);
+    assert.equal(cardOf(EVA), OLD);
+    assert.equal(statusOf(EVA), 'PEND');
+  });
+
   test('undo of a card change: a read with the new card since is not taken without the confirmation', async () => {
     const ev = await rebind(ctx.app, EVA, NEW);
     readNow(NEW);
