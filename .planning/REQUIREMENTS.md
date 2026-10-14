@@ -113,24 +113,36 @@ per control, time penalty for overstaying.
 **REQ-EVT-CMP-011 (v2)** — Patrol / pair / group registration where
 multiple competitors share a card or run together.
 
-**REQ-EVT-CMP-012 (v1)** — Keep the card's main and reserve records for
-start and finish, as read, in the card-read event. Never keep the card
-holder bytes. (ADR-0019)
+**REQ-EVT-CMP-012 (v1)** — Keep the start and finish records the card
+still holds (main and reserve), as read, in the card-read event: each
+with its own time, fraction, station code and origin, and "unknown" or
+"not read" where that is the case. Never keep the card holder data,
+neither as bytes nor as decoded text. (ADR-0019)
 
 **REQ-EVT-CMP-013 (v1)** — The time that counts: the first valid finish
-punch of this race; the drawn start time, or in a start-punch class the
-first valid start punch. A finish judge's decision and a recorded
-organiser decision go first. (ADR-0019, TR 4.18.9, TR 4.20.6)
+punch, unless a time at the line or a recorded decision goes first. The
+start follows the class's start choice (ADR-0018): `start_time` the
+stored time; `start_punch` and `free_start` the first valid start punch,
+else the stored time; `auto` the stored time, else the first valid
+punch. Validity (race, day across midnight, clear, check, start window)
+is evidence for review, not a hard rule. (ADR-0019, TR 4.18.9, TR 4.20.6)
 
-**REQ-EVT-CMP-014 (v1)** — Show every candidate, the time used and why;
-mark conflicting or unreasonable times for review.
+**REQ-EVT-CMP-014 (v1)** — Show every available candidate, the one used
+and why, compared before rounding and by code and origin. A missing or
+unread reserve record shows as "first punch unknown". Conflicts are
+marked for review.
 
 **REQ-EVT-CMP-015 (v1)** — The secretariat can pick another candidate
-or enter a time, with a reason, stored as a new event and undoable;
-originals are never changed.
+or enter a time, with a reason, stored as a new event that names the
+read and the record chosen, and undoable; originals are never changed.
+A finish judge's order (TR 4.20.8, dead heats included) is a separate
+decision and never made by altering times.
 
 **REQ-EVT-CMP-016 (v1)** — Results, lists and exports use the decided
-time. A new read-out never removes earlier data or a manual decision.
+time and finish order. A new read-out, an undo, a rebuild or a race
+reset never removes earlier data or a manual decision; a change of start
+time or start choice after a read gives one consistent result
+everywhere.
 
 ---
 
