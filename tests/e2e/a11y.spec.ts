@@ -449,7 +449,8 @@ for (const high of [false, true]) {
         const [, url, ready, prepare] = screensFor(ids, request)[i];
         await page.goto(url);
         await noTransitions(page);
-        await expect(ready(page)).toBeVisible();
+        // First visit: the page load alone can pass 5 s on a busy machine.
+        await expect(ready(page)).toBeVisible({ timeout: 20_000 });
         if (url.endsWith('/registration')) await prepareRegistration(page, ids.regId, request);
         await prepare?.(page);
         // A prepare may reload (dropping the style tag): inject again.
