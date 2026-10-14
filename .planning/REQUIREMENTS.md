@@ -113,6 +113,25 @@ per control, time penalty for overstaying.
 **REQ-EVT-CMP-011 (v2)** — Patrol / pair / group registration where
 multiple competitors share a card or run together.
 
+**REQ-EVT-CMP-012 (v1)** — Keep the card's main and reserve records for
+start and finish, as read, in the card-read event. Never keep the card
+holder bytes. (ADR-0019)
+
+**REQ-EVT-CMP-013 (v1)** — The time that counts: the first valid finish
+punch of this race; the drawn start time, or in a start-punch class the
+first valid start punch. A finish judge's decision and a recorded
+organiser decision go first. (ADR-0019, TR 4.18.9, TR 4.20.6)
+
+**REQ-EVT-CMP-014 (v1)** — Show every candidate, the time used and why;
+mark conflicting or unreasonable times for review.
+
+**REQ-EVT-CMP-015 (v1)** — The secretariat can pick another candidate
+or enter a time, with a reason, stored as a new event and undoable;
+originals are never changed.
+
+**REQ-EVT-CMP-016 (v1)** — Results, lists and exports use the decided
+time. A new read-out never removes earlier data or a manual decision.
+
 ---
 
 ## User interface

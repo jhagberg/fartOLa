@@ -47,3 +47,4 @@ choice was made, not how it was implemented. Current project state lives in
 | [0016](0016-simple-clear-ui-not-meos-parity.md)                       | Own simple UI, not MeOS's: you always see what will happen and what did                       | accepted               | 2026-10-06 |
 | [0017](0017-fixed-offset-competition-clock.md)                        | One fixed-offset competition clock per competition                                            | accepted               | 2026-10-07 |
 | [0018](0018-one-start-choice-per-class.md)                            | One start choice per class with three answers; Kontroll reads it instead of guessing          | accepted               | 2026-10-12 |
+| [0019](0019-which-start-and-finish-time-counts.md)                    | Which start and finish time counts: the first valid punch, every candidate kept               | proposed               | 2026-10-14 |
