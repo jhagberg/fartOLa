@@ -41,7 +41,9 @@ async function mockNoMatch(page: Page): Promise<void> {
 /** Open the modal for CARD on the form step. */
 export async function openWalkup(page: Page, id: string, card = CARD): Promise<void> {
   await page.goto(`/competition/${id}/readout?walkup=${card}`);
-  await expect(page.getByTestId('walkup-modal')).toBeVisible();
+  // A full page load on the vite dev server: 2-3 s with six workers, over
+  // 5 s on a busy machine.
+  await expect(page.getByTestId('walkup-modal')).toBeVisible({ timeout: 20_000 });
   await page.getByTestId('walkup-not-entered').click();
   await expect(page.getByTestId('walkup-name')).toBeVisible();
 }
