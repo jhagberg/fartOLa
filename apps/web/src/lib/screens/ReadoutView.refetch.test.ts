@@ -251,4 +251,26 @@ describe('ReadoutView — overlapping readout refetches', () => {
     expect(document.body.textContent).toContain('Senaste Löpare');
     expect(failed()).toBeNull();
   });
+
+  it('the first load replays every stored event with one refetch', async () => {
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    mounted = true;
+    const competitorFetches = (): number =>
+      vi.mocked(fetch).mock.calls.filter(([u]) => String(u).endsWith('/c1/competitors')).length;
+    const before = competitorFetches();
+    // The server's hello replay: every stored read, and a binding.
+    const replay = (payload: unknown, seq: number): void =>
+      sockets[0]!.onmessage!({
+        data: JSON.stringify({ type: 'replay', channel: 'readout:c1', payload, seq }),
+      });
+    for (let i = 1; i <= 5; i++) replay({ event_type: 'card_read', card_number: 1000 + i }, i);
+    replay({ event_type: 'card_bound', card_number: 1003 }, 6);
+    await settle();
+    expect(held).toHaveLength(1);
+    expect(competitorFetches() - before).toBe(1);
+    held[0]!(readoutBody('Första Löpare', 1));
+    await settle();
+    expect(held).toHaveLength(1);
+  });
 });

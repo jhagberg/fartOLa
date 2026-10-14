@@ -453,12 +453,12 @@
         newTopByCard.delete(cardNumber);
         if (isNew) triggerCardReadSideEffects(cardNumber);
       },
-      classifyCard: async (cardNumber) => {
+      classifyCard: async (cardNumber, replay) => {
         // Refetch BOTH endpoints so history[0].unmatched + competitor
         // consent_status reflect the post-read state. This is the
         // same Promise.all that the Phase 1 inline `onCardRead` ran.
         const seen = new Set(history.map(historyKey));
-        await Promise.all([refetchReadout(), refetchCompetitors()]);
+        await (replay ? refetchForReplay() : Promise.all([refetchReadout(), refetchCompetitors()]));
         // This read's own row: a later read may already be on top.
         const row = readRow(cardNumber);
         newTopByCard.set(cardNumber, row !== undefined && !seen.has(historyKey(row)));
@@ -469,14 +469,18 @@
       onConnectionChange: (state) => {
         bridgeStatus.set(state);
       },
-      onOtherEnvelope: (eventType, payload) => {
+      onOtherEnvelope: (eventType, payload, replay) => {
         switch (eventType) {
           case 'manual_dnf':
           case 'un_dnf':
           case 'results_update':
-            void refetchReadout();
+            void (replay ? refetchForReplay() : refetchReadout());
             break;
           case 'card_bound':
+            if (replay) {
+              void refetchForReplay();
+              break;
+            }
             void refetchCompetitors();
             void refetchReadout();
             break;
@@ -518,6 +522,17 @@
       extraChannels: [resultsChannel(competitionId)],
     });
     subscription.connect();
+  }
+
+  /** The refetch the first replayed event started. The server sends its
+   * whole replay (the hello after load or a reconnect) before it answers
+   * that refetch, so the other replayed events join it. */
+  let replayRefetch: Promise<unknown> | null = null;
+  function refetchForReplay(): Promise<unknown> {
+    replayRefetch ??= Promise.all([refetchReadout(), refetchCompetitors()]).finally(() => {
+      replayRefetch = null;
+    });
+    return replayRefetch;
   }
 
   /** Refetches overlap; an answer older than the one shown is dropped. */
