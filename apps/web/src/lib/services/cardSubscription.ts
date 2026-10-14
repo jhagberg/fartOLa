@@ -47,7 +47,10 @@ export interface CardSubscriptionOpts {
     classification: CardClassification,
     /** True for the server's replay (hello after load or reconnect), false
      * for a live read. */
-    replay: boolean
+    replay: boolean,
+    /** classifyCard's verdict on whether this read added a row the page did
+     * not have; undefined without one. */
+    isNew?: boolean
   ) => void;
   /** Optional async resolver — given a cardNumber, returns whether
    * this card is unmatched in the current projection plus the hint to
@@ -58,7 +61,7 @@ export interface CardSubscriptionOpts {
     cardNumber: number,
     /** True for a replayed read, as for onCardRead. */
     replay: boolean
-  ) => Promise<{ isUnmatched: boolean; cardHolderHint: string | null }>;
+  ) => Promise<{ isUnmatched: boolean; cardHolderHint: string | null; isNew?: boolean }>;
   /** Connection-state callback. /readout wires to bridgeStatus.set;
    * /registration may use it for a small status pill or ignore. */
   onConnectionChange?: (state: ConnectionState) => void;
@@ -124,12 +127,13 @@ export function createCardSubscription(opts: CardSubscriptionOpts): CardSubscrip
       if (opts.classifyCard) {
         void opts
           .classifyCard(cardNumber, replay)
-          .then(({ isUnmatched, cardHolderHint }) => {
+          .then(({ isUnmatched, cardHolderHint, isNew }) => {
             opts.onCardRead(
               cardNumber,
               cardHolderHint ?? inlineHint,
               isUnmatched ? 'unknown' : 'known',
-              replay
+              replay,
+              isNew
             );
           })
           .catch(() => {
