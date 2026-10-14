@@ -50,6 +50,7 @@
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
+  import Button from '#lib/ui/Button.svelte';
   import { tweaks } from '#lib/stores/tweaks.svelte.ts';
   import { getEventorStatus, refreshEventorStatus } from '#lib/stores/eventorStatus.svelte.ts';
   import { bridgeStatus } from '#lib/stores/bridgeStatus.svelte.ts';
@@ -458,10 +459,11 @@
         // same Promise.all that the Phase 1 inline `onCardRead` ran.
         const seen = new Set(history.map(historyKey));
         await Promise.all([refetchReadout(), refetchCompetitors()]);
-        const top = history[0];
-        newTopByCard.set(cardNumber, top !== undefined && !seen.has(historyKey(top)));
-        const isUnmatched = top !== undefined && top.card_number === cardNumber && top.unmatched;
-        const cardHolderHint = isUnmatched ? top?.card_holder_hint ?? null : null;
+        // This read's own row: a later read may already be on top.
+        const row = readRow(cardNumber);
+        newTopByCard.set(cardNumber, row !== undefined && !seen.has(historyKey(row)));
+        const isUnmatched = row?.unmatched ?? false;
+        const cardHolderHint = isUnmatched ? row?.card_holder_hint ?? null : null;
         return { isUnmatched, cardHolderHint };
       },
       onConnectionChange: (state) => {
@@ -518,9 +520,12 @@
     subscription.connect();
   }
 
-  /** Refetches overlap; only the newest answer may set the readout. */
+  /** Refetches overlap; an answer older than the one shown is dropped. */
   let readoutSeq = 0;
+  let readoutShown = 0;
   let readoutNewest: Promise<void> = Promise.resolve();
+  /** The newest refetch failed: the readout may be behind (ADR-0016 rule 5). */
+  let readoutFailed = $state(false);
 
   /** Resolves once the newest refetch has landed, so a caller that reads
    * `history` afterwards (classifyCard) never sees an older state. */
@@ -537,13 +542,16 @@
   async function fetchReadout(mine: number): Promise<void> {
     try {
       const res = (await getReadout(competitionId)) as ReadoutResponse;
-      if (mine !== readoutSeq) return;
+      if (mine < readoutShown) return;
+      readoutShown = mine;
+      if (mine === readoutSeq) readoutFailed = false;
       history = res.history;
       pendingUnknownCards = res.pending_unknown_cards;
       voidedCodes = res.voided_codes;
       clockOffsetMin = res.clock_offset_min;
     } catch {
-      // Soft fail — WS will catch up.
+      // Keep what is shown; the retry or the next event fetches again.
+      if (mine === readoutSeq) readoutFailed = true;
     }
   }
 
@@ -562,6 +570,12 @@
   // (extracted by 02-02b-PLAN.md task 2). The per-event side effects
   // below (triggerCardReadSideEffects + the consent/hyrbricka logic)
   // stay in-screen because they read screen-local state.
+
+  /** The newest history row of `cardNumber`: the read itself, even when a
+   * later read in the same refetch is on top. */
+  function readRow(cardNumber: number): ReadoutHistoryRow | undefined {
+    return history.find((r) => r.card_number === cardNumber);
+  }
 
   function triggerCardReadSideEffects(cardNumber: number): void {
     // A new read takes over at once; if it replaced a pinned older read, a
@@ -583,15 +597,15 @@
     // Unknown card → walk-up redirect after 600ms (UI-SPEC). Skip if a
     // walk-up overlay is already open for some other card (subsequent-
     // cards behavior: operator picks up from history when ready).
-    const isUnknown = top?.card_number === cardNumber && top.unmatched;
-    if (isUnknown && walkupCard === null) {
+    const row = readRow(cardNumber);
+    if (row?.unmatched && walkupCard === null) {
       if (walkupTimer) clearTimeout(walkupTimer);
       walkupTimer = setTimeout(() => {
         void goto(`/competition/${competitionId}/readout?walkup=${cardNumber}`);
       }, 600);
     }
 
-    if (top) firstReadPrompts(top, cardNumber);
+    if (row) firstReadPrompts(row, cardNumber);
   }
 
   /** The prompts a competitor's read-out raises: consent confirmation
@@ -951,6 +965,16 @@
   <aside class="ro-side">
     <RadioStatusPanel {competitionId} />
 
+    {#if readoutFailed}
+      <div class="refetch-failed" role="alert" data-testid="readout-refetch-failed">
+        <Icon name="alert-triangle" size={16} />
+        <span>{t('ro.refetchFailed')}</span>
+        <Button variant="secondary" size="sm" onclick={() => void refetchReadout()}>
+          {t('common.retry')}
+        </Button>
+      </div>
+    {/if}
+
     <HistoryList
       rows={historyRows}
       activeKey={currentRow ? historyKey(currentRow) : null}
@@ -1137,6 +1161,17 @@
     flex-direction: column;
     gap: 18px;
     min-width: 0;
+  }
+  .refetch-failed {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--dnf);
+    border-radius: var(--radius);
+    background: var(--dnf-soft);
+    font-size: var(--fs-label);
   }
   .controls-head {
     margin-top: 22px;

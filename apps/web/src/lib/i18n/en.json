@@ -379,6 +379,7 @@
   "ro.autoprint.off": "Off",
   "ro.status.done": "{{name}}: {{status}}",
   "ro.pinned": "You are viewing an older read.",
+  "ro.refetchFailed": "Could not fetch the latest reads. What is shown may be out of date.",
   "ro.pinned.latest": "Show latest",
   "ro.pinned.replaced": "New read: {{name}}. The selected read is in the history.",
   "ro.status.failed": "The status was not saved.",
