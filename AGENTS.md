@@ -79,5 +79,6 @@ pnpm e2e        # when you touch the web app or routes
 
 - Architecture decisions: `docs/decisions/` (MADR). A new decision that
   others will build on gets an ADR.
-- Roadmap and plans: `.planning/ROADMAP.md`, `.planning/phases/`.
+- Roadmap (now, next, later, and how we work): `.planning/ROADMAP.md`.
+  Older phase plans are history in `.planning/phases/`.
 - Open work: `.planning/todos/pending/`.
