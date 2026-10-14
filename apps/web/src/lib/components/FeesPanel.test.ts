@@ -223,6 +223,16 @@ describe('FeesPanel', () => {
     expect(rowNote()).toBe('Sparat');
   });
 
+  it('a refused value does not outlive a fresh read of the fees', async () => {
+    change(entry(), 'abc');
+    await settle();
+    expect(rowNote()).toBe('Ange beloppet i hela kronor.');
+    document.querySelector<HTMLButtonElement>('[data-testid="fees-from-eventor"]')!.click();
+    await settle();
+    expect(entry().value).toBe('250');
+    expect(rowNote()).toBe('');
+  });
+
   it('after an Eventor fetch whose reload fails, the fees stay locked until a retry reads them', async () => {
     const fetchButton = document.querySelector<HTMLButtonElement>(
       '[data-testid="fees-from-eventor"]'

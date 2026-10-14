@@ -1164,6 +1164,23 @@ describe('competitions REST CRUD', () => {
     assert.deepEqual(after.json(), { error: 'max_time_locked' });
   });
 
+  test('SOFT TR 4.21.2: GET says whether the max time is locked, also after reset-race', async () => {
+    const id = await createComp();
+    const locked = async () =>
+      (
+        (await ctx.app.inject({ method: 'GET', url: `/api/competitions/${id}` })).json() as {
+          max_time_locked: boolean;
+        }
+      ).max_time_locked;
+    const post = (action: string) =>
+      ctx.app.inject({ method: 'POST', url: `/api/competitions/${id}/${action}` });
+    assert.equal(await locked(), false);
+    await post('start-race');
+    assert.equal(await locked(), true);
+    await post('reset-race');
+    assert.equal(await locked(), true);
+  });
+
   test('SOFT TR 4.21.2: a drawn start time that has passed counts as the first start', async () => {
     const id = await createComp();
     const cls = await ctx.app.inject({

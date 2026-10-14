@@ -30,7 +30,6 @@
     getCompetition,
     listCompetitors,
     listVoidedControls,
-    maxTimeMinutesToSec,
     patchCompetition,
     setCompetitionMaxTime,
     setControlVoided,
@@ -56,6 +55,7 @@
   } from '@fartola/shared-types';
   import { clockHmLabel } from './competition-clock.ts';
   import { validDate } from './wizardDate.ts';
+  import { formatMaxTime, parseMaxTime } from './max-time.ts';
 
   interface Props {
     competitionId: string;
@@ -66,7 +66,7 @@
   let competition: CompetitionDTO | null = $state(null);
   /** Bumped when a class kind is saved, to reload the fees. */
   let feesKey = $state(0);
-  /** Fee saves in flight or waiting: the remount waits for them, or a
+  /** Fee saves in flight or waiting: the reload waits for them, or a
    * waiting edit would go out on the old panel's values. */
   let feesPending = $state(0);
   let feesStale = $state(false);
@@ -135,8 +135,10 @@
   // SOFT TR 4.16.3: the closing time for the PM.
   let closing: ClosingTime | null = $state(null);
   let closingGen = 0;
-  // SOFT TR 4.21.1: one max time for the competition, in whole minutes.
-  let formMaxTimeMin = $state('');
+  // SOFT TR 4.21.1: one max time for the competition, typed as mm:ss.
+  let formMaxTime = $state('');
+  /** SOFT TR 4.21.2, as the edge decides it (GET competition). */
+  let maxLockedByEdge = $state(false);
   let maxInvalid = $state(false);
   /** The edge refused the max time: the first start has passed (TR 4.21.2). */
   let maxRefused = $state(false);
@@ -148,16 +150,8 @@
     $state(null);
   let voidGen = 0;
 
-  /** SOFT TR 4.21.2, as the edge decides it: the race has started or a
-   * start time has passed. A refused save says so too. */
-  const maxLocked = $derived.by(() => {
-    const c: CompetitionDTO | null = competition;
-    return (
-      maxRefused ||
-      (c !== null && c.race_started_at_ms != null) ||
-      competitors.some((r) => r.start_time_ms !== null && r.start_time_ms <= Date.now())
-    );
-  });
+  /** The edge says so, or a save was refused (the page was left open). */
+  const maxLocked = $derived(maxRefused || maxLockedByEdge);
 
   const competitorCountByClass = $derived.by(() => {
     const m = new Map<string, number>();
@@ -228,11 +222,12 @@
       classes = detail.classes;
       courses = detail.courses;
       closing = detail.closing;
+      maxLockedByEdge = detail.max_time_locked;
       competitors = compsRes.competitors;
       voidedCodes = voidedRes.control_codes;
       form = detailsOf(detail.competition);
       details = createSaveQueue(detailsOf(detail.competition), sendDetails);
-      formMaxTimeMin = maxTimeToMinutes(detail.competition.max_time_sec);
+      formMaxTime = formatMaxTime(detail.competition.max_time_sec);
     } catch (e) {
       console.error('competition load failed:', e);
       loadError = t('info.loadError');
@@ -245,11 +240,13 @@
    * waiting in the queue would be overwritten. */
   async function sendDetails(change: Partial<Details>): Promise<void> {
     const { level, distance, ...rest } = change;
-    competition = await patchCompetition(competitionId, {
+    const reply = await patchCompetition(competitionId, {
       ...rest,
       ...(level === undefined ? {} : { level: level === '' ? null : level }),
       ...(distance === undefined ? {} : { distance: distance === '' ? null : distance }),
     });
+    // The reply may predate a max-time save: it does not own that field.
+    competition = { ...reply, max_time_sec: competition?.max_time_sec ?? reply.max_time_sec };
     // A new date can move the clock offset; the server shifts the starts,
     // so the closing time is fetched again (ADR-0017).
     void refreshClosing();
@@ -258,8 +255,11 @@
   async function refreshClosing(): Promise<void> {
     const mine = ++closingGen;
     try {
-      const { closing: next } = await getCompetition(competitionId);
-      if (mine === closingGen) closing = next;
+      const { closing: next, max_time_locked } = await getCompetition(competitionId);
+      if (mine === closingGen) {
+        closing = next;
+        maxLockedByEdge = max_time_locked;
+      }
     } catch (e) {
       console.error('closing time reload failed:', e);
     }
@@ -305,22 +305,19 @@
     }
   }
 
-  function maxTimeToMinutes(sec: number | null | undefined): string {
-    return sec === null || sec === undefined ? '' : String(Math.round(sec / 60));
-  }
-
   /** One save at a time: Spara is off while one is in flight. */
   async function saveMaxTime(): Promise<void> {
     if (maxSave.state === 'saving') return;
-    const sec = maxTimeMinutesToSec(formMaxTimeMin);
-    maxInvalid = sec === undefined;
-    if (sec === undefined) return;
+    const sec = parseMaxTime(formMaxTime);
+    maxInvalid = sec === 'invalid';
+    if (sec === 'invalid') return;
     const mine = ++maxGen;
     await maxSave.run(
       setCompetitionMaxTime(competitionId, sec).then(
         (updated) => {
           if (mine !== maxGen) return;
-          competition = updated;
+          // Only the max time is this save's to set.
+          if (competition !== null) competition = { ...competition, max_time_sec: updated.max_time_sec };
           void refreshClosing();
         },
         (e: unknown) => {
@@ -330,7 +327,7 @@
             (e.body as { error?: string } | null)?.error === 'max_time_locked'
           ) {
             maxRefused = true;
-            formMaxTimeMin = maxTimeToMinutes(competition?.max_time_sec);
+            formMaxTime = formatMaxTime(competition?.max_time_sec);
           }
           throw e;
         }
@@ -500,11 +497,13 @@
           <input
             id="info-max-time"
             type="text"
-            inputmode="numeric"
-            placeholder="150"
-            bind:value={formMaxTimeMin}
+            placeholder="150:00"
+            bind:value={formMaxTime}
             readonly={maxLocked}
-            oninput={() => (maxInvalid = false)}
+            oninput={() => {
+              maxInvalid = false;
+              if (maxSave.state !== 'saving') maxSave.reset();
+            }}
             aria-invalid={maxInvalid ? 'true' : undefined}
             aria-describedby={maxInvalid
               ? 'info-max-time-lock info-max-time-error'
@@ -548,7 +547,7 @@
           onclick={saveMaxTime}
           disabled={maxLocked ||
             maxSave.state === 'saving' ||
-            formMaxTimeMin === maxTimeToMinutes(competition.max_time_sec)}
+            parseMaxTime(formMaxTime) === (competition.max_time_sec ?? null)}
           data-testid="info-max-time-save"
         >
           {t('info.save')}
@@ -578,15 +577,15 @@
       <header class="card-head">
         <h2>{t('fees.heading')}</h2>
       </header>
-      <!-- Remounted after a class kind is saved: the kind decides the youth
-           fee field and the cap shown. Not while a fee save is pending. -->
-      {#key feesKey}
-        <FeesPanel
-          {competitionId}
-          eventorLinked={competition?.eventor_event_id != null}
-          bind:pending={feesPending}
-        />
-      {/key}
+      <!-- Reads the fees again after a class kind is saved (the kind decides
+           the youth fee field and the cap shown), keeping its row notes. Not
+           while a fee save is pending. -->
+      <FeesPanel
+        {competitionId}
+        reloadKey={feesKey}
+        eventorLinked={competition?.eventor_event_id != null}
+        bind:pending={feesPending}
+      />
     </section>
 
     <!-- Courses with ordered control codes -->
