@@ -11,6 +11,7 @@ import { clockToEpochMs, parseTimeOfDay } from '@fartola/shared-types';
 
 import CorrectionsPanel from './CorrectionsPanel.svelte';
 import type { CorrectionsDTO } from '#lib/api/client.ts';
+import { panelProps } from './CorrectionsPanel.testprops.svelte.ts';
 
 const at = (text: string): number => clockToEpochMs('2026-10-03', parseTimeOfDay(text)!, 120);
 
@@ -232,5 +233,31 @@ describe('CorrectionsPanel (mounted)', () => {
     expect((posts[0]!.body as { finish_ms: number }).finish_ms).toBe(
       clockToEpochMs('2026-10-03', parseTimeOfDay('10:28')!, 180)
     );
+  });
+
+  it('a new read of the same runner keeps what the operator is typing', async () => {
+    panelProps.obj = { id: 'r1' };
+    component = mount(CorrectionsPanel, {
+      target: document.body,
+      props: {
+        competitionId: 'c1',
+        get competitorId() {
+          return panelProps.obj.id;
+        },
+        onChanged,
+      },
+    });
+    await settle();
+    type('corr-finish-input', '10:42');
+    type('corr-punch-input', '35');
+    // The readout refetches its competitors after a read: a new object.
+    panelProps.obj = { id: 'r1' };
+    await settle();
+    expect($<HTMLInputElement>('corr-finish-input')!.value).toBe('10:42');
+    expect($<HTMLInputElement>('corr-punch-input')!.value).toBe('35');
+    // Another runner still starts blank.
+    panelProps.obj = { id: 'r2' };
+    await settle();
+    expect($<HTMLInputElement>('corr-finish-input')!.value).toBe('');
   });
 });
