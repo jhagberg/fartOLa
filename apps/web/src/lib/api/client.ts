@@ -157,6 +157,8 @@ export function getCompetition(id: string): Promise<{
   classes: ClassDTO[];
   courses: CourseDTO[];
   closing: ClosingTime;
+  /** SOFT TR 4.21.2: the max time can no longer be changed. */
+  max_time_locked: boolean;
 }> {
   return apiFetch(`/api/competitions/${encodeURIComponent(id)}`);
 }
@@ -200,15 +202,6 @@ export function setCompetitionMaxTime(
     method: 'PATCH',
     body: { max_time_sec: maxTimeSec },
   });
-}
-
-/** Whole minutes from the max-time field → seconds. '' → null (no max
- * time); anything but a positive whole number → undefined (invalid). */
-export function maxTimeMinutesToSec(raw: string): number | null | undefined {
-  const s = raw.trim();
-  if (s === '') return null;
-  if (!/^\d+$/.test(s) || Number(s) === 0) return undefined;
-  return Number(s) * 60;
 }
 
 /** Phase 2.1 — flip the race-phase gate. Idempotent: returns the existing

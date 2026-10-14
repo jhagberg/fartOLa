@@ -74,6 +74,7 @@
     type CompetitionClock,
   } from './competition-clock.ts';
   import { kindStatus } from './class-kinds.ts';
+  import { formatMaxTime, parseMaxTime } from './max-time.ts';
   import {
     DRAW_MODES,
     DRAW_TYPES,
@@ -369,26 +370,6 @@
   function msToHHMMSS(ms: number | null): string {
     if (ms === null || clock === null) return '—';
     return formatClockTime(ms, clock.offsetMin);
-  }
-
-  /** Seconds as the mm:ss the field takes; '' = none. */
-  function formatMaxTime(sec: number | null | undefined): string {
-    if (sec == null) return '';
-    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
-  }
-
-  /** Parse a max time: empty = clear (null), mm:ss or h:mm:ss = seconds
-   * (> 0), anything else is 'invalid' and must never be saved. */
-  function parseMaxTime(raw: string): number | null | 'invalid' {
-    const v = raw.trim();
-    if (v === '') return null;
-    const m = /^(?:(\d{1,3}):([0-5]\d)|(\d{1,3}):([0-5]\d):([0-5]\d))$/.exec(v);
-    if (m === null) return 'invalid';
-    const sec =
-      m[1] !== undefined
-        ? Number(m[1]) * 60 + Number(m[2])
-        : Number(m[3]) * 3600 + Number(m[4]) * 60 + Number(m[5]);
-    return sec > 0 ? sec : 'invalid';
   }
 
   /** A plain message for a failed row save; the raw error goes to the console. */

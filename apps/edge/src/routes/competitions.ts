@@ -202,6 +202,8 @@ export default async function registerCompetitions(app: FastifyInstance): Promis
       courses: courseDTOs,
       // SOFT TR 4.16.3, TR 4.22.1: when the finish closes (for the PM).
       closing: closingTime(app.fartolaDb, id),
+      // SOFT TR 4.21.2: the screen asks instead of copying the rule.
+      max_time_locked: maxTimeLocked(app.fartolaDb, id, Date.now()),
     };
   });
 

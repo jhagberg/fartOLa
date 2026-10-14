@@ -61,16 +61,6 @@ describe('competition max time (SOFT TR 4.21.1)', () => {
     vi.restoreAllMocks();
   });
 
-  it('SOFT TR 4.21.1: the max time is entered in whole minutes for the whole competition', async () => {
-    const { maxTimeMinutesToSec } = await import('../api/client.ts');
-    expect(maxTimeMinutesToSec('150')).toBe(9000);
-    expect(maxTimeMinutesToSec(' 90 ')).toBe(5400);
-    expect(maxTimeMinutesToSec('')).toBeNull();
-    expect(maxTimeMinutesToSec('0')).toBeUndefined();
-    expect(maxTimeMinutesToSec('1:30')).toBeUndefined();
-    expect(maxTimeMinutesToSec('abc')).toBeUndefined();
-  });
-
   it('setCompetitionMaxTime PATCHes /api/competitions/:id/max-time', async () => {
     global.fetch = vi.fn(
       async () => new Response(JSON.stringify({ max_time_sec: 9000 }), { status: 200 })
@@ -419,7 +409,7 @@ describe('fees remount and the locked max time', () => {
   it('SOFT TR 4.21.2: a refused max time says so, shows the stored time and locks the field', async () => {
     const input = document.querySelector<HTMLInputElement>('[data-testid="info-max-time"]')!;
     expect(input.readOnly).toBe(false);
-    input.value = '120';
+    input.value = '120:00';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await settle();
     document.querySelector<HTMLButtonElement>('[data-testid="info-max-time-save"]')!.click();
@@ -431,7 +421,7 @@ describe('fees remount and the locked max time', () => {
       'Låst sedan första start.'
     );
     expect(input.readOnly).toBe(true);
-    expect(input.value).toBe('150');
+    expect(input.value).toBe('150:00');
     expect(
       document.querySelector<HTMLButtonElement>('[data-testid="info-max-time-save"]')!.disabled
     ).toBe(true);
@@ -520,11 +510,11 @@ describe('saves that overlap: max time and the date', () => {
 
   it('Spara for the max time waits while a save is in flight: one request, the newest value', async () => {
     const save = $<HTMLButtonElement>('info-max-time-save');
-    await change('info-max-time', '120', 'input');
+    await change('info-max-time', '120:00', 'input');
     save.click();
     await settle();
     expect(save.disabled).toBe(true);
-    await change('info-max-time', '100', 'input');
+    await change('info-max-time', '100:00', 'input');
     save.click();
     save.click();
     await settle();
@@ -534,7 +524,7 @@ describe('saves that overlap: max time and the date', () => {
     await settle();
     expect($('info-max-time-note').textContent).toContain('Sparat');
     // The typed 100 was not sent: Spara is back for it.
-    expect($<HTMLInputElement>('info-max-time').value).toBe('100');
+    expect($<HTMLInputElement>('info-max-time').value).toBe('100:00');
     expect(save.disabled).toBe(false);
     save.click();
     await settle();
@@ -626,5 +616,204 @@ describe('a failed load', () => {
     flushSync();
     expect(document.querySelector('[data-testid="competition-info"] [role="alert"]')).toBeNull();
     expect(document.querySelector('[data-testid="info-date"]')).not.toBeNull();
+  });
+});
+
+// The Tävlingsinfo batch: the max time as mm:ss like Lottning, its lock read
+// from the edge, one writer of `competition`, and the fee rows keeping their
+// notes over a class-kind save.
+describe('Tävlingsinfo: max time and fees', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  let server: Record<string, unknown>;
+  let lockedByEdge: boolean;
+  let failFeePut: boolean;
+  let feeGets: number;
+  /** Replies to PATCH /competitions/:id wait here (stale snapshot at request time). */
+  let heldDetails: Array<{ release: () => void }>;
+  let maxPatches: Array<Record<string, unknown>>;
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+  };
+  const $ = <T extends Element>(id: string) => document.querySelector<T>(`[data-testid="${id}"]`)!;
+  const type = async (id: string, value: string) => {
+    const el = $<HTMLInputElement>(id);
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+  };
+  const text = (id: string) => $(id).textContent!.trim();
+
+  const mountView = async () => {
+    const { default: CompetitionInfoView } = await import('./CompetitionInfoView.svelte');
+    component = mount(CompetitionInfoView, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+  };
+
+  beforeEach(() => {
+    lockedByEdge = false;
+    failFeePut = false;
+    feeGets = 0;
+    heldDetails = [];
+    maxPatches = [];
+    server = {
+      id: 'c1',
+      name: 'Batch',
+      date: '2026-10-08',
+      receipt_template: 'classic',
+      auto_print: false,
+      timing_format: 'seconds',
+      level: null,
+      distance: null,
+      max_time_sec: 9000,
+      race_started_at_ms: null,
+      clock_offset_min: 120,
+    };
+    const h21 = {
+      class_id: 'h21',
+      name: 'H21',
+      class_kind: 'senior',
+      age_class: 21,
+      class_kind_source: 'name',
+      suggestion: { class_kind: 'senior', age_class: 21, source: 'name' },
+    };
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        if (url.endsWith('/max-time')) {
+          maxPatches.push(body);
+          server = { ...server, ...body };
+          return json(server);
+        }
+        const snapshot = { ...server, ...body };
+        server = snapshot;
+        await new Promise<void>((r) => heldDetails.push({ release: r }));
+        return json(snapshot);
+      }
+      if (url.endsWith('/fees')) {
+        if (init?.method === 'PUT') return failFeePut ? json({ error: 'x' }, 500) : json({});
+        feeGets++;
+        return json({
+          date: '2026-10-08',
+          card_fee: null,
+          classes: [
+            {
+              class_id: 'h21',
+              name: 'H21',
+              class_kind: 'senior',
+              entry_fee: 180,
+              youth_entry_fee: null,
+              late_fee_pct: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/classes/kinds')) {
+        if (init?.method === 'PUT') return json({ updated: 1 });
+        return json({ eventor: 'not_linked', items: [h21] });
+      }
+      if (url.endsWith('/competitors')) return json({ competitors: [] });
+      if (url.endsWith('/voided-controls')) return json({ control_codes: [] });
+      return json({
+        competition: server,
+        classes: [{ id: 'h21', name: 'H21', short_name: null }],
+        courses: [],
+        closing: { last_start_ms: null, closing_time_ms: null },
+        max_time_locked: lockedByEdge,
+      });
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('SOFT TR 4.21.2: the field is locked when the edge says so (after a race reset, no start time passed here)', async () => {
+    lockedByEdge = true;
+    await mountView();
+    expect($<HTMLInputElement>('info-max-time').readOnly).toBe(true);
+    expect(text('info-max-time-lock')).toBe('Låst sedan första start.');
+  });
+
+  it('the max time is typed as mm:ss, as on Lottning: a stored value round-trips and minutes alone are refused', async () => {
+    await mountView();
+    const save = $<HTMLButtonElement>('info-max-time-save');
+    expect($<HTMLInputElement>('info-max-time').value).toBe('150:00');
+    // Unchanged: nothing to save, whatever way it is written.
+    expect(save.disabled).toBe(true);
+    await type('info-max-time', '2:30:00');
+    expect(save.disabled).toBe(true);
+    await type('info-max-time', '90');
+    save.click();
+    await settle();
+    expect(maxPatches).toEqual([]);
+    expect(document.body.textContent).toContain('Ogiltig maxtid');
+    await type('info-max-time', '1:30');
+    save.click();
+    await settle();
+    expect(maxPatches).toEqual([{ max_time_sec: 90 }]);
+    expect($<HTMLInputElement>('info-max-time').value).toBe('1:30');
+    expect(save.disabled).toBe(true);
+  });
+
+  it('a details reply that lands after a max-time save does not bring the old max time back', async () => {
+    await mountView();
+    const name = $<HTMLInputElement>('info-name');
+    name.value = 'Nytt namn';
+    name.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await type('info-max-time', '100:00');
+    $<HTMLButtonElement>('info-max-time-save').click();
+    await settle();
+    expect(maxPatches).toEqual([{ max_time_sec: 6000 }]);
+    // The details reply was made before the max time changed.
+    heldDetails[0]!.release();
+    await settle();
+    expect($<HTMLInputElement>('info-max-time').value).toBe('100:00');
+    expect($<HTMLButtonElement>('info-max-time-save').disabled).toBe(true);
+  });
+
+  it('typing again clears the max time "Sparat" note', async () => {
+    await mountView();
+    await type('info-max-time', '100:00');
+    $<HTMLButtonElement>('info-max-time-save').click();
+    await settle();
+    expect(text('info-max-time-note')).toContain('Sparat');
+    await type('info-max-time', '100:0');
+    expect(text('info-max-time-note')).not.toContain('Sparat');
+  });
+
+  it("a class-kind save keeps the fee rows' failed-save note and reloads the fees", async () => {
+    await mountView();
+    failFeePut = true;
+    const fee = document.querySelector<HTMLInputElement>('input[aria-label^="Avgift för H21"]')!;
+    fee.value = '200';
+    fee.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(text('fees-row-note')).toBe('Det gick inte att spara avgiften.');
+    expect(feeGets).toBe(1);
+    const kind = document.querySelector<HTMLSelectElement>(
+      '[data-class-id="h21"] [data-testid="class-kind-select"]'
+    )!;
+    kind.value = 'elit';
+    kind.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(feeGets).toBe(2);
+    expect(text('fees-row-note')).toBe('Det gick inte att spara avgiften.');
   });
 });

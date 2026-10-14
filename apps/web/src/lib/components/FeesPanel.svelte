@@ -13,6 +13,7 @@
   Logic lives in screens/fees.ts.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import { feesFromEventor, getFees, putFees, type FeesResponse } from '#lib/api/client.ts';
   import Button from '#lib/ui/Button.svelte';
@@ -33,11 +34,14 @@
     /** The competition is linked to an Eventor event. */
     eventorLinked: boolean;
     /** Fee saves in flight or waiting (bound by the parent, which must not
-     * remount the panel under them). */
+     * change `reloadKey` under them). */
     pending?: number;
+    /** Changed by the parent when the fees must be read again (a class kind
+     * was saved); the rows keep their notes. */
+    reloadKey?: number;
   }
 
-  let { competitionId, eventorLinked, pending = $bindable(0) }: Props = $props();
+  let { competitionId, eventorLinked, pending = $bindable(0), reloadKey = 0 }: Props = $props();
 
   let data = $state<FeesResponse | null>(null);
   let error = $state<string | null>(null);
@@ -68,6 +72,10 @@
     failed = { ...failed, [row]: on ? [...rest, field] : rest };
   }
 
+  /** Bumped with every fresh read, so the inputs show the fresh values and
+   * not a value typed and refused. */
+  let readGen = $state(0);
+
   /** The first read failed: nothing to show, a retry reads it again. */
   let loadFailed = $state(false);
 
@@ -84,6 +92,13 @@
   $effect(() => {
     void competitionId;
     void load();
+  });
+
+  let seenKey = untrack(() => reloadKey);
+  $effect(() => {
+    if (reloadKey === seenKey) return;
+    seenKey = reloadKey;
+    void reload(true);
   });
 
   function noteFor(row: string): ReturnType<typeof createSaveState> {
@@ -196,7 +211,7 @@
 
   /** Stay disabled until the fees are read again: the next edit builds its
    * row on them, and an old row would save the old fees back. */
-  async function reload(): Promise<void> {
+  async function reload(keepNotes = false): Promise<void> {
     busy = true;
     reloadFailed = false;
     try {
@@ -207,7 +222,9 @@
       return;
     }
     queues.clear();
-    failed = {};
+    invalid = {};
+    if (!keepNotes) failed = {};
+    readGen++;
     busy = false;
   }
 
@@ -228,6 +245,7 @@
 <div class="fees" data-testid="fees-panel">
   <p class="hint">{t('fees.hint')}</p>
   {#if data !== null}
+    {#key readGen}
     <div class="top">
       <label class="field">
         <span>{t('fees.cardFee')}</span>
@@ -254,6 +272,7 @@
         </Button>
       {/if}
     </div>
+    {/key}
   {/if}
   {#if error}
     <p class="err" role="alert" data-testid="fees-error">{error}</p>
@@ -271,6 +290,7 @@
   {/if}
 
   {#if data !== null && data.classes.length > 0}
+    {#key readGen}
     <div class="table-wrap">
       <table class="fees-table">
         <thead>
@@ -333,6 +353,7 @@
         </tbody>
       </table>
     </div>
+    {/key}
   {/if}
 </div>
 
