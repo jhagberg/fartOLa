@@ -109,6 +109,18 @@ export function buildCardReadPayload(card: BaseSiCard): CardReadPayload {
         ? null
         : snakeCaseKeys(raceResult.cardHolder as Record<string, unknown>),
   };
+  const startFirst = toHalfDayClock(
+    raceResult.startFirstTime,
+    raceResult.startFirstCode,
+    raceResult.startFirstSubsec256
+  );
+  if (startFirst) payload.start_first = startFirst;
+  const finishFirst = toHalfDayClock(
+    raceResult.finishFirstTime,
+    raceResult.finishFirstCode,
+    raceResult.finishFirstSubsec256
+  );
+  if (finishFirst) payload.finish_first = finishFirst;
   if (card.cardSeriesByte !== undefined) payload.card_series_byte = card.cardSeriesByte;
   if (c.uid !== undefined) payload.uid = c.uid;
   return payload;

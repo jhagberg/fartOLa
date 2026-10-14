@@ -22,6 +22,15 @@ export interface IRaceResultData {
   /** Subsecond of the start/finish time in 1/256 s (0-255): PTD bit 7 set, CN = TSS. Absent: no fraction. SI6 and newer. */
   startSubsec256?: number;
   finishSubsec256?: number;
+  /** SIAC reserve records (block 3): the FIRST start/finish punch after a clear;
+   * the main record is the last. Absent: no reserve record. Code absent when the
+   * reserve record has a subsecond (PTD bit 7: its code is unknown). */
+  startFirstTime?: SiTimestamp;
+  finishFirstTime?: SiTimestamp;
+  startFirstCode?: number;
+  finishFirstCode?: number;
+  startFirstSubsec256?: number;
+  finishFirstSubsec256?: number;
   /** SIAC block 3: battery voltage in mV, hardware and software version "major.minor". */
   batteryMillivolts?: number;
   hardwareVersion?: string;

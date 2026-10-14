@@ -36,9 +36,19 @@ import * as path from 'node:path';
 import * as url from 'node:url';
 import { EventEmitter } from 'node:events';
 
-import { SiMainStation, NdjsonEmitter, BaseSiCard, SiCard10, render } from '@fartola/sportident';
+import {
+  SiMainStation,
+  NdjsonEmitter,
+  BaseSiCard,
+  SiCard10,
+  SIAC,
+  render,
+} from '@fartola/sportident';
 import type { ISerialTransport } from '@fartola/sportident';
 
+import type { Event, Competitor, Class } from '../db/types.ts';
+import { reduce, type CourseWithControlCodes } from '../projection/reduce.ts';
+import { localToEpochMs } from '../time/competitionClock.ts';
 import { buildCardReadPayload } from './cardReadPayload.ts';
 
 // Resolve the fixture directory relative to THIS test file (mirror the
@@ -336,5 +346,129 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     assert.equal(payload.finish?.subsec_256, 0);
     assert.ok(payload.check);
     assert.equal('subsec_256' in payload.check, false);
+  });
+});
+
+// SIAC reserve records (block 3): the first start/finish punch after a clear.
+// Observation only; the projection must not use them.
+describe('SIAC reserve records in the card_read payload', () => {
+  // 0x1d8 start_r, 0x1dc finish_r; [ptd, cn, th, tl]; times 10:00:00 (36000 =
+  // 0x8ca0) and 10:10:00 (36600 = 0x8ef8) as the main start, finish.
+  function siacImage(withReserve: boolean): number[] {
+    const mem = new Array<number>(0x400).fill(0xee);
+    const holder = ';;;;;;;;;;;';
+    for (let i = 0; i < holder.length; i++) mem[0x20 + i] = holder.charCodeAt(i);
+    mem[0x16] = 0;
+    [mem[0x1c2], mem[0x1c3]] = [4, 0];
+    mem.splice(0x0c, 4, 0x00, 1, 0x8c, 0xa0);
+    mem.splice(0x10, 4, 0x00, 2, 0x8e, 0xf8);
+    mem[0xa5] = 1;
+    mem[0xa9] = 2;
+    // reserve: start 09:59:50, finish 10:05:00 (36300 = 0x8dcc), finish with a subsecond
+    if (withReserve) {
+      mem.splice(0x1d8, 4, 0x00, 1, 0x8c, 0x96);
+      mem.splice(0x1dc, 4, 0x80, 99, 0x8d, 0xcc);
+    }
+    return mem;
+  }
+  const decode = (withReserve: boolean): SIAC => {
+    const card = new SIAC(8_500_001);
+    card._decodeFromStorage(siacImage(withReserve));
+    return card;
+  };
+
+  test('start_first / finish_first reach the payload and the NDJSON line alike', () => {
+    const card = decode(true);
+    const payload = buildCardReadPayload(card);
+    assert.deepEqual(payload.start_first, {
+      seconds_in_half_day: 35_990,
+      half_day: 0,
+      weekday: null,
+      code: 1,
+    });
+    // PTD bit 7: CN is the subsecond and the code is unknown
+    assert.deepEqual(payload.finish_first, {
+      seconds_in_half_day: 36_300,
+      half_day: 0,
+      weekday: null,
+      subsec_256: 99,
+    });
+    assert.equal(payload.start?.seconds_in_half_day, 36_000);
+    const lines: string[] = [];
+    new NdjsonEmitter({ device_path: '/dev/x', out: (l) => lines.push(l) }).card_read({ card });
+    const nd = JSON.parse(lines[0]!) as Record<string, unknown>;
+    assert.deepEqual(nd.start_first, payload.start_first);
+    assert.deepEqual(nd.finish_first, payload.finish_first);
+  });
+
+  test('no reserve record: the keys are absent', () => {
+    const payload = buildCardReadPayload(decode(false));
+    assert.equal('start_first' in payload, false);
+    assert.equal('finish_first' in payload, false);
+  });
+
+  test('the projection gives identical results with and without the new fields', () => {
+    const DAY = '2026-10-03';
+    const mk = (withReserve: boolean): Event =>
+      ({
+        nodeId: 'n',
+        localSeq: 1,
+        competitionId: 'comp-1',
+        eventType: 'card_read',
+        eventTimeMs: localToEpochMs(DAY, 37_000),
+        recordedAtMs: localToEpochMs(DAY, 37_000),
+        payload: buildCardReadPayload(decode(withReserve)),
+      }) as Event;
+    const withFields = mk(true);
+    const without = mk(false);
+    assert.ok((withFields.payload as { finish_first?: unknown }).finish_first);
+    assert.equal((without.payload as { finish_first?: unknown }).finish_first, undefined);
+    const run = (e: Event) =>
+      reduce({
+        competition_id: 'comp-1',
+        clock_offset_min: 120,
+        events: [e],
+        competitors: [
+          {
+            id: 'a',
+            competitionId: 'comp-1',
+            name: 'A',
+            club: null,
+            classId: 'cls',
+            cardNumber: (withFields.payload as { card_number: number }).card_number,
+            consentAtMs: null,
+            consentStatus: 'explicit',
+            scrubbedAtMs: null,
+            source: 'walkup',
+            startTimeMs: null,
+          } as Competitor,
+        ],
+        classes: [
+          {
+            id: 'cls',
+            competitionId: 'comp-1',
+            name: 'H',
+            shortName: null,
+            firstStartMs: null,
+            startIntervalSec: null,
+            maxTimeSec: null,
+          } as Class,
+        ],
+        courses: [
+          {
+            id: 'c',
+            competitionId: 'comp-1',
+            name: 'C',
+            classId: 'cls',
+            lengthM: null,
+            climbM: null,
+            control_codes: [],
+          } as CourseWithControlCodes,
+        ],
+      });
+    const a = run(withFields);
+    const b = run(without);
+    assert.equal(a.competitors.get('a')?.elapsed_time_ms, 600_000);
+    assert.deepEqual(a, b);
   });
 });
