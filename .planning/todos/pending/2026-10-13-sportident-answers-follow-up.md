@@ -92,9 +92,13 @@ Acceptance cases (from a review of ADR-0019, 2026-10-14):
    finish, total, result list and export agree.
 8. A card with owner text programmed: the stored event holds none of it,
    as bytes or as text.
-9. Old events without reserve data keep today's behaviour, also when a
-   later read adds reserve data.
-10. The replay of both days and an explicit decision before the new
+9. An old read without reserve data keeps today's behaviour while it is
+   the active read. A later read with reserve data takes over: old read
+   30:05, new read first finish 30:00 gives 30:00, marked for review
+   because a re-read changed the result.
+10. A finish time entered by hand for a runner without a card: time,
+    source and reason are enough; no read or record is required.
+11. The replay of both days and an explicit decision before the new
     default is used for results. The rule matrix lint does not replace
     the behaviour tests.
 
