@@ -340,7 +340,15 @@
   async function onKindSaved(): Promise<void> {
     refusal = null;
     done = t('lottning.kindSaved');
-    classes = (await listClasses(competitionId)).classes;
+    const fresh = (await listClasses(competitionId)).classes;
+    // The settings saved here are not the reload's to set: it may have been
+    // read before a save went through.
+    classes = fresh.map((c) => {
+      const mine = classes.find((o) => o.id === c.id);
+      return mine === undefined
+        ? c
+        : { ...c, start_method: mine.start_method, no_timing: mine.no_timing };
+    });
     // The start-order rule reads the confirmed kind (SOFT TR 7.4.2).
     await loadStartList();
   }
@@ -902,7 +910,9 @@
         </Select>
       </Field>
 
-      <!-- How the class starts: one choice, three answers (ADR-0018) -->
+      <!-- How the class starts: one choice, three answers (ADR-0018). Keyed on
+           the class: the DOM keeps a clicked choice, so it must not carry over. -->
+      {#key selectedClassId}
       <fieldset
         class="radio-group"
         bind:this={startGroupEl}
@@ -959,6 +969,7 @@
           {/if}
         </div>
       </fieldset>
+      {/key}
       <div class="max-time-state" data-testid="lottning-start-method-note">
         <SavedNote state={startSave.state} error={startSave.error} />
       </div>
@@ -1134,6 +1145,7 @@
     </Field>
 
     <!-- Class without timing (02.1-14 Task 9) -->
+    {#key selectedClassId}
     <label class="check-row">
       <input
         type="checkbox"
@@ -1144,6 +1156,7 @@
       />
       <span>{t('lottning.noTiming')}</span>
     </label>
+    {/key}
     <div class="max-time-state" data-testid="lottning-no-timing-note">
       <SavedNote state={noTimingSave.state} error={noTimingSave.error} />
     </div>
