@@ -6,6 +6,7 @@
 
 import { test, expect } from '@playwright/test';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
+import { pinActive } from './helpers/settings.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -63,6 +64,8 @@ test('choosing a competition in the drawer closes it on the new page', async ({
 }) => {
   await seedCompetition(request, { controls: 3 });
   const { competitionId: current } = await seedCompetition(request, { controls: 3 });
+  // Another worker's seed can change the server's active competition.
+  await pinActive(page, current);
   await page.setViewportSize({ width: 820, height: 1180 });
   await page.goto('/');
   await page.getByTestId('topbar-menu').click();
