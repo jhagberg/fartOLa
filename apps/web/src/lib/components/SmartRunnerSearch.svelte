@@ -21,7 +21,7 @@
   Backed by /api/eventor/lookup (FTS5). 200ms debounce.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import {
     searchEventorCompetitors,
@@ -220,8 +220,11 @@
   // (e.g. operator scrolling through SmartClubSearch options).
   $effect(() => {
     void clubId;
-    if (lastQuery.length > 0 && !/^\d+$/.test(lastQuery)) {
-      scheduleFetch(lastQuery);
+    // untrack: following lastQuery too refetched (and reopened the list)
+    // after every fetch.
+    const q = untrack(() => lastQuery);
+    if (q.length > 0 && !/^\d+$/.test(q)) {
+      scheduleFetch(q);
     }
   });
 
