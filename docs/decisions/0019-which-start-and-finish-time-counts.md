@@ -111,16 +111,24 @@ decided:
 - **Shown:** where candidates differ, the read-out and "Ändra" show
   every candidate, the one used and why. Conflicts are marked for
   review.
-- **Changed:** the secretariat picks another candidate or enters a time,
-  with a reason. That is a new event that names the read and the record
-  it chose (not only a time value), records the node and event code
-  (ADR-0010), and is undone by a further event.
+- **Changed:** the secretariat picks another candidate or enters a time.
+  Picking a candidate names the read and the record chosen, with a
+  reason. Entering a time (no card, a time at the line, a station's
+  backup) gives the time, its source and a reason; it needs no card
+  record. Either is a new event that records the node and event code
+  (ADR-0010) and is undone by a further event.
 - **One result:** results, lists and every export use the decided time
   and, where one is set, the decided finish order.
 - **Re-reads and rebuilds:** a new read-out adds data and never removes
   earlier data or a manual decision. A decision stands until it is
   withdrawn; after that the automatic choice comes from the right active
   read. The same holds after a projection rebuild and a race reset.
+- **Which read is active:** the latest read of the runner's card for
+  this race, as today. Its candidates decide; an older read's
+  candidates do not mix in. Example, once the default has changed: an
+  old read without reserve data gives 30:05, a new read shows a first
+  finish of 30:00, so the result is 30:00, and because a re-read changed
+  the result it is marked for review.
 
 ### Consequences
 
@@ -132,8 +140,9 @@ decided:
   the maintainer's decision. Until then the candidates are reported and
   shown, and the result is unchanged.
 - Bad, because reads stored before the reserve records were kept have no
-  first punch; they keep today's behaviour, also when a later read adds
-  reserve data.
+  first punch: while such a read is the active one, the main record
+  counts as today. A later read with reserve data takes over as the
+  active read.
 - Neutral: "first after a clear" is not always "first of this race" (a
   test punch, a training lap without a clear); that is why the choice is
   shown and changeable.

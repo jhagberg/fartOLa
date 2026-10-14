@@ -133,8 +133,10 @@ unread reserve record shows as "first punch unknown". Conflicts are
 marked for review.
 
 **REQ-EVT-CMP-015 (v1)** — The secretariat can pick another candidate
-or enter a time, with a reason, stored as a new event that names the
-read and the record chosen, and undoable; originals are never changed.
+or enter a time, stored as a new event and undoable; originals are
+never changed. Picking a candidate names the read and the record, with a
+reason; entering a time gives the time, its source and a reason, and
+needs no card record.
 A finish judge's order (TR 4.20.8, dead heats included) is a separate
 decision and never made by altering times.
 
