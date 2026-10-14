@@ -132,5 +132,23 @@ start and finish units.
 - The header of `ModernSiCard.ts` still says "PTD bits 6-7 are code bits
   8-9"; the code uses bit 6 only. Correct the comment.
 
+## 4. Bench test with a real station and SIAC
+
+What we know about the reserve records and the battery measurement on
+read comes from documents, SPORTident's library on our own card images,
+and simulated stations. One read with real hardware settles the rest.
+
+- Equipment: a BSM8 in readout mode (extended protocol, handshake) and
+  Jonas's own SIAC, with start and finish each punched twice after a
+  clear (about 30 s apart), so reserve and main records differ.
+- Record the serial traffic of a read by a program that measures the
+  battery (it sends `EA` to page 0x7E, data `05 05 05 05`, the same
+  bytes as SPORTident's library with battery measurement on, and MeOS).
+  Wanted: the station's exact reply, and that block 3 is read after it.
+- Read the same card with `fartola-readout --pretty`: `start_first` and
+  `finish_first` match the first punches, the main records the last.
+- Keep the capture with the other private captures; only the findings
+  (and a synthetic fixture built from them) go into the repo.
+
 Not documented by SPORTident, so nothing to build: a subsecond for
 ordinary control punches, and what the code bytes hold after a clear.
