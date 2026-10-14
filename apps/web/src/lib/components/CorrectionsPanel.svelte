@@ -43,6 +43,10 @@
 
   let { competitionId, competitorId, onChanged }: Props = $props();
 
+  // The readout rebuilds its competitor object on every read, which makes a
+  // new getter for this prop; $derived keeps the reset below to a new runner.
+  const runnerId = $derived(competitorId);
+
   let data = $state<CorrectionsDTO | null>(null);
   let clock = $state<CompetitionClock | null>(null);
   let loadError = $state<string | null>(null);
@@ -67,7 +71,7 @@
     const mine = ++generation;
     try {
       const [res, c] = await Promise.all([
-        getCorrections(competitionId, competitorId),
+        getCorrections(competitionId, runnerId),
         fetchCompetitionClock(competitionId),
       ]);
       if (mine !== generation) return;
@@ -82,7 +86,7 @@
 
   $effect(() => {
     void competitionId;
-    void competitorId;
+    void runnerId;
     finishText = '';
     finishReason = t('corr.finish.reasonDefault');
     finishError = null;
