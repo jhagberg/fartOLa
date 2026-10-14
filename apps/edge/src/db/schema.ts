@@ -124,6 +124,10 @@ export type EventPayload =
       finish: HalfDayClock | null;
       check: HalfDayClock | null;
       clear: HalfDayClock | null;
+      /** SIAC reserve records: the first start/finish punch after a clear.
+       * Observation only, not used by the projection. */
+      start_first?: HalfDayClock;
+      finish_first?: HalfDayClock;
       punch_count: number;
       punches: NdjsonPunch[];
       card_holder: Record<string, unknown> | null;

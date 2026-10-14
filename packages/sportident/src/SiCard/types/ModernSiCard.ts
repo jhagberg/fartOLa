@@ -25,6 +25,9 @@
 //     start or finish record (if the card holder step did not read it), and the
 //     start/finish code is taken from there, also without PTD bit 7 (SPORTident
 //     (Thomas, 2026-10-09 and 2026-10-13)).
+//   - SIAC reserve records start_r / finish_r (block 3): the first start/finish
+//     punch after a clear; the main record holds the last (SPORTident (Thomas,
+//     2026-10-13); SPORTident card data structure (provided on request)).
 //   - Block 3 (page 3) is read on SIAC (static readsBlock3) for battery voltage and
 //     hardware/software version.
 // See packages/sportident/NOTICE.md for cumulative attribution.
@@ -32,6 +35,7 @@
 import { proto } from '../../constants.ts';
 import {
   SiTime,
+  type SiTimestamp,
   arr2cardNumber,
   siPunchCode,
   siRecordCode,
@@ -132,6 +136,12 @@ export interface IModernSiCardStorageFields extends IBaseSiCardStorageFields {
   softwareVersion?: string;
   startCodeBlock1?: number;
   finishCodeBlock1?: number;
+  startFirstTime?: SiTimestamp;
+  finishFirstTime?: SiTimestamp;
+  startFirstCode?: number;
+  finishFirstCode?: number;
+  startFirstSubsec256?: number;
+  finishFirstSubsec256?: number;
 }
 
 /** "major.minor" from two block-3 bytes; undefined while erased (0xEE). */
@@ -181,6 +191,18 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   cardHolder: new SiModified(new SiArray(0x80, (i) => new SiInt([[0x20 + i]])), (charCodes) =>
     parseCardHolder(charCodes)
   ),
+  // Reserve records (block 3, SIAC only): start_r at page 0x76 = byte 0x1d8,
+  // finish_r at page 0x77 = byte 0x1dc; same 4-byte layout as the main
+  // start/finish records (SPORTident card data structure, provided on
+  // request). Written by the first punch after a clear. A reserve record with
+  // PTD bit 7 has a subsecond in CN and its code is unknown: block 1 holds the
+  // code of the MAIN record only (open question to SPORTident, 2026-10-13).
+  startFirstTime: new SiTime([[0x1d8 + 3], [0x1d8 + 2]], 0x1d8),
+  finishFirstTime: new SiTime([[0x1dc + 3], [0x1dc + 2]], 0x1dc),
+  startFirstCode: siRecordCode(0x1d8),
+  finishFirstCode: siRecordCode(0x1dc),
+  startFirstSubsec256: siSubsec256(0x1d8),
+  finishFirstSubsec256: siSubsec256(0x1dc),
   // Block 3 (SIAC only, see readsBlock3). Battery: 1.9 V + n × 0.09 V, over
   // 5 V means no valid value (MeOS SportIdent.cpp:1490-1497; same byte and
   // formula in SPORTident.Communication 2.59.0, black-box byte sweep of siac-jonas-001, 2026-10-08).
@@ -376,6 +398,17 @@ export class ModernSiCard extends BaseSiCard {
     const finishSubsec = this.storage.get('finishSubsec256')?.value;
     if (finishTime != null && finishSubsec !== undefined)
       this.raceResult.finishSubsec256 = finishSubsec;
+    if ((this.constructor as typeof ModernSiCard).readsBlock3) {
+      for (const name of ['start', 'finish'] as const) {
+        const time = this.storage.get(`${name}FirstTime`)?.value;
+        if (time == null) continue; // missing or erased reserve: absent, never "same as main"
+        this.raceResult[`${name}FirstTime`] = time;
+        const code = this.storage.get(`${name}FirstCode`)?.value;
+        if (code !== undefined) this.raceResult[`${name}FirstCode`] = code;
+        const subsec = this.storage.get(`${name}FirstSubsec256`)?.value;
+        if (subsec !== undefined) this.raceResult[`${name}FirstSubsec256`] = subsec;
+      }
+    }
     const checkTime = this.storage.get('checkTime')?.value;
     if (checkTime !== undefined) this.raceResult.checkTime = checkTime;
     const checkCode = this.storage.get('checkCode')?.value;
