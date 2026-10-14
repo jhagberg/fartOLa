@@ -55,7 +55,9 @@ export interface CardSubscriptionOpts {
    * silent-drop-when-modal-open semantics keep working. If omitted,
    * classification is always 'unclassified'. */
   classifyCard?: (
-    cardNumber: number
+    cardNumber: number,
+    /** True for a replayed read, as for onCardRead. */
+    replay: boolean
   ) => Promise<{ isUnmatched: boolean; cardHolderHint: string | null }>;
   /** Connection-state callback. /readout wires to bridgeStatus.set;
    * /registration may use it for a small status pill or ignore. */
@@ -66,7 +68,7 @@ export interface CardSubscriptionOpts {
    * supplies one that refetches its REST projections; /registration
    * usually ignores. The handler receives the FLAT inner envelope —
    * replay wrappers are already unwrapped. */
-  onOtherEnvelope?: (eventType: string, payload: unknown) => void;
+  onOtherEnvelope?: (eventType: string, payload: unknown, replay: boolean) => void;
   /** Optional extra channels to pre-subscribe beyond readoutChannel.
    * /readout subscribes to resultsChannel as well. */
   extraChannels?: ChannelName[];
@@ -121,7 +123,7 @@ export function createCardSubscription(opts: CardSubscriptionOpts): CardSubscrip
           : null;
       if (opts.classifyCard) {
         void opts
-          .classifyCard(cardNumber)
+          .classifyCard(cardNumber, replay)
           .then(({ isUnmatched, cardHolderHint }) => {
             opts.onCardRead(
               cardNumber,
@@ -147,7 +149,7 @@ export function createCardSubscription(opts: CardSubscriptionOpts): CardSubscrip
       }
       return;
     }
-    opts.onOtherEnvelope?.(eventType, payload);
+    opts.onOtherEnvelope?.(eventType, payload, replay);
   }
 
   return {
