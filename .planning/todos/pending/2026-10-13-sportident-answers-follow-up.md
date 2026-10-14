@@ -142,6 +142,20 @@ and simulated stations. One read with real hardware settles the rest.
   Wanted: the station's exact reply, and that block 3 is read after it.
 - Read the same card with `fartola-readout --pretty`: `start_first` and
   `finish_first` match the first punches, the main records the last.
+- The battery measurement changes the voltage byte (0x1C7) on the card;
+  a simulated station can only return a fixed value.
+- Real block 3 values on a real card: the battery date, the voltage, and
+  the reference voltage and low-battery indicator (RBAT, LBAT; positions
+  in SPORTident's data structure document, provided on request).
+- What a new and a weak battery give for the voltage byte: the readings
+  above, or a question to SPORTident. Our decoder accepts a wider range
+  than the library seems to, so the upper limit is open.
+- Reserve records after a double start and finish punch, and after a
+  clear, look as the simulated cards assume.
+- In autosend mode the station pushes blocks 0 and 4-7 only (PC
+  Programmer's Guide 5), so a reader in that mode never sees the reserve
+  records in block 3. Confirm on the real station.
+- What a clear after the start punch does to the card memory.
 - Keep the capture with the other private captures; only the findings
   (and a synthetic fixture built from them) go into the repo.
 
