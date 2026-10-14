@@ -50,7 +50,8 @@ export async function seedRunners(request: APIRequestContext): Promise<RunnersSe
 
 export async function openRunners(page: Page, id: string): Promise<void> {
   await page.goto(`/competition/${id}/runners`);
-  await expect(page.getByTestId('runners-view')).toBeVisible();
+  // A full page load: over 5 s on a busy machine.
+  await expect(page.getByTestId('runners-view')).toBeVisible({ timeout: 20_000 });
   // The first visit compiles the route and runs five requests.
   await expect(page.getByTestId('runners-row').first()).toBeVisible({ timeout: 20_000 });
 }
