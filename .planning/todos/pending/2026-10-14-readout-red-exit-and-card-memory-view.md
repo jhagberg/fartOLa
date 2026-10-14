@@ -1,6 +1,6 @@
 ---
 created: 2026-10-14T12:30:00+02:00
-title: Readout - a "red exit" for not-OK cards, and a full card memory view
+title: Readout - a "red exit" for not-OK cards, a full card memory view, and missing punches from station backup
 area: readout
 files:
   - apps/edge/src/si/cardReadPayload.ts
@@ -57,6 +57,29 @@ the result disagree.
   (see its header). Decide here whether to drop or redact it too.
 - Layout facts come from SPORTident's data structure document and
   Thomas's answers; cite them, never copy the document.
+
+Reference: the OLA guide (page 32) points users to SPORTident's
+SI-Config+ for troubleshooting. Its card read shows every field of the
+card, the SIAC reserve fields included, which OLA's own raw-data view
+does not. That is the level to aim for. A lab with SI-Config+ (observe
+only) would show how it lays the fields out.
+
+## 3. Find a missing punch in a station's backup
+
+The same page of the OLA guide describes the other half of that
+troubleshooting: read a control's backup memory, look for the runner's
+card, and if a valid punch is there, add it to the runner's punches.
+
+- `packages/sportident/src/SiStation/readBackup.ts` already reads backup
+  memory; today it is used only for the check unit's card numbers
+  (`routes/checkunit.ts`, kvar i skogen).
+- Wanted: read any station's backup (card, time), filter by card
+  number, and from a missing control in "Ändra" offer the punch found
+  there. Adding it is a decision with a reason (as in item 1 of
+  `2026-10-13-sportident-answers-follow-up.md`), the station's record
+  kept as evidence.
+- Fits the red exit: the secretariat's queue is where a missing punch is
+  looked up.
 
 ## Open
 
