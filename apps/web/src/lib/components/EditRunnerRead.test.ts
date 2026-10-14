@@ -109,6 +109,7 @@ describe('EditRunnerRead (mounted)', () => {
     }) as typeof fetch;
     readProps.obj = { id: 'r1' };
     readProps.reloadKey = 0;
+    readProps.readKey = 'k1';
   });
   const mountIt = (): void => {
     component = mount(EditRunnerRead, {
@@ -122,6 +123,9 @@ describe('EditRunnerRead (mounted)', () => {
         cardNumber: 7501853,
         get reloadKey() {
           return readProps.reloadKey;
+        },
+        get readKey() {
+          return readProps.readKey;
         },
       },
     });
@@ -195,6 +199,22 @@ describe('EditRunnerRead (mounted)', () => {
     await settle();
     expect($('edit-read-status')!.textContent).toContain('Godkänd');
     expect($('punch-grid')!.querySelector('[data-state="miss"]')).toBeNull();
+  });
+
+  it('a new read of the runner fetches the read again', async () => {
+    mountIt();
+    await settle();
+    answer('r1', 0, readOf('MP', [31, 33]));
+    await settle();
+    expect($('edit-read-status')!.textContent).not.toContain('Godkänd');
+    // A reread on the readout finds the missing control.
+    readProps.obj = { id: 'r1' };
+    readProps.readKey = 'k2';
+    await settle();
+    expect(corrections.get('r1')).toHaveLength(2);
+    answer('r1', 1, readOf('OK', [31, 32, 33]));
+    await settle();
+    expect($('edit-read-status')!.textContent).toContain('Godkänd');
   });
 
   it('Sen start shows only when the payload has it', async () => {

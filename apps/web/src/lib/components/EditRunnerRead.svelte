@@ -34,9 +34,18 @@
     cardNumber: number | null;
     /** Bumped by the parent after a correction: fetch again. */
     reloadKey?: number;
+    /** Changes when a new read of the runner lands: fetch again. */
+    readKey?: string;
   }
 
-  let { competitionId, competitorId, classId, cardNumber, reloadKey = 0 }: Props = $props();
+  let {
+    competitionId,
+    competitorId,
+    classId,
+    cardNumber,
+    reloadKey = 0,
+    readKey = '',
+  }: Props = $props();
 
   // Props from a parent that rebuilds its object on every refetch (the
   // readout after each card read) are new getters each time; reading them
@@ -104,6 +113,7 @@
     void compId;
     void classKey;
     void reloadKey;
+    void readKey;
     void load();
   });
 </script>

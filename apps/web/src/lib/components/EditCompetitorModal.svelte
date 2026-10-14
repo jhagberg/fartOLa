@@ -232,6 +232,7 @@
         classId={competitor.class_id}
         cardNumber={competitor.card_number}
         reloadKey={readVersion}
+        readKey={readKey ?? ''}
       />
     {/if}
     <form
