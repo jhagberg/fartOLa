@@ -242,6 +242,9 @@ describe('LottningView (mounted)', () => {
   let h12Start: string | undefined;
   let raceStartedAt: number | null;
   let patchAnswer: { status: number; body: unknown } | null;
+  /** When set, GET /classes waits for it (the answer is the state at request time). */
+  let holdClasses: Promise<void> | null;
+  let releaseClasses: () => void;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -270,6 +273,7 @@ describe('LottningView (mounted)', () => {
     h12Start = undefined;
     raceStartedAt = null;
     patchAnswer = null;
+    holdClasses = null;
     drawAnswer = { status: 201, body: { drawn: 2 } };
     bibsAnswer = null;
     holdHistory = null;
@@ -329,7 +333,9 @@ describe('LottningView (mounted)', () => {
             },
           ],
         });
-      if (url.endsWith('/classes'))
+      if (url.endsWith('/classes')) {
+        const stale = holdClasses;
+        if (stale !== null) await stale;
         return json({
           classes: [
             {
@@ -353,6 +359,7 @@ describe('LottningView (mounted)', () => {
             },
           ],
         });
+      }
       if (url.includes('/lottning/d10')) {
         if (holdD10 !== null) await holdD10;
         return json({
@@ -1312,5 +1319,44 @@ describe('LottningView (mounted)', () => {
     await settle();
     expect(box.checked).toBe(false);
     expect(text('lottning-no-timing-note')).toBe('Valet sparades inte. Försök igen.');
+  });
+
+  it('a class switch during a save does not show the other class its pending choice', async () => {
+    await mountView();
+    holdClassPatch = true;
+    const box = $('lottning-no-timing') as HTMLInputElement;
+    box.click();
+    await settle();
+    expect(box.checked).toBe(true);
+    await choose('lottning-class-select', 'd10');
+    expect(($('lottning-no-timing') as HTMLInputElement).checked).toBe(false);
+    heldPatches[0]!.answer();
+    await settle();
+    expect(($('lottning-no-timing') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('confirming the class kind does not overwrite a setting that saved meanwhile', async () => {
+    drawAnswer = {
+      status: 409,
+      body: { error: 'class_kind_unconfirmed', message: 'Bekräfta klasstyp för H12' },
+    };
+    await mountView();
+    await choose('lottning-mode-select', 'Pursuit');
+    ($('lottning-draw-btn') as HTMLButtonElement).click();
+    await settle();
+    holdClasses = new Promise<void>((r) => (releaseClasses = r));
+    holdClassPatch = true;
+    const box = $('lottning-no-timing') as HTMLInputElement;
+    box.click();
+    ($('class-kind-confirm') as HTMLButtonElement).click();
+    await settle();
+    heldPatches[0]!.answer();
+    await settle();
+    expect(box.checked).toBe(true);
+    // The class list read before the save went through arrives last.
+    releaseClasses();
+    await settle();
+    await settle();
+    expect(($('lottning-no-timing') as HTMLInputElement).checked).toBe(true);
   });
 });
