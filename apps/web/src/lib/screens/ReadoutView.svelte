@@ -149,9 +149,6 @@
   const dev = $derived(getEventorStatus().fartola_dev);
 
   let subscription: ReturnType<typeof createCardSubscription> | null = null;
-  /** Per card number: did the latest classified read add a row the page did
-   * not have? Set by classifyCard, consumed by onCardRead. */
-  const newTopByCard = new Map<number, boolean>();
 
   // Walk-up overlay open flag — reactive from the URL. Plan 14 mounts a
   // modal when this is non-null; for plan 13 we expose the same signal
@@ -445,18 +442,16 @@
     // dispatch logic Phase 1 inlined.
     subscription = createCardSubscription({
       competitionId,
-      onCardRead: (cardNumber, _hint, _classification, replay) => {
+      onCardRead: (cardNumber, _hint, _classification, replay, added) => {
         // The classifyCard resolver already refetched /readout +
         // /competitors; the projection is now authoritative for the
         // post-read side effects (walkup redirect, consent toast,
         // hyrbricka toast). The classification value is informational —
-        // triggerCardReadSideEffects re-checks history[0].unmatched
+        // triggerCardReadSideEffects re-checks the read's own row
         // (the existing C-M3 site) to decide the walkup branch.
         // A replay of a read the page already had (the hello after load or a
         // reconnect) is no news; a live or a missed one is, and takes over.
-        const isNew = !replay || (newTopByCard.get(cardNumber) ?? true);
-        newTopByCard.delete(cardNumber);
-        if (isNew) triggerCardReadSideEffects(cardNumber);
+        if (!replay || (added ?? true)) triggerCardReadSideEffects(cardNumber);
       },
       classifyCard: async (cardNumber, replay) => {
         // Refetch BOTH endpoints so history[0].unmatched + competitor
@@ -466,10 +461,11 @@
         await (replay ? refetchForReplay() : Promise.all([refetchReadout(), refetchCompetitors()]));
         // This read's own row: a later read may already be on top.
         const row = readRow(cardNumber);
-        newTopByCard.set(cardNumber, row !== undefined && !seen.has(historyKey(row)));
+        // Per event: the server replays every read, duplicates included.
+        const isNew = row !== undefined && !seen.has(historyKey(row));
         const isUnmatched = row?.unmatched ?? false;
         const cardHolderHint = isUnmatched ? row?.card_holder_hint ?? null : null;
-        return { isUnmatched, cardHolderHint };
+        return { isUnmatched, cardHolderHint, isNew };
       },
       onConnectionChange: (state) => {
         bridgeStatus.set(state);

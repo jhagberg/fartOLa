@@ -69,6 +69,8 @@ const readoutBody = (name: string, seq: number) => ({
 /** The /readout requests after mount, each waiting for the test. */
 let held: Array<(body: unknown) => void>;
 let sockets: FakeWebSocket[];
+/** The /readout answer the page loads with. */
+let mountBody: unknown;
 
 class FakeWebSocket {
   readyState = 1;
@@ -99,6 +101,7 @@ describe('ReadoutView — overlapping readout refetches', () => {
 
   beforeEach(() => {
     goto.mockClear();
+    mountBody = readoutBody('Första Löpare', 1);
     held = [];
     sockets = [];
     mounted = false;
@@ -112,7 +115,7 @@ describe('ReadoutView — overlapping readout refetches', () => {
         });
       if (url.endsWith('/radio/status')) return json({ settings: { enabled: false } });
       if (url.endsWith('/readout')) {
-        if (!mounted) return json(readoutBody('Första Löpare', 1));
+        if (!mounted) return json(mountBody);
         const body = await new Promise<unknown>((r) => held.push(r));
         return body instanceof Response ? body : json(body);
       }
@@ -272,5 +275,41 @@ describe('ReadoutView — overlapping readout refetches', () => {
     held[0]!(readoutBody('Första Löpare', 1));
     await settle();
     expect(held).toHaveLength(1);
+  });
+
+  it('two replayed reads of an unknown card the page already has open no walk-up', async () => {
+    const unknownRow = (seq: number) =>
+      ({
+        ...row('', seq),
+        card_number: 1007,
+        competitor_id: null,
+        competitor_name: null,
+        unmatched: true,
+      }) as unknown as ReturnType<typeof row>;
+    const loaded = readoutBody('Känd Löpare', 3);
+    loaded.history = [row('Känd Löpare', 3), unknownRow(2), unknownRow(1)];
+    mountBody = loaded;
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    mounted = true;
+    const replay = (card: number, seq: number): void =>
+      sockets[0]!.onmessage!({
+        data: JSON.stringify({
+          type: 'replay',
+          channel: 'readout:c1',
+          payload: { event_type: 'card_read', card_number: card },
+          seq,
+        }),
+      });
+    replay(1007, 1);
+    replay(1007, 2);
+    replay(1003, 3);
+    await settle();
+    expect(held).toHaveLength(1);
+    held[0]!(loaded);
+    await settle();
+    // The walk-up opens 600 ms after an unknown read.
+    await new Promise((r) => setTimeout(r, 700));
+    expect(goto).not.toHaveBeenCalled();
   });
 });
