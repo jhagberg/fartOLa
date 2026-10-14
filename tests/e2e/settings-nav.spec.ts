@@ -317,7 +317,8 @@ async function twoCompetitions(
   };
   const nameB = listed.competitions.find((c) => c.id === b)?.name ?? '';
   expect(nameB, 'competition B is listed').not.toBe('');
-  await request.post(`${BASE}/api/sessions/active-competition`, { data: { competition_id: a } });
+  // Not the server's shared value: specs in other workers set it too.
+  await pinActive(page, a);
   await page.route('**/src/routes/competition/**', () => {
     /* never answered: the readout does not open */
   });
@@ -385,8 +386,15 @@ test('a late Liveresultat and helper-code load for the old competition is ignore
       },
     })
   );
+  // A's loads must be in flight before the switch, or there is no late load.
+  const aAsked = Promise.all(
+    ['liveresultat/credentials', 'event-codes'].map((p) =>
+      page.waitForRequest(`**/api/competitions/${a}/${p}`, { timeout: 20_000 })
+    )
+  );
   await page.goto('/installningar');
   await expect(page.getByTestId('settings-view')).toBeVisible({ timeout: 20_000 });
+  await aAsked;
   await switchTo(page, nameB);
   const live = page.locator('#liveresultat');
   await expect(live.getByTestId('liveresultat-id')).toHaveValue('222');
