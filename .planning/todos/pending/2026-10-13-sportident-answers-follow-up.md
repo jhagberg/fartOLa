@@ -55,7 +55,39 @@ the race ended. TR 4.18.9: a runner late by their own fault keeps the
 drawn time. SOFT says nothing about reserve records as such: "first valid
 punch" is our application of the rule. "First after a clear" is not
 always "first of this race" (a test punch, or a training lap without a
-clear), so the choice must be visible and changeable.
+clear), so the choice must be visible and changeable. The 2022 rulebook
+says the same (5.5.2, 5.7.5). A question to SOFT asks whether they read
+4.20.6 the same way.
+
+Requirements (maintainer, 2026-10-14):
+
+- **Keep the originals.** Keep the card's main and reserve records for
+  start and finish, and the read-out's own data, when they exist. Never
+  keep the card holder bytes of block 0 (personal data we do not need;
+  see `2026-10-14-readout-red-exit-and-card-memory-view.md`).
+- **Start.** In a start-punch class, the first valid start punch of this
+  race. With a drawn start time, the drawn time, unless a recorded
+  organiser decision changes it (TR 4.18.9). A start punch well after
+  the drawn time in a class that has drawn times is a late start: flag
+  it for review, never count it silently.
+- **Finish.** The first valid finish punch of this race. A finish judge's
+  decision goes before the punch: a time at the line (TR 4.20.4), and
+  the finish order at a mass or chasing start (TR 4.20.8).
+- **Valid** means: this race and day, after the clear and check, and for
+  a start inside the class's start window.
+- **Review.** Conflicting or unreasonable times are marked for review:
+  first and last differ, finish before the last control, a start long
+  after the drawn time.
+- **Show why.** Show every candidate, which time counts and why. The
+  secretariat can pick another candidate or enter a corrected time.
+- **Audit.** Store who, when and why as a new event, never changing the
+  originals (ADR-0003). Today "who" is the node and event code
+  (ADR-0010); a person's name needs an operator name we do not have yet.
+- **One decided time.** Results, lists and every export use the same
+  decided time.
+- **Re-reads.** A new read-out never silently removes earlier data or a
+  manual decision. This is an invariant for the operator-mistake walker
+  (read, correct the finish, read again: the decision stands).
 
 Steps, in this order:
 
