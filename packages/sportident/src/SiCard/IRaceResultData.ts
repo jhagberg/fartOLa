@@ -3,7 +3,7 @@
 // Local modifications: import path `siProtocol` -> `siProtocol.ts` (Node 22 strip-types
 // requires the suffix; root tsconfig has `allowImportingTsExtensions: true`).
 //   - startCode/finishCode/checkCode: station codes of the start, finish and check units.
-//   - batteryMillivolts/hardwareVersion/softwareVersion: SIAC block 3.
+//   - batteryMillivolts/hardwareVersion/softwareVersion/batteryDate: SIAC block 3.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import type { SiTimestamp } from '../siProtocol.ts';
@@ -35,6 +35,9 @@ export interface IRaceResultData {
   batteryMillivolts?: number;
   hardwareVersion?: string;
   softwareVersion?: string;
+  /** SIAC block 3: battery date "YYYY-MM-DD", no time zone; the recommended
+   * battery change is three years later. Absent when unknown. */
+  batteryDate?: string;
   punches?: IPunch[];
 }
 

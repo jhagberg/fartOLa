@@ -128,6 +128,8 @@ export type EventPayload =
        * Observation only, not used by the projection. */
       start_first?: HalfDayClock;
       finish_first?: HalfDayClock;
+      /** SIAC block 3: battery date "YYYY-MM-DD", no time zone. Observation only. */
+      battery_date?: string;
       punch_count: number;
       punches: NdjsonPunch[];
       card_holder: Record<string, unknown> | null;
