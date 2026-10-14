@@ -121,6 +121,7 @@ export function buildCardReadPayload(card: BaseSiCard): CardReadPayload {
     raceResult.finishFirstSubsec256
   );
   if (finishFirst) payload.finish_first = finishFirst;
+  if (raceResult.batteryDate !== undefined) payload.battery_date = raceResult.batteryDate;
   if (card.cardSeriesByte !== undefined) payload.card_series_byte = card.cardSeriesByte;
   if (c.uid !== undefined) payload.uid = c.uid;
   return payload;

@@ -30,6 +30,7 @@
 //     2026-10-13); SPORTident card data structure (provided on request)).
 //   - Block 3 (page 3) is read on SIAC (static readsBlock3) for battery voltage and
 //     hardware/software version.
+//   - SIAC battery date from block 3 (page 0x6F, 0x1bc-0x1be), "YYYY-MM-DD" or unknown.
 // See packages/sportident/NOTICE.md for cumulative attribution.
 
 import { proto } from '../../constants.ts';
@@ -134,6 +135,7 @@ export interface IModernSiCardStorageFields extends IBaseSiCardStorageFields {
   batteryMillivolts?: number;
   hardwareVersion?: string;
   softwareVersion?: string;
+  batteryDate?: string;
   startCodeBlock1?: number;
   finishCodeBlock1?: number;
   startFirstTime?: SiTimestamp;
@@ -149,6 +151,21 @@ const siVersion = (offset: number): SiModified<number[], string> =>
   new SiModified(new SiArray(2, (i) => new SiInt([[offset + i]])), (bytes) =>
     bytes.some((b) => b === undefined || b === 0xee) ? undefined : `${bytes[0]}.${bytes[1]}`
   ) as unknown as SiModified<number[], string>;
+
+/** SIAC battery date "YYYY-MM-DD" from block-3 bytes yy mm dd (binary, year
+ * 2000 + yy); undefined while erased, missing, not a calendar date, or after
+ * the current year: a battery date is never in the future, and no SIAC has a
+ * 19yy date (SPORTident's library gave 19yy for yy 27 and up on 2026-10-14). */
+const siBatteryDate = (offset: number): SiModified<number[], string> =>
+  new SiModified(new SiArray(3, (i) => new SiInt([[offset + i]])), (bytes) => {
+    const [yy, mm, dd] = bytes as (number | undefined)[];
+    if (yy === undefined || mm === undefined || dd === undefined) return undefined;
+    const year = 2000 + yy;
+    const d = new Date(Date.UTC(year, mm - 1, dd));
+    if (year > new Date().getFullYear() || d.getUTCMonth() !== mm - 1 || d.getUTCDate() !== dd)
+      return undefined;
+    return d.toISOString().slice(0, 10);
+  }) as unknown as SiModified<number[], string>;
 
 export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStorageFields> = {
   uid: new SiInt([[0x03], [0x02], [0x01], [0x00]]),
@@ -213,6 +230,10 @@ export const modernSiCardStorageLocations: SiStorageLocations<IModernSiCardStora
   // Hardware and software version, major.minor (SPORTident.Communication 2.59.0, black-box byte sweep of siac-jonas-001, 2026-10-08).
   hardwareVersion: siVersion(0x1c0),
   softwareVersion: siVersion(0x1c2),
+  // Battery date, page 0x6F: yy mm dd and a character-set byte (SPORTident card
+  // data structure, provided on request). Binary, 2000 + yy: SPORTident.Communication
+  // 2.59.0 on synthetic SIAC images, 2026-10-14.
+  batteryDate: siBatteryDate(0x1bc),
 };
 export const modernSiCardStorageDefinition = defineStorage(0x400, modernSiCardStorageLocations);
 
@@ -437,6 +458,8 @@ export class ModernSiCard extends BaseSiCard {
       if (hardware !== undefined) this.raceResult.hardwareVersion = hardware;
       const software = this.storage.get('softwareVersion')?.value;
       if (software !== undefined) this.raceResult.softwareVersion = software;
+      const batteryDate = this.storage.get('batteryDate')?.value;
+      if (batteryDate !== undefined) this.raceResult.batteryDate = batteryDate;
     }
   }
 }

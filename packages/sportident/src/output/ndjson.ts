@@ -102,6 +102,8 @@ export interface CardReadEvent extends NdjsonBase {
   battery_mv?: number;
   hardware_version?: string;
   software_version?: string;
+  /** SIAC only (block 3): battery date "YYYY-MM-DD", no time zone. */
+  battery_date?: string;
   raw_pages_b64?: string;
 }
 
@@ -322,6 +324,7 @@ export class NdjsonEmitter {
       event.hardware_version = raceResult.hardwareVersion;
     if (raceResult.softwareVersion !== undefined)
       event.software_version = raceResult.softwareVersion;
+    if (raceResult.batteryDate !== undefined) event.battery_date = raceResult.batteryDate;
     if (this.includeRawPages) {
       // Best-effort: ModernSiCard / SiCard5 own a SiStorage with internalData
       // accessible via storage.getInternalData() — but the storage type is

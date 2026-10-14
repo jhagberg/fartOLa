@@ -401,6 +401,19 @@ describe('SIAC reserve records in the card_read payload', () => {
     assert.deepEqual(nd.finish_first, payload.finish_first);
   });
 
+  test('battery_date reaches the payload and the NDJSON line alike; absent when unknown', () => {
+    const card = new SIAC(8_500_001);
+    const mem = siacImage(false);
+    mem.splice(0x1bc, 3, 24, 5, 15);
+    card._decodeFromStorage(mem);
+    const payload = buildCardReadPayload(card);
+    assert.equal(payload.battery_date, '2024-05-15');
+    const lines: string[] = [];
+    new NdjsonEmitter({ device_path: '/dev/x', out: (l) => lines.push(l) }).card_read({ card });
+    assert.equal((JSON.parse(lines[0]!) as Record<string, unknown>).battery_date, '2024-05-15');
+    assert.equal('battery_date' in buildCardReadPayload(decode(false)), false);
+  });
+
   test('no reserve record: the keys are absent', () => {
     const payload = buildCardReadPayload(decode(false));
     assert.equal('start_first' in payload, false);
