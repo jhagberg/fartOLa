@@ -375,8 +375,12 @@ export class ModernSiCard extends BaseSiCard {
    * bit 6), lost when PTD bit 7 is set. (The 0xEE case is an open question
    * to SPORTident, 2026-10-13.) */
   private recordCode(name: 'start' | 'finish'): number | undefined {
-    if (this.keepsBlock1Codes()) return this.storage.get(`${name}CodeBlock1`)?.value;
-    return this.storage.get(`${name}Code`)?.value;
+    const own = this.storage.get(`${name}Code`)?.value;
+    if (!this.keepsBlock1Codes()) return own;
+    // shortcut: with nothing usable in block 1 (0x00, or 0xEE, which may be
+    // code 238: open question to SPORTident) a record without bit 7 still has
+    // its code in CN; drop the fallback once 0xEE is settled.
+    return this.storage.get(`${name}CodeBlock1`)?.value ?? own;
   }
 
   protected populateRaceResult(): void {

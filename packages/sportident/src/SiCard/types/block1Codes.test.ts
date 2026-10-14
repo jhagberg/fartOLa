@@ -109,12 +109,17 @@ describe('SIAC firmware 4.0+: bit-7 start/finish codes from block 1', () => {
     assert.deepEqual([card.raceResult.startCode, card.raceResult.finishCode], [13, 99]);
   });
 
-  test('without bit 7 and with 0x00 in block 1 there is no code', async () => {
-    const mem = makeMemory({ firmware: [4, 0] });
-    setRecord(mem, FINISH, 0x01, 20);
-    mem[0xa9] = 0x00;
-    const { card } = await read(SIAC, mem);
-    assert.equal(card.raceResult.finishCode, undefined);
+  test('without bit 7 and nothing usable in block 1 the record keeps its own code (238 too)', async () => {
+    for (const [byte, cn] of [
+      [0x00, 20],
+      [0xee, 238],
+    ] as const) {
+      const mem = makeMemory({ firmware: [4, 0] });
+      setRecord(mem, FINISH, 0x01, cn);
+      mem[0xa9] = byte;
+      const { card } = await read(SIAC, mem);
+      assert.equal(card.raceResult.finishCode, cn, `0x${byte.toString(16)} in block 1`);
+    }
   });
 
   test('no start or finish record: no page 1 is read', async () => {
