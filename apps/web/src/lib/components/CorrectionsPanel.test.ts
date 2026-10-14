@@ -260,4 +260,33 @@ describe('CorrectionsPanel (mounted)', () => {
     await settle();
     expect($<HTMLInputElement>('corr-finish-input')!.value).toBe('');
   });
+
+  it('a new read of the runner reloads what the panel shows and keeps the typing', async () => {
+    panelProps.obj = { id: 'r1' };
+    panelProps.readKey = 'k1';
+    state.missing_codes = [32, 35];
+    component = mount(CorrectionsPanel, {
+      target: document.body,
+      props: {
+        competitionId: 'c1',
+        get competitorId() {
+          return panelProps.obj.id;
+        },
+        get reloadKey() {
+          return panelProps.readKey;
+        },
+        onChanged,
+      },
+    });
+    await settle();
+    expect(document.querySelectorAll('[data-testid="corr-punch-pick"]')).toHaveLength(2);
+    type('corr-finish-input', '10:42');
+    // A reread finds every control: the server has no missing ones now.
+    state = { ...state, missing_codes: [] };
+    panelProps.obj = { id: 'r1' };
+    panelProps.readKey = 'k2';
+    await settle();
+    expect(document.querySelectorAll('[data-testid="corr-punch-pick"]')).toHaveLength(0);
+    expect($<HTMLInputElement>('corr-finish-input')!.value).toBe('10:42');
+  });
 });
