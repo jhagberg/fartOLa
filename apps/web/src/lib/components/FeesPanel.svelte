@@ -75,6 +75,7 @@
   /** Bumped with every fresh read, so the inputs show the fresh values and
    * not a value typed and refused. */
   let readGen = $state(0);
+  let reloadSeq = 0;
 
   /** The first read failed: nothing to show, a retry reads it again. */
   let loadFailed = $state(false);
@@ -212,15 +213,21 @@
   /** Stay disabled until the fees are read again: the next edit builds its
    * row on them, and an old row would save the old fees back. */
   async function reload(keepNotes = false): Promise<void> {
+    // Only the newest read counts: an older answer would install old fees.
+    const mine = ++reloadSeq;
     busy = true;
     reloadFailed = false;
+    let fresh: FeesResponse;
     try {
-      data = await getFees(competitionId);
+      fresh = await getFees(competitionId);
     } catch (e) {
+      if (mine !== reloadSeq) return;
       console.error('fees reload failed:', e);
       reloadFailed = true;
       return;
     }
+    if (mine !== reloadSeq) return;
+    data = fresh;
     queues.clear();
     invalid = {};
     if (!keepNotes) failed = {};

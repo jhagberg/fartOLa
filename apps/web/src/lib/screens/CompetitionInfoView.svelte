@@ -246,7 +246,7 @@
       ...(distance === undefined ? {} : { distance: distance === '' ? null : distance }),
     });
     // The reply may predate a max-time save: it does not own that field.
-    competition = { ...reply, max_time_sec: competition?.max_time_sec ?? reply.max_time_sec };
+    competition = { ...reply, max_time_sec: competition ? competition.max_time_sec : reply.max_time_sec };
     // A new date can move the clock offset; the server shifts the starts,
     // so the closing time is fetched again (ADR-0017).
     void refreshClosing();

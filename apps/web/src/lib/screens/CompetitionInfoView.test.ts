@@ -631,6 +631,11 @@ describe('Tävlingsinfo: max time and fees', () => {
   /** Replies to PATCH /competitions/:id wait here (stale snapshot at request time). */
   let heldDetails: Array<{ release: () => void }>;
   let maxPatches: Array<Record<string, unknown>>;
+  /** The fees as the server holds them; a GET answers the state at request time. */
+  let fees: { entry_fee: number; late_fee_pct: number | null };
+  let holdFeeGets: boolean;
+  let heldFeeGets: Array<() => void>;
+  let feePuts: Array<Record<string, unknown>>;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -663,6 +668,10 @@ describe('Tävlingsinfo: max time and fees', () => {
     feeGets = 0;
     heldDetails = [];
     maxPatches = [];
+    fees = { entry_fee: 180, late_fee_pct: null };
+    holdFeeGets = false;
+    heldFeeGets = [];
+    feePuts = [];
     server = {
       id: 'c1',
       name: 'Batch',
@@ -704,8 +713,19 @@ describe('Tävlingsinfo: max time and fees', () => {
         return json(snapshot);
       }
       if (url.endsWith('/fees')) {
-        if (init?.method === 'PUT') return failFeePut ? json({ error: 'x' }, 500) : json({});
+        if (init?.method === 'PUT') {
+          if (failFeePut) return json({ error: 'x' }, 500);
+          const body = JSON.parse(String(init.body)) as {
+            classes?: Array<{ entry_fee: number; late_fee_pct: number | null }>;
+          };
+          feePuts.push(body);
+          const row = body.classes?.[0];
+          if (row) fees = { entry_fee: row.entry_fee, late_fee_pct: row.late_fee_pct };
+          return json({});
+        }
         feeGets++;
+        const now = { ...fees };
+        if (holdFeeGets) await new Promise<void>((r) => heldFeeGets.push(r));
         return json({
           date: '2026-10-08',
           card_fee: null,
@@ -714,9 +734,9 @@ describe('Tävlingsinfo: max time and fees', () => {
               class_id: 'h21',
               name: 'H21',
               class_kind: 'senior',
-              entry_fee: 180,
+              entry_fee: now.entry_fee,
               youth_entry_fee: null,
-              late_fee_pct: null,
+              late_fee_pct: now.late_fee_pct,
             },
           ],
         });
@@ -815,5 +835,51 @@ describe('Tävlingsinfo: max time and fees', () => {
     await settle();
     expect(feeGets).toBe(2);
     expect(text('fees-row-note')).toBe('Det gick inte att spara avgiften.');
+  });
+
+  it('a cleared max time is not brought back by a details reply made before it', async () => {
+    await mountView();
+    const name = $<HTMLInputElement>('info-name');
+    name.value = 'Nytt namn';
+    name.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await type('info-max-time', '');
+    $<HTMLButtonElement>('info-max-time-save').click();
+    await settle();
+    expect(maxPatches).toEqual([{ max_time_sec: null }]);
+    heldDetails[0]!.release();
+    await settle();
+    await type('info-max-time', '150:00');
+    expect($<HTMLButtonElement>('info-max-time-save').disabled).toBe(false);
+  });
+
+  it('an older fee reload that lands last does not wipe a fee saved after the newer one', async () => {
+    await mountView();
+    holdFeeGets = true;
+    const kind = document.querySelector<HTMLSelectElement>(
+      '[data-class-id="h21"] [data-testid="class-kind-select"]'
+    )!;
+    kind.value = 'elit';
+    kind.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    kind.value = 'junior';
+    kind.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(heldFeeGets).toHaveLength(2);
+    // The newer read lands first; a fee is saved; then the older read lands.
+    heldFeeGets[1]!();
+    await settle();
+    holdFeeGets = false;
+    const entry = document.querySelector<HTMLInputElement>('input[aria-label^="Avgift för H21"]')!;
+    entry.value = '200';
+    entry.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    heldFeeGets[0]!();
+    await settle();
+    const late = document.querySelector<HTMLInputElement>('input[aria-label^="Tillägg för H21"]')!;
+    late.value = '60';
+    late.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(feePuts.at(-1)).toMatchObject({ classes: [{ entry_fee: 200, late_fee_pct: 60 }] });
   });
 });
