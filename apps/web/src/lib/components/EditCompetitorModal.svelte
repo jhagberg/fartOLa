@@ -54,9 +54,13 @@
     onSaved: (updated: CompetitorDTO) => void;
     /** After Återbud; without it the parent gets onSaved, as before. */
     onWithdrawn?: (competitor: CompetitorDTO) => void;
+    /** The runner's latest read on the readout: a new one reloads the
+     * corrections. */
+    readKey?: string;
   }
 
-  let { open, competitor, competitionId, classes, onClose, onSaved, onWithdrawn }: Props = $props();
+  let { open, competitor, competitionId, classes, onClose, onSaved, onWithdrawn, readKey }: Props =
+    $props();
 
   type FieldName = 'name' | 'class' | 'card' | 'paid';
 
@@ -385,6 +389,7 @@
       <CorrectionsPanel
         {competitionId}
         competitorId={competitor.id}
+        reloadKey={readKey ?? ''}
         onChanged={() => readVersion++}
       />
     {/if}

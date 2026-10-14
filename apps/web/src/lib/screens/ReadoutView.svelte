@@ -242,6 +242,11 @@
   // from the competitors map. Save flows through editCompetitorProfile
   // (PATCH /api/competitors/:id/profile) and refetchCompetitors.
   let editingCompetitorId: string | null = $state(null);
+  /** The edited runner's latest read: a new one reloads the open corrections. */
+  const editingReadKey = $derived.by((): string => {
+    const row = history.find((r) => r.competitor_id === editingCompetitorId);
+    return row ? historyKey(row) : '';
+  });
 
   /** Card replacements from the walk-up overlay's "anmäld?" step, newest
    * first, each shown with undo until the operator closes it (ADR-0016
@@ -1104,6 +1109,7 @@
   competitor={editingCompetitorId ? competitorsById.get(editingCompetitorId) ?? null : null}
   {competitionId}
   {classes}
+  readKey={editingReadKey}
   onClose={() => { editingCompetitorId = null; }}
   onSaved={(updated) => {
     // Refetch so derived shapes (competitorsById, history rows) pick

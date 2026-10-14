@@ -37,11 +37,14 @@
   interface Props {
     competitionId: string;
     competitorId: string;
+    /** Changes when a new read of the runner lands: fetch again, keep the
+     * typing. */
+    reloadKey?: string;
     /** Called after a correction is saved or removed. */
     onChanged?: () => void;
   }
 
-  let { competitionId, competitorId, onChanged }: Props = $props();
+  let { competitionId, competitorId, reloadKey = '', onChanged }: Props = $props();
 
   // The readout rebuilds its competitor object on every read, which makes a
   // new getter for this prop; $derived keeps the reset below to a new runner.
@@ -96,6 +99,10 @@
     additionMin = 1;
     additionReason = '';
     saveError = null;
+  });
+  $effect(() => {
+    void runnerId;
+    void reloadKey;
     void load();
   });
 
