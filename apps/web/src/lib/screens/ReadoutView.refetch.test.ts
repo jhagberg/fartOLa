@@ -98,6 +98,7 @@ describe('ReadoutView — overlapping readout refetches', () => {
   let mounted: boolean;
 
   beforeEach(() => {
+    goto.mockClear();
     held = [];
     sockets = [];
     mounted = false;
@@ -113,7 +114,7 @@ describe('ReadoutView — overlapping readout refetches', () => {
       if (url.endsWith('/readout')) {
         if (!mounted) return json(readoutBody('Första Löpare', 1));
         const body = await new Promise<unknown>((r) => held.push(r));
-        return json(body);
+        return body instanceof Response ? body : json(body);
       }
       if (url.endsWith('/c1/competitors')) return json({ competitors: [] });
       if (url.endsWith('/api/competitions/c1'))
@@ -190,5 +191,64 @@ describe('ReadoutView — overlapping readout refetches', () => {
     await vi.waitFor(() =>
       expect(goto).toHaveBeenCalledWith('/competition/c1/readout?walkup=1007')
     );
+  });
+
+  it('an unknown first card in a merged refetch still opens its walk-up', async () => {
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    mounted = true;
+    const send = (type: string, payload: unknown): void =>
+      sockets[0]!.onmessage!({ data: JSON.stringify({ type, payload }) });
+    // An unknown card, then a known runner, before either refetch answers.
+    send('card_read', { card_number: 1007 });
+    send('card_read', { card_number: 1008 });
+    await settle();
+    expect(held).toHaveLength(2);
+    const both = readoutBody('Känd Löpare', 8);
+    both.history = [
+      row('Känd Löpare', 8),
+      {
+        ...row('', 7),
+        competitor_id: null,
+        competitor_name: null,
+        unmatched: true,
+      } as unknown as ReturnType<typeof row>,
+    ];
+    held[0]!(both);
+    held[1]!(both);
+    await settle();
+    await vi.waitFor(() =>
+      expect(goto).toHaveBeenCalledWith('/competition/c1/readout?walkup=1007')
+    );
+  });
+
+  it('a failed newest refetch keeps the older good answer and offers a retry', async () => {
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    mounted = true;
+    const live = (): void =>
+      sockets[0]!.onmessage!({
+        data: JSON.stringify({ type: 'results_update', payload: {} }),
+      });
+    live();
+    live();
+    await settle();
+    expect(held).toHaveLength(2);
+    held[0]!(readoutBody('Ny Löpare', 2));
+    await settle();
+    held[1]!(new Response('{}', { status: 500 }));
+    await settle();
+    expect(document.body.textContent).toContain('Ny Löpare');
+    const failed = (): HTMLElement | null =>
+      document.querySelector('[data-testid="readout-refetch-failed"]');
+    expect(failed()).not.toBeNull();
+
+    failed()!.querySelector('button')!.click();
+    await settle();
+    expect(held).toHaveLength(3);
+    held[2]!(readoutBody('Senaste Löpare', 3));
+    await settle();
+    expect(document.body.textContent).toContain('Senaste Löpare');
+    expect(failed()).toBeNull();
   });
 });

@@ -379,6 +379,7 @@
   "ro.autoprint.off": "Av",
   "ro.status.done": "{{name}}: {{status}}",
   "ro.pinned": "Du tittar på en äldre avläsning.",
+  "ro.refetchFailed": "Kunde inte hämta de senaste avläsningarna. Det som visas kan vara gammalt.",
   "ro.pinned.latest": "Visa senaste",
   "ro.pinned.replaced": "Ny avläsning: {{name}}. Den valda avläsningen finns i historiken.",
   "ro.status.failed": "Statusen sparades inte.",
