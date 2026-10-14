@@ -17,12 +17,14 @@
 //     station.
 //   - Removed upstream's stdout-warning on storage mismatch (no console writes
 //     from decoders; mismatch detection moves to the multiplexer in Plan 04).
-//   - Punch control code via siPunchCode(): PTD bits 6-7 are code bits 8-9 (codes > 255).
+//   - Punch control code via siPunchCode(): PTD bit 6 is code bit 8 (codes 256-511).
 //   - Start/finish/check station codes (CN plus PTD bit 6) read into startCode/finishCode/checkCode;
 //     a start/finish record with PTD bit 7 has lost its code, except on SIAC
 //     firmware 4.0+, which keeps it in block 1 (0xa5 / 0xa9).
-//   - Block 1 (page 1) is also fetched on SIAC firmware 4.0+ when a start/finish
-//     record has PTD bit 7 and the card holder step did not read it.
+//   - On SIAC firmware 4.0+ block 1 (page 1) is always fetched when there is a
+//     start or finish record (if the card holder step did not read it), and the
+//     start/finish code is taken from there, also without PTD bit 7 (SPORTident
+//     (Thomas, 2026-10-09 and 2026-10-13)).
 //   - Block 3 (page 3) is read on SIAC (static readsBlock3) for battery voltage and
 //     hardware/software version.
 // See packages/sportident/NOTICE.md for cumulative attribution.
@@ -281,15 +283,12 @@ export class ModernSiCard extends BaseSiCard {
     return Number.isInteger(major) && major >= 4;
   }
 
-  /** True when a start or finish record in page 0 has PTD bit 7 (its CN is a
-   * subsecond), the card keeps such codes in block 1, and block 1 has not been
-   * read. An erased record (0xEE) has bit 7 set too, hence the time check. */
+  /** True when there is a start or finish record in page 0, the card keeps
+   * their codes in block 1, and block 1 has not been read. */
   protected needsBlock1(): boolean {
     if (this.block1Read || !this.keepsBlock1Codes()) return false;
     return (['start', 'finish'] as const).some(
-      (name) =>
-        this.storage.get(`${name}Subsec256`)?.value !== undefined &&
-        this.storage.get(`${name}Time`)?.value != null
+      (name) => this.storage.get(`${name}Time`)?.value != null
     );
   }
 
@@ -349,12 +348,13 @@ export class ModernSiCard extends BaseSiCard {
     this.populateRaceResult();
   }
 
-  /** Start/finish code: the record's own (CN + bit 6) unless PTD bit 7 is
-   * set; then block 1 on SIAC firmware 4.0+, otherwise lost. */
+  /** Start/finish code: block 1 (0xa5 / 0xa9) on SIAC firmware 4.0+, bit 7 or
+   * not; 0x00 there means not available. Otherwise the record's own (CN +
+   * bit 6), lost when PTD bit 7 is set. (The 0xEE case is an open question
+   * to SPORTident, 2026-10-13.) */
   private recordCode(name: 'start' | 'finish'): number | undefined {
-    const own = this.storage.get(`${name}Code`)?.value;
-    if (own !== undefined || !this.keepsBlock1Codes()) return own;
-    return this.storage.get(`${name}CodeBlock1`)?.value;
+    if (this.keepsBlock1Codes()) return this.storage.get(`${name}CodeBlock1`)?.value;
+    return this.storage.get(`${name}Code`)?.value;
   }
 
   protected populateRaceResult(): void {

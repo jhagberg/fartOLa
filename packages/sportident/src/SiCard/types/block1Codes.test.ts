@@ -98,14 +98,31 @@ describe('SIAC firmware 4.0+: bit-7 start/finish codes from block 1', () => {
     }
   });
 
-  test('without bit 7 the record is its own code and no page 1 is read', async () => {
+  test('without bit 7 page 1 is still read and 0xa5 / 0xa9 are the codes (Thomas, 2026-10-13)', async () => {
     const mem = makeMemory({ firmware: [4, 0], punches: 2 });
     setRecord(mem, FINISH, 0x01, 20);
-    setRecord(mem, START, 0x41, 3);
+    setRecord(mem, START, 0x01, 3);
+    mem[0xa5] = 13;
+    mem[0xa9] = 99;
+    const { card, pages } = await read(SIAC, mem);
+    assert.deepEqual(pages, [0, 3, 1, 4]);
+    assert.deepEqual([card.raceResult.startCode, card.raceResult.finishCode], [13, 99]);
+  });
+
+  test('without bit 7 and with 0x00 in block 1 there is no code', async () => {
+    const mem = makeMemory({ firmware: [4, 0] });
+    setRecord(mem, FINISH, 0x01, 20);
+    mem[0xa9] = 0x00;
+    const { card } = await read(SIAC, mem);
+    assert.equal(card.raceResult.finishCode, undefined);
+  });
+
+  test('no start or finish record: no page 1 is read', async () => {
+    const mem = makeMemory({ firmware: [4, 0], punches: 2 });
     mem[0xa9] = 99;
     const { card, pages } = await read(SIAC, mem);
     assert.deepEqual(pages, [0, 3, 4]);
-    assert.deepEqual([card.raceResult.startCode, card.raceResult.finishCode], [259, 20]);
+    assert.equal(card.raceResult.finishCode, undefined);
   });
 
   test('page 1 read once, before the punch pages, even with an incomplete card holder', async () => {
@@ -148,6 +165,24 @@ describe('bit-7 start/finish code is lost elsewhere', () => {
       assert.equal(card.raceResult.finishCode, undefined);
       assert.equal(card.raceResult.finishSubsec256, 117);
     }
+  });
+
+  test('SIAC below 4.0 without bit 7: the record is its own code, no page 1', async () => {
+    const mem = makeMemory({ firmware: [3, 9] });
+    setRecord(mem, FINISH, 0x41, 20);
+    mem[0xa9] = 99;
+    const { card, pages } = await read(SIAC, mem);
+    assert.deepEqual(pages, [0, 3]);
+    assert.equal(card.raceResult.finishCode, 276);
+  });
+
+  test('SI10 without bit 7: the record is its own code, 0xa9 ignored, no page 1', async () => {
+    const mem = makeMemory();
+    setRecord(mem, FINISH, 0x01, 20);
+    mem[0xa9] = 99;
+    const { card, pages } = await read(SiCard10, mem);
+    assert.deepEqual(pages, [0]);
+    assert.equal(card.raceResult.finishCode, 20);
   });
 
   test('SI10: 0xa5 / 0xa9 are not used; bit 7 means no code, no page 1', async () => {
