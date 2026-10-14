@@ -68,6 +68,5 @@ Tertiary: federations (SOFT, IOF) consuming standard data exports.
 
 - Full ecosystem and protocol research: `.planning/research/ecosystem.md`
 - Architecture (target state): `.planning/research/architecture.md`
-- Phased delivery: `.planning/ROADMAP.md`
+- Now, next and later: `.planning/ROADMAP.md`
 - Scoped requirements with IDs: `.planning/REQUIREMENTS.md`
-- Current state and decisions: `.planning/STATE.md`

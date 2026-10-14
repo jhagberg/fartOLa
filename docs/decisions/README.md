@@ -2,8 +2,8 @@
 
 Architecture Decision Records (ADRs) for fartOLa, in
 [MADR 4.0.0](https://adr.github.io/madr/) format. An ADR records _why_ a
-choice was made, not how it was implemented. Current project state lives in
-`.planning/STATE.md`, and decision content lives here.
+choice was made, not how it was implemented. What we work on now
+lives in `.planning/ROADMAP.md`, and decision content lives here.
 
 ## How we write ADRs
 
