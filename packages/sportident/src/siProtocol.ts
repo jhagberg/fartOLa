@@ -429,11 +429,12 @@ export const siRecordCode = (
   );
 
 /** SIAC (firmware 4.0+) start/finish code in block 1 (0xA5 / 0xA9). 0x00 means
- * the code was lost (contact punch with subsecond timing), 0xEE unwritten; both
- * give undefined. PTD bit 6 is not added (SPORTident.Communication 2.59.0 on
- * our own card images, 2026-10-09). */
+ * the code is not available (SPORTident, Thomas, 2026-10-09) and gives
+ * undefined. 0xEE is passed on: unwritten or code 238 is an open question to
+ * SPORTident (2026-10-13), decided by the caller. PTD bit 6 is not added
+ * (SPORTident.Communication 2.59.0 on our own card images, 2026-10-09). */
 export const siacBlock1Code = (offset: number): SiModified<number, number> =>
-  new SiModified(new SiInt([[offset]]), (b) => (b === 0x00 || b === 0xee ? undefined : b));
+  new SiModified(new SiInt([[offset]]), (b) => (b === 0x00 ? undefined : b));
 
 /** Subsecond of a START or FINISH record (never check/clear/ordinary punches:
  * the doc allows a subsecond value "only for start and finish"): when PTD

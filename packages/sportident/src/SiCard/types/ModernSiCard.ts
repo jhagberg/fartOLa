@@ -377,10 +377,11 @@ export class ModernSiCard extends BaseSiCard {
   private recordCode(name: 'start' | 'finish'): number | undefined {
     const own = this.storage.get(`${name}Code`)?.value;
     if (!this.keepsBlock1Codes()) return own;
-    // shortcut: with nothing usable in block 1 (0x00, or 0xEE, which may be
-    // code 238: open question to SPORTident) a record without bit 7 still has
-    // its code in CN; drop the fallback once 0xEE is settled.
-    return this.storage.get(`${name}CodeBlock1`)?.value ?? own;
+    const b1 = this.storage.get(`${name}CodeBlock1`)?.value;
+    // shortcut: 0xEE is unwritten or code 238 (open question to SPORTident);
+    // without bit 7 CN still holds the code, with bit 7 the code is lost even
+    // if it was 238. Settle once SPORTident answers.
+    return b1 === 0xee ? own : b1;
   }
 
   protected populateRaceResult(): void {
