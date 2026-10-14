@@ -37,75 +37,66 @@ overwritten; the main record holds the last one. If they differ, the
 runner punched start or finish more than once. Which one counts is the
 reader's decision.
 
-Today fartOLa reads only the main record, so a runner who punches the
-finish twice gets the later time, and nothing shows it.
+Status (2026-10-14): the library reads both records and the card-read
+event carries them (`start_first`, `finish_first`, PR #137). The
+projection still takes only the main records into the read history and
+the result, so a runner who punches the finish twice gets the later
+time, and nothing shows it.
 
-Proposed rule (to be confirmed by the maintainer before it changes a
-result):
+The rules are decided in ADR-0019 (proposed) and REQ-EVT-CMP-012 to 016:
+the first valid finish punch; the start source stays the class's start
+choice (ADR-0018), with "the start punch" meaning the first valid one;
+every available candidate kept with its own metadata; decisions as
+events; the finish judge's order separate from times. SOFT says nothing
+about reserve records as such: "first valid punch" is our application of
+TR 4.20.6, and a question to SOFT asks whether they read it the same way.
+The 2022 rulebook says the same (5.5.2, 5.7.5).
 
-| Situation                  | Time that counts                                       |
-| -------------------------- | ------------------------------------------------------ |
-| Finish punch               | the first valid finish punch of this race              |
-| Drawn start time used      | the drawn time, by the class's start method, as today  |
-| Start punch used           | the first valid start punch of this race               |
+Steps, in this order (none changes a result before step 4):
 
-TR 4.20.6 (2026-07-01): time is taken when the runner "ends the race" by
-punching the finish unit after the line, so a later finish punch is after
-the race ended. TR 4.18.9: a runner late by their own fault keeps the
-drawn time. SOFT says nothing about reserve records as such: "first valid
-punch" is our application of the rule. "First after a clear" is not
-always "first of this race" (a test punch, or a training lap without a
-clear), so the choice must be visible and changeable. The 2022 rulebook
-says the same (5.5.2, 5.7.5). A question to SOFT asks whether they read
-4.20.6 the same way.
+1. Done in the library and the event. Still to do: each candidate's
+   unknown or unread fields stored as such, and the card holder kept out
+   of the event, neither bytes nor decoded text (`cardReadPayload.ts`
+   `card_holder`; old events left alone).
+2. The projection keeps the candidates per read. At the read-out and in
+   "Ändra", show "Första mål", "Sista mål" and the one used, when they
+   differ; the same for start. Results unchanged.
+3. The secretariat can change the choice with a reason; the event names
+   the read and the record. Build on the existing hand-entered finish
+   decision (`manual_finish_set`). The finish judge's order is a
+   separate decision (TR 4.20.8, rule matrix row SAKNAS today).
+4. Then change the default, with the acceptance cases below as tests and
+   the replay of both days (ADR-0014), on the maintainer's decision.
 
-Requirements (maintainer, 2026-10-14):
+Acceptance cases (from a review of ADR-0019, 2026-10-14):
 
-- **Keep the originals.** Keep the card's main and reserve records for
-  start and finish, and the read-out's own data, when they exist. Never
-  keep the card holder bytes of block 0 (personal data we do not need;
-  see `2026-10-14-readout-red-exit-and-card-memory-view.md`).
-- **Start.** In a start-punch class, the first valid start punch of this
-  race. With a drawn start time, the drawn time, unless a recorded
-  organiser decision changes it (TR 4.18.9). A start punch well after
-  the drawn time in a class that has drawn times is a late start: flag
-  it for review, never count it silently.
-- **Finish.** The first valid finish punch of this race. A finish judge's
-  decision goes before the punch: a time at the line (TR 4.20.4), and
-  the finish order at a mass or chasing start (TR 4.20.8).
-- **Valid** means: this race and day, after the clear and check, and for
-  a start inside the class's start window.
-- **Review.** Conflicting or unreasonable times are marked for review:
-  first and last differ, finish before the last control, a start long
-  after the drawn time.
-- **Show why.** Show every candidate, which time counts and why. The
-  secretariat can pick another candidate or enter a corrected time.
-- **Audit.** Store who, when and why as a new event, never changing the
-  originals (ADR-0003). Today "who" is the node and event code
-  (ADR-0010); a person's name needs an operator name we do not have yet.
-- **One decided time.** Results, lists and every export use the same
-  decided time.
-- **Re-reads.** A new read-out never silently removes earlier data or a
-  manual decision. This is an invariant for the operator-mistake walker
-  (read, correct the finish, read again: the decision stands).
-
-Steps, in this order:
-
-1. The library reports both records, unchanged, in the card-read event:
-   time, fraction, station code and which record it came from. The
-   projection chooses; the library does not.
-2. At the read-out and in "Ändra", show "Första mål", "Sista mål" and the
-   one used, when they differ; the same for start. Results unchanged.
-3. The secretariat can change the choice with a reason, the raw records
-   kept and the change undoable. Build on the existing hand-entered
-   finish decision (`manual_finish_set`).
-4. Then change the default to the rule above, with focused tests and the
-   replay (ADR-0014). Reads stored before step 1 have no reserve data and
-   keep today's behaviour.
-
-Details: a missing reserve record means "first punch unknown", not "more
-than one punch". Compare the two times before rounding, and across
-midnight (half-day clock).
+1. Each start choice: start time 13:00:00, first start punch 13:00:10,
+   later one 13:00:20, finish 13:30:00. Check the source, the result
+   and the fallback when there is no valid punch.
+2. Start 23:59:50, finish 00:30:00 in one race; a read without check,
+   and one without clear; an official allowing a late start outside the
+   window.
+3. First and last equal in whole seconds but with a different fraction
+   or code; a reserve without a known code or mode; a reserve that is
+   empty versus a block that was not read. Never confuse these.
+4. A test finish punch before the race, then two finish passages: show
+   only the candidates the card still holds; the true middle punch may
+   be gone.
+5. Read A, a manual finish decision, read B with other candidates, undo:
+   the decision stands until withdrawn, then the automatic choice comes
+   from the right read. Also after a rebuild and a race reset.
+6. Two runners at a mass or chasing start whose punch times are in the
+   other order than the finish judge's: places follow the judge without
+   altered times. Also a dead heat.
+7. Change the start time or the class's start choice after a read: start,
+   finish, total, result list and export agree.
+8. A card with owner text programmed: the stored event holds none of it,
+   as bytes or as text.
+9. Old events without reserve data keep today's behaviour, also when a
+   later read adds reserve data.
+10. The replay of both days and an explicit decision before the new
+    default is used for results. The rule matrix lint does not replace
+    the behaviour tests.
 
 ## 2. Contact or AIR+ for start and finish
 
