@@ -1158,6 +1158,18 @@ describe('LottningView (mounted)', () => {
       expect(ticked()).toEqual(['start_time']);
     });
 
+    it('the start rule has a ? that opens why, with the TR number', async () => {
+      h12Start = 'start_time';
+      h12Class = { free_start_banned: true };
+      await mountView();
+      const btn = $('help-lottning-start-help') as HTMLButtonElement;
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      btn.click();
+      flushSync();
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(text('lottning-start-help')).toContain('SOFT TR 7.4.2');
+    });
+
     it('a banned class stored as free start shows the conflict in the error style', async () => {
       h12Start = 'free_start';
       h12Class = { free_start_banned: true };
@@ -1286,6 +1298,18 @@ describe('LottningView (mounted)', () => {
     await settle();
     expect($('lottning-max-time-error')).not.toBeNull();
     expect(text('lottning-max-time-note')).not.toContain('sparades inte');
+  });
+
+  it('SOFT TR 4.21.2: a refused max time has a ? that opens why', async () => {
+    await mountView();
+    expect($('help-lottning-max-time-locked')).toBeNull();
+    patchAnswer = { status: 409, body: { error: 'max_time_locked' } };
+    await typeInto('lottning-max-time', '90:00');
+    ($('lottning-max-time-save') as HTMLButtonElement).click();
+    await settle();
+    ($('help-lottning-max-time-locked') as HTMLButtonElement).click();
+    flushSync();
+    expect(text('lottning-max-time-locked')).toContain('SOFT TR 4.21.2');
   });
 
   it('a max-time failure that lands after a class switch is not shown on the new class', async () => {

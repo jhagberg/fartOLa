@@ -421,6 +421,9 @@ describe('fees remount and the locked max time', () => {
       'Låst sedan första start.'
     );
     expect(input.readOnly).toBe(true);
+    document.querySelector<HTMLButtonElement>('[data-testid="help-info-max-time-why"]')!.click();
+    flushSync();
+    expect(document.getElementById('info-max-time-why')!.textContent).toContain('SOFT TR 4.21.2');
     expect(input.value).toBe('150:00');
     expect(
       document.querySelector<HTMLButtonElement>('[data-testid="info-max-time-save"]')!.disabled
