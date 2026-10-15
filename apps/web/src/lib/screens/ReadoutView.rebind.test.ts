@@ -58,6 +58,8 @@ function row(attached: boolean) {
     finish_ms: null,
     late_start_ms: null,
     early_start_ms: null,
+    first_last: { start: null, finish: null },
+    start_source: null,
     manual_finish_ms: null,
     manual_finish_reason: null,
     manual_punches: [],

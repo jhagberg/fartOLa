@@ -28,6 +28,7 @@ const read = (over: Partial<Read> = {}): Read => ({
   missingStartHint: null,
   startWarning: null,
   corrections: [],
+  firstLast: [],
   ...over,
 });
 
@@ -94,5 +95,33 @@ describe('LatestReadCard corrections', () => {
 
   it('shows nothing without corrections', () => {
     expect(html(read()).querySelector('[data-testid="corrections-line"]')).toBeNull();
+  });
+});
+
+describe('LatestReadCard first and last punch (ADR-0019 step 2)', () => {
+  it('shows the first and the last finish, the last marked as used', () => {
+    const el = html(
+      read({
+        firstLast: [
+          { kind: 'finish', first: '10:29:30', last: '10:30:00 (kod 100)', lastUsed: true },
+        ],
+      })
+    ).querySelector('[data-testid="first-last-finish"]');
+    expect(el?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Första mål 10:29:30 Sista mål 10:30:00 (kod 100) (används)'
+    );
+  });
+
+  it('shows the start pair without a mark when the drawn start time counts', () => {
+    const el = html(
+      read({ firstLast: [{ kind: 'start', first: '10:00:10', last: '10:00:20', lastUsed: false }] })
+    ).querySelector('[data-testid="first-last-start"]');
+    expect(el?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Första start 10:00:10 Sista start 10:00:20'
+    );
+  });
+
+  it('shows nothing when first and last are the same punch or the card has no first', () => {
+    expect(html(read()).querySelector('[data-testid="first-last"]')).toBeNull();
   });
 });

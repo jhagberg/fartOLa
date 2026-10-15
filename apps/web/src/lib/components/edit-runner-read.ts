@@ -7,7 +7,13 @@
 import { formatClockTime } from '@fartola/shared-types';
 import type { ClassDTO, CourseDTO } from '@fartola/shared-types';
 import type { CorrectionsDTO } from '#lib/api/client.ts';
-import { classifyPunches, formatElapsed, rawPunchesToReceipt } from '#lib/screens/readout-types.ts';
+import {
+  classifyPunches,
+  firstLastLines,
+  formatElapsed,
+  rawPunchesToReceipt,
+  type FirstLastLine,
+} from '#lib/screens/readout-types.ts';
 import type { ReceiptPunch } from './receipt-templates/types.ts';
 
 export interface EditRunnerRead {
@@ -24,6 +30,8 @@ export interface EditRunnerRead {
   /** "3:12" when the start punch is more than 60 s late; else null. */
   lateStart: string | null;
   finish: { time: string; byHand: boolean } | null;
+  /** ADR-0019 step 2: first and last start/finish where they differ. */
+  firstLast: FirstLastLine[];
   status: CorrectionsDTO['status'];
   elapsed: string | null;
   /** Controls in course order (course-shaped when the class has a course). */
@@ -90,6 +98,13 @@ export function toEditRunnerRead(
         : read?.finish_ms != null
           ? { time: clock(read.finish_ms), byHand: false }
           : null,
+    firstLast: read
+      ? firstLastLines(
+          read.first_last,
+          { start: c.start_source === 'punch', finish: c.manual_finish_ms === null },
+          ctx.clockOffsetMin
+        )
+      : [],
     status: c.status,
     elapsed: ctx.noTiming
       ? null
