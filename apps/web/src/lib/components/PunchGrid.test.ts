@@ -102,7 +102,7 @@ describe('PunchGrid without a course', () => {
 });
 
 describe('PunchGrid punch by hand (SOFT TR 8.1.4 kommentar)', () => {
-  it('reads "manuell", keeps its course number and is not the miss state', () => {
+  it('reads "för hand", keeps its course number and is not the miss state', () => {
     const el = render([
       ok(31),
       { code: 32, split: '—', time: '—', ok: true, manual: true },
@@ -110,7 +110,7 @@ describe('PunchGrid punch by hand (SOFT TR 8.1.4 kommentar)', () => {
     ]);
     const tile = tiles(el)[1]!;
     expect(tile.dataset.state).toBe('manual');
-    expect(bottom(tile)).toBe('manuell');
+    expect(bottom(tile)).toBe('för hand');
     expect(tile.querySelector('.idx')?.textContent).toBe('2');
   });
 });

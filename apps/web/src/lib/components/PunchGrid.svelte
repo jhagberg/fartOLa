@@ -4,7 +4,7 @@
   PunchGrid — the runner's controls in course order, then appended
   punches, then the finish. Each state differs in lightness, border, icon
   and word, so it reads without colour (design-lab spec "Punch tiles";
-  ADR-0016 rule 7): ok, manual ("manuell", punched by hand), miss
+  ADR-0016 rule 7): ok, manual ("för hand", punched by hand), miss
   ("saknas"), order ("fel ordn."), extra, struck ("struken"), finish.
   Without a course (`verdict` false) tiles are plain punches: nothing
   claims correct or missing.

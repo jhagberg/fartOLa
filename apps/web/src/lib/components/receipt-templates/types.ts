@@ -29,7 +29,7 @@ export interface ReceiptPunch {
    * not on the course; 'order' = a course control punched out of order. */
   kind?: 'struck' | 'extra' | 'order';
   /** A course control punched by hand (SOFT TR 8.1.4 kommentar): OK, no
-   * time, shown "manuell". */
+   * time, shown "för hand". */
   manual?: boolean;
   /** Per-leg place; 1 = fastest split. Detailed template colours green. */
   legRank?: number | null;
