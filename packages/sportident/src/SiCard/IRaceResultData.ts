@@ -23,8 +23,9 @@ export interface IRaceResultData {
   startSubsec256?: number;
   finishSubsec256?: number;
   /** SIAC reserve records (block 3): the FIRST start/finish punch after a clear;
-   * the main record is the last. Absent: no reserve record. Code absent when the
-   * reserve record has a subsecond (PTD bit 7: its code is unknown). */
+   * the main record is the last. Time absent: not read (block 3 not read, or a
+   * card without reserve records); null: read and empty (erased, 0xEEEE). Code
+   * absent when the reserve record has a subsecond (PTD bit 7: its code is unknown). */
   startFirstTime?: SiTimestamp;
   finishFirstTime?: SiTimestamp;
   startFirstCode?: number;
