@@ -1240,5 +1240,6 @@
   "help.why": "Why?",
   "help.maxTimeLocked": "Every runner gets the same max time, and it is published in the PM. So it cannot change once the first runner has started.",
   "help.startBanned": "Age classes are drawn so the start is fair. Free start is only for open classes.",
-  "help.startRequired": "An open class has no drawn start: runners start when they like and the time counts from the start punch."
+  "help.startRequired": "An open class has no drawn start: runners start when they like and the time counts from the start punch.",
+  "info.courses.voidHint": "Tap a control to void it. Tap again to undo."
 }

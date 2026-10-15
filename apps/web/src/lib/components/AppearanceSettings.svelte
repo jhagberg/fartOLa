@@ -125,6 +125,7 @@
         ></button>
       {/each}
     </div>
+    <span data-testid="accent-name">{t(`tw.accent.${tweaks.accent}`)}</span>
   </Field>
 
   <!-- Contrast -->

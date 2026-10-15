@@ -1240,5 +1240,6 @@
   "help.why": "Varför?",
   "help.maxTimeLocked": "Alla löpare ska ha samma maxtid, och den står i PM. Därför får den inte ändras när första löparen har startat.",
   "help.startBanned": "Åldersklasser ska lottas så att starten blir rättvis. Fri start är bara till för öppna klasser.",
-  "help.startRequired": "En öppen klass har ingen lottad start: löparen startar när hen vill och tiden räknas från startstämplingen."
+  "help.startRequired": "En öppen klass har ingen lottad start: löparen startar när hen vill och tiden räknas från startstämplingen.",
+  "info.courses.voidHint": "Tryck på en kontroll för att stryka den. Tryck igen för att ångra."
 }
