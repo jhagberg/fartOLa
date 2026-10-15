@@ -81,10 +81,14 @@
   let loadFailed = $state(false);
 
   async function load(): Promise<void> {
+    // Same sequence as reload(): a first read that lands after a reload is old.
+    const mine = ++reloadSeq;
     loadFailed = false;
     try {
-      data = await getFees(competitionId);
+      const fresh = await getFees(competitionId);
+      if (mine === reloadSeq) data = fresh;
     } catch (e) {
+      if (mine !== reloadSeq) return;
       console.error('fees load failed:', e);
       loadFailed = true;
     }

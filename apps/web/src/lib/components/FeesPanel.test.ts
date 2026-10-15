@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
 import FeesPanel from './FeesPanel.svelte';
+import { feesProps } from './FeesPanel.testprops.svelte.ts';
 
 const COMP = 'comp-1';
 
@@ -22,6 +23,23 @@ let failPut: boolean;
 let entryFee: number;
 /** The next GET of the fees answers 500 (once). */
 let failGet: boolean;
+/** When set, the next GET reads the fees now but answers once this resolves. */
+let holdGet: Promise<void> | null = null;
+
+const fees = (entry_fee: number) => ({
+  date: '2026-10-10',
+  card_fee: cardFee,
+  classes: [
+    {
+      class_id: 'h21',
+      name: 'H21',
+      class_kind: 'senior',
+      entry_fee,
+      youth_entry_fee: null,
+      late_fee_pct: 50,
+    },
+  ],
+});
 
 function installFetch(): void {
   puts = [];
@@ -34,6 +52,13 @@ function installFetch(): void {
     if (String(url).endsWith('/fees/from-eventor')) {
       entryFee = 250;
       return json({ updated: 1 });
+    }
+    if ((init?.method ?? 'GET') === 'GET' && holdGet) {
+      const held = holdGet;
+      holdGet = null;
+      const body = fees(entryFee);
+      await held;
+      return json(body);
     }
     if ((init?.method ?? 'GET') === 'GET' && failGet) {
       failGet = false;
@@ -50,20 +75,7 @@ function installFetch(): void {
       if (body.card_fee !== undefined) cardFee = body.card_fee;
       return json({ updated: 0 });
     }
-    return json({
-      date: '2026-10-10',
-      card_fee: cardFee,
-      classes: [
-        {
-          class_id: 'h21',
-          name: 'H21',
-          class_kind: 'senior',
-          entry_fee: entryFee,
-          youth_entry_fee: null,
-          late_fee_pct: 50,
-        },
-      ],
-    });
+    return json(fees(entryFee));
   }) as unknown as typeof fetch;
 }
 
@@ -252,6 +264,37 @@ describe('FeesPanel', () => {
     expect(document.querySelector('[data-testid="fees-reload-error"]')).toBeNull();
     expect(entry().value).toBe('250');
     expect(late().disabled).toBe(false);
+    change(late(), '60');
+    await settle();
+    expect(puts).toEqual([{ classes: [{ ...H21, entry_fee: 250, late_fee_pct: 60 }] }]);
+  });
+
+  it('a first read that lands after a reload does not put the old fees back', async () => {
+    void unmount(component!);
+    document.body.innerHTML = '';
+    let release!: () => void;
+    holdGet = new Promise<void>((r) => (release = r));
+    feesProps.reloadKey = 0;
+    component = mount(FeesPanel, {
+      target: document.body,
+      props: {
+        competitionId: COMP,
+        eventorLinked: true,
+        get reloadKey() {
+          return feesProps.reloadKey;
+        },
+      },
+    });
+    await settle();
+    // The first read is still out (it read 180); the fees change and a
+    // class-kind save reads them again.
+    entryFee = 250;
+    feesProps.reloadKey = 1;
+    await settle();
+    expect(entry().value).toBe('250');
+    release();
+    await settle();
+    expect(entry().value).toBe('250');
     change(late(), '60');
     await settle();
     expect(puts).toEqual([{ classes: [{ ...H21, entry_fee: 250, late_fee_pct: 60 }] }]);
