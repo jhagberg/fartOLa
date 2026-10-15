@@ -59,9 +59,10 @@ export interface CompetitorView {
     start: HalfDayClock | null;
     finish: HalfDayClock | null;
     /** SIAC reserve records (the first start/finish after a clear), as read.
-     * Absent when the read has none; shown only, never scored (ADR-0019). */
-    start_first?: HalfDayClock;
-    finish_first?: HalfDayClock;
+     * Absent when not read (or the card has none), null when read and empty;
+     * shown only, never scored (ADR-0019). */
+    start_first?: HalfDayClock | null;
+    finish_first?: HalfDayClock | null;
   }>;
   latest_punches: NdjsonPunch[];
   /** C-H2: kept on the view so plan 16 (IOF XML export) can render

@@ -116,14 +116,15 @@ const bothDiffer = (a: number | undefined, b: number | undefined): boolean =>
   a !== undefined && b !== undefined && a !== b;
 
 /** A read's first and last start and finish where they differ, compared
- * before rounding: time, subsecond and code. Null when the card has no
- * reserve record (old reads, non-SIAC cards) or it is the same punch. */
+ * before rounding: time, subsecond and code. Null when the reserve record is
+ * not known (old reads, non-SIAC cards, block 3 not read), empty (null), or
+ * the same punch. */
 export function firstAndLastPunches(
   read: {
     start: HalfDayClock | null;
     finish: HalfDayClock | null;
-    start_first?: HalfDayClock;
-    finish_first?: HalfDayClock;
+    start_first?: HalfDayClock | null;
+    finish_first?: HalfDayClock | null;
     card_type: string;
   },
   readAtMs: number,
@@ -133,8 +134,8 @@ export function firstAndLastPunches(
     ms: cardClockToEpochMs(c, read.card_type, readAtMs, offsetMin),
     code: c.code ?? null,
   });
-  const pair = (first: HalfDayClock | undefined, last: HalfDayClock | null) =>
-    first === undefined || last === null
+  const pair = (first: HalfDayClock | null | undefined, last: HalfDayClock | null) =>
+    first == null || last === null
       ? null
       : first.seconds_in_half_day !== last.seconds_in_half_day ||
           first.half_day !== last.half_day ||

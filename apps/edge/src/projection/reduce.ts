@@ -344,9 +344,9 @@ export function reduce(input: ReduceInput): CompetitionState {
           start: payload.start,
           finish: payload.finish,
         };
-        // Absent stays absent: a read without reserve records gets no key.
-        if (payload.start_first) read.start_first = payload.start_first;
-        if (payload.finish_first) read.finish_first = payload.finish_first;
+        // Absent stays absent (not read), null stays null (read and empty).
+        if (payload.start_first !== undefined) read.start_first = payload.start_first;
+        if (payload.finish_first !== undefined) read.finish_first = payload.finish_first;
         view.card_read_history.push(read);
         // A standing DQ hides the punches, as a DQ set after the read does.
         view.latest_punches = view.manual_status === 'DQ' ? [] : payload.punches;

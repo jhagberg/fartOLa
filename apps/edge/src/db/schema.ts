@@ -125,9 +125,11 @@ export type EventPayload =
       check: HalfDayClock | null;
       clear: HalfDayClock | null;
       /** SIAC reserve records: the first start/finish punch after a clear.
-       * Observation only, not used by the projection. */
-      start_first?: HalfDayClock;
-      finish_first?: HalfDayClock;
+       * Absent: not read (block 3 not read, a card without them, an older
+       * event); null: read and empty. Observation only, not used by the
+       * projection. */
+      start_first?: HalfDayClock | null;
+      finish_first?: HalfDayClock | null;
       /** SIAC block 3: battery date "YYYY-MM-DD", no time zone. Observation only. */
       battery_date?: string;
       punch_count: number;
