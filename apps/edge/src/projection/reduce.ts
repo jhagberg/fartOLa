@@ -348,7 +348,8 @@ export function reduce(input: ReduceInput): CompetitionState {
         if (payload.start_first) read.start_first = payload.start_first;
         if (payload.finish_first) read.finish_first = payload.finish_first;
         view.card_read_history.push(read);
-        view.latest_punches = payload.punches;
+        // A standing DQ hides the punches, as a DQ set after the read does.
+        view.latest_punches = view.manual_status === 'DQ' ? [] : payload.punches;
         view.latest_start = payload.start;
         view.latest_finish = payload.finish;
         // Phase 2.1 race-phase gate: card_reads from before the race
