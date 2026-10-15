@@ -48,7 +48,8 @@
       onResolved('confirmed');
       return;
     }
-    error = r.data.message ?? r.data.error ?? t('err.network');
+    console.error(r);
+    error = t('common.unknownError');
   }
 
   function onDismiss(): void {

@@ -801,7 +801,6 @@
   "pursuitResults.err.parseFailed": "Filen kunde inte läsas som en resultatlista. Kontrollera att det är en IOF XML 3.0-resultatlista.",
   "pursuitResults.err.noFile": "Välj en fil först.",
   "pursuitResults.err.tooLarge": "Filen är för stor.",
-  "pursuitResults.err.failed": "Resultatlistan kunde inte läsas in: {{error}}",
   "history.title": "Ändringar av starttider",
   "history.empty": "Inga starttider har ändrats än.",
   "history.cause.draw": "Lottning",

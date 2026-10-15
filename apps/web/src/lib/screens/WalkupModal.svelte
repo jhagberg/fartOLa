@@ -48,6 +48,7 @@
   } from '#lib/api/client.ts';
   import { parseBirthYear, walkupFee } from '#lib/screens/fees.ts';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import Button from '#lib/ui/Button.svelte';
   import Field from '#lib/ui/Field.svelte';
   import Input from '#lib/ui/Input.svelte';
@@ -454,14 +455,14 @@
       } else if (e instanceof ApiError && e.status === 400) {
         const body = e.body as { error?: string } | undefined;
         if (body && body.error === 'hyrbricka_contact_required') {
-          // Server-side authoritative gate; surface its message.
+          // Server-side authoritative gate.
           fieldError = t('walk.err.hyrbrickaContact');
         } else {
-          fieldError = (e as Error).message ?? t('err.network');
+          fieldError = userMessage(e);
         }
       } else if (e instanceof ApiError) {
-        // Other ApiError (5xx etc.) — server responded, surface the message.
-        fieldError = (e as Error).message ?? t('err.network');
+        // Other ApiError (5xx etc.): plain words, the raw text goes to the console.
+        fieldError = userMessage(e);
       } else {
         // Not an ApiError → raw fetch failure even after the client's
         // built-in 1-shot retry. The form stays populated; the operator
@@ -542,7 +543,7 @@
       // logic drops this card.
       close(true);
     } catch (e) {
-      fieldError = (e as Error).message ?? t('err.network');
+      fieldError = userMessage(e);
     } finally {
       saving = false;
     }

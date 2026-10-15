@@ -801,7 +801,6 @@
   "pursuitResults.err.parseFailed": "The file could not be read as a result list. Check that it is an IOF XML 3.0 result list.",
   "pursuitResults.err.noFile": "Choose a file first.",
   "pursuitResults.err.tooLarge": "The file is too large.",
-  "pursuitResults.err.failed": "The result list could not be read: {{error}}",
   "history.title": "Start-time changes",
   "history.empty": "No start times have changed yet.",
   "history.cause.draw": "Draw",

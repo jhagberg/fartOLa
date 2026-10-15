@@ -16,6 +16,7 @@
 
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import {
     ApiError,
     importPreviousResults,
@@ -84,7 +85,7 @@
           : undefined;
       const key = code !== undefined ? ERRORS[code] : undefined;
       error =
-        key !== undefined ? t(key) : t('pursuitResults.err.failed', { error: (e as Error).message });
+        key !== undefined ? t(key) : userMessage(e);
     } finally {
       busy = false;
     }
