@@ -243,7 +243,7 @@ test.describe('max time per class (LO-1)', () => {
   });
 });
 
-for (const bad of ['abc', '60', '0:00', '1:99', '-5:00']) {
+for (const bad of ['abc', '0', '0:00', '1:99', '-5:00']) {
   test(`an entry that is not a max time ("${bad}") is refused and sends nothing (LO-1)`, async ({
     page,
     request,
