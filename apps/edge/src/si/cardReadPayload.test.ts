@@ -508,6 +508,11 @@ describe('SIAC reserve records in the card_read payload', () => {
     const a = run(withFields);
     const b = run(without);
     assert.equal(a.competitors.get('a')?.elapsed_time_ms, 600_000);
+    // The read history keeps the reserves (ADR-0019 step 2); all else is equal.
+    const read = a.competitors.get('a')!.card_read_history[0]!;
+    assert.ok(read.finish_first);
+    delete read.start_first;
+    delete read.finish_first;
     assert.deepEqual(a, b);
   });
 });
