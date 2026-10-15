@@ -28,6 +28,7 @@
   import { activeCompetition } from '../stores/activeCompetition.svelte.ts';
   import Icon from '../ui/Icon.svelte';
   import { t } from '../i18n/index.ts';
+  import { userMessage } from '../api/userMessage.ts';
 
   let open = $state(false);
   let query = $state('');
@@ -78,7 +79,7 @@
       query = '';
       void goto(`/competition/${id}/readout`);
     } catch (e) {
-      switchError = (e as Error).message;
+      switchError = userMessage(e);
     }
   }
 

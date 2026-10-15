@@ -14,6 +14,7 @@
 <script lang="ts">
   import PulseDot from '../ui/PulseDot.svelte';
   import { t } from '../i18n/index.ts';
+  import { userMessage } from '../api/userMessage.ts';
   import { reconnectBridge, ApiError } from '../api/client.ts';
 
   type Status = 'online' | 'offline' | 'connecting';
@@ -57,7 +58,7 @@
       if (e instanceof ApiError && e.status === 503) {
         reconnectError = t('ro.bridgeNotAttached');
       } else {
-        reconnectError = (e as Error).message;
+        reconnectError = userMessage(e);
       }
     } finally {
       reconnecting = false;
