@@ -30,6 +30,7 @@
   "export.unreadDns.undone": "Did not start removed for {{n}} runners",
   "export.title": "Export results",
   "export.intro": "Check and download the result file for Eventor.",
+  "export.eventorLink": "Send results to Eventor",
   "export.typeHeading": "Type",
   "export.type.final": "Final",
   "export.type.provisional": "Preliminary",
@@ -135,6 +136,9 @@
   "nav.registration": "Registration desk",
   "nav.menu": "Open menu",
   "nav.close": "Close menu",
+  "nav.group.before": "Before the race",
+  "nav.group.during": "During the race",
+  "nav.group.after": "After the race",
   "a11y.skipToContent": "Skip to main content",
 
   "active.label": "Active",

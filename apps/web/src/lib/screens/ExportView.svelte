@@ -126,6 +126,12 @@
   <header class="hd">
     <h1 class="h0">{t('export.title')}</h1>
     <p class="muted">{t('export.intro')}</p>
+    <p>
+      <a
+        href={`/competition/${encodeURIComponent(competitionId)}/eventor-publish`}
+        data-testid="export-eventor-link">{t('export.eventorLink')}</a
+      >
+    </p>
   </header>
 
   <section class="sec" data-testid="export-section-type">
