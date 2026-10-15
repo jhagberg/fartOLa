@@ -1236,5 +1236,9 @@
   "edit.read.splits": "Sträcktider",
   "hint.cardNumber": "Numret som står på brickan, bara siffror.",
   "hint.birthYear": "Fyra siffror, t.ex. 2012.",
-  "hint.clock": "Klockslag, TT:MM:SS"
+  "hint.clock": "Klockslag, TT:MM:SS",
+  "help.why": "Varför?",
+  "help.maxTimeLocked": "Alla löpare ska ha samma maxtid, och den står i PM. Därför får den inte ändras när första löparen har startat.",
+  "help.startBanned": "Åldersklasser ska lottas så att starten blir rättvis. Fri start är bara till för öppna klasser.",
+  "help.startRequired": "En öppen klass har ingen lottad start: löparen startar när hen vill och tiden räknas från startstämplingen."
 }

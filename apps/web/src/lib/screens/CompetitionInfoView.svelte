@@ -40,6 +40,7 @@
   import ClassKindsPanel from '#lib/components/ClassKindsPanel.svelte';
   import FeesPanel from '#lib/components/FeesPanel.svelte';
   import Button from '#lib/ui/Button.svelte';
+  import HelpTip from '#lib/ui/HelpTip.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import LoadError from '#lib/ui/LoadError.svelte';
   import SavedNote from '#lib/ui/SavedNote.svelte';
@@ -519,6 +520,7 @@
           <p class="field-hint" id="info-max-time-lock" data-testid="info-max-time-lock">
             {maxLocked ? t('info.maxTime.lockedNote') : t('info.maxTime.lockNote')}
           </p>
+          <HelpTip id="info-max-time-why" tr="TR 4.21.2" text={t('help.maxTimeLocked')} />
           {#if maxInvalid}
             <p class="err" role="alert" id="info-max-time-error">{t('info.maxTime.invalid')}</p>
           {/if}

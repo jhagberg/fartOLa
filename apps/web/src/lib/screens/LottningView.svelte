@@ -47,6 +47,7 @@
     type VacantPosition,
   } from '#lib/api/client.ts';
   import Field from '#lib/ui/Field.svelte';
+  import HelpTip from '#lib/ui/HelpTip.svelte';
   import Select from '#lib/ui/Select.svelte';
   import Input from '#lib/ui/Input.svelte';
   import Button from '#lib/ui/Button.svelte';
@@ -941,6 +942,11 @@
               {#if startRule.conflict}<Icon name="alert-triangle" />{/if}
               <span>{t(startRule.key)}</span>
             </p>
+            <HelpTip
+              id="lottning-start-help"
+              tr={startRule.key.endsWith('banned') ? 'TR 7.4.2' : 'TR 7.4.3'}
+              text={t(startRule.key.endsWith('banned') ? 'help.startBanned' : 'help.startRequired')}
+            />
           {/if}
           {#if selectedStartMethod === 'free_start' && hasStartTimes}
             <p class="hint" data-testid="lottning-start-method-keep">
@@ -1123,6 +1129,9 @@
           state={maxSave.state}
           error={maxLocked ? t('lottning.maxTimeLocked') : maxSave.error}
         />
+        {#if maxLocked}
+          <HelpTip id="lottning-max-time-locked" tr="TR 4.21.2" text={t('help.maxTimeLocked')} />
+        {/if}
         {#if maxTimeStored === null && maxSave.state !== 'error'}
           <span class="muted">{t('lottning.maxTimeNone')}</span>
         {/if}
