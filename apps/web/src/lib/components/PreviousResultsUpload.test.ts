@@ -113,4 +113,13 @@ describe('PreviousResultsUpload (mounted)', () => {
     );
     expect($('pursuit-results-done')).toBeNull();
   });
+
+  it('a refusal with server text says Något gick fel, never the text', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    answer = { status: 500, body: { error: 'SQLITE_BUSY: database is locked' } };
+    await pickAndUpload();
+    expect($('pursuit-results-error')!.textContent).toContain('Något gick fel');
+    expect(document.body.textContent).not.toContain('SQLITE_BUSY');
+    expect(log).toHaveBeenCalled();
+  });
 });
