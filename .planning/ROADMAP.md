@@ -35,6 +35,7 @@ roadmap used until 2026-10-14 is in
 | Design-lab plans 1-3 | The screens redone after the UI audit (ADR-0016) | 2026-10-12 |
 | Start choice per class | One start answer per class (ADR-0018) | 2026-10-14 |
 | Stable CI and screen fixes | Flaky e2e, small screen bugs, read-out refetch, speaker demo feedback form | 2026-10-15 |
+| Times, rules and first/last punch | Late start not from a pre-race scan, receipt splits over noon and midnight, DQ before the read, no false-start button for start-punch classes, "för hand", card holder kept out of events, first and last start/finish shown (ADR-0019 steps 1-2) | 2026-10-15 |
 | Also | Speaker screen, kvar i skogen from radio, jSh/serial radio input, SIAC block 1 and reserve records, card change keeps the result, operator-mistake walker | 2026-10 |
 
 Phase plans and their history stay in `.planning/phases/`; no new ones
@@ -45,15 +46,13 @@ are added.
 | Item | Done when | Todos |
 | --- | --- | --- |
 | OLA lab: how OLA reads and decides | report with navigation, comparison table and frame log | lab session (private); feeds ADR-0019 and the red exit |
-| Which start and finish time counts | steps 1-2 built (no result changes); ADR-0019 accepted (SOFT's answer, replay) before steps 3-4 | `2026-10-13-sportident-answers-follow-up` item 1 |
-| Times that can be wrong | late start ignores pre-race scans; splits over 12:00 and midnight are positive; a DQ before the read hides the punches; each with a replay (PR 151 waits for it) | `late-start-from-pre-race-scan`, `splits-across-half-day`, `dq-before-read-keeps-punches` |
-| Rule and wording fixes | no false-start button where the start punch counts; one word for a manual punch (PR 150) | `hide-false-start-button-for-punch-classes`, `manual-punch-one-word` |
+| Which start and finish time counts | step 1 finished (an empty reserve told from an unread block); SOFT asked; ADR-0019 accepted (SOFT's answer, replay) before steps 3-4 | `2026-10-13-sportident-answers-follow-up` item 1 |
+| Medium screens | hire-card contact editable and checked; no raw server text in errors; sidebar grouped | `hire-card-contact-edit-and-validation`, `raw-server-text-in-error-messages`, `sidebar-menu-grouping` |
 
 ## Next
 
 | Item | Done when | Todos |
 | --- | --- | --- |
-| Medium screens | hire-card contact editable and checked; no raw server text in errors; sidebar grouped | `hire-card-contact-edit-and-validation`, `raw-server-text-in-error-messages`, `sidebar-menu-grouping` |
 | Demo from the real app | the project site shows the app's own screens on recorded data | `2026-10-14-demo-from-the-real-app` |
 
 ## Later (each needs a short plan first)
