@@ -770,7 +770,7 @@ describe('Tävlingsinfo: max time and fees', () => {
     expect(text('info-max-time-lock')).toBe('Låst sedan första start.');
   });
 
-  it('the max time is typed as mm:ss, as on Lottning: a stored value round-trips and minutes alone are refused', async () => {
+  it('the max time is typed as minutes or mm:ss, as on Lottning: a stored value round-trips and a bad one is refused', async () => {
     await mountView();
     const save = $<HTMLButtonElement>('info-max-time-save');
     expect($<HTMLInputElement>('info-max-time').value).toBe('150:00');
@@ -778,16 +778,17 @@ describe('Tävlingsinfo: max time and fees', () => {
     expect(save.disabled).toBe(true);
     await type('info-max-time', '2:30:00');
     expect(save.disabled).toBe(true);
-    await type('info-max-time', '90');
+    await type('info-max-time', '90:60');
     save.click();
     await settle();
     expect(maxPatches).toEqual([]);
     expect(document.body.textContent).toContain('Ogiltig maxtid');
-    await type('info-max-time', '1:30');
+    expect(text('info-max-time-format')).toBe('Minuter eller mm:ss, till exempel 150 eller 150:00');
+    await type('info-max-time', '90');
     save.click();
     await settle();
-    expect(maxPatches).toEqual([{ max_time_sec: 90 }]);
-    expect($<HTMLInputElement>('info-max-time').value).toBe('1:30');
+    expect(maxPatches).toEqual([{ max_time_sec: 5400 }]);
+    expect($<HTMLInputElement>('info-max-time').value).toBe('90:00');
     expect(save.disabled).toBe(true);
   });
 

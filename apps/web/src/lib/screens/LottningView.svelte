@@ -529,7 +529,11 @@
     const mine = ++maxSaveGen;
     await maxSave.run(
       saveClassSetting(classId, 'maxTimeSec', sec, maxTimeStored ?? null, (saved) => {
-        if (classId === selectedClassId) maxTimeStored = saved;
+        if (classId === selectedClassId) {
+          maxTimeStored = saved;
+          // Shown as mm:ss, unless more was typed meanwhile.
+          if (parseMaxTime(maxTimeInput) === saved) maxTimeInput = formatMaxTime(saved);
+        }
       }).catch((e: unknown) => {
         if (mine === maxSaveGen)
           maxLocked =

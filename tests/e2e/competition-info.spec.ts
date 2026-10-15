@@ -234,7 +234,7 @@ test.describe('max time', () => {
     );
     await page.getByTestId('info-max-time-rule').getByText('Visa regeltext').click();
     await expect(page.getByTestId('info-max-time-rule')).toContainText('densamma för alla klasser');
-    await page.getByTestId('info-max-time').fill('150:00');
+    await page.getByTestId('info-max-time').fill('150');
     await page.getByTestId('info-max-time-save').click();
     await expect(page.getByTestId('info-max-time-note')).toHaveText('Sparat');
     expect((await competition(request, id)).max_time_sec).toBe(9000);
