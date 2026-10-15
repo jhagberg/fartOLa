@@ -27,6 +27,7 @@
   import Button from '#lib/ui/Button.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import {
     getCompetition,
     postCheckunitSnapshot,
@@ -197,7 +198,7 @@
         asleep = true;
         error = t('kvariskov.asleep');
       } else {
-        error = err instanceof Error ? err.message : String(err);
+        error = userMessage(err);
       }
     } finally {
       loading = false;
