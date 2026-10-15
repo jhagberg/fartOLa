@@ -55,8 +55,13 @@ The 2022 rulebook says the same (5.5.2, 5.7.5).
 Steps, in this order (none changes a result before step 4):
 
 1. Done in the library and the event; the card holder is kept out of
-   new events (the name for a walk-up stays in memory only). Still to
-   do: each candidate's unknown or unread fields stored as such.
+   new events (the name for a walk-up stays in memory only). Unknown
+   and unread are stored as such (2026-10-15): a reserve record that
+   was read and is empty (time 0xEEEE) is `null` in `start_first` /
+   `finish_first`, one not read (block 3 not read, no reserve records,
+   older events) has no key; a reserve code whose CN holds a fraction
+   stays absent. Still open: whether an empty reserve is always 0xEEEE
+   after a clear (item 4), and the contact/AIR+ mode (item 2).
 2. The projection keeps the candidates per read. At the read-out and in
    "Ändra", show "Första mål", "Sista mål" and the one used, when they
    differ; the same for start. Results unchanged.
