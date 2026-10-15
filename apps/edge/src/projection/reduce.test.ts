@@ -2410,6 +2410,24 @@ describe('reduce — manual finish time (SOFT TR 4.20.6)', () => {
     assert.equal(v.status, 'PEND');
   });
 
+  test('card missing: a pre-race scan gives no late or early start', () => {
+    // The scan at the desk carries last week's start punch (09:00).
+    seqCounter = 0;
+    const v = reduce({
+      ...base,
+      competitors: [comp({ id: 'a', cardNumber: 1, startTimeMs: at(8 * 3600) })],
+      courses: [course('cls-H21', [])],
+      race_started_at_ms: at(8 * 3600 + 45 * 60),
+      events: [
+        cardRead(1, [p(31)], hd(9 * 3600), null, { eventTimeMs: at(8 * 3600 + 30 * 60) }),
+        setFinish(9 * 3600 + 20 * 60),
+      ],
+    }).competitors.get('a')!;
+    assert.equal(v.status, 'OK');
+    assert.equal(v.late_start_ms, null);
+    assert.equal(v.early_start_ms, null);
+  });
+
   test('a manual status wins over the finish by hand', () => {
     seqCounter = 0;
     const v = reduce({
