@@ -574,6 +574,7 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
           startMethod: cls?.startMethod ?? 'auto',
         }),
         read_at_ms: view.card_read_history.at(-1)?.event_time_ms ?? null,
+        start_method: cls?.startMethod ?? 'auto',
         // Read-only, for the edit dialog (start, punches and splits): the
         // drawn start, the late-start warning the projection already holds
         // (none for start_punch classes), and the latest read as the card

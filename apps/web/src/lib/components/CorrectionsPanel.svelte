@@ -312,18 +312,20 @@
           </Button>
         </div>
       {:else}
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          data-testid="corr-false-start"
-          onclick={() =>
-            void run(() =>
-              setTimeAddition(competitionId, competitorId, 1, t('corr.addition.falseStart'))
-            )}
-        >
-          {t('corr.addition.falseStartBtn')}
-        </Button>
+        {#if data.start_method !== 'start_punch' && data.start_method !== 'free_start'}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            data-testid="corr-false-start"
+            onclick={() =>
+              void run(() =>
+                setTimeAddition(competitionId, competitorId, 1, t('corr.addition.falseStart'))
+              )}
+          >
+            {t('corr.addition.falseStartBtn')}
+          </Button>
+        {/if}
         <div class="entry">
           <label class="field">
             <span>{t('corr.addition.min')}</span>

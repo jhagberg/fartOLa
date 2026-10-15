@@ -744,6 +744,7 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
       manual_punches: [],
       time_addition_min: 0,
       time_addition_reason: null,
+      start_method: 'auto',
     });
     const b = await seedCompetitionAndCompetitor(ctx.app);
     assert.equal((await get(a.competitionId, b.competitorId)).statusCode, 404);

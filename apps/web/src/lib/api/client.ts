@@ -724,6 +724,8 @@ export interface CorrectionsDTO {
   manual_punches: Array<{ control_code: number; reason: string }>;
   time_addition_min: number;
   time_addition_reason: string | null;
+  /** The class's start method; start_punch and free_start take no false-start addition (TR 4.18.14). */
+  start_method: StartMethod;
 }
 
 const competitorPath = (competitionId: string, competitorId: string): string =>

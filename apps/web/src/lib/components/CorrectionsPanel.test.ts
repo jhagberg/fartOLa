@@ -55,6 +55,7 @@ describe('CorrectionsPanel (mounted)', () => {
       manual_punches: [],
       time_addition_min: 0,
       time_addition_reason: null,
+      start_method: 'start_time',
     };
     posts = [];
     offset = 120;
@@ -133,6 +134,21 @@ describe('CorrectionsPanel (mounted)', () => {
     await settle();
     expect(posts[1]!.url).toBe('/api/competitions/c1/competitors/r1/clear-manual-finish');
     expect($('corr-finish-input')).not.toBeNull();
+  });
+
+  it('offers the one-minute false start unless the class runs from the start punch (TR 4.18.14)', async () => {
+    await mountIt();
+    expect($('corr-false-start')).not.toBeNull();
+    void unmount(component!);
+    document.body.innerHTML = '';
+    for (const m of ['start_punch', 'free_start'] as const) {
+      state = { ...state, start_method: m };
+      await mountIt();
+      expect($('corr-false-start'), m).toBeNull();
+      expect($('corr-addition-select'), m).not.toBeNull();
+      void unmount(component!);
+      document.body.innerHTML = '';
+    }
   });
 
   it('a time before the start is refused without a request', async () => {
