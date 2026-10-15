@@ -94,3 +94,55 @@ export function cardClockToEpochMs(
   const anchor = readAtMs + offsetMs + CLOCK_SKEW_TOLERANCE_MS;
   return anchor - ((((anchor - cardMs) % period) + period) % period) - offsetMs;
 }
+
+/** A start or finish placed on the competition clock (epoch ms, with the
+ * subsecond), and its station code; null when the record has none. */
+export interface CardTime {
+  ms: number;
+  code: number | null;
+}
+
+/** The first (reserve record) and last (main record) start or finish punch
+ * of a read (ADR-0019 step 2). Shown only; the result uses the last. */
+export interface FirstAndLast {
+  first: CardTime;
+  last: CardTime;
+}
+
+/** Both known and not the same: a reserve code is unknown when its CN byte
+ * holds a fraction, and unknown is not a difference. */
+const bothDiffer = (a: number | undefined, b: number | undefined): boolean =>
+  a !== undefined && b !== undefined && a !== b;
+
+/** A read's first and last start and finish where they differ, compared
+ * before rounding: time, subsecond and code. Null when the card has no
+ * reserve record (old reads, non-SIAC cards) or it is the same punch. */
+export function firstAndLastPunches(
+  read: {
+    start: HalfDayClock | null;
+    finish: HalfDayClock | null;
+    start_first?: HalfDayClock;
+    finish_first?: HalfDayClock;
+    card_type: string;
+  },
+  readAtMs: number,
+  offsetMin: number
+): { start: FirstAndLast | null; finish: FirstAndLast | null } {
+  const at = (c: HalfDayClock): CardTime => ({
+    ms: cardClockToEpochMs(c, read.card_type, readAtMs, offsetMin),
+    code: c.code ?? null,
+  });
+  const pair = (first: HalfDayClock | undefined, last: HalfDayClock | null) =>
+    first === undefined || last === null
+      ? null
+      : first.seconds_in_half_day !== last.seconds_in_half_day ||
+          first.half_day !== last.half_day ||
+          bothDiffer(first.subsec_256, last.subsec_256) ||
+          bothDiffer(first.code, last.code)
+        ? { first: at(first), last: at(last) }
+        : null;
+  return {
+    start: pair(read.start_first, read.start),
+    finish: pair(read.finish_first, read.finish),
+  };
+}

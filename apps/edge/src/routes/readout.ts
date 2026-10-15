@@ -52,8 +52,12 @@ import {
   courseControls,
   controls,
 } from '../db/schema.ts';
-import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
-import { officialMs, rawElapsedMs } from '../projection/dnfMp.ts';
+import {
+  cardClockToEpochMs,
+  firstAndLastPunches,
+  type FirstAndLast,
+} from '../projection/halfDayClockMath.ts';
+import { officialMs, rawElapsedMs, startSource } from '../projection/dnfMp.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
 import type { PunchStatus } from '../projection/types.ts';
 import type { EventPayload } from '../db/schema.ts';
@@ -155,6 +159,11 @@ interface HistoryRow {
    * time in a class timed from it. Warnings for the jury only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** ADR-0019 step 2: this read's first and last start and finish where the
+   * card's reserve record differs from the main one (null otherwise), and
+   * which start the running time takes, so the UI marks the punch in use. */
+  first_last: { start: FirstAndLast | null; finish: FirstAndLast | null };
+  start_source: 'drawn' | 'punch' | null;
   /** The competitor's CURRENT standing in the class, from the projection's
    * results rows (display only). Refreshes with every readout refetch, so a
    * later finisher moving this runner down shows up on the open card.
@@ -400,6 +409,21 @@ export default async function registerReadoutRoute(app: FastifyInstance): Promis
           time_addition_reason: corrected?.time_addition_reason ?? null,
           late_start_ms: view?.late_start_ms ?? null,
           early_start_ms: view?.early_start_ms ?? null,
+          first_last:
+            clockOffsetMin === null
+              ? { start: null, finish: null }
+              : firstAndLastPunches(payload, e.eventTimeMs, clockOffsetMin),
+          start_source:
+            !view || !competitor || clockOffsetMin === null
+              ? null
+              : startSource({
+                  start: payload.start,
+                  cardType: payload.card_type,
+                  readAtMs: e.eventTimeMs,
+                  drawnStartMs: view.start_time_ms,
+                  clockOffsetMin,
+                  startMethod: startMethodByClass.get(competitor.classId) ?? 'auto',
+                }),
           class_place: classRow?.place ?? null,
           class_behind_leader_ms: classRow?.behind_leader_ms ?? null,
           class_finished_count: classRows.filter((r) => r.place !== null).length,

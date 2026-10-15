@@ -789,6 +789,61 @@ describe('POST …/competitors/:competitorId/manual-finish (SOFT TR 4.20.6)', ()
     assert.equal((res.json() as { start_ms: number }).start_ms, Date.UTC(2026, 4, 22, 7, 50));
   });
 
+  test('GET …/corrections: the latest read has its first and last start and finish where they differ', async () => {
+    const { competitionId, competitorId } = await seedCompetitionAndCompetitor(ctx.app);
+    ctx.handle.sqlite
+      .prepare('UPDATE competitors SET card_number = 503 WHERE id = ?')
+      .run(competitorId);
+    ctx.handle.sqlite
+      .prepare('UPDATE competitions SET race_started_at_ms = 1 WHERE id = ?')
+      .run(competitionId);
+    // 10:00 start punched twice, 10:20 finish once with a fraction (CEST, 2026-05-22).
+    const clk = (s: number) => ({ seconds_in_half_day: s, half_day: 0 as const, weekday: null });
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: 'test',
+        localSeq: 1,
+        competitionId,
+        eventType: 'card_read',
+        eventTimeMs: Date.UTC(2026, 4, 22, 8, 30),
+        recordedAtMs: Date.UTC(2026, 4, 22, 8, 30),
+        payload: {
+          event_type: 'card_read',
+          card_number: 503,
+          card_type: 'SIAC',
+          start: { ...clk(10 * 3600 + 20), code: 1 },
+          start_first: { ...clk(10 * 3600), code: 1 },
+          finish: { ...clk(10 * 3600 + 1200), code: 100, subsec_256: 128 },
+          finish_first: { ...clk(10 * 3600 + 1200), subsec_256: 128 },
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: null,
+        },
+      })
+      .run();
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/competitions/${competitionId}/competitors/${competitorId}/corrections`,
+    });
+    const body = res.json() as {
+      elapsed_time_ms: number | null;
+      latest_read: { first_last: unknown };
+    };
+    assert.deepEqual(body.latest_read.first_last, {
+      start: {
+        first: { ms: Date.UTC(2026, 4, 22, 8, 0), code: 1 },
+        last: { ms: Date.UTC(2026, 4, 22, 8, 0, 20), code: 1 },
+      },
+      // The same finish punch: the reserve's unknown code is no difference.
+      finish: null,
+    });
+    // Shown only: the time still runs from the last start punch.
+    assert.equal(body.elapsed_time_ms, 1_181_000); // 19:40.5, official whole seconds
+  });
+
   test('GET …/corrections has the latest read, the read count, the drawn start and the late start', async () => {
     // Drawn 10:00 (CEST, 2026-05-22); a start punch at 10:00:00 + offset.
     const DRAWN = Date.UTC(2026, 4, 22, 8, 0);

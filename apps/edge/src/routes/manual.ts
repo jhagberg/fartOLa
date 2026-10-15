@@ -71,7 +71,7 @@ import {
 } from '../db/schema.ts';
 import { startMs, startSource } from '../projection/dnfMp.ts';
 import { competitionClockOffsetMin } from '../time/competitionClock.ts';
-import { cardClockToEpochMs } from '../projection/halfDayClockMath.ts';
+import { cardClockToEpochMs, firstAndLastPunches } from '../projection/halfDayClockMath.ts';
 import type { CompetitorView } from '../projection/types.ts';
 import { insertEvent } from '../si/eventInserter.ts';
 import { issuesToErrors } from './_zod-errors.ts';
@@ -618,6 +618,8 @@ export default async function registerManualRoutes(app: FastifyInstance): Promis
                         scored.event_time_ms,
                         offsetMin
                       ),
+                // ADR-0019 step 2: first and last start/finish where they differ.
+                first_last: firstAndLastPunches(scored, scored.event_time_ms, offsetMin),
               },
         missing_codes: view.missing_codes,
         manual_finish_ms: view.manual_finish_ms,

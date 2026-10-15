@@ -17,7 +17,12 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { HalfDayClock } from '@fartola/sportident';
-import { halfDayClockToMs, diffMs, cardClockToEpochMs } from './halfDayClockMath.ts';
+import {
+  halfDayClockToMs,
+  diffMs,
+  cardClockToEpochMs,
+  firstAndLastPunches,
+} from './halfDayClockMath.ts';
 import { clockToEpochMs } from '../time/competitionClock.ts';
 
 /** Build a HalfDayClock from a "seconds since the day's midnight" scalar.
@@ -211,5 +216,57 @@ describe('subsecond (subsec_256, 1/256 s) of start/finish clocks', () => {
     assert.equal(cardClockToEpochMs(withSub(36_000, 0), 'SI10', readAt, 0), base);
     const base5 = cardClockToEpochMs(hd(36_000), 'SI5', readAt, 0);
     assert.equal(cardClockToEpochMs(withSub(36_000, 128), 'SI5', readAt, 0), base5 + 500);
+  });
+});
+
+describe('firstAndLastPunches (ADR-0019 step 2)', () => {
+  const readAt = Date.UTC(2026, 9, 3, 12, 0, 0);
+  const at = (c: HalfDayClock) => cardClockToEpochMs(c, 'SIAC', readAt, 0);
+  const withSub = (sec: number, subsec_256: number): HalfDayClock => ({ ...hd(sec), subsec_256 });
+  const finishOf = (finish: HalfDayClock, finish_first?: HalfDayClock) =>
+    firstAndLastPunches(
+      { start: null, finish, ...(finish_first ? { finish_first } : {}), card_type: 'SIAC' },
+      readAt,
+      0
+    ).finish;
+
+  test('no reserve record: nothing (old reads, non-SIAC cards)', () => {
+    assert.equal(finishOf({ ...hd(37_800), code: 100 }), null);
+  });
+
+  test('the same punch: nothing, also when the reserve has no code (its CN is a fraction)', () => {
+    assert.equal(finishOf({ ...hd(37_800), code: 100 }, { ...hd(37_800), code: 100 }), null);
+    assert.equal(finishOf({ ...withSub(37_800, 40), code: 100 }, withSub(37_800, 40)), null);
+  });
+
+  test('another second: both, with their codes', () => {
+    const last = { ...hd(37_830), code: 100 };
+    const first = { ...hd(37_800), code: 100 };
+    assert.deepEqual(finishOf(last, first), {
+      first: { ms: at(first), code: 100 },
+      last: { ms: at(last), code: 100 },
+    });
+  });
+
+  test('same whole second, another fraction or another code: both', () => {
+    const f = finishOf(withSub(37_800, 41), withSub(37_800, 40));
+    assert.deepEqual(f, {
+      first: { ms: at(withSub(37_800, 40)), code: null },
+      last: { ms: at(withSub(37_800, 41)), code: null },
+    });
+    assert.notEqual(finishOf({ ...hd(37_800), code: 100 }, { ...hd(37_800), code: 101 }), null);
+  });
+
+  test('start likewise', () => {
+    const r = firstAndLastPunches(
+      { start: hd(36_020), start_first: hd(36_010), finish: null, card_type: 'SIAC' },
+      readAt,
+      0
+    );
+    assert.deepEqual(r.start, {
+      first: { ms: at(hd(36_010)), code: null },
+      last: { ms: at(hd(36_020)), code: null },
+    });
+    assert.equal(r.finish, null);
   });
 });

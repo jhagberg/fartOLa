@@ -573,6 +573,57 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.equal(row.early_start_ms, null);
   });
 
+  test('ADR-0019 step 2: first and last finish on the row where they differ; none without a reserve', async () => {
+    seedCompetition(ctx.handle, 'comp-fl');
+    const readAt = localToEpochMs('2026-05-14', 9 * 3600 + 40 * 60);
+    const finish = { half_day: 0 as const, seconds_in_half_day: 9 * 3600 + 30 * 60, weekday: null };
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-fl', 7501853, readAt - 60_000, 1);
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: ctx.nodeId,
+        localSeq: 2,
+        competitionId: 'comp-fl',
+        eventType: 'card_read',
+        eventTimeMs: readAt,
+        recordedAtMs: readAt,
+        payload: {
+          event_type: 'card_read',
+          card_number: 7501853,
+          card_type: 'SIAC',
+          start: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null, code: 1 },
+          start_first: { half_day: 0, seconds_in_half_day: 9 * 3600, weekday: null, code: 1 },
+          finish: { ...finish, code: 100 },
+          finish_first: { ...finish, seconds_in_half_day: finish.seconds_in_half_day - 30 },
+          check: null,
+          clear: null,
+          punch_count: 1,
+          punches: [{ code: 31, seconds_in_half_day: 9 * 3600 + 900, half_day: 0, weekday: null }],
+          card_holder: null,
+        },
+      })
+      .run();
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-fl/readout' });
+    type Row = {
+      first_last: { start: unknown; finish: unknown };
+      start_source: string | null;
+      elapsed_time_ms: number | null;
+    };
+    const [latest, old] = (res.json() as { history: Row[] }).history;
+    const at = (sec: number): number => localToEpochMs('2026-05-14', sec);
+    assert.deepEqual(latest!.first_last, {
+      start: null,
+      finish: {
+        first: { ms: at(9 * 3600 + 30 * 60 - 30), code: null },
+        last: { ms: at(9 * 3600 + 30 * 60), code: 100 },
+      },
+    });
+    assert.equal(latest!.start_source, 'punch');
+    // Shown only: the time still runs to the last finish punch.
+    assert.equal(latest!.elapsed_time_ms, 30 * 60 * 1000);
+    assert.deepEqual(old!.first_last, { start: null, finish: null });
+  });
+
   test('test 3: 15 card_read events → history.length === 12 (cap)', async () => {
     seedCompetition(ctx.handle, 'comp-3');
     for (let i = 1; i <= 15; i++) {
