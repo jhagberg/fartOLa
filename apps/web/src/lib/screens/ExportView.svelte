@@ -28,6 +28,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import Icon from '#lib/ui/Icon.svelte';
   import Button from '#lib/ui/Button.svelte';
   import {
@@ -85,7 +86,7 @@
       if (gen !== requestGen) return;
       preview = null;
       previewStatus = null;
-      lastError = err instanceof Error ? err.message : t('common.unknownError');
+      lastError = userMessage(err);
     } finally {
       if (gen === requestGen) loading = false;
     }
@@ -105,7 +106,7 @@
       });
       await refresh();
     } catch (err) {
-      unreadMessage = err instanceof Error ? err.message : t('common.unknownError');
+      unreadMessage = userMessage(err);
     } finally {
       busy = false;
     }
@@ -172,10 +173,7 @@
         <Button variant="secondary" size="sm" onclick={() => void refresh()}>
           {t('common.retry')}
         </Button>
-        <details>
-          <summary>{t('export.details')}</summary>
-          <p>{lastError}</p>
-        </details>
+        <p>{lastError}</p>
       </div>
     {:else if preview === null}
       <p class="muted">—</p>
