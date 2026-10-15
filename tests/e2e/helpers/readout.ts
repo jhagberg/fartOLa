@@ -44,7 +44,7 @@ export async function prepareReadoutPinnedPrintFailed(
   await expect(page.getByText('printer_offline')).toBeVisible();
 }
 
-/** The status popover after a failed save, with its reason. */
+/** The status popover after a failed save, in plain words. */
 export async function prepareReadoutStatusFailed(
   page: Page,
   request: APIRequestContext
@@ -59,8 +59,8 @@ export async function prepareReadoutStatusFailed(
   await expect(
     page.getByRole('alert').filter({ hasText: 'Statusen sparades inte.' })
   ).toBeVisible();
-  await page.getByText('Visa orsak').click();
-  await expect(page.getByText('disk_full')).toBeVisible();
+  await expect(page.getByText('Något gick fel')).toBeVisible();
+  await expect(page.getByText('disk_full')).toHaveCount(0);
 }
 
 /** No read yet: the disabled print button and its hint. */
