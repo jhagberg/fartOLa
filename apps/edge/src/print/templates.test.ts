@@ -201,18 +201,23 @@ test('a control punched by hand prints as "för hand" (classic, detailed)', asyn
 });
 
 // An SI5 card has no PM bit: 12:03 is stored as 00:03. A night relay leg
-// crosses midnight. Neither may print a split 12 h too long.
-test('splits across noon on an SI5 card and across midnight (classic, detailed)', async () => {
+// crosses midnight. Neither may print a split 12 h too long, and a card
+// with a PM bit keeps a time from the start of 12 h or more.
+test('splits across noon on an SI5 card, across midnight and over 12 h (classic, detailed)', async () => {
   const pm = (sec: number) => ({ seconds_in_half_day: sec, half_day: 1 as const, weekday: null });
-  for (const [what, start, punch, split] of [
-    ['SI5 11:58 → 12:03', clock(43_080), clock(180), '5:00'],
-    ['night 23:55 → 00:10', pm(42_900), clock(600), '15:00'],
+  for (const [what, cardType, start, punch, split] of [
+    ['SI5 11:58 → 12:03', 'SI5', clock(43_080), clock(180), '5:00'],
+    ['night 23:55 → 00:10', 'SI10', pm(42_900), clock(600), '15:00'],
+    ['SI10 08:00 → 21:00', 'SI10', clock(28_800), pm(32_400), '13:00:00'],
   ] as const) {
     const data = receiptData({
       no_timing: false,
       latest_start: start,
       latest_punches: [{ code: 31, ...punch }],
     });
+    data.competitor.card_read_history = [
+      { card_type: cardType } as (typeof data.competitor.card_read_history)[number],
+    ];
     for (const name of ['classic', 'detailed'] as const) {
       const row = (await printed(name, data)).split('\n').find((l) => /^\S+\s+31\s/.test(l)) ?? '';
       assert.match(row, new RegExp(`\\s${split}\\b`), `${name} ${what}: ${row}`);
