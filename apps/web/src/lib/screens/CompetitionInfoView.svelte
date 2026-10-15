@@ -318,6 +318,8 @@
           if (mine !== maxGen) return;
           // Only the max time is this save's to set.
           if (competition !== null) competition = { ...competition, max_time_sec: updated.max_time_sec };
+          // Shown as mm:ss, unless more was typed meanwhile.
+          if (parseMaxTime(formMaxTime) === sec) formMaxTime = formatMaxTime(sec);
           void refreshClosing();
         },
         (e: unknown) => {
@@ -506,10 +508,13 @@
             }}
             aria-invalid={maxInvalid ? 'true' : undefined}
             aria-describedby={maxInvalid
-              ? 'info-max-time-lock info-max-time-error'
-              : 'info-max-time-lock'}
+              ? 'info-max-time-format info-max-time-lock info-max-time-error'
+              : 'info-max-time-format info-max-time-lock'}
             data-testid="info-max-time"
           />
+          <p class="field-hint" id="info-max-time-format" data-testid="info-max-time-format">
+            {t('info.maxTime.format')}
+          </p>
           <p class="field-hint" id="info-max-time-lock" data-testid="info-max-time-lock">
             {maxLocked ? t('info.maxTime.lockedNote') : t('info.maxTime.lockNote')}
           </p>
