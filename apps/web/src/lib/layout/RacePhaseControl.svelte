@@ -39,6 +39,7 @@
     type ResetRaceUndo,
   } from '../api/client.ts';
   import { t } from '../i18n/index.ts';
+  import { userMessage } from '../api/userMessage.ts';
 
   const active = $derived(activeCompetition.value);
   const isRaceStarted = $derived(
@@ -116,7 +117,7 @@
       activeCompetition.update(await startRace(active.id));
       mode = 'idle';
     } catch (e) {
-      err = (e as Error).message;
+      err = userMessage(e);
     } finally {
       busy = false;
     }
@@ -158,7 +159,7 @@
         forceTicked = false;
         void activeCompetition.refreshList();
       } else {
-        err = (e as Error).message;
+        err = userMessage(e);
       }
     } finally {
       busy = false;
@@ -182,7 +183,7 @@
         err = t('race.undo.changed');
         loadUndo(id);
       } else {
-        err = (e as Error).message;
+        err = userMessage(e);
       }
     } finally {
       busy = false;

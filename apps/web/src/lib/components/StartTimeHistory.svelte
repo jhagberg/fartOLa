@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import { formatClockTime } from '@fartola/shared-types';
   import { getStartTimeHistory, undoStartTimes } from '#lib/api/client.ts';
   import { fetchCompetitionClock } from '#lib/screens/competition-clock.ts';
@@ -69,7 +70,7 @@
       loadError = null;
     } catch (e) {
       if (mine !== generation) return;
-      loadError = (e as Error).message;
+      loadError = userMessage(e);
     }
     onLoaded?.(key);
   }

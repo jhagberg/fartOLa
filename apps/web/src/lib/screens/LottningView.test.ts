@@ -145,6 +145,20 @@ describe('M1 — draw body per mode (mirrors the edge LottningInput)', () => {
     ).toEqual({ key: 'lottning.err.invalidField', fieldKey: 'lottning.restart' });
   });
 
+  it('a failure the edge gave no code for shows plain words, never the server text', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const server = new ApiError(500, 'SQLITE_BUSY', { error: 'SQLITE_BUSY' }, '');
+    expect(refusalOf(server, 'H21')).toEqual({
+      key: 'lottning.err.failed',
+      vars: { error: 'Något gick fel' },
+    });
+    expect(refusalOf(new TypeError('Failed to fetch'), 'H21').vars).toEqual({
+      error: 'Nätverksfel — försök igen',
+    });
+    expect(log).toHaveBeenCalledTimes(2);
+    log.mockRestore();
+  });
+
   it('SOFT TR 4.16.3: closingMoved only when both times are known and differ', () => {
     expect(closingMoved({ drawn: 1 })).toBeNull();
     expect(

@@ -27,6 +27,8 @@ describe('RacePhaseControl', () => {
   // The competition list and the undo preview can be made to fail.
   let listFails: boolean;
   let undoFails: boolean;
+  // Every reset or start is answered with a raw server error.
+  let postFails: boolean;
 
   const settle = async (): Promise<void> => {
     for (let i = 0; i < 8; i++) {
@@ -52,6 +54,7 @@ describe('RacePhaseControl', () => {
     hold = null;
     listFails = false;
     undoFails = false;
+    postFails = false;
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (body: unknown, status = 200) =>
@@ -62,6 +65,8 @@ describe('RacePhaseControl', () => {
       const comp = () => ({ id: 'c1', name: 'Test', race_started_at_ms: startedAtMs });
       // A second competition, started and with read-outs of its own.
       const other = { id: 'c2', name: 'Other', race_started_at_ms: START };
+      if (init?.method === 'POST' && postFails && /race/.test(url))
+        return json({ error: 'SQLITE_BUSY: db locked' }, 500);
       if (init?.method === 'POST' && url.includes('/reset-race')) {
         const body = JSON.parse(String(init.body)) as { force?: boolean; started_at_ms?: number };
         posts.push({ url, body });
@@ -294,6 +299,30 @@ describe('RacePhaseControl', () => {
     await click('undo-reset-retry');
     expect(el('undo-reset-failed')).toBeNull();
     expect(el('undo-reset-note')!.textContent).toContain('623 avläsningar');
+  });
+
+  it('a failed start says so in plain words, never the server text', async () => {
+    startedAtMs = null;
+    postFails = true;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mountIt();
+    await click('start-race-btn');
+    await click('start-race-confirm');
+    expect(text()).toContain('Något gick fel');
+    expect(text()).not.toContain('SQLITE_BUSY');
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('a failed reset says so in plain words, never the server text', async () => {
+    postFails = true;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mountIt();
+    await click('reset-race-btn');
+    await click('reset-race-confirm');
+    expect(text()).toContain('Något gick fel');
+    expect(text()).not.toContain('SQLITE_BUSY');
+    log.mockRestore();
   });
 
   it('sv + en have the same race texts', async () => {

@@ -16,6 +16,7 @@ import {
   type StartClashWith,
   type VacantPosition,
 } from '#lib/api/client.ts';
+import { userMessage } from '#lib/api/userMessage.ts';
 
 export const DRAW_MODES: DrawMode[] = [
   'SOFT',
@@ -174,7 +175,7 @@ export function refusalOf(e: unknown, className: string): Refusal {
         fieldKey: FIELD_KEYS[b.errors[0]!.path] ?? 'lottning.mode',
       };
   }
-  return { key: 'lottning.err.failed', vars: { error: (e as Error).message } };
+  return { key: 'lottning.err.failed', vars: { error: userMessage(e) } };
 }
 
 /** Classes with their shared start minutes: 'D21 (10:02, 10:04), H50 (10:06)'. */

@@ -193,6 +193,41 @@ describe('StartTimeHistory (mounted)', () => {
   });
 });
 
+describe('StartTimeHistory failed load', () => {
+  let component: ReturnType<typeof mount> | null = null;
+  afterEach(() => {
+    if (component) void unmount(component);
+    component = null;
+    document.body.innerHTML = '';
+    vi.restoreAllMocks();
+  });
+
+  it('says so in plain words, never the server text', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: 'SQLITE_BUSY: db locked' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        })
+    ) as unknown as typeof fetch;
+    component = mount(StartTimeHistory, {
+      target: document.body,
+      props: { competitionId: 'c1', classNames: {}, onUndone: vi.fn() },
+    });
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+      await tick();
+    }
+    flushSync();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Kunde inte läsa ändringarna');
+    expect(text).toContain('Något gick fel');
+    expect(text).not.toContain('SQLITE_BUSY');
+    expect(log).toHaveBeenCalled();
+  });
+});
+
 describe('StartTimeHistory overlapping loads', () => {
   let component: ReturnType<typeof mount> | null = null;
   afterEach(() => {
