@@ -63,116 +63,125 @@
     {t('nav.competitions')}
   </NavItem>
 
-  <NavItem
-    active={route === 'readout'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('readout')}
-  >
-    {#snippet icon()}<Icon name="radio" />{/snippet}
-    {t('nav.readout')}
-    {#snippet badge()}
-      {#if readoutBadge != null}{readoutBadge}{/if}
-    {/snippet}
-  </NavItem>
+  <div role="group" aria-labelledby="nav-before" data-testid="nav-group-before">
+    <p class="nav-heading" id="nav-before">{t('nav.group.before')}</p>
+    <NavItem
+      active={route === 'info'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('info')}
+    >
+      {#snippet icon()}<Icon name="info" />{/snippet}
+      {t('nav.info')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'runners'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('runners')}
-  >
-    {#snippet icon()}<Icon name="users" />{/snippet}
-    {t('nav.runners')}
-  </NavItem>
+    <NavItem
+      active={route === 'runners'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('runners')}
+    >
+      {#snippet icon()}<Icon name="users" />{/snippet}
+      {t('nav.runners')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'registration'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('registration')}
-  >
-    {#snippet icon()}<Icon name="user-plus" />{/snippet}
-    {t('nav.registration')}
-  </NavItem>
+    <NavItem
+      active={route === 'lottning'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('lottning')}
+    >
+      {#snippet icon()}<Icon name="shuffle" />{/snippet}
+      {t('nav.lottning')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'lottning'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('lottning')}
-  >
-    {#snippet icon()}<Icon name="shuffle" />{/snippet}
-    {t('nav.lottning')}
-  </NavItem>
+    <NavItem
+      active={route === 'prerace'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('prerace')}
+    >
+      {#snippet icon()}<Icon name="check" />{/snippet}
+      {t('nav.prerace')}
+    </NavItem>
+  </div>
 
-  <NavItem
-    active={route === 'prerace'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('prerace')}
-  >
-    {#snippet icon()}<Icon name="check" />{/snippet}
-    {t('nav.prerace')}
-  </NavItem>
+  <div role="group" aria-labelledby="nav-during" data-testid="nav-group-during">
+    <p class="nav-heading" id="nav-during">{t('nav.group.during')}</p>
+    <NavItem
+      active={route === 'readout'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('readout')}
+    >
+      {#snippet icon()}<Icon name="radio" />{/snippet}
+      {t('nav.readout')}
+      {#snippet badge()}
+        {#if readoutBadge != null}{readoutBadge}{/if}
+      {/snippet}
+    </NavItem>
 
-  <NavItem
-    active={route === 'results'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('results')}
-  >
-    {#snippet icon()}<Icon name="list" />{/snippet}
-    {t('nav.results')}
-  </NavItem>
+    <NavItem
+      active={route === 'registration'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('registration')}
+    >
+      {#snippet icon()}<Icon name="user-plus" />{/snippet}
+      {t('nav.registration')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'speaker'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('speaker')}
-  >
-    {#snippet icon()}<Icon name="mic" />{/snippet}
-    {t('nav.speaker')}
-  </NavItem>
+    <NavItem
+      active={route === 'results'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('results')}
+    >
+      {#snippet icon()}<Icon name="list" />{/snippet}
+      {t('nav.results')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'export'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('export')}
-  >
-    {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
-    {t('nav.export')}
-  </NavItem>
+    <NavItem
+      active={route === 'speaker'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('speaker')}
+    >
+      {#snippet icon()}<Icon name="mic" />{/snippet}
+      {t('nav.speaker')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'hyrbrickor'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('hyrbrickor')}
-  >
-    {#snippet icon()}<Icon name="key" />{/snippet}
-    {t('nav.hyrbrickor')}
-  </NavItem>
+    <NavItem
+      active={route === 'kvariskov'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('kvariskov')}
+    >
+      {#snippet icon()}<Icon name="alert-triangle" />{/snippet}
+      {t('nav.kvariskov')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'eventor-publish'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('eventor-publish')}
-  >
-    {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
-    {t('nav.eventor')}
-  </NavItem>
+    <NavItem
+      active={route === 'hyrbrickor'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('hyrbrickor')}
+    >
+      {#snippet icon()}<Icon name="key" />{/snippet}
+      {t('nav.hyrbrickor')}
+    </NavItem>
+  </div>
 
-  <NavItem
-    active={route === 'kvariskov'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('kvariskov')}
-  >
-    {#snippet icon()}<Icon name="alert-triangle" />{/snippet}
-    {t('nav.kvariskov')}
-  </NavItem>
+  <div role="group" aria-labelledby="nav-after" data-testid="nav-group-after">
+    <p class="nav-heading" id="nav-after">{t('nav.group.after')}</p>
+    <NavItem
+      active={route === 'export'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('export')}
+    >
+      {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
+      {t('nav.export')}
+    </NavItem>
 
-  <NavItem
-    active={route === 'info'}
-    disabled={compScopedDisabled}
-    onclick={() => onNavigate?.('info')}
-  >
-    {#snippet icon()}<Icon name="info" />{/snippet}
-    {t('nav.info')}
-  </NavItem>
+    <NavItem
+      active={route === 'eventor-publish'}
+      disabled={compScopedDisabled}
+      onclick={() => onNavigate?.('eventor-publish')}
+    >
+      {#snippet icon()}<Icon name="arrow-up-right" />{/snippet}
+      {t('nav.eventor')}
+    </NavItem>
+  </div>
 
   <NavItem active={route === 'settings'} onclick={() => onNavigate?.('settings')}>
     {#snippet icon()}<Icon name="settings" />{/snippet}
@@ -206,6 +215,20 @@
     font-size: var(--fs-heading);
     font-weight: 600;
     letter-spacing: -0.01em;
+  }
+  [role='group'] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+  .nav-heading {
+    margin: var(--space-xs) 0 0;
+    padding: 0 var(--space-sm);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
   }
   .sidebar-footer {
     margin-top: auto;

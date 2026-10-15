@@ -31,6 +31,7 @@
   "export.unreadDns.undone": "Ej start borttaget för {{n}} löpare",
   "export.title": "Exportera resultat",
   "export.intro": "Kontrollera och hämta resultatfilen för Eventor.",
+  "export.eventorLink": "Skicka resultat till Eventor",
   "export.typeHeading": "Typ",
   "export.type.final": "Slutgiltig",
   "export.type.provisional": "Preliminär",
@@ -135,6 +136,9 @@
   "nav.registration": "Registrering",
   "nav.menu": "Öppna meny",
   "nav.close": "Stäng meny",
+  "nav.group.before": "Före loppet",
+  "nav.group.during": "Under loppet",
+  "nav.group.after": "Efter loppet",
   "a11y.skipToContent": "Hoppa till innehåll",
 
   "active.label": "Aktiv",
