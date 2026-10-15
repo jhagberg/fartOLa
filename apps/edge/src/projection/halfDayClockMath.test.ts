@@ -257,6 +257,12 @@ describe('firstAndLastPunches (ADR-0019 step 2)', () => {
     assert.notEqual(finishOf({ ...hd(37_800), code: 100 }, { ...hd(37_800), code: 101 }), null);
   });
 
+  test('a missing fraction is zero, as scoring takes it: a fraction on one side is a difference', () => {
+    assert.notEqual(finishOf(withSub(37_800, 200), hd(37_800)), null);
+    assert.notEqual(finishOf(hd(37_800), withSub(37_800, 200)), null);
+    assert.equal(finishOf(withSub(37_800, 0), hd(37_800)), null);
+  });
+
   test('start likewise', () => {
     const r = firstAndLastPunches(
       { start: hd(36_020), start_first: hd(36_010), finish: null, card_type: 'SIAC' },
