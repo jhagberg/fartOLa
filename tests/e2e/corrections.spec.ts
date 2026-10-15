@@ -1,14 +1,17 @@
 // Authored for fartola. Not ported from upstream.
 //
 // The secretariat corrects a read-out from the competitor dialog: a control
-// punched by hand (SOFT TR 8.1.4 kommentar), a false start (TR 4.18.14) and
+// punched by hand (SOFT TR 8.1.4 kommentar), a time addition (TR 10.4.2) and
 // a finish time by hand (TR 4.20.6). Each shows on the readout card, and
 // removing it undoes it. Synthetic data only (helpers/seed.ts).
 
 import { test, expect } from '@playwright/test';
 import { seedCompetition, simulateRead } from './helpers/seed.ts';
 
-test('punch, false start and finish by hand, each shown and undone', async ({ page, request }) => {
+test('punch, time addition and finish by hand, each shown and undone', async ({
+  page,
+  request,
+}) => {
   const { competitionId } = await seedCompetition(request, { controls: 4 });
   await page.goto(`/competition/${competitionId}/readout`);
   await expect(page.getByTestId('readout-view')).toBeVisible();
@@ -31,8 +34,12 @@ test('punch, false start and finish by hand, each shown and undone', async ({ pa
   await expect(panel.getByTestId('corr-punch')).toContainText('32');
   await expect(panel.getByTestId('corr-now')).toContainText('Godkänd');
 
-  // A false start: one minute, in the time.
-  await panel.getByTestId('corr-false-start').click();
+  // The time runs from the start punch here, so no one-minute false start
+  // button (TR 4.18.14); a time addition is entered with its reason.
+  await expect(panel.getByTestId('corr-false-start')).toHaveCount(0);
+  await panel.getByTestId('corr-addition-select').selectOption('1');
+  await panel.getByTestId('corr-addition-reason').fill('Juryns beslut');
+  await panel.getByTestId('corr-addition-set').click();
   await expect(panel.getByTestId('corr-now')).toContainText('9:00');
 
   // The finish unit failed: the finish line time was 10:07:30.
