@@ -307,7 +307,11 @@
           </select>
         </Field>
 
-        <Field label={t('runners.addSheet.cardLabel')} htmlFor="add-runner-card">
+        <Field
+          label={t('runners.addSheet.cardLabel')}
+          hint={t('hint.cardNumber')}
+          htmlFor="add-runner-card"
+        >
           <input
             id="add-runner-card"
             class="input mono"

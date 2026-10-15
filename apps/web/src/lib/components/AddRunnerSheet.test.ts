@@ -17,6 +17,14 @@ const settle = async (): Promise<void> => {
 };
 const q = <T extends Element>(id: string) => document.querySelector<T>(`[data-testid="${id}"]`);
 
+/** Text of the elements an input's aria-describedby points at. */
+const describedBy = (el: Element | null): string =>
+  (el?.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+
 describe('AddRunnerSheet', () => {
   let component: ReturnType<typeof mount> | null = null;
   let network: boolean;
@@ -82,5 +90,9 @@ describe('AddRunnerSheet', () => {
     await settle();
     vi.useRealTimers();
     expect(q('add-runner-error')!.textContent).toBe('Nätverksfel — försök igen');
+  });
+
+  it('the card field says what to type', () => {
+    expect(describedBy(q('add-runner-card'))).toBe('Numret som står på brickan, bara siffror.');
   });
 });

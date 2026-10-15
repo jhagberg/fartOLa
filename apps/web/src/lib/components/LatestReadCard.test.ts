@@ -32,6 +32,14 @@ const read = (over: Partial<Read> = {}): Read => ({
   ...over,
 });
 
+/** Text of the elements an input's aria-describedby points at. */
+const describedBy = (el: Element | null): string =>
+  (el?.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+
 let instance: ReturnType<typeof mount> | null = null;
 afterEach(() => {
   if (instance) void unmount(instance);
@@ -123,5 +131,14 @@ describe('LatestReadCard first and last punch (ADR-0019 step 2)', () => {
 
   it('shows nothing when first and last are the same punch or the card has no first', () => {
     expect(html(read()).querySelector('[data-testid="first-last"]')).toBeNull();
+  });
+});
+
+describe('LatestReadCard missing start', () => {
+  it('the start field says it takes a time of day', () => {
+    const el = html(read({ missingStart: true })).querySelector(
+      '[data-testid="missing-start-input"]'
+    );
+    expect(describedBy(el)).toBe('Klockslag, TT:MM:SS');
   });
 });

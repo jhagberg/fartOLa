@@ -428,7 +428,7 @@
   "ms.name": "Name",
   "ms.class": "Class",
   "ms.check": "Check",
-  "ms.suggested": "Suggested start",
+  "ms.suggested": "Suggested start (HH:MM:SS)",
   "ms.result": "Time",
   "ms.set": "Set",
   "ms.setAll": "Set all ({{n}})",
@@ -453,7 +453,7 @@
   "corr.line.finish": "Finish time by hand {{time}}: {{reason}}",
   "corr.punch": "Punches by hand",
   "corr.punch.missing": "Missing:",
-  "corr.punch.code": "Control",
+  "corr.punch.code": "Control (code number)",
   "corr.punch.add": "Add punch",
   "corr.punch.reasonDefault": "Pin punch on the start card",
   "corr.line.punch": "Punch by hand {{code}}: {{reason}}",
@@ -1233,5 +1233,8 @@
   "edit.read.readAt": "Read",
   "edit.read.reads": "Reads: {{count}}",
   "edit.read.punches": "Punches",
-  "edit.read.splits": "Splits"
+  "edit.read.splits": "Splits",
+  "hint.cardNumber": "The number printed on the card, digits only.",
+  "hint.birthYear": "Four digits, e.g. 2012.",
+  "hint.clock": "Time of day, HH:MM:SS"
 }

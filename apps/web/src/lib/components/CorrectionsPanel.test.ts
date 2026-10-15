@@ -124,6 +124,11 @@ describe('CorrectionsPanel (mounted)', () => {
     await settle();
   };
 
+  it('the control field says it takes a code number', async () => {
+    await mountIt();
+    expect($('corr-punch-input')!.closest('label')!.textContent).toContain('kodnummer');
+  });
+
   it('sets a finish time with its reason, shows it, and removes it', async () => {
     await mountIt();
     type('corr-finish-input', '10:42:30');

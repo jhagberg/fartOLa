@@ -71,4 +71,43 @@ describe('MissingStartsPanel', () => {
     expect(alert.textContent).not.toMatch(/boom|500|HTTP/);
     expect(log).toHaveBeenCalled();
   });
+
+  it('the suggested start column says it takes TT:MM:SS', async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            n: 1,
+            median_ms: 0,
+            mean_ms: 0,
+            offset_ms: 0,
+            clock_offset_min: 120,
+            items: [
+              {
+                competitor_id: 'r1',
+                name: 'Test Löpare',
+                club: null,
+                class_id: 'h21',
+                class_name: 'H21',
+                card_number: 1,
+                status: 'OK',
+                check_ms: 36_000_000,
+                suggested_start_ms: 36_060_000,
+                finish_ms: 38_000_000,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    ) as unknown as typeof fetch;
+    component = mount(MissingStartsPanel, {
+      target: document.body,
+      props: { competitionId: 'c1' },
+    });
+    await settle();
+    const th = [...document.querySelectorAll('th')].find((h) =>
+      h.textContent?.includes('Föreslagen')
+    );
+    expect(th!.textContent).toContain('TT:MM:SS');
+  });
 });

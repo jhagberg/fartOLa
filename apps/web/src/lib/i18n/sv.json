@@ -428,7 +428,7 @@
   "ms.name": "Namn",
   "ms.class": "Klass",
   "ms.check": "Check",
-  "ms.suggested": "Föreslagen start",
+  "ms.suggested": "Föreslagen start (TT:MM:SS)",
   "ms.result": "Tid",
   "ms.set": "Sätt",
   "ms.setAll": "Sätt alla ({{n}})",
@@ -453,7 +453,7 @@
   "corr.line.finish": "Måltid för hand {{time}}: {{reason}}",
   "corr.punch": "Stämplar för hand",
   "corr.punch.missing": "Saknas:",
-  "corr.punch.code": "Kontroll",
+  "corr.punch.code": "Kontroll (kodnummer)",
   "corr.punch.add": "Lägg till stämpling",
   "corr.punch.reasonDefault": "Stiftklämma på startkortet",
   "corr.line.punch": "Stämpel för hand {{code}}: {{reason}}",
@@ -1233,5 +1233,8 @@
   "edit.read.readAt": "Avläst",
   "edit.read.reads": "Avläsningar: {{count}}",
   "edit.read.punches": "Stämplingar",
-  "edit.read.splits": "Sträcktider"
+  "edit.read.splits": "Sträcktider",
+  "hint.cardNumber": "Numret som står på brickan, bara siffror.",
+  "hint.birthYear": "Fyra siffror, t.ex. 2012.",
+  "hint.clock": "Klockslag, TT:MM:SS"
 }

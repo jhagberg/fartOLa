@@ -428,7 +428,11 @@
           void search();
         }}
       >
-        <Field label={t('importRunners.eventor.dateLabel')} htmlFor="import-date">
+        <Field
+          label={t('importRunners.eventor.dateLabel')}
+          hint={t('wiz.date.helper')}
+          htmlFor="import-date"
+        >
           <Input
             id="import-date"
             data-testid="import-date"

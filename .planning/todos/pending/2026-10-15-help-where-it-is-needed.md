@@ -32,3 +32,26 @@ operator needs to see. ADR-0016 says you always see what will happen.
 Done when every format field shows its format, every rule refusal links
 to its explanation, and the a11y e2e suite checks that hints are
 announced (aria-describedby).
+
+## Audit 2026-10-15 (fields with a format or a rule and no visible hint)
+
+`Field.svelte` now links its hint to the input (aria-describedby).
+
+Done (hint added, tested):
+
+- Card number: walk-up, add runner, edit runner (`hint.cardNumber`).
+- Birth year: walk-up (`hint.birthYear`).
+- Competition date: Tävlingsinfo and Eventor import (`wiz.date.helper`).
+- Missing start time: readout card (`hint.clock`), Saknade starter column header, label now says TT:MM:SS.
+- Manual punch control: label says "kodnummer".
+
+Already fine: max time (Tävlingsinfo, Lottning), fee fields (unit in label), manual finish time (format in label), Lottning interval/scale/start name/bibs (hint present), access code, wizard date (helper).
+
+Still open (no hint, format or rule not visible):
+
+- Settings: liveresultat competition id, ROC competition id and "börja från ROC-id" (number only, said only in the error).
+- Wizard: Eventor competition id (the label is only the placeholder, which vanishes).
+- Lottning: first start / restart (type=time, no 24 h hint), vacant slots, seed group per runner.
+- Class kinds: age per class (number; what it means for the fee/class kind).
+- Corrections: reason fields (max 500 chars, no counter).
+- Walk-up / add runner: phone and email for hired cards (placeholder only).

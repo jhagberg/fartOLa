@@ -393,12 +393,13 @@
             autocomplete="off"
             spellcheck="false"
             aria-invalid={dateInvalid ? 'true' : undefined}
-            aria-describedby={dateInvalid ? 'info-date-error' : undefined}
+            aria-describedby={dateInvalid ? 'info-date-hint info-date-error' : 'info-date-hint'}
             oninput={() => (dateInvalid = false)}
             onchange={(e) => saveField('date', e.currentTarget.value.trim())}
             onkeydown={blurOnEnter}
             data-testid="info-date"
           />
+          <p class="field-hint" id="info-date-hint">{t('wiz.date.helper')}</p>
           {#if dateInvalid}
             <p class="err" role="alert" id="info-date-error" data-testid="info-date-error">
               {t('wiz.date.invalid')}

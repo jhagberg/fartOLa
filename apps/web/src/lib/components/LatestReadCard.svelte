@@ -393,9 +393,11 @@
             class="dnf-input mono start-input"
             placeholder="HH:MM:SS"
             aria-label={t('ro.missingStart.set')}
+            aria-describedby="ro-start-hint"
             bind:value={startInput}
             data-testid="missing-start-input"
           />
+          <small class="start-hint" id="ro-start-hint">{t('hint.clock')}</small>
           <Button
             size="sm"
             disabled={startInput.trim().length === 0}
@@ -754,6 +756,10 @@
   }
   .start-input {
     width: 9ch;
+  }
+  .start-hint {
+    font-size: var(--fs-caption);
+    color: var(--fg-muted);
   }
   .first-last {
     margin-top: 12px;
