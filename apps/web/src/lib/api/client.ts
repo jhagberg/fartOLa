@@ -1233,7 +1233,14 @@ export function returnHiredCard(
 export function updateHiredContact(
   competitionId: string,
   cardNumber: number,
-  contact: { name: string | null; phone: string | null; email: string | null; note: string | null }
+  contact: {
+    /** The rental the form was opened on (marked_at_ms): a re-hire makes the edit stale. */
+    marked_at_ms: number;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    note: string | null;
+  }
 ): Promise<{ ok: true }> {
   return apiFetch<{ ok: true }>(
     `/api/competitions/${encodeURIComponent(competitionId)}/hired-cards/${encodeURIComponent(
