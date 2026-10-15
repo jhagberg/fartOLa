@@ -132,7 +132,8 @@ export type EventPayload =
       battery_date?: string;
       punch_count: number;
       punches: NdjsonPunch[];
-      card_holder: Record<string, unknown> | null;
+      /** Old events only: new reads never store card holder data (ADR-0019). */
+      card_holder?: Record<string, unknown> | null;
       card_series_byte?: number;
       uid?: number;
     }

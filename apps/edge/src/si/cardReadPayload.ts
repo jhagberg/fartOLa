@@ -19,13 +19,6 @@
 // Any future field rename / removal in Phase 0's types surfaces here as a TS
 // compile error.
 //
-// snakeCaseKeys mirrors the helper in `packages/sportident/src/output/ndjson.ts`
-// lines 146-160 (one-level snake_case conversion of an arbitrary record). The
-// Phase 0 cardHolder is a flat dict so one level suffices. Duplicating this
-// 6-line helper (rather than re-exporting it from Phase 0) keeps the surface
-// stable; if Phase 0 ever switches to recursive conversion, both copies must
-// move in lockstep.
-//
 // Locked by:
 // - .planning/phases/01-single-laptop-training-mvp/01-06-PLAN.md task 1
 // - .planning/phases/01-single-laptop-training-mvp/01-REVIEWS.md §C-H2
@@ -43,17 +36,6 @@ import { cardTypeFromNumber } from './cardType.ts';
 
 /** The events.payload union arm produced for `card_read` events. */
 export type CardReadPayload = Extract<EventPayload, { event_type: 'card_read' }>;
-
-/** One-level snake_case key conversion (no recursion — Phase 0's cardHolder
- * is a flat dict so a single pass suffices). Mirrors
- * `packages/sportident/src/output/ndjson.ts` line 155 `snakeCaseKeys`. */
-function snakeCaseKeys(obj: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of Object.keys(obj)) {
-    out[k.replace(/[A-Z]/g, (m) => '_' + m.toLowerCase())] = obj[k];
-  }
-  return out;
-}
 
 /** Optional fields carried by ModernSiCard / SiCard5 instances but not present
  * on BaseSiCard's static surface. Matches NdjsonEmitter's `WithCounts` cast in
@@ -104,10 +86,7 @@ export function buildCardReadPayload(card: BaseSiCard): CardReadPayload {
     clear: toHalfDayClock(raceResult.clearTime),
     punch_count: c.punchCount ?? punches.length,
     punches,
-    card_holder:
-      raceResult.cardHolder === undefined
-        ? null
-        : snakeCaseKeys(raceResult.cardHolder as Record<string, unknown>),
+    // ADR-0019: no card holder data in the event (bridge keeps the name in memory).
   };
   const startFirst = toHalfDayClock(
     raceResult.startFirstTime,

@@ -11,7 +11,7 @@
 //       (connection_changed:open + card_inserted + card_read + close);
 //       card_read.payload.punches.length > 0 (B-1 regression).
 //   1b. C-H2 — payload.finish + payload.start non-null on SI10 replay;
-//       card_holder is null or a snake_case object; punch_count matches
+//       no card holder data (ADR-0019); punch_count matches
 //       payload.punches.length OR the card's c.punchCount. THIS is the
 //       explicit regression gate against future revert to the truncated
 //       plan-03 shape.
@@ -246,7 +246,7 @@ describe('SI bridge — offline PlaybackTransport replay against Jonas fixtures'
     }
   });
 
-  test('test 1b (C-H2 — finish + start + card_holder + punch_count populated on SI10 replay)', async () => {
+  test('test 1b (C-H2 — finish + start + punch_count populated, no card holder, on SI10 replay)', async () => {
     const ctx = await bootCtx();
     try {
       await replayFixtureThroughBridge(ctx, 'si10', () => null);
@@ -264,7 +264,6 @@ describe('SI bridge — offline PlaybackTransport replay against Jonas fixtures'
         clear: unknown;
         punch_count: number;
         punches: unknown[];
-        card_holder: unknown;
       };
       // C-H2 regression gate — these four assertions catch any future
       // revert to the truncated plan-03 payload shape.
@@ -276,18 +275,8 @@ describe('SI bridge — offline PlaybackTransport replay against Jonas fixtures'
       assert.notEqual(payload.start, null, 'payload.start must be non-null');
       // SI10 fixture: check is populated, clear is null. Don't pin clear's
       // value strictly — the gate is about the SHAPE being present.
-      // card_holder must be either null OR a Record<string, unknown> — never
-      // undefined, never camelCase.
-      assert.ok(
-        payload.card_holder === null || typeof payload.card_holder === 'object',
-        'card_holder must be null or an object'
-      );
-      if (payload.card_holder !== null && payload.card_holder !== undefined) {
-        // snake_case key contract: NO uppercase letters in any key.
-        for (const key of Object.keys(payload.card_holder as Record<string, unknown>)) {
-          assert.ok(!/[A-Z]/.test(key), `card_holder key '${key}' must be snake_case`);
-        }
-      }
+      // ADR-0019: the card holder data never goes into the event.
+      assert.equal('card_holder' in payload, false);
       // punch_count must equal punches.length OR be a valid card-reported
       // count >= punches.length. The SI10 fixture's punch_count is 2.
       assert.ok(typeof payload.punch_count === 'number');
