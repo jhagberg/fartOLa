@@ -45,6 +45,7 @@ const readOf = (status: CorrectionsDTO['status'], punches: number[]): Correction
     start: clk(36000),
     finish: clk(36720),
     punches: punches.map((code, i) => ({ code, ...clk(36000 + 120 * (i + 1)) })),
+    first_last: { start: null, finish: null },
   },
 });
 
@@ -229,6 +230,30 @@ describe('EditRunnerRead (mounted)', () => {
     answer('r1', 1, readOf('OK', [31, 32, 33]));
     await settle();
     expect($('edit-read-late')).toBeNull();
+  });
+
+  it('shows the first and last finish only when the read has two (ADR-0019 step 2)', async () => {
+    mountIt();
+    await settle();
+    const two = readOf('OK', [31, 32, 33]);
+    two.latest_read!.first_last = {
+      start: null,
+      finish: {
+        first: { ms: Date.UTC(2026, 9, 9, 8, 11, 30), code: null },
+        last: { ms: Date.UTC(2026, 9, 9, 8, 12), code: 100 },
+      },
+    };
+    answer('r1', 0, two);
+    await settle();
+    expect($('first-last-finish')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'Första mål 10:11:30 Sista mål 10:12:00 (kod 100) (används)'
+    );
+    expect($('first-last-start')).toBeNull();
+    readProps.reloadKey = 1;
+    await settle();
+    answer('r1', 1, readOf('OK', [31, 32, 33]));
+    await settle();
+    expect($('first-last')).toBeNull();
   });
 
   it('a lost card with a finish by hand still shows the finish, status and time', async () => {

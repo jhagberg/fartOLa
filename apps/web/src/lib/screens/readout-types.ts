@@ -92,6 +92,11 @@ export interface ReadoutHistoryRow {
    * time in a class timed from it (ms, positive). Jury warnings only. */
   late_start_ms: number | null;
   early_start_ms: number | null;
+  /** ADR-0019 step 2: the read's first and last start and finish where the
+   * card's reserve record differs from the main one; null otherwise. */
+  first_last: FirstLast;
+  /** Which start the running time takes; null for unknown cards. */
+  start_source: 'drawn' | 'punch' | null;
   /** Secretariat corrections in force for the runner (SOFT TR 4.20.6):
    * the finish time by hand and why; null when none. */
   manual_finish_ms: number | null;
@@ -147,6 +152,59 @@ export function missingStartHint(
     offset: formatElapsed(offset),
     suggested: formatClockTime(suggested, clockOffsetMin),
   };
+}
+
+/** A start or finish on the competition clock (epoch ms, with the
+ * subsecond) and its station code, null when unknown. */
+export interface CardTime {
+  ms: number;
+  code: number | null;
+}
+
+/** First and last start and finish of a read where they differ (the edge
+ * compares them before rounding); null when the same punch or no reserve. */
+export interface FirstLast {
+  start: { first: CardTime; last: CardTime } | null;
+  finish: { first: CardTime; last: CardTime } | null;
+}
+
+/** "Första mål 10:29:30 · Sista mål 10:30:00 (kod 100)" for the read-out
+ * and the edit dialog. `lastUsed`: the last is what the result uses today
+ * (the start punch is the start; no finish by hand). */
+export interface FirstLastLine {
+  kind: 'start' | 'finish';
+  first: string;
+  last: string;
+  lastUsed: boolean;
+}
+
+/** A card time with its fraction and code: a pair can differ in those only. */
+function cardTimeText(c: CardTime, clockOffsetMin: number): string {
+  const frac = c.ms % 1000;
+  const time =
+    formatClockTime(c.ms, clockOffsetMin) + (frac === 0 ? '' : `.${String(frac).padStart(3, '0')}`);
+  return c.code === null ? time : `${time} (${t('ro.firstLast.code', { code: c.code })})`;
+}
+
+export function firstLastLines(
+  fl: FirstLast,
+  used: { start: boolean; finish: boolean },
+  clockOffsetMin: number | null
+): FirstLastLine[] {
+  if (clockOffsetMin === null) return [];
+  return (['start', 'finish'] as const).flatMap((kind) => {
+    const pair = fl[kind];
+    return pair === null
+      ? []
+      : [
+          {
+            kind,
+            first: cardTimeText(pair.first, clockOffsetMin),
+            last: cardTimeText(pair.last, clockOffsetMin),
+            lastUsed: used[kind],
+          },
+        ];
+  });
 }
 
 /** 02.1-14 Task 14: "Sen start +3:12" / "Tjuvstart? −0:05" for the read-out

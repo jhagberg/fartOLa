@@ -18,6 +18,7 @@
 // - 01-PATTERNS.md §S-6 (snake_case at the I/O boundary)
 // - Endpoint surface from apps/edge/src/routes/ (verified 2026-05-14)
 
+import type { FirstLast } from '#lib/screens/readout-types.ts';
 import type {
   CompetitionDTO,
   CompetitionCreateInput,
@@ -717,6 +718,8 @@ export interface CorrectionsDTO {
     /** The card's start and finish clocks as epoch ms (null when absent). */
     start_ms: number | null;
     finish_ms: number | null;
+    /** ADR-0019 step 2: first and last start/finish where they differ. */
+    first_last: FirstLast;
   } | null;
   missing_codes: number[];
   manual_finish_ms: number | null;

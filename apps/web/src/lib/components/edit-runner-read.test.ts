@@ -42,6 +42,7 @@ const read = (over: Partial<CorrectionsDTO> = {}): CorrectionsDTO => ({
       p(34, '10:08:00'),
       p(36, '10:10:00'),
     ],
+    first_last: { start: null, finish: null },
   },
   missing_codes: [35],
   manual_finish_ms: null,
@@ -191,5 +192,45 @@ describe('courseCodes', () => {
     expect(courseCodes({ id: 'k', course_id: null }, courses)).toEqual([1, 2]);
     expect(courseCodes({ id: 'x', course_id: null }, courses)).toEqual([]);
     expect(courseCodes(undefined, courses)).toEqual([]);
+  });
+});
+
+describe('toEditRunnerRead first and last punch (ADR-0019 step 2)', () => {
+  const withPairs = (over: Partial<CorrectionsDTO> = {}): CorrectionsDTO => {
+    const r = read(over);
+    return {
+      ...r,
+      latest_read: {
+        ...r.latest_read!,
+        first_last: {
+          start: {
+            first: { ms: at('10:00:00'), code: 1 },
+            last: { ms: at('10:00:20'), code: 1 },
+          },
+          // Same whole second: the fraction shows why there are two.
+          finish: {
+            first: { ms: at('10:12:00') + 500, code: null },
+            last: { ms: at('10:12:00') + 503, code: 100 },
+          },
+        },
+      },
+    };
+  };
+
+  it('formats both, with fraction and code, and marks the last only where it is used', () => {
+    expect(toEditRunnerRead(withPairs(), ctx).firstLast).toEqual([
+      { kind: 'start', first: '10:00:00 (kod 1)', last: '10:00:20 (kod 1)', lastUsed: false },
+      { kind: 'finish', first: '10:12:00.500', last: '10:12:00.503 (kod 100)', lastUsed: true },
+    ]);
+    const punchStart = toEditRunnerRead(
+      withPairs({ start_source: 'punch', manual_finish_ms: at('10:11:00') }),
+      ctx
+    ).firstLast;
+    expect(punchStart.map((l) => l.lastUsed)).toEqual([true, false]);
+  });
+
+  it('nothing without pairs or without a read', () => {
+    expect(toEditRunnerRead(read(), ctx).firstLast).toEqual([]);
+    expect(toEditRunnerRead(read({ latest_read: null }), ctx).firstLast).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@
   import StatusPill from '#lib/ui/StatusPill.svelte';
   import PunchGrid from '#lib/components/PunchGrid.svelte';
   import SplitsTable from '#lib/components/SplitsTable.svelte';
+  import FirstLastPunches from '#lib/components/FirstLastPunches.svelte';
   import { courseCodes, toEditRunnerRead, type EditRunnerRead } from './edit-runner-read.ts';
   import { t } from '#lib/i18n/index.ts';
   import {
@@ -185,6 +186,7 @@
             </div>
           </div>
         {/if}
+        <FirstLastPunches lines={view.firstLast} />
         <div>
           <span class="label">{t('ro.status')}</span>
           <div class="value" data-testid="edit-read-status">

@@ -43,6 +43,8 @@
   import StatusPill from '#lib/ui/StatusPill.svelte';
   import PulseDot from '#lib/ui/PulseDot.svelte';
   import type { CorrectionLine } from '#lib/screens/corrections.ts';
+  import type { FirstLastLine } from '#lib/screens/readout-types.ts';
+  import FirstLastPunches from '#lib/components/FirstLastPunches.svelte';
 
   interface Read {
     cardNumber: number;
@@ -75,6 +77,8 @@
     /** Secretariat corrections in force (screens/corrections.ts), shown so
      * a read-out never hides them. */
     corrections: CorrectionLine[];
+    /** ADR-0019 step 2: first and last start/finish where they differ. */
+    firstLast: FirstLastLine[];
   }
 
   type ManualStatus = 'DNF' | 'DNS' | 'DQ' | 'CANCEL' | 'MAX' | 'MP';
@@ -362,6 +366,10 @@
         <div class="start-warning mono" role="status" data-testid="start-warning">
           <Icon name="alert-triangle" size={16} /> {t(read.startWarning.key, { diff: read.startWarning.diff })}
         </div>
+      {/if}
+
+      {#if read.firstLast.length > 0}
+        <div class="first-last"><FirstLastPunches lines={read.firstLast} /></div>
       {/if}
 
       {#if read.corrections.length > 0}
@@ -746,6 +754,9 @@
   }
   .start-input {
     width: 9ch;
+  }
+  .first-last {
+    margin-top: 12px;
   }
   .corrections {
     margin: 12px 0 0;

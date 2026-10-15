@@ -105,6 +105,7 @@
     toReceiptRead,
     missingStartHint,
     startWarning,
+    firstLastLines,
     setStartFromInput,
   } from './readout-types.ts';
   import { correctionLines } from './corrections.ts';
@@ -328,6 +329,11 @@
       // 02.1-14 Task 14: late / early start punch (jury warning).
       startWarning: startWarning(row),
       corrections: correctionLines(row, clockOffsetMin),
+      firstLast: firstLastLines(
+        row.first_last,
+        { start: row.start_source === 'punch', finish: row.manual_finish_ms === null },
+        clockOffsetMin
+      ),
     };
   });
 
