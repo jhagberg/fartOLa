@@ -3,6 +3,7 @@
 // REST surface for the Plan 02-05 Hyrbricka (hired card) return UX:
 //
 //   - GET   /api/competitions/:id/hired-cards
+//   - PATCH /api/competitions/:id/hired-cards/:cardNumber (edit the contact)
 //   - PATCH /api/competitions/:id/hired-cards/:cardNumber/return
 //
 // Reuses the hired_cards table landed in Plan 02-01 (compound PK
@@ -47,7 +48,7 @@ import { and, desc, eq, gt, isNotNull, isNull, sum } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { competitors, hiredCards } from '../db/schema.ts';
-import { readoutChannel } from '@fartola/shared-types';
+import { readoutChannel, phoneValid, emailValid } from '@fartola/shared-types';
 import { issuesToErrors } from './_zod-errors.ts';
 
 const ListParams = z.object({
@@ -57,6 +58,13 @@ const ListParams = z.object({
 const PatchParams = z.object({
   id: z.string().min(1),
   cardNumber: z.coerce.number().int().positive(),
+});
+
+const ContactBody = z.object({
+  name: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  note: z.string().nullable(),
 });
 
 interface HiredCardRow {
@@ -142,6 +150,43 @@ export default async function registerHiredCardsRoutes(app: FastifyInstance): Pr
       paid_on_site: { cash, swish, other, total: cash + swish + other },
     };
   });
+
+  // PATCH /api/competitions/:id/hired-cards/:cardNumber — edit the contact.
+  // Same rules as the walk-up: phone or e-mail, each well formed if given.
+  app.patch<{ Params: { id: string; cardNumber: string } }>(
+    '/api/competitions/:id/hired-cards/:cardNumber',
+    async (req, reply) => {
+      const params = PatchParams.safeParse(req.params);
+      if (!params.success) return reply.code(400).send(issuesToErrors(params.error.issues));
+      const body = ContactBody.safeParse(req.body);
+      if (!body.success) return reply.code(400).send(issuesToErrors(body.error.issues));
+      const { id, cardNumber } = params.data;
+      const orNull = (v: string | null): string | null => (v && v.trim() !== '' ? v.trim() : null);
+      const phone = orNull(body.data.phone);
+      const email = orNull(body.data.email);
+      if (phone === null && email === null) {
+        return reply.code(400).send({ error: 'hyrbricka_contact_required' });
+      }
+      if (phone !== null && !phoneValid(phone)) {
+        return reply.code(400).send({ error: 'hyrbricka_phone_invalid' });
+      }
+      if (email !== null && !emailValid(email)) {
+        return reply.code(400).send({ error: 'hyrbricka_email_invalid' });
+      }
+      const result = app.fartolaDb.db
+        .update(hiredCards)
+        .set({
+          contactName: orNull(body.data.name),
+          contactPhone: phone,
+          contactEmail: email,
+          note: orNull(body.data.note),
+        })
+        .where(and(eq(hiredCards.competitionId, id), eq(hiredCards.cardNumber, cardNumber)))
+        .run();
+      if (result.changes === 0) return reply.code(404).send({ error: 'not_found' });
+      return reply.code(200).send({ ok: true });
+    }
+  );
 
   // PATCH /api/competitions/:id/hired-cards/:cardNumber/return
   app.patch<{ Params: { id: string; cardNumber: string } }>(

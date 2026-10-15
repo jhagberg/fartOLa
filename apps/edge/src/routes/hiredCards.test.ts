@@ -375,3 +375,76 @@ describe('PATCH /api/competitions/:id/hired-cards/:cardNumber/return', () => {
     assert.equal(row.returnedAtMs, 999, 'returnedAtMs must NOT be overwritten by race-loser');
   });
 });
+
+// ============================================================================
+// PATCH /api/competitions/:id/hired-cards/:cardNumber (edit the contact)
+// ============================================================================
+
+describe('PATCH /api/competitions/:id/hired-cards/:cardNumber', () => {
+  let ctx: Ctx;
+  const url = '/api/competitions/comp-e/hired-cards/12345';
+  const good = { name: 'Rut', phone: '+46 70-123 45 67', email: 'rut@example.org', note: 'ok' };
+
+  beforeEach(async () => {
+    ctx = await boot();
+    seedCompetition(ctx.handle, 'comp-e');
+    seedHiredCard(ctx.handle, 'comp-e', 12345, { contactPhone: '0700000000' });
+  });
+  afterEach(async () => {
+    await teardown(ctx);
+  });
+
+  test('updates name, phone, email and note', async () => {
+    const res = await ctx.app.inject({ method: 'PATCH', url, payload: good });
+    assert.equal(res.statusCode, 200);
+    const row = ctx.handle.db.select().from(hiredCards).all()[0];
+    assert.equal(row?.contactName, 'Rut');
+    assert.equal(row?.contactPhone, '+46 70-123 45 67');
+    assert.equal(row?.contactEmail, 'rut@example.org');
+    assert.equal(row?.note, 'ok');
+  });
+
+  test('empty strings are stored as null', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url,
+      payload: { name: '  ', phone: '0701234567', email: '', note: null },
+    });
+    assert.equal(res.statusCode, 200);
+    const row = ctx.handle.db.select().from(hiredCards).all()[0];
+    assert.equal(row?.contactName, null);
+    assert.equal(row?.contactEmail, null);
+  });
+
+  test('a phone number of letters is refused and nothing changes', async () => {
+    const res = await ctx.app.inject({ method: 'PATCH', url, payload: { ...good, phone: 'abc' } });
+    assert.equal(res.statusCode, 400);
+    assert.equal((res.json() as { error: string }).error, 'hyrbricka_phone_invalid');
+    assert.equal(ctx.handle.db.select().from(hiredCards).all()[0]?.contactPhone, '0700000000');
+  });
+
+  test('an e-mail without @ is refused', async () => {
+    const res = await ctx.app.inject({ method: 'PATCH', url, payload: { ...good, email: 'rut' } });
+    assert.equal(res.statusCode, 400);
+    assert.equal((res.json() as { error: string }).error, 'hyrbricka_email_invalid');
+  });
+
+  test('both phone and e-mail empty is refused', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url,
+      payload: { name: 'Rut', phone: '', email: null, note: null },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal((res.json() as { error: string }).error, 'hyrbricka_contact_required');
+  });
+
+  test('unknown card is 404', async () => {
+    const res = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/competitions/comp-e/hired-cards/99999',
+      payload: good,
+    });
+    assert.equal(res.statusCode, 404);
+  });
+});

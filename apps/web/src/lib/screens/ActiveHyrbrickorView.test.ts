@@ -440,4 +440,116 @@ describe('ActiveHyrbrickorView mounted', () => {
       'Inga hyrbrickor ute just nu. Hyrbrickor som lånas ut vid direktanmälan visas här tills de lämnas tillbaka.'
     );
   });
+
+  describe('edit the contact', () => {
+    let patches: Array<{ url: string; body: Record<string, unknown> }>;
+    let patchStatus: number;
+    const edit = (id: string): HTMLInputElement => q(`hyrbrickor-edit-${id}`) as HTMLInputElement;
+    async function type(id: string, value: string): Promise<void> {
+      edit(id).value = value;
+      edit(id).dispatchEvent(new Event('input', { bubbles: true }));
+      await settle();
+    }
+    async function click(id: string): Promise<void> {
+      q(id)!.click();
+      await settle();
+    }
+    async function showEditing(): Promise<void> {
+      patches = [];
+      patchStatus = 200;
+      handle = async (url, init) => {
+        if (init?.method === 'PATCH') {
+          patches.push({ url, body: JSON.parse(String(init.body)) });
+          return patchStatus === 200
+            ? json({ ok: true })
+            : json({ error: 'SQLITE_BUSY: db locked' }, patchStatus);
+        }
+        return json({ open, returned: [] });
+      };
+      await show();
+      await click('hyrbrickor-row-edit');
+    }
+
+    it('Ändra opens the fields filled in; Spara sends them and shows the new contact', async () => {
+      await showEditing();
+      expect(edit('name').value).toBe('Anna Andersson');
+      expect(edit('phone').value).toBe('0701234567');
+      await type('name', 'Anna Berg');
+      await type('phone', '+46 70 999 99 99');
+      await click('hyrbrickor-edit-save');
+      expect(patches).toHaveLength(1);
+      expect(patches[0]!.url).toBe('/api/competitions/c1/hired-cards/7501853');
+      expect(patches[0]!.body).toMatchObject({ name: 'Anna Berg', phone: '+46 70 999 99 99' });
+      expect(q('hyrbrickor-edit-phone')).toBeNull();
+      const row = target.querySelector('[data-testid=hyrbrickor-open-row]')!;
+      expect(row.textContent).toContain('Anna Berg');
+      expect(row.textContent).toContain('+46 70 999 99 99');
+    });
+
+    it('Avbryt closes the fields without sending', async () => {
+      await showEditing();
+      await type('name', 'Någon annan');
+      await click('hyrbrickor-edit-cancel');
+      expect(q('hyrbrickor-edit-name')).toBeNull();
+      expect(patches).toHaveLength(0);
+      expect(text()).toContain('Anna Andersson');
+    });
+
+    it('a bad phone number is flagged on blur and blocks Spara', async () => {
+      await showEditing();
+      await type('phone', 'abc');
+      edit('phone').dispatchEvent(new FocusEvent('blur'));
+      await settle();
+      const err = q('hyrbrickor-edit-phone-error')!;
+      expect(err.textContent).toContain('telefonnummer');
+      expect(edit('phone').getAttribute('aria-invalid')).toBe('true');
+      expect(edit('phone').getAttribute('aria-describedby')).toBe(err.id);
+      await click('hyrbrickor-edit-save');
+      expect(patches).toHaveLength(0);
+      await type('phone', '');
+      expect(q('hyrbrickor-edit-phone-error')).toBeNull();
+    });
+
+    it('emptying both phone and e-mail blocks Spara with a plain message', async () => {
+      await showEditing();
+      await type('phone', '');
+      await click('hyrbrickor-edit-save');
+      expect(patches).toHaveLength(0);
+      expect(q('hyrbrickor-edit-error')?.textContent).toContain('telefon eller e-post');
+    });
+
+    it('a failed save says so in plain words, never the server text', async () => {
+      await showEditing();
+      patchStatus = 500;
+      await click('hyrbrickor-edit-save');
+      expect(q('hyrbrickor-edit-error')?.textContent).toContain('Kunde inte spara');
+      expect(text()).not.toContain('SQLITE_BUSY');
+      expect(q('hyrbrickor-edit-phone')).not.toBeNull();
+    });
+  });
+
+  describe('phone number', () => {
+    const stubPointer = (coarse: boolean): void => {
+      window.matchMedia = vi.fn((query: string) => ({
+        matches: query === '(pointer: coarse)' && coarse,
+      })) as unknown as typeof window.matchMedia;
+    };
+    const phone = (): HTMLElement => q('hyrbrickor-row-phone')!;
+
+    it('is a tel: link on a touch screen', async () => {
+      stubPointer(true);
+      handle = async () => json({ open, returned: [] });
+      await show();
+      expect(phone().tagName).toBe('A');
+      expect(phone().getAttribute('href')).toBe('tel:0701234567');
+    });
+
+    it('is plain text with a mouse', async () => {
+      stubPointer(false);
+      handle = async () => json({ open, returned: [] });
+      await show();
+      expect(phone().tagName).not.toBe('A');
+      expect(phone().textContent).toBe('0701234567');
+    });
+  });
 });

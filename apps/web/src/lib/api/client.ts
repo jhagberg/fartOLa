@@ -1228,6 +1228,21 @@ export function returnHiredCard(
   );
 }
 
+/** PATCH /api/competitions/:id/hired-cards/:cardNumber — change the contact
+ * of a rental. The edge applies the same phone/e-mail rules as the walk-up. */
+export function updateHiredContact(
+  competitionId: string,
+  cardNumber: number,
+  contact: { name: string | null; phone: string | null; email: string | null; note: string | null }
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>(
+    `/api/competitions/${encodeURIComponent(competitionId)}/hired-cards/${encodeURIComponent(
+      String(cardNumber)
+    )}`,
+    { method: 'PATCH', body: contact }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Lottning — start-time draw (Phase 2.1 Plan 02.1-02 routes)
 // ---------------------------------------------------------------------------

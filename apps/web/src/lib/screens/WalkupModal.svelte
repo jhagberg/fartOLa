@@ -51,12 +51,13 @@
   import Button from '#lib/ui/Button.svelte';
   import Field from '#lib/ui/Field.svelte';
   import Input from '#lib/ui/Input.svelte';
+  import HiredContactFields from '#lib/components/HiredContactFields.svelte';
   import Select from '#lib/ui/Select.svelte';
   import SmartRunnerSearch from '#lib/components/SmartRunnerSearch.svelte';
   import SmartClubSearch from '#lib/components/SmartClubSearch.svelte';
   import EnteredRunnerStep from '#lib/components/EnteredRunnerStep.svelte';
   import type { CardRebind } from '#lib/api/client.ts';
-  import type { EventorClubSuggestion } from '@fartola/shared-types';
+  import { emailValid, phoneValid, type EventorClubSuggestion } from '@fartola/shared-types';
   import { ApiError, getCompetitor } from '#lib/api/client.ts';
   import type {
     ClassDTO,
@@ -215,6 +216,8 @@
   let contactPhone = $state('');
   let contactEmail = $state('');
   let contactNote = $state('');
+  /** Set by a save press: shows the contact errors of fields never visited. */
+  let contactSubmitted = $state(false);
 
   // SOFT TR 4.12.6 — the fees, to show what the runner pays. In an open
   // class the runner's birth year decides the fee and the surcharge.
@@ -367,11 +370,18 @@
     if (hiredCard && contactPhone.trim() === '' && contactEmail.trim() === '') {
       return t('walk.err.hyrbrickaContact');
     }
+    if (hiredCard && contactPhone.trim() !== '' && !phoneValid(contactPhone)) {
+      return t('walk.err.hyrbrickaPhone');
+    }
+    if (hiredCard && contactEmail.trim() !== '' && !emailValid(contactEmail)) {
+      return t('walk.err.hyrbrickaEmail');
+    }
     return null;
   }
 
   async function onSave(): Promise<void> {
     fieldError = null;
+    contactSubmitted = true;
     cardTakenExistingId = null;
     networkError = false;
     const seq = ++saveSeq;
@@ -688,36 +698,14 @@
 
       {#if hiredCard}
         <div class="hired-fields" data-testid="walkup-hired-fields">
-          <Field label={t('walk.hyrbricka.name')} htmlFor="walkup-hc-name">
-            <Input
-              id="walkup-hc-name"
-              data-testid="walkup-hc-name"
-              bind:value={contactName}
-            />
-          </Field>
-          <Field label={t('walk.hyrbricka.phone')} htmlFor="walkup-hc-phone">
-            <Input
-              id="walkup-hc-phone"
-              data-testid="walkup-hc-phone"
-              type="tel"
-              bind:value={contactPhone}
-            />
-          </Field>
-          <Field label={t('walk.hyrbricka.email')} htmlFor="walkup-hc-email">
-            <Input
-              id="walkup-hc-email"
-              data-testid="walkup-hc-email"
-              type="email"
-              bind:value={contactEmail}
-            />
-          </Field>
-          <Field label={t('walk.hyrbricka.note')} htmlFor="walkup-hc-note">
-            <Input
-              id="walkup-hc-note"
-              data-testid="walkup-hc-note"
-              bind:value={contactNote}
-            />
-          </Field>
+          <HiredContactFields
+            bind:name={contactName}
+            bind:phone={contactPhone}
+            bind:email={contactEmail}
+            bind:note={contactNote}
+            prefix="walkup-hc"
+            submitted={contactSubmitted}
+          />
         </div>
       {/if}
 

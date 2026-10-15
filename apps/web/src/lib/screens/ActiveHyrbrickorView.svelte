@@ -22,9 +22,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
-  import { ApiError, listHiredCards, returnHiredCard } from '#lib/api/client.ts';
+  import {
+    ApiError,
+    listHiredCards,
+    returnHiredCard,
+    updateHiredContact,
+  } from '#lib/api/client.ts';
+  import { emailValid, phoneValid } from '@fartola/shared-types';
   import type { HiredCardRow, HiredCardsListResponse } from '@fartola/shared-types';
   import Button from '#lib/ui/Button.svelte';
+  import { canTapToCall } from '#lib/ui/canTapToCall.ts';
+  import HiredContactFields from '#lib/components/HiredContactFields.svelte';
   import LoadError from '#lib/ui/LoadError.svelte';
 
   interface Props {
@@ -50,6 +58,18 @@
   let seq = 0;
   /** A retry from 'stale' is running: the warning gives way to a busy line. */
   let reloading = $state(false);
+
+  const tapToCall = canTapToCall();
+
+  /** The row being edited (card number) and its form. */
+  let editing: number | null = $state(null);
+  let editName = $state('');
+  let editPhone = $state('');
+  let editEmail = $state('');
+  let editNote = $state('');
+  let editSubmitted = $state(false);
+  let editError: string | null = $state(null);
+  let saving = $state(false);
 
   onMount(() => {
     void fetchAll();
@@ -87,6 +107,58 @@
   function formatTime(ms: number): string {
     const d = new Date(ms);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function startEdit(row: HiredCardRow): void {
+    editing = row.card_number;
+    editName = row.contact_name ?? '';
+    editPhone = row.contact_phone ?? '';
+    editEmail = row.contact_email ?? '';
+    editNote = row.note ?? '';
+    editSubmitted = false;
+    editError = null;
+  }
+
+  async function saveEdit(): Promise<void> {
+    if (editing === null) return;
+    editSubmitted = true;
+    editError = null;
+    const phone = editPhone.trim();
+    const email = editEmail.trim();
+    if (phone === '' && email === '') {
+      editError = t('walk.err.hyrbrickaContact');
+      return;
+    }
+    if ((phone !== '' && !phoneValid(phone)) || (email !== '' && !emailValid(email))) return;
+    const orNull = (v: string): string | null => (v.trim() === '' ? null : v.trim());
+    const contact = {
+      name: orNull(editName),
+      phone: orNull(phone),
+      email: orNull(email),
+      note: orNull(editNote),
+    };
+    const card = editing;
+    saving = true;
+    try {
+      await updateHiredContact(competitionId, card, contact);
+      open = open.map((r) =>
+        r.card_number === card
+          ? {
+              ...r,
+              contact_name: contact.name,
+              contact_phone: contact.phone,
+              contact_email: contact.email,
+              note: contact.note,
+            }
+          : r
+      );
+      editing = null;
+    } catch (e) {
+      console.error('hired contact save failed', e);
+      editError = t('hyrbrickor.editError');
+    } finally {
+      saving = false;
+    }
   }
 
   async function onReturn(cardNumber: number): Promise<void> {
@@ -169,24 +241,67 @@
                   >
                 {/if}
               </div>
-              <div class="contact-line">
-                {#if row.contact_name}
-                  <span data-testid="hyrbrickor-row-name">{row.contact_name}</span>
+              {#if editing === row.card_number}
+                <form
+                  class="edit-form"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    void saveEdit();
+                  }}
+                >
+                  <HiredContactFields
+                    bind:name={editName}
+                    bind:phone={editPhone}
+                    bind:email={editEmail}
+                    bind:note={editNote}
+                    prefix="hyrbrickor-edit"
+                    submitted={editSubmitted}
+                  />
+                  {#if editError}
+                    <p class="row-error" role="alert" data-testid="hyrbrickor-edit-error">
+                      {editError}
+                    </p>
+                  {/if}
+                  <div class="actions">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-testid="hyrbrickor-edit-cancel"
+                      onclick={() => (editing = null)}>{t('hyrbrickor.editCancel')}</Button
+                    >
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      type="submit"
+                      data-testid="hyrbrickor-edit-save"
+                      disabled={saving}>{t('hyrbrickor.editSave')}</Button
+                    >
+                  </div>
+                </form>
+              {:else}
+                <div class="contact-line">
+                  {#if row.contact_name}
+                    <span data-testid="hyrbrickor-row-name">{row.contact_name}</span>
+                  {/if}
+                  {#if row.contact_phone}
+                    {#if tapToCall}
+                      <a href={`tel:${row.contact_phone}`} data-testid="hyrbrickor-row-phone"
+                        >{row.contact_phone}</a
+                      >
+                    {:else}
+                      <span data-testid="hyrbrickor-row-phone">{row.contact_phone}</span>
+                    {/if}
+                  {/if}
+                  {#if row.contact_email}
+                    <a
+                      href={`mailto:${row.contact_email}`}
+                      data-testid="hyrbrickor-row-email">{row.contact_email}</a
+                    >
+                  {/if}
+                </div>
+                {#if row.note}
+                  <p class="note muted small" data-testid="hyrbrickor-row-note">{row.note}</p>
                 {/if}
-                {#if row.contact_phone}
-                  <a href={`tel:${row.contact_phone}`} data-testid="hyrbrickor-row-phone"
-                    >{row.contact_phone}</a
-                  >
-                {/if}
-                {#if row.contact_email}
-                  <a
-                    href={`mailto:${row.contact_email}`}
-                    data-testid="hyrbrickor-row-email">{row.contact_email}</a
-                  >
-                {/if}
-              </div>
-              {#if row.note}
-                <p class="note muted small" data-testid="hyrbrickor-row-note">{row.note}</p>
               {/if}
               {#if rowErrors[row.card_number]}
                 <p class="row-error" role="alert" data-testid="hyrbrickor-row-error">
@@ -194,6 +309,14 @@
                 </p>
               {/if}
               <div class="actions">
+                {#if editing !== row.card_number}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid="hyrbrickor-row-edit"
+                    onclick={() => startEdit(row)}>{t('hyrbrickor.edit')}</Button
+                  >
+                {/if}
                 <Button
                   variant="primary"
                   size="sm"
@@ -378,8 +501,14 @@
   .note {
     margin: 0;
   }
+  .edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   .actions {
     display: flex;
+    gap: var(--space-xs);
     justify-content: flex-end;
     margin-top: 4px;
   }

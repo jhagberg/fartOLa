@@ -27,6 +27,7 @@
   import { t } from '#lib/i18n/index.ts';
   import Icon from '#lib/ui/Icon.svelte';
   import Button from '#lib/ui/Button.svelte';
+  import { canTapToCall } from '#lib/ui/canTapToCall.ts';
 
   interface Props {
     cardNumber: number;
@@ -85,7 +86,11 @@
     {#if contactPhone}
       <p class="row">
         <span class="lbl">{t('readout.hyrbricka.contact.phone')}</span>
-        <a href={`tel:${contactPhone}`} data-testid="hyrbricka-contact-phone">{contactPhone}</a>
+        {#if canTapToCall()}
+          <a href={`tel:${contactPhone}`} data-testid="hyrbricka-contact-phone">{contactPhone}</a>
+        {:else}
+          <span data-testid="hyrbricka-contact-phone">{contactPhone}</span>
+        {/if}
       </p>
     {/if}
     {#if contactEmail}

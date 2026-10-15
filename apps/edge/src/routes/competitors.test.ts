@@ -1034,6 +1034,27 @@ describe('Phase 2.0 — hired_card extension (Plan 02-02)', () => {
     assert.equal(hrRows.length, 0);
   });
 
+  test('test HB3c: hired_card=true + a phone number of letters → 400 hyrbricka_phone_invalid', async () => {
+    const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/competitors',
+      payload: {
+        competition_id: competitionId,
+        name: 'Bad Phone',
+        club: null,
+        class_id: classId,
+        card_number: 88890,
+        consent: true,
+        hired_card: true,
+        hired_contact: { name: null, phone: 'abc', email: null, note: null },
+      },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal((res.json() as { error: string }).error, 'hyrbricka_phone_invalid');
+    assert.equal(ctx.handle.db.select().from(competitors).all().length, 0);
+  });
+
   test('test HB3b: hired_card=true + hired_contact omitted entirely → 400 hyrbricka_contact_required', async () => {
     const { competitionId, classId } = await seedCompetitionAndClass(ctx.app);
     const res = await ctx.app.inject({
