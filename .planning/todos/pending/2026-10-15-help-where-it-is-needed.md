@@ -55,3 +55,26 @@ Still open (no hint, format or rule not visible):
 - Class kinds: age per class (number; what it means for the fee/class kind).
 - Corrections: reason fields (max 500 chars, no counter).
 - Walk-up / add runner: phone and email for hired cards (placeholder only).
+
+## Progress 2026-10-15
+
+`ui/HelpTip.svelte` (a "?" disclosure: aria-expanded, aria-controls, click or
+tap, Escape closes, SOFT TR number first) is in use at: the max-time lock on
+Tävlingsinfo and Lottning (TR 4.21.2) and the start-method rule on Lottning
+(TR 7.4.2 / 7.4.3).
+
+Rule refusals still to link to a HelpTip:
+
+- Kontroll: the start-method rule (`prerace.startChoice.rule`, TR 7.4.2/7.4.3).
+- Lottning: draw blocked until results are uploaded (`lottning.drawHint.*`, TR 7.4.1).
+- Walk-up / edit runner: card already taken, card change that takes a result away.
+- Readout: manual finish, time addition and manual punch refusals (TR 4.20.6).
+- Eventor / liveresultat level rules in Inställningar (TR 7.7.1).
+
+Hover `title` as the only copy: fixed for the control chips (visible hint) and
+the accent swatches (visible name). `StatusPill` keeps its `title` as an extra;
+its explanation is already in an `sr-only` description, so no change. The
+active-competition name `title` only repeats the visible name.
+
+Left for later: an a11y e2e that checks hints are announced; the format hints
+listed under "Still open" above.

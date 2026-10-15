@@ -630,6 +630,7 @@
               {#if crs.controls.length === 0}
                 <p class="muted course-empty">{t('info.courses.noControls')}</p>
               {:else}
+                <p class="muted" id="info-ctrl-hint-{crs.id}">{t('info.courses.voidHint')}</p>
                 <ol class="course-controls">
                   {#each crs.controls as ctrl (ctrl.order_idx)}
                     {@const voided = voidedCodes.includes(ctrl.control_code)}
@@ -639,6 +640,7 @@
                         class="ctrl-chip mono"
                         class:voided
                         aria-pressed={voided}
+                        aria-describedby="info-ctrl-hint-{crs.id}"
                         title={t(voided ? 'info.courses.unvoidControl' : 'info.courses.voidControl', {
                           code: ctrl.control_code,
                         })}
