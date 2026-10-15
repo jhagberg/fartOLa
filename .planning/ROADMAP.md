@@ -34,6 +34,7 @@ roadmap used until 2026-10-14 is in
 | 2.2 Draw and class model, M1-M2 | Class kind and level, start times as events, SOFT draw, late entrants, seeding, pursuit, fees, bibs, pre-race check, closing time | 2026-10-11 |
 | Design-lab plans 1-3 | The screens redone after the UI audit (ADR-0016) | 2026-10-12 |
 | Start choice per class | One start answer per class (ADR-0018) | 2026-10-14 |
+| Stable CI and screen fixes | Flaky e2e, small screen bugs, read-out refetch, speaker demo feedback form | 2026-10-15 |
 | Also | Speaker screen, kvar i skogen from radio, jSh/serial radio input, SIAC block 1 and reserve records, card change keeps the result, operator-mistake walker | 2026-10 |
 
 Phase plans and their history stay in `.planning/phases/`; no new ones
@@ -43,20 +44,16 @@ are added.
 
 | Item | Done when | Todos |
 | --- | --- | --- |
-| CI that does not flake | each of the three tests passes 20 runs in a row | `2026-10-14-flaky-e2e-tests` |
-| Small screen bugs | search list stays closed; class switch in Lottning shows its own choice; Tävlingsinfo has one writer, one max-time format, the lock from the server, notes kept | `runner-search-dropdown-reopens`, `lottning-class-switch-shows-other-classs-choice`, the four Tävlingsinfo todos of 2026-10-11 |
-| Read-out refetch | a fast pair of reads, an unknown card and an open Ändra all survive a refetch | `readout-first-load-refetch-per-card-read`, `readout-unknown-card-in-merged-refetch`, `corrections-panel-resets-inputs` |
 | OLA lab: how OLA reads and decides | report with navigation, comparison table and frame log | lab session (private); feeds ADR-0019 and the red exit |
+| Which start and finish time counts | steps 1-2 built (no result changes); ADR-0019 accepted (SOFT's answer, replay) before steps 3-4 | `2026-10-13-sportident-answers-follow-up` item 1 |
+| Times that can be wrong | late start ignores pre-race scans; splits over 12:00 and midnight are positive; a DQ before the read hides the punches; each with a replay (PR 151 waits for it) | `late-start-from-pre-race-scan`, `splits-across-half-day`, `dq-before-read-keeps-punches` |
+| Rule and wording fixes | no false-start button where the start punch counts; one word for a manual punch (PR 150) | `hide-false-start-button-for-punch-classes`, `manual-punch-one-word` |
 
 ## Next
 
 | Item | Done when | Todos |
 | --- | --- | --- |
-| Which start and finish time counts | ADR-0019 accepted (SOFT's answer, replay), then steps 2-4 built | `2026-10-13-sportident-answers-follow-up` item 1 |
-| Times that can be wrong | late start ignores pre-race scans; splits over 12:00 and midnight are positive; DQ before read keeps punches; each with a replay | `late-start-from-pre-race-scan`, `splits-across-half-day`, `dq-before-read-keeps-punches` |
-| Rule and wording fixes | no false-start button where the start punch counts; one word for a manual punch | `hide-false-start-button-for-punch-classes`, `manual-punch-one-word` |
 | Medium screens | hire-card contact editable and checked; no raw server text in errors; sidebar grouped | `hire-card-contact-edit-and-validation`, `raw-server-text-in-error-messages`, `sidebar-menu-grouping` |
-| Speaker demo feedback | the speaker can send feedback from the demo | link to a form in the demo (after PR 131) |
 | Demo from the real app | the project site shows the app's own screens on recorded data | `2026-10-14-demo-from-the-real-app` |
 
 ## Later (each needs a short plan first)
