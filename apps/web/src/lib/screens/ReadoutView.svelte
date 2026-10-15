@@ -902,7 +902,8 @@
       await apiPrintReceipt(competitionId, competitorId, selectedTemplate);
       prints = { ...prints, [key]: { status: 'ok', error: '' } };
     } catch (err) {
-      const error = userMessage(err);
+      // Shown behind "Visa orsak": the printer's own reason helps whoever fixes it.
+      const error = (err as Error).message || t('common.unknownError');
       prints = { ...prints, [key]: { status: 'failed', error } };
     }
   }
