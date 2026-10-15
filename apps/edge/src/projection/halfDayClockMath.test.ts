@@ -234,6 +234,21 @@ describe('firstAndLastPunches (ADR-0019 step 2)', () => {
     assert.equal(finishOf({ ...hd(37_800), code: 100 }), null);
   });
 
+  test('an empty reserve record (null): nothing new, like one not read', () => {
+    const r = firstAndLastPunches(
+      {
+        start: hd(36_000),
+        start_first: null,
+        finish: { ...hd(37_800), code: 100 },
+        finish_first: null,
+        card_type: 'SIAC',
+      },
+      readAt,
+      0
+    );
+    assert.deepEqual(r, { start: null, finish: null });
+  });
+
   test('the same punch: nothing, also when the reserve has no code (its CN is a fraction)', () => {
     assert.equal(finishOf({ ...hd(37_800), code: 100 }, { ...hd(37_800), code: 100 }), null);
     assert.equal(finishOf({ ...withSub(37_800, 40), code: 100 }, withSub(37_800, 40)), null);
