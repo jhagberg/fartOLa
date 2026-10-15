@@ -94,10 +94,11 @@ export interface CardReadEvent extends NdjsonBase {
   punches: NdjsonPunch[];
   card_holder: Record<string, unknown> | null;
   /** SIAC only (block 3): the FIRST start/finish punch after a clear (reserve
-   * record), next to the last one in `start`/`finish`. Absent: no reserve record.
-   * `code` is absent when the reserve record has a subsecond. Observation only. */
-  start_first?: HalfDayClock;
-  finish_first?: HalfDayClock;
+   * record), next to the last one in `start`/`finish`. Absent: not read (block 3
+   * not read, or no reserve records); null: read and empty. `code` is absent
+   * when the reserve record has a subsecond. Observation only. */
+  start_first?: HalfDayClock | null;
+  finish_first?: HalfDayClock | null;
   /** SIAC only (block 3): battery voltage in mV, versions "major.minor". */
   battery_mv?: number;
   hardware_version?: string;
@@ -306,13 +307,13 @@ export class NdjsonEmitter {
       raceResult.startFirstCode,
       raceResult.startFirstSubsec256
     );
-    if (startFirst) event.start_first = startFirst;
+    if (raceResult.startFirstTime !== undefined) event.start_first = startFirst;
     const finishFirst = toHalfDayClock(
       raceResult.finishFirstTime,
       raceResult.finishFirstCode,
       raceResult.finishFirstSubsec256
     );
-    if (finishFirst) event.finish_first = finishFirst;
+    if (raceResult.finishFirstTime !== undefined) event.finish_first = finishFirst;
     if (card.cardSeriesByte !== undefined) {
       event.card_series_byte = card.cardSeriesByte;
     }

@@ -93,13 +93,13 @@ export function buildCardReadPayload(card: BaseSiCard): CardReadPayload {
     raceResult.startFirstCode,
     raceResult.startFirstSubsec256
   );
-  if (startFirst) payload.start_first = startFirst;
+  if (raceResult.startFirstTime !== undefined) payload.start_first = startFirst;
   const finishFirst = toHalfDayClock(
     raceResult.finishFirstTime,
     raceResult.finishFirstCode,
     raceResult.finishFirstSubsec256
   );
-  if (finishFirst) payload.finish_first = finishFirst;
+  if (raceResult.finishFirstTime !== undefined) payload.finish_first = finishFirst;
   if (raceResult.batteryDate !== undefined) payload.battery_date = raceResult.batteryDate;
   if (card.cardSeriesByte !== undefined) payload.card_series_byte = card.cardSeriesByte;
   if (c.uid !== undefined) payload.uid = c.uid;
