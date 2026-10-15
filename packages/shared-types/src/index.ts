@@ -139,6 +139,9 @@ export type { ResultStatusCode, SoftStatus } from './resultStatus.ts';
 export { entryFeeFor, isYouthByBirthYear, paysYouthFee, surchargeCapPct } from './fees.ts';
 export type { ClassFees, EntryFee, EntryTiming } from './fees.ts';
 
+// --- Hire card contact check ---------------------------------------------
+export { phoneValid, emailValid } from './contact.ts';
+
 // --- Competition clock (epoch ms ↔ one fixed offset per competition) -----
 export {
   COMPETITION_TZ,

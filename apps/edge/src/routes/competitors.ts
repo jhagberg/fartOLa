@@ -86,7 +86,7 @@ import {
   paysYouthFee,
   readoutChannel,
 } from '@fartola/shared-types';
-import { LoseResult } from '@fartola/shared-types';
+import { LoseResult, phoneValid, emailValid } from '@fartola/shared-types';
 import { classes, clubs, competitions, competitors, events, hiredCards } from '../db/schema.ts';
 import { UnknownCompetitor, writeStartTimes } from '../db/startTimes.ts';
 import type { Competitor } from '../db/types.ts';
@@ -199,6 +199,16 @@ function hiredContactMissing(input: CompetitorCreateInput): boolean {
   return (hc?.phone?.trim() ?? '') === '' && (hc?.email?.trim() ?? '') === '';
 }
 
+/** The phone number or e-mail given for a hired card is not well formed. */
+function hiredContactInvalid(input: CompetitorCreateInput): 'phone' | 'email' | null {
+  if (input.hired_card !== true) return null;
+  const phone = input.hired_contact?.phone?.trim() ?? '';
+  const email = input.hired_contact?.email?.trim() ?? '';
+  if (phone !== '' && !phoneValid(phone)) return 'phone';
+  if (email !== '' && !emailValid(email)) return 'email';
+  return null;
+}
+
 /** Open (or reopen) the rental of `cardNumber` for `competitorId`. Run
  * inside the write's transaction so a failure leaves no orphan rental. The
  * compound PK [competitionId, cardNumber] upserts (Pitfall 10): re-renting a
@@ -303,6 +313,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
       if (hiredContactMissing(input)) {
         return reply.code(400).send({ error: 'hyrbricka_contact_required' });
       }
+      const badContact = hiredContactInvalid(input);
+      if (badContact) return reply.code(400).send({ error: `hyrbricka_${badContact}_invalid` });
 
       // (4r) Collision check — another competitor in this competition
       // already holds the new card. The partial unique index would
@@ -492,6 +504,8 @@ export default async function registerCompetitors(app: FastifyInstance): Promise
     if (hiredContactMissing(input)) {
       return reply.code(400).send({ error: 'hyrbricka_contact_required' });
     }
+    const badContact = hiredContactInvalid(input);
+    if (badContact) return reply.code(400).send({ error: `hyrbricka_${badContact}_invalid` });
 
     // (4) Card-taken check — D-11 partial unique index covers this at the
     // SQL layer but a pre-flight SELECT gives the operator a structured
