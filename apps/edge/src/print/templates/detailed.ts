@@ -42,6 +42,7 @@ export default async function detailed(
 
   printer.println('Str  Kod    Split   Rank Lost');
   let prev = data.competitor.latest_start;
+  const cardType = data.competitor.card_read_history.at(-1)?.card_type;
   for (const row of controlRows(data)) {
     const tag = row.no.padEnd(3, ' ');
     const code = String(row.code).padEnd(5, ' ');
@@ -51,7 +52,9 @@ export default async function detailed(
     }
     // 02.1-14 Task 9: no split times for an untimed class.
     const splitMs =
-      row.punch === null || data.competitor.no_timing ? null : halfDayClockGapMs(prev, row.punch);
+      row.punch === null || data.competitor.no_timing
+        ? null
+        : halfDayClockGapMs(prev, row.punch, cardType);
     const split = formatElapsed(splitMs).padStart(7, ' ');
     const label = row.label === null ? '' : ` ${row.label}`;
     printer.println(`${tag}  ${code} ${split}     —     —${label}`);

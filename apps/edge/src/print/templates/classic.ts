@@ -47,6 +47,7 @@ export default async function classic(
   // for the IOF XML export and the detailed template can lift them
   // then). For now we render `cum` only.
   printer.println('Sträcka  Kod    Cum');
+  const cardType = data.competitor.card_read_history.at(-1)?.card_type;
   for (const row of controlRows(data)) {
     const tag = row.no.padEnd(3, ' ');
     const code = String(row.code).padEnd(5, ' ');
@@ -54,7 +55,7 @@ export default async function classic(
     const cumMs =
       row.punch === null || data.competitor.no_timing
         ? null
-        : halfDayClockGapMs(data.competitor.latest_start, row.punch);
+        : halfDayClockGapMs(data.competitor.latest_start, row.punch, cardType);
     const cumStr = row.label === 'struken' ? '' : formatElapsed(cumMs).padStart(7, ' ');
     const label = row.label === null ? '' : ` ${row.label}`;
     printer.println(`${tag}      ${code} ${cumStr}${label}`.trimEnd());

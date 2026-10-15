@@ -179,21 +179,23 @@ export function formatGap(behindMs: number | null): string {
   return `+${formatElapsed(behindMs)} efter ledaren`;
 }
 
-/** Subtract two half-day clocks modulo 12 h. Returns the gap in
- * milliseconds, or null if either argument is null. `half_day` is ignored:
- * an SI5 card has no PM bit, so 12:03 reads as 00:03 there (as the readout
- * screen's splits, readout-types.ts formatSplit).
- * shortcut: a gap of 12 h or more wraps; use cardClockToEpochMs with the
- * read time if splits that long ever occur. */
+/** Subtract two half-day clocks (modular wrap-around). Returns the gap in
+ * milliseconds, or null if either argument is null. An SI5 card has no PM
+ * bit (12:03 reads as 00:03), so its gaps wrap at 12 h, as the readout
+ * screen's splits do; other cards use `half_day` and wrap at 24 h.
+ * shortcut: an SI5 gap of 12 h or more wraps; use cardClockToEpochMs with
+ * the read time if that ever matters. */
 export function halfDayClockGapMs(
   from: { seconds_in_half_day: number; half_day: 0 | 1 } | HalfDayClock | null,
-  to: { seconds_in_half_day: number; half_day: 0 | 1 } | NdjsonPunch | HalfDayClock | null
+  to: { seconds_in_half_day: number; half_day: 0 | 1 } | NdjsonPunch | HalfDayClock | null,
+  cardType?: string
 ): number | null {
   if (from === null || to === null) return null;
-  const halfDay = 12 * 3600;
-  return (
-    ((((to.seconds_in_half_day - from.seconds_in_half_day) % halfDay) + halfDay) % halfDay) * 1000
-  );
+  const period = cardType === 'SI5' ? 12 * 3600 : 24 * 3600;
+  const pm = cardType === 'SI5' ? 0 : 12 * 3600;
+  const diff =
+    to.seconds_in_half_day + to.half_day * pm - (from.seconds_in_half_day + from.half_day * pm);
+  return (((diff % period) + period) % period) * 1000;
 }
 
 // ---------------------------------------------------------------------------
