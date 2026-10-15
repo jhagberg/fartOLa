@@ -10,6 +10,7 @@
   import { formatClockTime } from '@fartola/shared-types';
   import { postEventorPushResults, postEventorPushStartlist, ApiError } from '#lib/api/client.ts';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import EventorKeyLink from '#lib/components/EventorKeyLink.svelte';
   import { fetchCompetitionClock } from '#lib/screens/competition-clock.ts';
   import Button from '#lib/ui/Button.svelte';
@@ -30,7 +31,6 @@
     pushing: boolean;
     url: string | null;
     error: string | null;
-    detail: string | null;
     noKey: boolean;
     last: Last | null;
   }
@@ -39,7 +39,6 @@
     pushing: false,
     url: null,
     error: null,
-    detail: null,
     noKey: false,
     last: null,
   });
@@ -78,7 +77,6 @@
     s.pushing = true;
     s.url = null;
     s.error = null;
-    s.detail = null;
     s.noKey = false;
     try {
       const res = await (kind === 'results'
@@ -97,7 +95,7 @@
         s.noKey = true;
       } else {
         s.error = t('eventor.publish.error');
-        s.detail = err instanceof Error ? err.message : String(err);
+        console.error(err);
       }
     } finally {
       s.pushing = false;
@@ -129,12 +127,6 @@
         <strong><Icon name="alert-triangle" size={18} /> {t('eventor.publish.errorLabel')}</strong>
         {s.error}
         {#if s.noKey}<EventorKeyLink />{/if}
-        {#if s.detail}
-          <details>
-            <summary>{t('export.details')}</summary>
-            <p>{s.detail}</p>
-          </details>
-        {/if}
       </div>
     {/if}
   </section>
@@ -201,22 +193,5 @@
     border: 1px solid var(--dnf);
     background: var(--dnf-soft);
     color: var(--fg);
-  }
-  .box summary {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-height: var(--hit);
-    cursor: pointer;
-  }
-  /* display: flex drops the native marker; draw it back. */
-  .box summary::before {
-    content: '\25B8' / '';
-  }
-  .box details[open] > summary::before {
-    content: '\25BE' / '';
-  }
-  .box details p {
-    overflow-wrap: anywhere;
   }
 </style>
