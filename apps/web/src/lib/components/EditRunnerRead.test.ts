@@ -29,6 +29,7 @@ const base: CorrectionsDTO = {
   manual_punches: [],
   time_addition_min: 0,
   time_addition_reason: null,
+  start_method: 'auto',
 };
 const readOf = (status: CorrectionsDTO['status'], punches: number[]): CorrectionsDTO => ({
   ...base,
