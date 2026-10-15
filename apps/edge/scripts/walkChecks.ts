@@ -218,14 +218,6 @@ export const KNOWN: ReadonlyArray<{
     url: /\/api\/competitors$|\/import$/,
     msg: /"card_number":null/,
   },
-  {
-    // Only when every difference listed is a punch the view no longer shows.
-    name: 'a DQ taken back and set again does not give the punches back',
-    where: '.planning/todos/pending/2026-10-13-dq-before-read-keeps-punches.md',
-    id: 'way-back-differs',
-    url: /\/(clear-status|un-dnf)$/,
-    msg: /before ≠ after: (?:\.competitors\[[^\]]*\]\.latest_punches\.\d+: [^;]* ≠ undefined(?:; |$))+$/,
-  },
 ];
 
 /** A card read in the same millisecond as race_started and stored before it
