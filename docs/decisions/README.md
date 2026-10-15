@@ -48,3 +48,4 @@ lives in `.planning/ROADMAP.md`, and decision content lives here.
 | [0017](0017-fixed-offset-competition-clock.md)                        | One fixed-offset competition clock per competition                                            | accepted               | 2026-10-07 |
 | [0018](0018-one-start-choice-per-class.md)                            | One start choice per class with three answers; Kontroll reads it instead of guessing          | accepted               | 2026-10-12 |
 | [0019](0019-which-start-and-finish-time-counts.md)                    | Which start and finish time counts: the first valid punch, every candidate kept               | proposed               | 2026-10-14 |
+| [0020](0020-assistant-access-over-mcp.md)                             | Assistant access over MCP: read-only first, writes only as the events the screens make        | proposed               | 2026-10-15 |
