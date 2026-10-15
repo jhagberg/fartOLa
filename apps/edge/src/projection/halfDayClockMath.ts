@@ -110,7 +110,8 @@ export interface FirstAndLast {
 }
 
 /** Both known and not the same: a reserve code is unknown when its CN byte
- * holds a fraction, and unknown is not a difference. */
+ * holds a fraction, and unknown is not a difference. (A missing fraction is
+ * not unknown: scoring takes it as zero.) */
 const bothDiffer = (a: number | undefined, b: number | undefined): boolean =>
   a !== undefined && b !== undefined && a !== b;
 
@@ -137,7 +138,7 @@ export function firstAndLastPunches(
       ? null
       : first.seconds_in_half_day !== last.seconds_in_half_day ||
           first.half_day !== last.half_day ||
-          bothDiffer(first.subsec_256, last.subsec_256) ||
+          (first.subsec_256 ?? 0) !== (last.subsec_256 ?? 0) ||
           bothDiffer(first.code, last.code)
         ? { first: at(first), last: at(last) }
         : null;
