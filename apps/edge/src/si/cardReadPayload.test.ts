@@ -101,6 +101,7 @@ function parseTranscript(raw: string): Step[] {
  * (siac-jonas-001: touch-free finish, blocks 1 and 3 never read) are frozen
  * truth, so they stay strict; these extra requests are answered with an
  * erased page (all 0xEE, "no data"). Undefined for any other request.
+ * The erased page 3 makes the reserve records read and empty (null).
  */
 function legacyErasedPageReply(sent: number[]): number[] | undefined {
   for (const page of [0x01, 0x03]) {
@@ -440,15 +441,39 @@ describe('SIAC reserve records in the card_read payload', () => {
     assert.equal('battery_date' in buildCardReadPayload(decode(false)), false);
   });
 
-  test('no reserve record: the keys are absent', () => {
-    const payload = buildCardReadPayload(decode(false));
-    assert.equal('start_first' in payload, false);
-    assert.equal('finish_first' in payload, false);
+  // Acceptance case 3 (ADR-0019): an empty reserve and an unread block 3 are
+  // both "first punch unknown", but never the same thing in the event.
+  test('an empty reserve record is null, in the payload and the NDJSON line alike', () => {
+    const card = decode(false);
+    const payload = buildCardReadPayload(card);
+    assert.equal(payload.start_first, null);
+    assert.equal(payload.finish_first, null);
+    const lines: string[] = [];
+    new NdjsonEmitter({ device_path: '/dev/x', out: (l) => lines.push(l) }).card_read({ card });
+    const nd = JSON.parse(lines[0]!) as Record<string, unknown>;
+    assert.equal(nd.start_first, null);
+    assert.equal(nd.finish_first, null);
   });
 
-  test('the projection gives identical results with and without the new fields', () => {
+  test('block 3 not read: the keys are absent, in the payload and the NDJSON line alike', () => {
+    const card = new SIAC(8_500_001);
+    card._decodeFromStorage(siacImage(true).slice(0, 0x180)); // blocks 0-2 only
+    const payload = buildCardReadPayload(card);
+    assert.equal(payload.finish?.seconds_in_half_day, 36_600);
+    assert.equal('start_first' in payload, false);
+    assert.equal('finish_first' in payload, false);
+    const lines: string[] = [];
+    new NdjsonEmitter({ device_path: '/dev/x', out: (l) => lines.push(l) }).card_read({ card });
+    const nd = JSON.parse(lines[0]!) as Record<string, unknown>;
+    assert.equal('start_first' in nd, false);
+    assert.equal('finish_first' in nd, false);
+  });
+
+  test('the projection gives identical results with a reserve, an empty one and an unread block 3', () => {
     const DAY = '2026-10-03';
-    const mk = (withReserve: boolean): Event =>
+    const unread = new SIAC(8_500_001);
+    unread._decodeFromStorage(siacImage(true).slice(0, 0x180));
+    const mk = (card: SIAC): Event =>
       ({
         nodeId: 'n',
         localSeq: 1,
@@ -456,12 +481,14 @@ describe('SIAC reserve records in the card_read payload', () => {
         eventType: 'card_read',
         eventTimeMs: localToEpochMs(DAY, 37_000),
         recordedAtMs: localToEpochMs(DAY, 37_000),
-        payload: buildCardReadPayload(decode(withReserve)),
+        payload: buildCardReadPayload(card),
       }) as Event;
-    const withFields = mk(true);
-    const without = mk(false);
+    const withFields = mk(decode(true));
+    const empty = mk(decode(false));
+    const notRead = mk(unread);
     assert.ok((withFields.payload as { finish_first?: unknown }).finish_first);
-    assert.equal((without.payload as { finish_first?: unknown }).finish_first, undefined);
+    assert.equal((empty.payload as { finish_first?: unknown }).finish_first, null);
+    assert.equal('finish_first' in notRead.payload, false);
     const run = (e: Event) =>
       reduce({
         competition_id: 'comp-1',
@@ -505,14 +532,19 @@ describe('SIAC reserve records in the card_read payload', () => {
           } as CourseWithControlCodes,
         ],
       });
-    const a = run(withFields);
-    const b = run(without);
-    assert.equal(a.competitors.get('a')?.elapsed_time_ms, 600_000);
-    // The read history keeps the reserves (ADR-0019 step 2); all else is equal.
-    const read = a.competitors.get('a')!.card_read_history[0]!;
-    assert.ok(read.finish_first);
-    delete read.start_first;
-    delete read.finish_first;
-    assert.deepEqual(a, b);
+    const [a, b, c] = [withFields, empty, notRead].map(run);
+    assert.equal(a!.competitors.get('a')?.elapsed_time_ms, 600_000);
+    // The read history keeps the reserves as read (ADR-0019 step 2): null for
+    // empty, absent for not read. All else is equal.
+    const history = (r: typeof a) => r!.competitors.get('a')!.card_read_history[0]!;
+    assert.ok(history(a).finish_first);
+    assert.equal(history(b).finish_first, null);
+    assert.equal('finish_first' in history(c), false);
+    for (const r of [a, b]) {
+      delete history(r).start_first;
+      delete history(r).finish_first;
+    }
+    assert.deepEqual(a, c);
+    assert.deepEqual(b, c);
   });
 });

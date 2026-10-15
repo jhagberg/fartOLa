@@ -93,6 +93,9 @@ const parseTranscript = (raw: string): { steps: TranscriptStep[]; meta: Transcri
  * (siac-jonas-001: touch-free finish, blocks 1 and 3 never read) are frozen
  * truth, so they stay strict; these extra requests are answered with an
  * erased page (all 0xEE, "no data"): no block-1 code, battery or versions. Undefined for any other request.
+ * The erased page 3 makes the reserve records read and empty (`start_first` /
+ * `finish_first` null in siac-jonas-001.expected.json), although the bench
+ * read never fetched block 3; no reply on the wire can say "not read".
  */
 export const legacyErasedPageReply = (sent: number[]): number[] | undefined => {
   for (const page of [0x01, 0x03]) {
