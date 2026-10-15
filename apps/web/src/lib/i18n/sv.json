@@ -496,6 +496,7 @@
   "hyrbrickor.editSave": "Spara",
   "hyrbrickor.editCancel": "Avbryt",
   "hyrbrickor.editError": "Kunde inte spara kontaktuppgifterna. Försök igen.",
+  "hyrbrickor.changed": "Hyrbrickan har ändrats av någon annan. Listan är uppdaterad, försök igen.",
   "hyrbrickor.returnedToast": "Bricka {{card}} återlämnad",
   "hyrbrickor.loadError": "Kunde inte hämta hyrbrickor.",
 

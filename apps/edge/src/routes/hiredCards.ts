@@ -61,6 +61,8 @@ const PatchParams = z.object({
 });
 
 const ContactBody = z.object({
+  /** The rental the form was opened on; a re-hire gives the card a new one. */
+  marked_at_ms: z.number().int(),
   name: z.string().nullable(),
   phone: z.string().nullable(),
   email: z.string().nullable(),
@@ -181,9 +183,25 @@ export default async function registerHiredCardsRoutes(app: FastifyInstance): Pr
           contactEmail: email,
           note: orNull(body.data.note),
         })
-        .where(and(eq(hiredCards.competitionId, id), eq(hiredCards.cardNumber, cardNumber)))
+        .where(
+          and(
+            eq(hiredCards.competitionId, id),
+            eq(hiredCards.cardNumber, cardNumber),
+            eq(hiredCards.markedAtMs, body.data.marked_at_ms),
+            isNull(hiredCards.returnedAtMs)
+          )
+        )
         .run();
-      if (result.changes === 0) return reply.code(404).send({ error: 'not_found' });
+      if (result.changes === 0) {
+        const exists = app.fartolaDb.db
+          .select()
+          .from(hiredCards)
+          .where(and(eq(hiredCards.competitionId, id), eq(hiredCards.cardNumber, cardNumber)))
+          .get();
+        return exists
+          ? reply.code(409).send({ error: 'hyrbricka_changed' })
+          : reply.code(404).send({ error: 'not_found' });
+      }
       return reply.code(200).send({ ok: true });
     }
   );

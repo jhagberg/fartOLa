@@ -496,6 +496,7 @@
   "hyrbrickor.editSave": "Save",
   "hyrbrickor.editCancel": "Cancel",
   "hyrbrickor.editError": "Could not save the contact details. Try again.",
+  "hyrbrickor.changed": "The hired card was changed by someone else. The list is updated, try again.",
   "hyrbrickor.returnedToast": "Card {{card}} returned",
   "hyrbrickor.loadError": "Could not load hired cards.",
 

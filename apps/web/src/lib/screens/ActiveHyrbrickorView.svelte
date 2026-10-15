@@ -138,9 +138,10 @@
       note: orNull(editNote),
     };
     const card = editing;
+    const marked = open.find((r) => r.card_number === card)?.marked_at_ms ?? 0;
     saving = true;
     try {
-      await updateHiredContact(competitionId, card, contact);
+      await updateHiredContact(competitionId, card, { marked_at_ms: marked, ...contact });
       open = open.map((r) =>
         r.card_number === card
           ? {
@@ -155,7 +156,14 @@
       editing = null;
     } catch (e) {
       console.error('hired contact save failed', e);
-      editError = t('hyrbrickor.editError');
+      if (e instanceof ApiError && e.status === 409) {
+        // The card was returned or hired out again meanwhile: drop the stale form.
+        editing = null;
+        toast(t('hyrbrickor.changed'));
+        void fetchAll();
+      } else {
+        editError = t('hyrbrickor.editError');
+      }
     } finally {
       saving = false;
     }
@@ -267,6 +275,7 @@
                       variant="ghost"
                       size="sm"
                       data-testid="hyrbrickor-edit-cancel"
+                      disabled={saving}
                       onclick={() => (editing = null)}>{t('hyrbrickor.editCancel')}</Button
                     >
                     <Button
@@ -314,6 +323,7 @@
                     variant="ghost"
                     size="sm"
                     data-testid="hyrbrickor-row-edit"
+                    disabled={saving}
                     onclick={() => startEdit(row)}>{t('hyrbrickor.edit')}</Button
                   >
                 {/if}

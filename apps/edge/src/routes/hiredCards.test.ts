@@ -383,7 +383,13 @@ describe('PATCH /api/competitions/:id/hired-cards/:cardNumber/return', () => {
 describe('PATCH /api/competitions/:id/hired-cards/:cardNumber', () => {
   let ctx: Ctx;
   const url = '/api/competitions/comp-e/hired-cards/12345';
-  const good = { name: 'Rut', phone: '+46 70-123 45 67', email: 'rut@example.org', note: 'ok' };
+  const good = {
+    marked_at_ms: 1_700_000_000_000,
+    name: 'Rut',
+    phone: '+46 70-123 45 67',
+    email: 'rut@example.org',
+    note: 'ok',
+  };
 
   beforeEach(async () => {
     ctx = await boot();
@@ -408,7 +414,13 @@ describe('PATCH /api/competitions/:id/hired-cards/:cardNumber', () => {
     const res = await ctx.app.inject({
       method: 'PATCH',
       url,
-      payload: { name: '  ', phone: '0701234567', email: '', note: null },
+      payload: {
+        marked_at_ms: 1_700_000_000_000,
+        name: '  ',
+        phone: '0701234567',
+        email: '',
+        note: null,
+      },
     });
     assert.equal(res.statusCode, 200);
     const row = ctx.handle.db.select().from(hiredCards).all()[0];
@@ -433,10 +445,24 @@ describe('PATCH /api/competitions/:id/hired-cards/:cardNumber', () => {
     const res = await ctx.app.inject({
       method: 'PATCH',
       url,
-      payload: { name: 'Rut', phone: '', email: null, note: null },
+      payload: { marked_at_ms: 1_700_000_000_000, name: 'Rut', phone: '', email: null, note: null },
     });
     assert.equal(res.statusCode, 400);
     assert.equal((res.json() as { error: string }).error, 'hyrbricka_contact_required');
+  });
+
+  test('a form from before a re-hire is refused and the new renter keeps the contact', async () => {
+    // The card was returned and hired out again: same row, new marked_at_ms.
+    ctx.handle.db
+      .update(hiredCards)
+      .set({ markedAtMs: 1_700_000_999_000, contactName: 'Ny Hyrare', contactPhone: '0709999999' })
+      .run();
+    const res = await ctx.app.inject({ method: 'PATCH', url, payload: good });
+    assert.equal(res.statusCode, 409);
+    assert.equal((res.json() as { error: string }).error, 'hyrbricka_changed');
+    const row = ctx.handle.db.select().from(hiredCards).all()[0];
+    assert.equal(row?.contactName, 'Ny Hyrare');
+    assert.equal(row?.contactPhone, '0709999999');
   });
 
   test('unknown card is 404', async () => {

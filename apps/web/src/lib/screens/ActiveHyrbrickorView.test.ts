@@ -479,11 +479,58 @@ describe('ActiveHyrbrickorView mounted', () => {
       await click('hyrbrickor-edit-save');
       expect(patches).toHaveLength(1);
       expect(patches[0]!.url).toBe('/api/competitions/c1/hired-cards/7501853');
-      expect(patches[0]!.body).toMatchObject({ name: 'Anna Berg', phone: '+46 70 999 99 99' });
+      expect(patches[0]!.body).toMatchObject({
+        marked_at_ms: 1_000,
+        name: 'Anna Berg',
+        phone: '+46 70 999 99 99',
+      });
       expect(q('hyrbrickor-edit-phone')).toBeNull();
       const row = target.querySelector('[data-testid=hyrbrickor-open-row]')!;
       expect(row.textContent).toContain('Anna Berg');
       expect(row.textContent).toContain('+46 70 999 99 99');
+    });
+
+    it('a card hired out again meanwhile: plain message, stale form dropped, list reloaded', async () => {
+      await showEditing();
+      patchStatus = 409;
+      const loads = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+      await click('hyrbrickor-edit-save');
+      expect(q('hyrbrickor-toast')?.textContent).toContain('ändrats av någon annan');
+      expect(q('hyrbrickor-edit-phone')).toBeNull();
+      expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
+        loads + 1
+      );
+      expect(text()).not.toContain('SQLITE_BUSY');
+    });
+
+    it('while one row saves, Ändra on the others and Avbryt are off, so no edit is lost', async () => {
+      await showEditing();
+      let release: () => void = () => {};
+      const inner = handle;
+      handle = async (url, init) => {
+        if (init?.method === 'PATCH') {
+          await new Promise<void>((r) => (release = r));
+          return json({ ok: true });
+        }
+        return inner(url, init);
+      };
+      await type('name', 'Anna Berg');
+      q('hyrbrickor-edit-save')!.click();
+      await settle();
+      const others = [
+        ...target.querySelectorAll<HTMLButtonElement>('[data-testid=hyrbrickor-row-edit]'),
+      ];
+      expect(others.length).toBeGreaterThan(0);
+      expect(others.every((b) => b.disabled)).toBe(true);
+      expect((q('hyrbrickor-edit-cancel') as HTMLButtonElement).disabled).toBe(true);
+      release();
+      await settle();
+      expect(q('hyrbrickor-edit-name')).toBeNull();
+      expect(text()).toContain('Anna Berg');
+      // Now B can be opened and keeps its edits.
+      target.querySelectorAll<HTMLButtonElement>('[data-testid=hyrbrickor-row-edit]')[1]!.click();
+      await settle();
+      expect(edit('name').value).toBe('Cia Carlsson');
     });
 
     it('Avbryt closes the fields without sending', async () => {
