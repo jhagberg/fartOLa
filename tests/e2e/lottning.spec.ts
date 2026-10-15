@@ -259,7 +259,7 @@ for (const bad of ['abc', '60', '0:00', '1:99', '-5:00']) {
     await page.getByTestId('lottning-max-time').fill(bad);
     await page.getByTestId('lottning-max-time-save').click();
     await expect(page.getByTestId('lottning-max-time-error')).toHaveText(
-      'Ogiltig maxtid. Skriv mm:ss, till exempel 60:00.'
+      'Ogiltig maxtid. Skriv minuter eller mm:ss, till exempel 60 eller 60:00.'
     );
     await expect(page.getByTestId('lottning-max-time')).toHaveAttribute('aria-invalid', 'true');
     expect(patches).toBe(0);
