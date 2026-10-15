@@ -38,6 +38,7 @@
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import Button from '#lib/ui/Button.svelte';
   import Icon from '#lib/ui/Icon.svelte';
   import StatusPill from '#lib/ui/StatusPill.svelte';
@@ -258,7 +259,7 @@
         await onManualDnf?.(id, reason);
       }
     } catch (e) {
-      dnfError = e instanceof Error && e.message ? e.message : t('common.unknownError');
+      dnfError = userMessage(e);
       return;
     } finally {
       dnfBusy = false;
@@ -470,10 +471,7 @@
               <div class="dnf-error" role="alert">
                 <Icon name="alert-triangle" size={16} />
                 <span>{t('ro.status.failed')}</span>
-                <details>
-                  <summary>{t('ro.print.reason')}</summary>
-                  <span class="reason">{dnfError}</span>
-                </details>
+                <span>{dnfError}</span>
               </div>
             {/if}
             <div class="dnf-actions">
@@ -784,16 +782,6 @@
     background: var(--dnf-soft);
     color: var(--fg);
     font-size: var(--fs-label);
-  }
-  .dnf-error summary {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--hit);
-    cursor: pointer;
-  }
-  .dnf-error .reason {
-    font-family: var(--font-mono);
-    overflow-wrap: anywhere;
   }
   .pinned-bar {
     display: flex;

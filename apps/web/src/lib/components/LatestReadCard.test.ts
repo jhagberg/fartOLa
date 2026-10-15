@@ -3,9 +3,10 @@
 // Component test for the card type in the LatestReadCard header
 // ("Bricka SIAC", "Bricka SI10", "Bricka SI5"). Synthetic data only.
 
-import { describe, it, expect, afterEach } from 'vitest';
-import { mount, unmount, flushSync } from 'svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { mount, unmount, flushSync, tick } from 'svelte';
 import LatestReadCard from './LatestReadCard.svelte';
+import { ApiError } from '../api/client.ts';
 
 type Read = NonNullable<Parameters<typeof LatestReadCard>[1]['read']>;
 
@@ -81,6 +82,36 @@ describe('LatestReadCard manual-status picker', () => {
     el.querySelector<HTMLButtonElement>('[data-testid="manual-dnf-btn"]')!.click();
     flushSync();
     expect(el.querySelector('[data-testid="dnf-confirm"]')?.textContent?.trim()).toBe('Spara');
+  });
+});
+
+describe('LatestReadCard failed status save', () => {
+  it('says why in plain words, never the server text', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onManualStatus = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(500, 'SQLITE_BUSY: database is locked', { error: 'SQLITE_BUSY' }, '')
+      );
+    instance = mount(LatestReadCard, {
+      target: document.body,
+      props: { read: read(), onManualStatus },
+    });
+    flushSync();
+    const q = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+    q('manual-dnf-btn').click();
+    flushSync();
+    q('dnf-confirm').click();
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    await tick();
+    flushSync();
+    expect(onManualStatus).toHaveBeenCalled();
+    const err = document.querySelector('.dnf-error')!.textContent!;
+    expect(err).toContain('Statusen sparades inte.');
+    expect(err).toContain('Något gick fel');
+    expect(document.body.textContent).not.toContain('SQLITE_BUSY');
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 });
 

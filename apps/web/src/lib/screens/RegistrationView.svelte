@@ -31,6 +31,7 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import { cardQueue, type QueuedCard } from '#lib/stores/cardQueue.svelte.ts';
   import { createCardSubscription } from '#lib/services/cardSubscription.ts';
   import {
@@ -201,7 +202,7 @@
       toast(t('registration.cancelToast', { name: knownCard.competitor.name }));
       knownCard = null;
     } catch (e) {
-      cancelErr = (e as Error).message;
+      cancelErr = userMessage(e);
     } finally {
       cancelBusy = false;
     }
