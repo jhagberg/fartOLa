@@ -609,7 +609,9 @@ export function reduce(input: ReduceInput): CompetitionState {
       ? DEFAULT_CHECK_TO_START_MS
       : medianMs;
   for (const v of competitorViews.values()) {
-    const latest = v.card_read_history[v.card_read_history.length - 1];
+    // A pre-race identity scan is not a read-out: its start and check punches
+    // can be last week's (a lost-card runner scored from a finish by hand).
+    const latest = v.card_read_history.findLast((r) => inRacePhaseAt(r.event_time_ms));
     if (latest === undefined || v.status === 'PEND') continue;
     const startInput = {
       start: latest.start,
