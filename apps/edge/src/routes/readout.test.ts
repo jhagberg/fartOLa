@@ -37,6 +37,7 @@ import {
   hiredCards,
 } from '../db/schema.ts';
 import type { DbHandle } from '../db/index.ts';
+import { rememberHolderName } from '../si/cardHolderHints.ts';
 import { clockToEpochMs, formatClockTime, localToEpochMs } from '../time/competitionClock.ts';
 import type { FastifyInstance } from 'fastify';
 import type { HalfDayClock } from '@fartola/sportident';
@@ -605,6 +606,44 @@ describe('GET /api/competitions/:id/readout', () => {
     assert.equal(body.history[0]?.competitor_id, null);
     assert.equal(body.history[0]?.status, 'PEND');
     assert.deepEqual(body.pending_unknown_cards, [9_999_999]);
+  });
+
+  test('test 4b: an unknown card suggests the name kept in memory, or from an old event (ADR-0019)', async () => {
+    seedCompetition(ctx.handle, 'comp-4b');
+    insertCardRead(ctx.handle, ctx.nodeId, 'comp-4b', 9_999_998, 100, 1);
+    rememberHolderName(ctx.nodeId, 1, 'Anna Test');
+    // An event stored before ADR-0019 still carries the holder record.
+    ctx.handle.db
+      .insert(events)
+      .values({
+        nodeId: ctx.nodeId,
+        localSeq: 2,
+        competitionId: 'comp-4b',
+        eventType: 'card_read',
+        eventTimeMs: 200,
+        recordedAtMs: 200,
+        payload: {
+          event_type: 'card_read',
+          card_number: 9_999_997,
+          card_type: 'SI10',
+          start: null,
+          finish: null,
+          check: null,
+          clear: null,
+          punch_count: 0,
+          punches: [],
+          card_holder: { first_name: 'Old', last_name: 'Read' },
+        },
+      })
+      .run();
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/competitions/comp-4b/readout' });
+    const hints = (
+      res.json() as { history: Array<{ card_number: number; card_holder_hint: string | null }> }
+    ).history.map((h) => [h.card_number, h.card_holder_hint]);
+    assert.deepEqual(hints, [
+      [9_999_997, 'Old Read'],
+      [9_999_998, 'Anna Test'],
+    ]);
   });
 
   test('test 5: active flag mirrors app.activeCompetitionId', async () => {

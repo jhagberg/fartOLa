@@ -50,6 +50,7 @@ import type { Event, Competitor, Class } from '../db/types.ts';
 import { reduce, type CourseWithControlCodes } from '../projection/reduce.ts';
 import { localToEpochMs } from '../time/competitionClock.ts';
 import { buildCardReadPayload } from './cardReadPayload.ts';
+import { holderName } from './cardHolderHints.ts';
 
 // Resolve the fixture directory relative to THIS test file (mirror the
 // benchReplay test convention — cwd-relative paths break under pnpm's per-
@@ -238,7 +239,8 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     assert.deepEqual(payload.clear, ndjson['clear']);
     assert.deepEqual(payload.punch_count, ndjson['punch_count']);
     assert.deepEqual(payload.punches, ndjson['punches']);
-    assert.deepEqual(payload.card_holder, ndjson['card_holder']);
+    // ADR-0019: the NDJSON output may show the card holder; the event never does.
+    assert.equal('card_holder' in payload, false);
     if (payload.card_series_byte !== undefined) {
       assert.deepEqual(payload.card_series_byte, ndjson['card_series_byte']);
     }
@@ -294,7 +296,31 @@ describe('buildCardReadPayload — SI10 Jonas fixture round-trip', () => {
     assert.equal(payload.check, null);
     assert.equal(payload.clear, null);
     assert.equal(payload.punch_count, 0);
-    assert.equal(payload.card_holder, null);
+  });
+
+  test('a card with holder data programmed: the event holds none of it (ADR-0019)', () => {
+    const card = {
+      cardNumber: 8_000_001,
+      raceResult: {
+        cardNumber: 8_000_001,
+        punches: [],
+        cardHolder: {
+          firstName: 'Anna',
+          lastName: 'Testsson',
+          street: 'Provgatan 1',
+          email: 'anna@example.test',
+          phone: '0700000000',
+          dateOfBirth: '1990-01-01',
+        },
+      },
+    } as unknown as BaseSiCard;
+    const stored = JSON.stringify(buildCardReadPayload(card));
+    for (const text of ['Anna', 'Testsson', 'Provgatan', 'example.test', '0700000000', '1990']) {
+      assert.ok(!stored.includes(text), `${text} in ${stored}`);
+    }
+    assert.equal(holderName(card.raceResult.cardHolder), 'Anna Testsson');
+    assert.equal(holderName({ first_name: ' Old ', last_name: 'Read' }), 'Old Read');
+    assert.equal(holderName({ country_code: 752 }), null);
   });
 
   test('test 5: punches[] deep-equals NdjsonEmitter.card_read output', async () => {

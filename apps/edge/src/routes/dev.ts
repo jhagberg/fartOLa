@@ -13,7 +13,7 @@
 //     the real SI bridge uses, so seq + recorded_at_ms semantics are
 //     identical between dev and prod inputs.
 //   - emits a payload in the FULL CardReadEvent shape — check/clear always
-//     null (no real card here), card_holder null, punch_count equal to
+//     null (no real card here), no card holder data, punch_count equal to
 //     punches.length. start + finish default to null (→ DNF in the reducer)
 //     but tests that need a non-DNF projected status (e.g. the manual-DNF
 //     flow which has to start from OK/MP to surface the reason input) can
@@ -185,7 +185,6 @@ export default async function registerDevRoutes(app: FastifyInstance): Promise<v
       clear: null,
       punch_count: punches.length,
       punches,
-      card_holder: null,
     };
 
     // Single insertion path — same helper the real SI bridge uses.

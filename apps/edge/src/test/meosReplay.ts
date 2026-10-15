@@ -441,7 +441,6 @@ export function replayCardReads(
           half_day: p.half_day as 0 | 1,
           weekday: null,
         })),
-        card_holder: null,
       },
       competitionId
     );

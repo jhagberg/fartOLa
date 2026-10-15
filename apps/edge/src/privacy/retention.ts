@@ -24,9 +24,9 @@
 //   - hired_cards.returned_at_ms — audit trail (when rental closed)
 //   - events.payload — append-only by REQ-EVT-002. card_bound payloads
 //     reference competitor_id only, never the name string, so most events
-//     don't leak PII post-scrub. card_read payloads carry card_holder
-//     (the on-card firmware name string); operators are advised to
-//     encrypt the disk. Phase 2 may add per-event payload redaction.
+//     don't leak PII post-scrub. card_read payloads stored before
+//     ADR-0019 carry card_holder (the on-card owner data); new ones do
+//     not. Operators are advised to encrypt the disk. Phase 2 may add per-event payload redaction.
 //
 // SCRUB vs DELETE: A7 confirmed SCRUB. DELETE would cascade onto event
 // rows that have FK references and would mutate the append-only log;

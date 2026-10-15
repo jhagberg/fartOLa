@@ -106,8 +106,10 @@ decided:
 
 - **Kept:** the card-read event carries the candidates as read. It never
   carries the card holder data, neither the bytes of block 0 nor the
-  decoded text (today's `card_holder` field must go; old events are
-  left alone unless a separate decision says otherwise).
+  decoded text (old events keep their `card_holder` field unless a
+  separate decision says otherwise). Read-out may still suggest the
+  name for a walk-up entry of an unknown card: the bridge keeps it in
+  memory only, so a restart forgets it.
 - **Shown:** where candidates differ, the read-out and "Ändra" show
   every candidate, the one used and why. Conflicts are marked for
   review.

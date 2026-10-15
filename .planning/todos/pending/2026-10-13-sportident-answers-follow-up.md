@@ -54,10 +54,9 @@ The 2022 rulebook says the same (5.5.2, 5.7.5).
 
 Steps, in this order (none changes a result before step 4):
 
-1. Done in the library and the event. Still to do: each candidate's
-   unknown or unread fields stored as such, and the card holder kept out
-   of the event, neither bytes nor decoded text (`cardReadPayload.ts`
-   `card_holder`; old events left alone).
+1. Done in the library and the event; the card holder is kept out of
+   new events (the name for a walk-up stays in memory only). Still to
+   do: each candidate's unknown or unread fields stored as such.
 2. The projection keeps the candidates per read. At the read-out and in
    "Ändra", show "Första mål", "Sista mål" and the one used, when they
    differ; the same for start. Results unchanged.

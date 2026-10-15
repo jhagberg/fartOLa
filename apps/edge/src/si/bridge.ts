@@ -39,6 +39,7 @@ import { and, asc, eq } from 'drizzle-orm';
 
 import { cardTypeFromNumber } from './cardType.ts';
 import { buildCardReadPayload } from './cardReadPayload.ts';
+import { holderName, rememberHolderName } from './cardHolderHints.ts';
 import { insertEvent } from './eventInserter.ts';
 import type { DbHandle } from '../db/index.ts';
 import type { ProjectionStore } from '../projection/store.ts';
@@ -282,11 +283,12 @@ export function attachBridge(station: SiMainStation, opts: BridgeOpts): Attached
     // C-H2 LOCKED: full CardReadEvent shape via buildCardReadPayload — mirrors
     // NdjsonEmitter.card_read byte-for-byte. payload.start / .finish / .check /
     // .clear are top-level HalfDayClock fields; punches[] is sourced from
-    // card.raceResult.punches (NdjsonEmitter line 253); card_holder is
-    // competitor metadata (NOT punches).
+    // card.raceResult.punches (NdjsonEmitter line 253). The card holder
+    // data stays out of the event; only its name is kept in memory (ADR-0019).
     const payload = buildCardReadPayload(card);
     const activeId = opts.getActiveCompetitionId();
     const r = insertEvent(opts.handle, opts.nodeId, 'card_read', Date.now(), payload, activeId);
+    rememberHolderName(opts.nodeId, r.local_seq, holderName(card.raceResult.cardHolder));
     maybeBroadcastAndMarkDirty('card_read', payload, r.local_seq, true);
 
     // Plan 15 — auto-print gate. Fires the print ~400ms after the
