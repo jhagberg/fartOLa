@@ -17,10 +17,9 @@
   import PlaybackBar from './PlaybackBar.svelte';
   import { boardSource, createClock, demoMs, density, eventTimes, firstFinishMs } from './playback.ts';
 
-  // Placeholder: the demo feedback form the project site already links to.
-  // A speaker may have no GitHub account; the maintainer decides the address.
+  // A form without sign-in: a speaker may have no GitHub account. Email is optional.
   const FEEDBACK_URL =
-    'https://github.com/jhagberg/fartOLa/issues/new?labels=demo-feedback&template=demo-feedback.yml&title=%5Bspeakerdemo%5D';
+    'https://docs.google.com/forms/d/e/1FAIpQLSfnc-C7BEamVhOhkWRmUsqg2c-3OrA8LTEUYLsUBt9A1ONpbw/viewform';
   const LEAD_MS = 2 * 60_000;
   const BARS = 120;
 
@@ -49,7 +48,7 @@
   <p class="note" data-testid="demo-note">
     <Icon name="info" />
     <span>{t('demo.note')}</span>
-    <a href={FEEDBACK_URL}>{t('demo.feedback')}</a>
+    <a href={FEEDBACK_URL} target="_blank" rel="noopener">{t('demo.feedback')}</a>
     <a href="?lang={tweaks.locale === 'sv' ? 'en' : 'sv'}">{t('demo.lang')}</a>
   </p>
   <div class="stage">
