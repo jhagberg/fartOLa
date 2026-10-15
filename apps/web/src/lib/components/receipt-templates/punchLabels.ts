@@ -10,7 +10,7 @@ import type { ReceiptPunch } from './types.ts';
 
 const LABEL_KEY = { struck: 'ro.struck', extra: 'ro.extra', order: 'ro.order' } as const;
 
-/** "struken" / "extra" / "fel ordn." / "manuell" for a labelled tile, else
+/** "struken" / "extra" / "fel ordn." / "för hand" for a labelled tile, else
  * null. */
 export function punchLabel(p: Pick<ReceiptPunch, 'kind' | 'manual'>): string | null {
   if (p.manual) return t('ro.manualPunch');

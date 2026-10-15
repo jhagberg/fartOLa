@@ -184,7 +184,7 @@ test('controls table prints "struken", "extra" and "fel ordn." (classic, detaile
 
 // SOFT TR 8.1.4 (kommentar): a control punched by hand has no time; the
 // receipt says so instead of leaving the row looking missing.
-test('a control punched by hand prints as "manuell" (classic, detailed)', async () => {
+test('a control punched by hand prints as "för hand" (classic, detailed)', async () => {
   const data = receiptData({
     no_timing: false,
     latest_punches: [{ code: 31, ...clock(36_100) }],
@@ -195,8 +195,8 @@ test('a control punched by hand prints as "manuell" (classic, detailed)', async 
     const lines = (await printed(name, data)).split('\n');
     const row = (code: number): string =>
       lines.find((l) => new RegExp(`^\\S+\\s+${code}\\s`).test(l)) ?? '';
-    assert.match(row(32), /manuell/, `${name} manual 32`);
-    assert.doesNotMatch(row(31), /manuell/, `${name} card 31`);
+    assert.match(row(32), /för hand/, `${name} manual 32`);
+    assert.doesNotMatch(row(31), /för hand/, `${name} card 31`);
   }
 });
 

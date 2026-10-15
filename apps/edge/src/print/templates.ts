@@ -118,11 +118,11 @@ export interface ControlRow {
   code: number;
   /** The punch, or null for a struck or missing control. */
   punch: NdjsonPunch | null;
-  label: 'struken' | 'extra' | 'fel ordn.' | 'manuell' | null;
+  label: 'struken' | 'extra' | 'fel ordn.' | 'för hand' | null;
 }
 
 /** The controls table of a receipt: course controls in course order (a voided
- * one as "struken", not missing; one punched by hand as "manuell"), then punches not on the course as "extra",
+ * one as "struken", not missing; one punched by hand as "för hand"), then punches not on the course as "extra",
  * or "fel ordn." when the control is on the course but was punched out of
  * order (the reducer's out_of_order_codes). */
 export function controlRows(data: ReceiptData): ControlRow[] {
@@ -152,7 +152,7 @@ export function controlRows(data: ReceiptData): ControlRow[] {
       no: String(++n),
       code,
       punch: idx >= 0 ? (punches[idx] as NdjsonPunch) : null,
-      label: manual.has(position) ? 'manuell' : null,
+      label: manual.has(position) ? 'för hand' : null,
     });
   }
   punches.forEach((p, i) => {
