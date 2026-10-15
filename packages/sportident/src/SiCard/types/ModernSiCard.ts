@@ -427,8 +427,11 @@ export class ModernSiCard extends BaseSiCard {
     if ((this.constructor as typeof ModernSiCard).readsBlock3) {
       for (const name of ['start', 'finish'] as const) {
         const time = this.storage.get(`${name}FirstTime`)?.value;
-        if (time == null) continue; // missing or erased reserve: absent, never "same as main"
+        // Not read (undefined): absent. Erased (0xEEEE, null): empty, kept as null.
+        // Neither is ever "same as main".
+        if (time === undefined) continue;
         this.raceResult[`${name}FirstTime`] = time;
+        if (time === null) continue; // an erased record's PTD/CN are no code or fraction
         const code = this.storage.get(`${name}FirstCode`)?.value;
         if (code !== undefined) this.raceResult[`${name}FirstCode`] = code;
         const subsec = this.storage.get(`${name}FirstSubsec256`)?.value;

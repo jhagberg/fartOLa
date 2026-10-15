@@ -76,16 +76,31 @@ describe('SIAC reserve records: first start/finish punch', () => {
     const r = await read(SIAC, mem);
     assert.equal(r.finishFirstTime, r.finishTime);
     assert.equal(r.finishFirstCode, 20);
-    assert.equal(r.startFirstTime, undefined);
+    assert.equal(r.startFirstTime, null);
   });
 
-  test('no reserve record (erased): absent, never "same as main"', async () => {
+  test('an empty (erased) reserve record: null, never "same as main", no code or fraction', async () => {
     const mem = makeMemory();
     setRecord(mem, FINISH, 0x00, 20, 37_000);
     const r = await read(SIAC, mem);
     assert.equal(r.finishTime, 37_000);
     for (const k of ['startFirst', 'finishFirst'] as const) {
-      assert.equal(r[`${k}Time`], undefined);
+      assert.equal(r[`${k}Time`], null);
+      assert.equal(r[`${k}Code`], undefined);
+      assert.equal(r[`${k}Subsec256`], undefined);
+    }
+  });
+
+  test('block 3 not read: the reserve is absent, not empty', () => {
+    const mem = makeMemory();
+    setRecord(mem, FINISH, 0x00, 20, 37_000);
+    setRecord(mem, FINISH_R, 0x00, 20, 36_900);
+    const card = new SIAC(0);
+    card._decodeFromStorage(mem.slice(0, 3 * BYTES_PER_PAGE)); // blocks 0-2 only
+    const r = card.raceResult;
+    assert.equal(r.finishTime, 37_000);
+    for (const k of ['startFirst', 'finishFirst'] as const) {
+      assert.equal(k + 'Time' in r, false);
       assert.equal(r[`${k}Code`], undefined);
       assert.equal(r[`${k}Subsec256`], undefined);
     }
