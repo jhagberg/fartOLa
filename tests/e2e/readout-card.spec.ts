@@ -189,8 +189,8 @@ test.describe('status change', () => {
     await expect(
       page.getByRole('alert').filter({ hasText: 'Statusen sparades inte.' })
     ).toBeVisible();
-    await page.getByText('Visa orsak').click();
-    await expect(page.getByText('disk_full')).toBeVisible();
+    await expect(page.getByText('Något gick fel')).toBeVisible();
+    await expect(page.getByText('disk_full')).toHaveCount(0);
     await expect(page.getByTestId('dnf-reason-input')).toHaveValue('Hjälpte annan löpare');
     await expect(page.getByTestId('status-pick-DQ')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('toast')).toHaveCount(0);

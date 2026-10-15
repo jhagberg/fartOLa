@@ -38,6 +38,6 @@ export async function prepareExportError(page: Page, kind: 'invalid' | 'network'
   await expect(
     page.getByTestId(kind === 'invalid' ? 'export-invalid' : 'export-error-network')
   ).toBeVisible();
-  await page.getByText('Visa detaljer').click();
+  if (kind === 'invalid') await page.getByText('Visa detaljer').click();
   await page.unroute(pattern);
 }
