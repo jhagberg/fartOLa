@@ -526,6 +526,37 @@ describe('reduce — CompetitionState projection', () => {
     assert.deepEqual(anna.card_read_history[1]!.start, hd(11 * 3600));
   });
 
+  test('ADR-0019 step 2: reserve records are kept per read, absent stays absent, result unchanged', () => {
+    seqCounter = 0;
+    const punches = [p(31), p(32), p(33), p(34)];
+    const plain = cardRead(1, punches, hd(10 * 3600 + 20), hd(10 * 3600 + 930));
+    const withReserves = cardRead(1, punches, hd(10 * 3600 + 20), hd(10 * 3600 + 930));
+    const startFirst = { ...hd(10 * 3600 + 10), code: 1 };
+    const finishFirst = { ...hd(10 * 3600 + 900), subsec_256: 128 };
+    Object.assign(withReserves.payload as object, {
+      start_first: startFirst,
+      finish_first: finishFirst,
+    });
+    const run = (e: Event) =>
+      reduce({
+        competition_id: 'comp-1',
+        events: [e],
+        competitors: [comp({ id: 'c-anna', cardNumber: 1 })],
+        classes: [cls('cls-H21')],
+        courses: [course('cls-H21', [31, 32, 33, 34])],
+      }).competitors.get('c-anna')!;
+    const without = run(plain);
+    const kept = run(withReserves);
+    assert.deepEqual(kept.card_read_history[0]!.start_first, startFirst);
+    assert.deepEqual(kept.card_read_history[0]!.finish_first, finishFirst);
+    assert.equal('start_first' in without.card_read_history[0]!, false);
+    assert.equal('finish_first' in without.card_read_history[0]!, false);
+    // Shown only: the last punches still decide the result (step 4 changes it).
+    assert.equal(kept.status, without.status);
+    assert.equal(kept.elapsed_time_ms, without.elapsed_time_ms);
+    assert.equal(kept.elapsed_time_ms, 910_000);
+  });
+
   // ---------------------------------------------------------------------------
   // Phase 2.0 — manual_status_set tests for the four new states added on
   // 2026-05-18. Each test asserts that:

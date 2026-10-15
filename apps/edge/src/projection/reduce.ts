@@ -336,14 +336,18 @@ export function reduce(input: ReduceInput): CompetitionState {
         }
         const view = competitorViews.get(competitor.id);
         if (view === undefined) break;
-        view.card_read_history.push({
+        const read: ReadView = {
           event_time_ms: e.eventTimeMs,
           card_number: payload.card_number,
           card_type: payload.card_type,
           punches: payload.punches,
           start: payload.start,
           finish: payload.finish,
-        });
+        };
+        // Absent stays absent: a read without reserve records gets no key.
+        if (payload.start_first) read.start_first = payload.start_first;
+        if (payload.finish_first) read.finish_first = payload.finish_first;
+        view.card_read_history.push(read);
         view.latest_punches = payload.punches;
         view.latest_start = payload.start;
         view.latest_finish = payload.finish;
