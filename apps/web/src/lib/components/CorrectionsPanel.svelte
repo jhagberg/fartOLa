@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import { formatClockTime } from '@fartola/shared-types';
   import {
     addManualPunch,
@@ -83,7 +84,7 @@
       loadError = null;
     } catch (e) {
       if (mine !== generation) return;
-      loadError = (e as Error).message;
+      loadError = userMessage(e);
     }
   }
 
@@ -116,7 +117,7 @@
       onChanged?.();
       return true;
     } catch (e) {
-      saveError = t('corr.err.save', { error: (e as Error).message });
+      saveError = t('corr.err.save', { error: userMessage(e) });
       return false;
     } finally {
       busy = false;

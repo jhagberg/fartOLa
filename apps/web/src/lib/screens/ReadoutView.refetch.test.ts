@@ -165,6 +165,24 @@ describe('ReadoutView — overlapping readout refetches', () => {
     expect(document.body.textContent).not.toContain('Gammal Löpare');
   });
 
+  it('a failed first load toasts plain words, never the server text', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ok = global.fetch;
+    global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).endsWith('/readout')
+        ? new Response(JSON.stringify({ error: 'SQLITE_BUSY: db locked' }), {
+            status: 500,
+            headers: { 'content-type': 'application/json' },
+          })
+        : ok(input, init)
+    ) as unknown as typeof fetch;
+    component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
+    await settle();
+    const toast = document.querySelector('[data-testid="toast"]')!.textContent!;
+    expect(toast).toBe('Något gick fel');
+    expect(log).toHaveBeenCalled();
+  });
+
   it('a card read waits for the newest refetch before it looks at the history', async () => {
     component = mount(ReadoutView, { target: document.body, props: { competitionId: 'c1' } });
     await settle();

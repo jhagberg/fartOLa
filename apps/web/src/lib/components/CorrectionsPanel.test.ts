@@ -20,6 +20,9 @@ describe('CorrectionsPanel (mounted)', () => {
   let state: CorrectionsDTO;
   let posts: Array<{ url: string; body: unknown }>;
   let offset: number;
+  // Answers a save or the load with a raw server error.
+  let failPosts: boolean;
+  let failLoad: boolean;
   const onChanged = vi.fn();
 
   const settle = async (): Promise<void> => {
@@ -59,6 +62,8 @@ describe('CorrectionsPanel (mounted)', () => {
     };
     posts = [];
     offset = 120;
+    failPosts = false;
+    failLoad = false;
     onChanged.mockReset();
     global.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -67,6 +72,10 @@ describe('CorrectionsPanel (mounted)', () => {
           status,
           headers: { 'content-type': 'application/json' },
         });
+      if (init?.method === 'POST' && failPosts)
+        return json({ error: 'SQLITE_BUSY: db locked' }, 500);
+      if (url.endsWith('/corrections') && failLoad)
+        return json({ error: 'SQLITE_BUSY: db locked' }, 500);
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as { finish_ms?: number; reason?: string };
         posts.push({ url, body });
@@ -134,6 +143,32 @@ describe('CorrectionsPanel (mounted)', () => {
     await settle();
     expect(posts[1]!.url).toBe('/api/competitions/c1/competitors/r1/clear-manual-finish');
     expect($('corr-finish-input')).not.toBeNull();
+  });
+
+  it('a failed save says so in plain words, never the server text', async () => {
+    failPosts = true;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mountIt();
+    type('corr-finish-input', '10:42:30');
+    $<HTMLButtonElement>('corr-finish-set')!.click();
+    await settle();
+    const text = $('corr-error')!.textContent!;
+    expect(text).toContain('Kunde inte spara');
+    expect(text).toContain('Något gick fel');
+    expect(text).not.toContain('SQLITE_BUSY');
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('a failed load says so in plain words, never the server text', async () => {
+    failLoad = true;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mountIt();
+    const text = document.body.textContent!;
+    expect(text).toContain('Kunde inte hämta rättningar');
+    expect(text).toContain('Något gick fel');
+    expect(text).not.toContain('SQLITE_BUSY');
+    log.mockRestore();
   });
 
   it('offers the one-minute false start unless the class runs from the start punch (TR 4.18.14)', async () => {

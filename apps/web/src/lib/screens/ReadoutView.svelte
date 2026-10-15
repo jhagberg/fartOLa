@@ -49,6 +49,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { t } from '#lib/i18n/index.ts';
+  import { userMessage } from '#lib/api/userMessage.ts';
   import Icon from '#lib/ui/Icon.svelte';
   import Button from '#lib/ui/Button.svelte';
   import { tweaks } from '#lib/stores/tweaks.svelte.ts';
@@ -432,8 +433,7 @@
       // Surface a transient toast — readout still mounts so the WS
       // can paint the next card_read. Note: in dev this can fire when
       // the competition row was deleted under us.
-      const msg = (err as Error).message;
-      toast(`${t('err.network')} (${msg})`);
+      toast(userMessage(err));
     }
     connectWs();
   }
@@ -715,7 +715,7 @@
     try {
       await returnHiredCard(competitionId, cardNumber);
     } catch (e) {
-      toast(`${t('err.network')} (${(e as Error).message})`);
+      toast(userMessage(e));
       return;
     }
     // Set replacement form — Assumption A8 (Svelte 5 mutation reactivity).
@@ -766,7 +766,7 @@
       // 500ms e2e assertion window.
       await refetchReadout();
     } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
+      toast(userMessage(err));
     }
   }
 
@@ -775,7 +775,7 @@
       await apiUnDnf(competitionId, competitorId);
       await refetchReadout();
     } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
+      toast(userMessage(err));
     }
   }
 
@@ -808,7 +808,7 @@
       await apiClearManualStatus(competitionId, competitorId);
       await refetchReadout();
     } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
+      toast(userMessage(err));
     }
   }
 
@@ -831,7 +831,7 @@
       }
       await Promise.all([refetchReadout(), refetchCompetitors()]);
     } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
+      toast(userMessage(err));
     }
   }
 
@@ -882,7 +882,7 @@
         ],
       });
     } catch (err) {
-      toast(`${t('err.network')} (${(err as Error).message})`);
+      toast(userMessage(err));
     }
   }
 
@@ -902,7 +902,7 @@
       await apiPrintReceipt(competitionId, competitorId, selectedTemplate);
       prints = { ...prints, [key]: { status: 'ok', error: '' } };
     } catch (err) {
-      const error = (err as Error).message || t('common.unknownError');
+      const error = userMessage(err);
       prints = { ...prints, [key]: { status: 'failed', error } };
     }
   }
