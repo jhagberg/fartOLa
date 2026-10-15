@@ -128,6 +128,7 @@
     <p class="muted">{t('export.intro')}</p>
     <p>
       <a
+        class="eventor-link"
         href={`/competition/${encodeURIComponent(competitionId)}/eventor-publish`}
         data-testid="export-eventor-link">{t('export.eventorLink')}</a
       >
@@ -270,6 +271,11 @@
     flex-direction: column;
     gap: 24px;
     max-width: 720px;
+  }
+  .eventor-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
   .hd .muted {
     margin-top: 4px;
