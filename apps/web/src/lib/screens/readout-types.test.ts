@@ -280,6 +280,23 @@ describe('startWarning (02.1-14 Task 14)', () => {
   });
 });
 
+// An SI5 card has no PM bit (12:03 reads as 00:03); a night leg crosses
+// midnight. The printed receipt got these wrong (print/templates.ts).
+describe('rawPunchesToReceipt across noon and midnight', () => {
+  it.each([
+    ['SI5 11:58 → 12:03', 43_080, 180, '5:00'],
+    ['night 23:55 → 00:10', 42_900, 600, '15:00'],
+  ])('%s', (_what, start, punch, split) => {
+    const [p31] = rawPunchesToReceipt(
+      [{ code: 31, seconds_in_half_day: punch, half_day: 0 }],
+      start,
+      null,
+      [31]
+    );
+    expect(p31).toMatchObject({ split, time: split });
+  });
+});
+
 // Display labels: OK / struken / extra / fel ordn. (synthetic data).
 describe('classifyPunches', () => {
   const at = (code: number, sec: number) => ({

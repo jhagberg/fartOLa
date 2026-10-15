@@ -200,6 +200,26 @@ test('a control punched by hand prints as "för hand" (classic, detailed)', asyn
   }
 });
 
+// An SI5 card has no PM bit: 12:03 is stored as 00:03. A night relay leg
+// crosses midnight. Neither may print a split 12 h too long.
+test('splits across noon on an SI5 card and across midnight (classic, detailed)', async () => {
+  const pm = (sec: number) => ({ seconds_in_half_day: sec, half_day: 1 as const, weekday: null });
+  for (const [what, start, punch, split] of [
+    ['SI5 11:58 → 12:03', clock(43_080), clock(180), '5:00'],
+    ['night 23:55 → 00:10', pm(42_900), clock(600), '15:00'],
+  ] as const) {
+    const data = receiptData({
+      no_timing: false,
+      latest_start: start,
+      latest_punches: [{ code: 31, ...punch }],
+    });
+    for (const name of ['classic', 'detailed'] as const) {
+      const row = (await printed(name, data)).split('\n').find((l) => /^\S+\s+31\s/.test(l)) ?? '';
+      assert.match(row, new RegExp(`\\s${split}\\b`), `${name} ${what}: ${row}`);
+    }
+  }
+});
+
 test('a punch of a struck control is not printed as extra', async () => {
   const data = receiptData({
     latest_punches: [

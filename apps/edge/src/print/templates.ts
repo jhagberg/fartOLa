@@ -179,20 +179,21 @@ export function formatGap(behindMs: number | null): string {
   return `+${formatElapsed(behindMs)} efter ledaren`;
 }
 
-/** Subtract two half-day clocks (modular wrap-around). Returns the gap in
- * milliseconds, or null if either argument is null. The reducer already
- * handles half-day rollover for elapsed_time_ms; we use the same modular
- * formula here for individual splits. */
+/** Subtract two half-day clocks modulo 12 h. Returns the gap in
+ * milliseconds, or null if either argument is null. `half_day` is ignored:
+ * an SI5 card has no PM bit, so 12:03 reads as 00:03 there (as the readout
+ * screen's splits, readout-types.ts formatSplit).
+ * shortcut: a gap of 12 h or more wraps; use cardClockToEpochMs with the
+ * read time if splits that long ever occur. */
 export function halfDayClockGapMs(
   from: { seconds_in_half_day: number; half_day: 0 | 1 } | HalfDayClock | null,
   to: { seconds_in_half_day: number; half_day: 0 | 1 } | NdjsonPunch | HalfDayClock | null
 ): number | null {
   if (from === null || to === null) return null;
-  const fromSec = from.seconds_in_half_day + from.half_day * 12 * 3600;
-  const toSec = to.seconds_in_half_day + to.half_day * 12 * 3600;
-  let diff = toSec - fromSec;
-  if (diff < 0) diff += 24 * 3600;
-  return diff * 1000;
+  const halfDay = 12 * 3600;
+  return (
+    ((((to.seconds_in_half_day - from.seconds_in_half_day) % halfDay) + halfDay) % halfDay) * 1000
+  );
 }
 
 // ---------------------------------------------------------------------------
