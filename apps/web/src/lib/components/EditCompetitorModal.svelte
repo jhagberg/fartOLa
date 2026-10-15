@@ -292,7 +292,7 @@
           </p>
         {/if}
       </Field>
-      <Field label={t('walk.card')} htmlFor="edit-card">
+      <Field label={t('walk.card')} hint={t('hint.cardNumber')} htmlFor="edit-card">
         <Input
           id="edit-card"
           type="text"

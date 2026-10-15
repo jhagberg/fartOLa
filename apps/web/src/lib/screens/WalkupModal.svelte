@@ -662,7 +662,7 @@
         </Select>
       </Field>
 
-      <Field label={t('walk.card')} htmlFor="walkup-card">
+      <Field label={t('walk.card')} hint={t('hint.cardNumber')} htmlFor="walkup-card">
         <Input
           id="walkup-card"
           data-testid="walkup-card"
@@ -675,7 +675,7 @@
         />
       </Field>
 
-      <Field label={t('walk.birthYear')} htmlFor="walkup-birth-year">
+      <Field label={t('walk.birthYear')} hint={t('hint.birthYear')} htmlFor="walkup-birth-year">
         <Input
           id="walkup-birth-year"
           data-testid="walkup-birth-year"

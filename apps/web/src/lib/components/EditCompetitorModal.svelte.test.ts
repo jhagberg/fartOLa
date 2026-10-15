@@ -32,6 +32,14 @@ const settle = async (): Promise<void> => {
 };
 const q = <T extends Element>(id: string) => document.querySelector<T>(`[data-testid="${id}"]`);
 
+/** Text of the elements an input's aria-describedby points at. */
+const describedBy = (el: Element | null): string =>
+  (el?.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+
 const props = $state({ competitor: runner() });
 
 describe('EditCompetitorModal', () => {
@@ -124,6 +132,11 @@ describe('EditCompetitorModal', () => {
     props.competitor = runner({ id: 'r2', name: 'Bo Test' });
     await settle();
     expect(q<HTMLInputElement>('edit-name')!.value).toBe('Bo Test');
+  });
+
+  it('the card field says what to type', async () => {
+    await settle();
+    expect(describedBy(q('edit-card'))).toBe('Numret som står på brickan, bara siffror.');
   });
 
   it('a failed save says something went wrong and logs the raw error', async () => {

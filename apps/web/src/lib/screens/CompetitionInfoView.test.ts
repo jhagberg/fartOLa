@@ -428,6 +428,14 @@ describe('fees remount and the locked max time', () => {
   });
 });
 
+/** Text of the elements an input's aria-describedby points at. */
+const describedBy = (el: Element | null): string =>
+  (el?.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+
 describe('saves that overlap: max time and the date', () => {
   let component: ReturnType<typeof mount> | null = null;
   /** Every PATCH waits until the test answers it. */
@@ -532,6 +540,10 @@ describe('saves that overlap: max time and the date', () => {
       { max_time_sec: 7200 },
       { max_time_sec: 6000 },
     ]);
+  });
+
+  it('the date field says how to write the date', () => {
+    expect(describedBy($('info-date'))).toBe('Skriv datum i formatet 2026-05-20.');
   });
 
   it('a date typed wrong while a valid one saves is kept when that save fails', async () => {
