@@ -688,7 +688,7 @@
     font-weight: 600;
   }
   .ico {
-    color: var(--accent);
+    color: var(--fg-muted);
     display: inline-flex;
   }
   .desc {

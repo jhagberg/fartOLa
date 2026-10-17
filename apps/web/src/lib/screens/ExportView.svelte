@@ -217,7 +217,7 @@
     {/if}
     <div class="row">
       <Button
-        variant="primary"
+        variant="secondary"
         disabled={pending === 0 || busy}
         data-testid="export-unread-dns"
         onclick={() => unreadDns(false)}
@@ -306,7 +306,7 @@
   .radio input {
     width: 24px;
     height: 24px;
-    accent-color: var(--accent);
+    accent-color: var(--fg);
   }
   .loading {
     color: var(--fg-muted);

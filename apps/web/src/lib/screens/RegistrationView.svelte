@@ -721,13 +721,14 @@
   }
   .reg-queue-chip .cta {
     margin-left: auto;
-    color: var(--accent);
+    color: var(--fg);
+    text-decoration: underline;
     font-size: var(--fs-label);
     font-weight: 600;
   }
   .known-banner {
-    background: var(--accent-soft, var(--bg-elev));
-    border: 1px solid var(--accent);
+    background: var(--bg-elev);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
     padding: var(--space-sm) var(--space-md);
     display: grid;
@@ -751,7 +752,7 @@
     font-family: var(--font-mono);
     font-weight: 700;
     font-size: 15px;
-    color: var(--accent);
+    color: var(--fg);
   }
   .known-label {
     color: var(--fg-muted);

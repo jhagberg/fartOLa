@@ -53,7 +53,7 @@
     cursor: pointer;
   }
   .help-btn[aria-expanded='true'] {
-    border-color: var(--accent);
+    border-color: var(--fg);
   }
   .help-body {
     display: block;

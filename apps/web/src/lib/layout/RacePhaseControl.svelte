@@ -403,17 +403,17 @@
     width: 100%;
     min-height: var(--hit);
     padding: 0 var(--space-md);
-    border: 1px solid var(--accent);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    background: var(--accent);
-    color: var(--accent-fg);
+    background: var(--bg-elev);
+    color: var(--fg);
     font: inherit;
     font-size: var(--fs-label);
     font-weight: 600;
     cursor: pointer;
   }
   .start-btn:hover {
-    background: var(--accent-strong);
+    background: var(--bg-sunken);
   }
   .undo-note {
     margin: 0;
@@ -458,9 +458,9 @@
   }
   .confirm-card {
     padding: var(--space-sm);
-    border: 1px solid var(--accent);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    background: var(--accent-soft);
+    background: var(--bg-elev);
     color: var(--fg);
     display: grid;
     gap: 6px;
@@ -506,7 +506,7 @@
     color: var(--accent-fg);
   }
   .confirm-go:hover:not(:disabled) {
-    background: var(--accent-strong);
+    background: var(--accent-hover);
   }
   .confirm-card.danger {
     border-color: var(--dnf);

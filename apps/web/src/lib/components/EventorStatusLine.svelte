@@ -70,7 +70,7 @@
     color: var(--fg-muted);
   }
   .ico.ok {
-    color: var(--accent-strong);
+    color: var(--ok);
   }
   .ico.bad {
     color: var(--dnf);

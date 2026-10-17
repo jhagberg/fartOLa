@@ -170,7 +170,7 @@
     cursor: pointer;
   }
   .radio input {
-    accent-color: var(--accent);
+    accent-color: var(--fg);
   }
   .seg {
     flex: 1;
@@ -184,9 +184,10 @@
     font-weight: 500;
   }
   .seg.active {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent-strong);
+    background: var(--bg-sunken);
+    border-color: var(--fg);
+    color: var(--fg);
+    font-weight: 600;
   }
   .swatches {
     /* Previews of each theme; must not follow the active theme. */
@@ -232,6 +233,6 @@
   .toggle input {
     width: 24px;
     height: 24px;
-    accent-color: var(--accent);
+    accent-color: var(--fg);
   }
 </style>

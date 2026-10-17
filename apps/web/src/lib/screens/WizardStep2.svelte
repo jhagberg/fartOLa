@@ -124,11 +124,11 @@
     color: var(--fg-muted);
   }
   .preview {
-    background: var(--ok-soft);
-    border: 1px solid var(--ok);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     padding: 14px;
-    color: var(--ok);
+    color: var(--fg);
     display: grid;
     gap: 4px;
   }

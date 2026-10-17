@@ -1125,7 +1125,7 @@
   .toast {
     margin: 0;
     font-size: var(--fs-label);
-    color: var(--accent-strong, var(--accent));
+    color: var(--ok);
   }
   .toast-err {
     color: var(--dnf);
@@ -1141,7 +1141,7 @@
   .radio-toggle input {
     width: 24px;
     height: 24px;
-    accent-color: var(--accent);
+    accent-color: var(--fg);
   }
   .generate-row {
     display: flex;

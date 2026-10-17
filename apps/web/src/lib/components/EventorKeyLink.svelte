@@ -17,7 +17,7 @@
     display: inline-flex;
     align-items: center;
     min-height: var(--hit);
-    color: var(--accent-strong);
+    color: var(--fg);
     font-size: var(--fs-label);
     font-weight: 500;
     text-decoration: underline;

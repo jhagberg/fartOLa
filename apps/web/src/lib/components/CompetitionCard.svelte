@@ -116,7 +116,7 @@
     padding: 2px 8px;
     border-radius: 999px;
     background: var(--bg-sunken);
-    color: var(--accent);
+    color: var(--fg-muted);
     border: 1px solid var(--border);
     font-weight: 600;
   }

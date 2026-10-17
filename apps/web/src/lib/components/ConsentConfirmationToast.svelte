@@ -96,7 +96,6 @@
   .consent-toast {
     background: var(--bg-elev);
     border: 1px solid var(--border-strong);
-    border-left: 4px solid var(--accent);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: 16px 18px;

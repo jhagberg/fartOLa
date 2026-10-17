@@ -700,9 +700,10 @@
     background: var(--bg-sunken);
   }
   .chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
+    background: var(--bg-sunken);
+    border-color: var(--fg);
+    color: var(--fg);
+    font-weight: 600;
   }
   .list {
     list-style: none;
