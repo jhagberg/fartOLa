@@ -179,8 +179,8 @@
       'zero' 1;
   }
   a {
-    color: var(--accent);
-    text-decoration: none;
+    color: var(--fg);
+    text-decoration: underline;
     display: inline-flex;
     align-items: center;
     min-height: 44px;

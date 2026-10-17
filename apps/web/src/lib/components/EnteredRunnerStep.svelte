@@ -313,7 +313,7 @@
   }
   .runner:hover,
   .runner:focus-visible {
-    border-color: var(--accent, var(--fg));
+    border-color: var(--fg);
   }
   .runner-name {
     font-weight: 600;

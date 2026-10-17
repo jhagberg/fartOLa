@@ -1263,12 +1263,12 @@
     transition: left 0.16s;
   }
   .auto-toggle .sw[data-on='true'] {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--fg);
+    border-color: var(--fg);
   }
   .auto-toggle .sw[data-on='true'] .sw-thumb {
     left: 21px;
-    background: var(--accent-fg);
+    background: var(--bg-elev);
   }
   .auto-toggle .lbl,
   .auto-toggle .state {
@@ -1329,7 +1329,8 @@
   }
   .pending-row .cta {
     font-size: var(--fs-label);
-    color: var(--accent);
+    color: var(--fg);
+    text-decoration: underline;
     font-weight: 600;
   }
   .toast-stack {

@@ -126,8 +126,8 @@
     font-family: var(--font-mono);
     font-size: var(--fs-label);
     padding: 2px 6px;
-    background: var(--accent-soft);
-    color: var(--accent-strong);
+    background: var(--bg-sunken);
+    color: var(--fg);
     border-radius: 4px;
     font-weight: 600;
   }

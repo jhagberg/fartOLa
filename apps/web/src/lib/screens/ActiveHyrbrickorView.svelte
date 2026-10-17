@@ -500,8 +500,8 @@
     padding-left: 0;
   }
   a {
-    color: var(--accent);
-    text-decoration: none;
+    color: var(--fg);
+    text-decoration: underline;
   }
   a:hover,
   a:focus-visible {

@@ -61,7 +61,7 @@
 <style>
   .res-tabs {
     display: flex;
-    gap: 4px;
+    gap: var(--space-xs);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
   }
@@ -86,8 +86,9 @@
     color: var(--fg-muted);
   }
   .res-tab.active {
-    color: var(--accent-strong);
-    border-color: var(--accent);
+    color: var(--fg);
+    border-color: var(--fg);
+    font-weight: 600;
   }
   .res-tab:hover:not(.active) {
     color: var(--fg);

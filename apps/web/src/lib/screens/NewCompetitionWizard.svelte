@@ -496,14 +496,15 @@
     flex-shrink: 0;
   }
   .wiz-step.active {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    border-color: var(--accent);
+    background: var(--bg-sunken);
+    color: var(--fg);
+    border-color: var(--fg);
+    font-weight: 600;
   }
   .wiz-step.active .num {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
+    background: var(--bg-elev);
+    color: var(--fg);
+    border-color: var(--fg);
   }
   .wiz-step.done .num {
     background: var(--ok);

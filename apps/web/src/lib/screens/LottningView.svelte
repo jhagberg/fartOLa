@@ -1493,13 +1493,12 @@
               <td class="col-edit">
                 {#if editingStartTime[runner.id] !== undefined}
                   <div class="edit-actions">
-                    <button
-                      type="button"
-                      class="edit-action-btn save"
+                    <Button
+                      variant="secondary"
                       onclick={() => void saveEditTime(runner.id)}
                       disabled={savingStartTime[runner.id]}
                       data-testid="lottning-save-time"
-                    >{t('info.save')}</button>
+                    >{t('info.save')}</Button>
                     <button
                       type="button"
                       class="edit-action-btn cancel"
@@ -1508,12 +1507,11 @@
                     >{t('race.confirm.cancel')}</button>
                   </div>
                 {:else}
-                  <button
-                    type="button"
-                    class="edit-btn"
+                  <Button
+                    variant="ghost"
                     onclick={() => startEditTime(runner.id, runner.start_time_ms, runner.bib)}
                     data-testid="lottning-edit-time-btn"
-                  >{t('runners.row.edit')}</button>
+                  >{t('runners.row.edit')}</Button>
                 {/if}
               </td>
             </tr>
@@ -1647,7 +1645,8 @@
   }
   .context a,
   .refusal a {
-    color: var(--accent);
+    color: var(--fg);
+    text-decoration: underline;
     margin-left: var(--space-xs);
   }
   .radio-group,
@@ -1749,7 +1748,8 @@
     font-size: var(--fs-label);
   }
   .done a {
-    color: var(--accent);
+    color: var(--fg);
+    text-decoration: underline;
   }
   .start-list {
     display: flex;
@@ -1829,17 +1829,6 @@
     font-family: var(--font-mono);
     font-feature-settings: 'tnum' 1;
   }
-  .edit-btn {
-    background: none;
-    border: none;
-    color: var(--accent);
-    font: inherit;
-    font-size: var(--fs-label);
-    cursor: pointer;
-    min-height: var(--hit);
-    min-width: var(--hit);
-    padding: 0 var(--space-xs);
-  }
   .row-error td {
     padding-top: 0;
   }
@@ -1863,10 +1852,6 @@
     padding: 0 var(--space-sm);
     cursor: pointer;
     color: var(--fg);
-  }
-  .edit-action-btn.save {
-    border-color: var(--accent);
-    color: var(--accent);
   }
   .edit-action-btn:disabled {
     opacity: 0.55;

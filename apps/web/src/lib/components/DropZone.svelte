@@ -147,8 +147,8 @@
   }
   .drop-zone:hover,
   .drop-zone.is-hover {
-    border-color: var(--accent);
-    background: var(--accent-soft);
+    border-color: var(--fg);
+    background: var(--bg-sunken);
   }
   .drop-zone.has-file {
     border-style: solid;

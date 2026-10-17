@@ -509,7 +509,7 @@
   .today-btn:hover,
   .today-btn:focus-visible {
     background: var(--bg-elev);
-    border-color: var(--accent);
+    border-color: var(--fg);
   }
 
   /* ---------- quickstart panel ---------- */

@@ -71,7 +71,7 @@
     text-align: left;
   }
   .splits-table tr.finish-row td {
-    background: var(--accent-soft);
+    background: var(--bg-sunken);
     font-weight: 600;
   }
 </style>

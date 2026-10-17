@@ -200,7 +200,7 @@
     display: flex;
     flex-direction: column;
     padding: var(--space-md) var(--space-sm);
-    gap: var(--space-2xs);
+    gap: var(--space-xs);
     height: 100%;
     min-height: 0;
     overflow-y: auto;
