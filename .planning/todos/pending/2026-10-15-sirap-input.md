@@ -1,6 +1,6 @@
 ---
 created: 2026-10-15T20:00:00+02:00
-title: SIRAP input - radio punches from meshO Manager, WiRoc and jSh over TCP
+title: SIRAP input - radio punches over TCP from gateways and radio managers
 area: radio
 files:
   - apps/edge/src/integrations/radioserial/input.ts
@@ -10,17 +10,15 @@ files:
 
 ## Why now
 
-meshO offers 5 radio units (EU model) for a test. Its only documented way
-out is meshO Manager forwarding radio punches as SIRAP (docs.mesho.live,
-"Connecting meshO Prime and radios"); it has no ROC and no serial
-autosend, so `--radio-serial` cannot read it. WiRoc and jSh also speak
-SIRAP (WiRoc: one TCP connection per punch). One TCP input covers all
-three, next to ROC and the serial input.
+Several radio systems forward punches as SIRAP: WiRoc and jSh gateways,
+and radio managers that have no ROC or serial autosend (so
+`--radio-serial` cannot read them). One TCP input covers them all, next
+to ROC and the serial input, before radio units are tested.
 
 ## The protocol (prior art: MeOS, `code/SportIdent.cpp:790-935`, mimicked, not ported)
 
 - The sender is a TCP client; the receiver listens (MeOS default port
-  10000, as meshO Manager's settings).
+  10000).
 - A punch is 15 bytes, little endian: type u8 (0 = punch), control code
   u16, card number u32, day u32 (0 when unknown), time u32. MeOS reads
   the time as tenths of a second since its zero time; WiRoc sends tenths
@@ -47,17 +45,17 @@ three, next to ROC and the serial input.
 3. Status for the radio panel: listening or not, connections, punches
    stored, duplicates, refused frames, last punch time; the watchdog sees
    SIRAP punches like the others.
-4. Bench: the meshO lab (`fartOLa-docs/mesho-lab`) forwards punches it
-   gets through its API to fartOLa's port; record the bytes and compare
-   (date, tenths, codes over 255). WiRoc and jSh when units are borrowed.
+4. Bench: a radio manager that forwards SIRAP, then WiRoc and jSh when
+   units are borrowed; record the bytes and compare (date, tenths, codes
+   over 255).
 5. Later, only on demand: SIRAP out, so fartOLa can feed MeOS during a
    migration (REQ-STD-006/007).
 
-Done when meshO Manager's "Forward Radio Punches" lands punches in
+Done when a sender's forwarded punches land in
 fartOLa's radio panel, speaker and kvar i skogen, duplicates once, with
 the parser tests above. Synthetic data only.
 
 ## Open
 
-- Does meshO send the day, and what zero time does it use for the time
-  field? Answered by step 4 or by the developer (`mesho-lab/QUESTIONS.md`).
+- Does a sender fill in the day, and what zero time does the time field
+  use? Answered by step 4.
