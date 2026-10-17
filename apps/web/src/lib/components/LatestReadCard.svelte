@@ -453,6 +453,7 @@
                   role="radio"
                   onclick={() => pickStatus(s)}
                 >
+                  {#if pickedStatus === s}<Icon name="check" size={16} />{/if}
                   {t(`status.${s}`)}
                 </button>
               {/each}
@@ -701,6 +702,9 @@
     gap: 4px;
   }
   .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     height: var(--hit);
     padding: 0 10px;
     border: 1px solid var(--border-strong);
@@ -715,9 +719,12 @@
   .status-chip:hover {
     background: var(--bg-sunken);
   }
+  /* A check and a 2 px ring, so the pick differs from hover in Sun mode
+     too, where every border is black. */
   .status-chip.active {
     background: var(--bg-sunken);
     border-color: var(--fg);
+    box-shadow: inset 0 0 0 1px var(--fg);
     color: var(--fg);
     font-weight: 600;
   }

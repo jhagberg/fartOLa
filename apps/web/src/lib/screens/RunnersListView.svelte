@@ -702,6 +702,7 @@
   .chip.active {
     background: var(--bg-sunken);
     border-color: var(--fg);
+    box-shadow: inset 0 0 0 1px var(--fg);
     color: var(--fg);
     font-weight: 600;
   }
