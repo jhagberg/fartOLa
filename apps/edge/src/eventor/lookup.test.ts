@@ -207,7 +207,7 @@ describe('eventor lookup FTS5 — searchCompetitorsByName', () => {
   test('club_id filter narrows the result set to that federation club', async () => {
     await withSeededDb((handle) => {
       // 'stora' matches both Hagberg (club 637) and Östberg (club 637)
-      // via their club_name column. Larsson (no club) does not match.
+      // via their club_name column. Provsson (no club) does not match.
       const all = searchCompetitorsByName(handle, 'stora', 20);
       assert.equal(all.length, 2);
 

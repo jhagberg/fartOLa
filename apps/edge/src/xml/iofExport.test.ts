@@ -353,7 +353,7 @@ describe('buildResultListXml — frozen fixture + structural guarantees', () => 
       ['DNS', 'cmp-dns', 'Erik Eriksson'],
       ['DQ', 'cmp-dq', 'Fia Forsberg'],
       ['CANCEL', 'cmp-cancel', 'Gustav Gren'],
-      ['MAX', 'cmp-max', 'Hanna Hagberg'],
+      ['MAX', 'cmp-max', 'Hanna Provsson'],
     ];
     for (const [status, id, name] of cmps) {
       const view = makeCompetitorView({

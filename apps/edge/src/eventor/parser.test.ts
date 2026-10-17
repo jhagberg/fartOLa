@@ -64,7 +64,7 @@ describe('eventor parser: streamCompetitorsXml — synthetic fixture', () => {
     assert.equal(r.modify_date_ms, Date.parse('2024-12-12T09:46:45Z'));
   });
 
-  test('record[1] (Larsson, orphan + multi-ControlCard) — both si_card and emit_card', async () => {
+  test('record[1] (Provsson, orphan + multi-ControlCard) — both si_card and emit_card', async () => {
     const records: EventorCompetitor[] = [];
     await streamCompetitorsXml(path.join(FIXTURE_DIR, 'competitors-sample.xml'), (rec) =>
       records.push(rec)
@@ -72,10 +72,10 @@ describe('eventor parser: streamCompetitorsXml — synthetic fixture', () => {
     const r = records[1];
     assert.ok(r);
     assert.equal(r.person_id, 1002);
-    assert.equal(r.family_name, 'Larsson');
-    assert.equal(r.given_name, 'Lena');
-    assert.equal(r.si_card, 8303057);
-    assert.equal(r.emit_card, 530947);
+    assert.equal(r.family_name, 'Provsson');
+    assert.equal(r.given_name, 'Lina');
+    assert.equal(r.si_card, 8999901);
+    assert.equal(r.emit_card, 999901);
     // Orphan rule — no <Organisation> → club_id null, no crash.
     assert.equal(r.club_id, null);
     assert.equal(r.sex, 'F');

@@ -19,11 +19,11 @@
     <!-- Orphan competitor (no Organisation) — must not crash parser -->
     <Person sex="F">
       <Id type="Sweden">1002</Id>
-      <Name><Family>Larsson</Family><Given>Lena</Given></Name>
-      <BirthDate>1957-01-01</BirthDate>
+      <Name><Family>Provsson</Family><Given>Lina</Given></Name>
+      <BirthDate>1960-01-01</BirthDate>
     </Person>
-    <ControlCard punchingSystem="SI">8303057</ControlCard>
-    <ControlCard punchingSystem="Emit">530947</ControlCard>
+    <ControlCard punchingSystem="SI">8999901</ControlCard>
+    <ControlCard punchingSystem="Emit">999901</ControlCard>
   </Competitor>
   <Competitor modifyTime="2024-12-12T09:46:45Z">
     <!-- Competitor with no SI card AND name with å/ä/ö (UTF-8 multi-byte) -->
