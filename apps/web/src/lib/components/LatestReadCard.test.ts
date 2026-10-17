@@ -83,6 +83,17 @@ describe('LatestReadCard manual-status picker', () => {
     flushSync();
     expect(el.querySelector('[data-testid="dnf-confirm"]')?.textContent?.trim()).toBe('Spara');
   });
+
+  it('marks only the picked status with a check, not by colour alone', () => {
+    const el = html(read());
+    el.querySelector<HTMLButtonElement>('[data-testid="manual-dnf-btn"]')!.click();
+    flushSync();
+    const checked = [...el.querySelectorAll('[role="radio"]')].filter((c) =>
+      c.querySelector('svg')
+    );
+    expect(checked).toHaveLength(1);
+    expect(checked[0]!.getAttribute('aria-checked')).toBe('true');
+  });
 });
 
 describe('LatestReadCard failed status save', () => {
