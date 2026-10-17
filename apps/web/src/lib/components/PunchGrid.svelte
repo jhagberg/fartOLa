@@ -89,7 +89,7 @@
     grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   }
   .punch-grid.medium {
-    grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
     gap: 6px;
   }
   .punch {
@@ -143,7 +143,7 @@
     white-space: nowrap;
   }
   .medium .label {
-    font-size: 13px;
+    font-size: var(--fs-label);
   }
   .punch.ok {
     background: var(--punch-ok-fill);

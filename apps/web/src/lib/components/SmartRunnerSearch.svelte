@@ -372,7 +372,7 @@
   }
   .opt-sub {
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-caption);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -382,7 +382,7 @@
     font-feature-settings:
       'tnum' 1,
       'zero' 1;
-    font-size: 12px;
+    font-size: var(--fs-caption);
     padding: 3px 8px;
     background: var(--bg-sunken);
     border: 1px solid var(--border);
