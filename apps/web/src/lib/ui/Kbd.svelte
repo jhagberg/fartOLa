@@ -20,11 +20,11 @@
 <style>
   .kbd {
     font-family: var(--font-mono);
-    font-size: 11px;
-    padding: 1px 5px;
+    font-size: var(--fs-caption);
+    padding: 1px 7px;
     background: var(--bg-sunken);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     color: var(--fg-muted);
   }
 </style>

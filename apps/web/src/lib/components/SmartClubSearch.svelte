@@ -233,7 +233,7 @@
     padding: 12px 14px;
     color: var(--fg-muted);
     font-style: italic;
-    font-size: 13px;
+    font-size: var(--fs-caption);
   }
   .opt {
     display: flex;
@@ -267,7 +267,7 @@
   }
   .opt-sub {
     color: var(--fg-muted);
-    font-size: 12px;
+    font-size: var(--fs-caption);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
