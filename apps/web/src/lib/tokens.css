@@ -1,22 +1,20 @@
 /*
  * Authored for fartola. Not ported from upstream.
  *
- * Locked design-token contract for the fartOLa Phase 1 SPA. Ported verbatim
- * from .planning/phases/01-single-laptop-training-mvp/01-SKETCHES/
- * claude-design-bundle/project/styles.css, extended with the spacing scale,
- * receipt-typography tokens, density modifiers, and font-pair attribute
- * selectors called out in 01-UI-SPEC.md §Design System.
+ * ⅃ooL brand layer (design system "⅃ooL", 2026-10-16) on the locked
+ * token contract. Every token name below is unchanged; values changed for
+ * the brand (cream page, forest accent), and these were ADDED:
+ *   --accent-hover --brand-forest --brand-orange --brand-cream
+ *   --mascot-fur --mascot-fur-shade --radius-pill --fs-speaker-row --fs-speaker-meta
+ *   --fs-hero --fs-jumbo.
+ * .contrast-high (bright sun) now overrides every colour token. The
+ * design system's Dark theme is proposed and not taken in yet.
  *
- * Locked by:
- * - 01-UI-SPEC.md §Spacing Scale + §Typography + §Color (LOCKED 60/30/10,
- *   4 status colors, 4-pair font alternates)
- * - 01-UI-SPEC.md §"Accent runtime overrides" + §"High-contrast bright-sun mode"
- * - 01-UI-SPEC.md §"Visual Anchors" (TID clock, hybrid-density rows)
- * - 01-11-PLAN.md task 1
+ * Earlier contract: 01-UI-SPEC.md §Spacing Scale, §Typography, §Color,
+ * §"Accent runtime overrides", §"High-contrast bright-sun mode".
  *
  * NOTE: This file only declares variables + a tiny base reset. All
- * component styling lives inside the respective .svelte files (Svelte 5
- * scoped <style> blocks) so HMR + scoped selectors do the heavy lifting.
+ * component styling lives inside the respective .svelte files.
  */
 
 :root {
@@ -42,35 +40,30 @@
   /* ───── Radii + shadows ───────────────────────────────────────────── */
   --radius: 6px;
   --radius-lg: 8px;
+  --radius-pill: 999px;
   --shadow-sm: 0 0 0 1px var(--border);
   --shadow-md: 0 0 0 1px var(--border);
-  --shadow-lg: 0 12px 40px rgba(20, 20, 30, 0.12), 0 0 0 1px rgba(20, 20, 30, 0.04);
+  --shadow-lg: 0 12px 40px rgba(15, 35, 28, 0.14), 0 0 0 1px rgba(15, 35, 28, 0.06);
 
-  /* ───── Color tokens — locked oklch palette ───────────────────────── */
-  --bg: oklch(0.98 0.005 90);
-  --bg-elev: oklch(1 0 0);
-  --bg-sunken: oklch(0.96 0.006 90);
-  --fg: oklch(0.22 0.01 240);
-  --fg-muted: oklch(0.42 0.01 240);
-  --fg-faint: oklch(0.52 0.01 240);
-  --border: oklch(0.9 0.005 90);
-  --border-strong: oklch(0.62 0.005 90);
+  /* ───── Color tokens: ⅃ooL light (cream page, forest accent) ───── */
+  /* Surfaces and ink */
+  --bg: #faf6ec;
+  --bg-elev: #fffdf8;
+  --bg-sunken: #f1ebdc;
+  --fg: #13241c;
+  --fg-muted: #38463f;
+  --fg-faint: #56625b;
+  --border: #e2d9c6;
+  --border-strong: #847b6a;
 
-  /* Accent — forest green (orienteering map vibe). Default of 4 variants. */
-  --accent: oklch(0.5 0.08 145);
-  --accent-fg: oklch(0.98 0.005 90);
-  --accent-soft: oklch(0.94 0.03 145);
-  --accent-strong: oklch(0.42 0.09 145);
+  /* Accent: green, for the one primary button. Hover goes lighter. */
+  --accent: #1d5a43;
+  --accent-fg: #faf6ec;
+  --accent-soft: #dfeae2;
+  --accent-strong: #0f3d2e;
+  --accent-hover: #3d765c;
 
-  /* Status — locked by 01-UI-SPEC §"Status colors".
-     Phase 2.0 (2026-05-18): four additional states added for operator manual
-     overrides — DNS/DQ/CANCEL/MAX. Each holds the same "soft fill + same-hue
-     foreground" contract as the original four. Hues are picked to read at-
-     a-glance:
-       - DNS  → muted blue-gray ("absent on race day")
-       - DQ   → violet ("operator rule decision")
-       - CANCEL → cool slate ("pre-race withdrawal")
-       - MAX  → deep amber-red ("over time", between MP amber and DNF red) */
+  /* Status: soft fill + same-hue text. MP text is --mp-fg; --mp is a mark. */
   --ok: oklch(0.46 0.13 145);
   --ok-soft: oklch(0.94 0.05 145);
   --mp: oklch(0.7 0.15 75);
@@ -87,12 +80,11 @@
   --cancel-soft: oklch(0.94 0.01 220);
   --max: oklch(0.46 0.15 50);
   --max-soft: oklch(0.94 0.06 50);
-
-  /* MP text on --mp-soft: --mp itself is too light for text (2.33:1). */
   --mp-fg: oklch(0.45 0.12 70);
 
-  /* Punch tiles (spec "Punch tiles"): each state differs in lightness,
-     border and word, not only in hue. */
+  /* Punch tiles: missing differs most in lightness from ok and wrong order
+     (darkest on the light card). Border, icon and
+     word differ too. */
   --punch-ok-fill: oklch(0.93 0.06 150);
   --punch-ok-line: oklch(0.42 0.11 150);
   --punch-miss-fill: oklch(0.44 0.17 27);
@@ -100,14 +92,26 @@
   --punch-order-fill: oklch(0.93 0.08 85);
   --punch-order-line: oklch(0.45 0.11 65);
 
+  /* Brand (⅃ooL). Orange is a mark on forest, never a text ground or a status. */
+  --brand-forest: #0f3d2e;
+  --brand-orange: #f26b1d;
+  --brand-cream: #faf6ec;
+  --mascot-fur: #d9b98c;
+  --mascot-fur-shade: #c49f6d;
+
+  --scrim: rgba(15, 35, 28, 0.4);
+
   /* ───── Typography ────────────────────────────────────────────────── */
   --fs-caption: 14px; /* was 12px; ADR-0016 r7 (audit LO-8) */
   --fs-label: 14px;
   --fs-body: 16px;
   --fs-heading: 22px;
   --fs-display: 28px;
+  --fs-hero: 48px; /* new: speaker, finish screens */
+  --fs-jumbo: 96px; /* new: kids' finish time, speaker leader */
+  --fs-speaker-row: 28px; /* new: speaker rows */
+  --fs-speaker-meta: 22px; /* new: smallest size on big screens */
 
-  --scrim: rgba(20, 20, 30, 0.32);
   --focus-ring: 2px solid var(--fg);
 
   /* Receipt typography (consumed by plan 15 print path) */
@@ -139,49 +143,87 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* ───── Accent runtime overrides (UI-SPEC §"Accent runtime overrides") ── */
+/* ───── Accent runtime overrides (UI-SPEC §"Accent runtime overrides") ──
+   Light theme only; ⅃ooL's own accent is forest. */
 [data-accent='blue'] {
   --accent: oklch(0.5 0.1 245);
   --accent-soft: oklch(0.94 0.03 245);
   --accent-strong: oklch(0.42 0.11 245);
+  --accent-hover: oklch(0.54 0.1 245);
 }
 [data-accent='magenta'] {
   --accent: oklch(0.5 0.13 330);
   --accent-soft: oklch(0.94 0.03 330);
   --accent-strong: oklch(0.42 0.14 330);
+  --accent-hover: oklch(0.54 0.13 330);
 }
 [data-accent='charcoal'] {
   --accent: oklch(0.3 0.01 240);
   --accent-soft: oklch(0.92 0.005 240);
   --accent-strong: oklch(0.2 0.01 240);
+  --accent-hover: oklch(0.4 0.01 240);
 }
 
 /* ───── High-contrast bright-sun mode (UI-SPEC §"High-contrast bright-sun") */
 .contrast-high {
+  /* Surfaces and ink */
   --bg: #ffffff;
   --bg-elev: #ffffff;
-  --bg-sunken: #f1f1f1;
+  --bg-sunken: #f1f1ec;
   --fg: #000000;
   --fg-muted: #1f1f1f;
   --fg-faint: #3a3a3a;
   --border: #000000;
   --border-strong: #000000;
+
+  /* Accent: green, for the one primary button. Hover goes lighter. */
   --accent: #00541e;
   --accent-fg: #ffffff;
   --accent-soft: #d8eedd;
   --accent-strong: #003912;
+  --accent-hover: #21763c;
+
+  /* Status: soft fill + same-hue text. MP text is --mp-fg; --mp is a mark. */
   --ok: #005f1a;
+  --ok-soft: oklch(0.94 0.05 145);
   --mp: #8a4a00;
+  --mp-soft: oklch(0.95 0.06 80);
   --dnf: #8a0010;
+  --dnf-soft: oklch(0.94 0.05 25);
+  --pend: oklch(0.7 0.005 240);
+  --pend-soft: oklch(0.94 0.005 240);
+  --dns: oklch(0.46 0.04 240);
+  --dns-soft: oklch(0.94 0.02 240);
+  --dq: oklch(0.46 0.16 320);
+  --dq-soft: oklch(0.94 0.05 320);
+  --cancel: oklch(0.46 0.02 220);
+  --cancel-soft: oklch(0.94 0.01 220);
+  --max: oklch(0.46 0.15 50);
+  --max-soft: oklch(0.94 0.06 50);
   --mp-fg: #7a4100;
+
+  /* Punch tiles: missing differs most in lightness from ok and wrong order
+     (darkest on the light card). Border, icon and
+     word differ too. */
   --punch-ok-fill: #d8eedd;
   --punch-ok-line: #005f1a;
   --punch-miss-fill: #8a0010;
+  --punch-miss-fg: #ffffff;
   --punch-order-fill: #ffe9b3;
   --punch-order-line: #5c3200;
+
+  /* Brand (⅃ooL). Orange is a mark on forest, never a text ground or a status. */
+  --brand-forest: #0f3d2e;
+  --brand-orange: #f26b1d;
+  --brand-cream: #faf6ec;
+  --mascot-fur: #d9b98c;
+  --mascot-fur-shade: #c49f6d;
+
+  --scrim: rgba(0, 0, 0, 0.5);
   --shadow-sm: 0 0 0 1px #000;
   --shadow-md: 0 0 0 1.5px #000;
   --shadow-lg: 0 0 0 2px #000;
+  color-scheme: light;
 }
 
 /* ───── Density modifiers — readout rows (UI-SPEC §"Visual Anchors") ───── */
@@ -262,7 +304,7 @@ textarea {
 .skip-link:focus,
 .skip-link:focus-visible {
   transform: translateY(0);
-  outline: 2px solid var(--accent-fg);
+  outline: var(--focus-ring); /* was accent-fg on the page, 1.00:1 */
   outline-offset: 2px;
 }
 

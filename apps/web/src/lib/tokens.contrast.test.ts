@@ -72,12 +72,14 @@ const PAIRS: Array<[string, string, number]> = [
   ['--fg-faint', '--bg', 4.5],
   ['--fg-faint', '--bg-sunken', 4.5],
   ['--fg-faint', '--pend-soft', 4.5],
+  ['--fg-faint', '--bg-elev', 4.5], // placeholders
   ['--fg-muted', '--bg-elev', 7],
   ['--fg-muted', '--ok-soft', 4.5],
   ['--ok', '--bg', 4.5],
   ['--mp-fg', '--bg', 4.5],
   ['--dnf', '--bg', 4.5],
   ['--accent-fg', '--accent', 4.5],
+  ['--accent-fg', '--accent-hover', 4.5],
   ['--ok', '--ok-soft', 4.5],
   ['--mp-fg', '--mp-soft', 4.5],
   ['--dnf', '--dnf-soft', 4.5],
@@ -95,7 +97,9 @@ const PAIRS: Array<[string, string, number]> = [
   // non-text: control borders, the focus ring on the page
   ['--border-strong', '--bg-elev', 3],
   ['--border-strong', '--bg-sunken', 3],
+  ['--border-strong', '--bg', 3],
   ['--fg', '--bg-elev', 3],
+  ['--punch-miss-fill', '--bg-elev', 3], // the missing tile against the card
 ];
 
 const root = block(':root');
