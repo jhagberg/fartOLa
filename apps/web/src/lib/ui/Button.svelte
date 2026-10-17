@@ -77,7 +77,7 @@
       background 0.12s,
       border 0.12s;
   }
-  .btn:hover {
+  .btn:hover:not(:disabled) {
     background: var(--bg-sunken);
   }
   .btn:active {
@@ -88,8 +88,9 @@
     color: var(--accent-fg);
     border-color: var(--accent);
   }
-  .variant-primary:hover {
-    background: var(--accent-strong);
+  .variant-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
   }
   /* Secondary == base .btn treatment (visible border + elevated background).
      Declared explicitly so it's discoverable and so callers see why it
@@ -99,14 +100,14 @@
     color: var(--fg);
     border-color: var(--border-strong);
   }
-  .variant-secondary:hover {
+  .variant-secondary:hover:not(:disabled) {
     background: var(--bg-sunken);
   }
   .variant-ghost {
     border-color: transparent;
     background: transparent;
   }
-  .variant-ghost:hover {
+  .variant-ghost:hover:not(:disabled) {
     background: var(--bg-sunken);
   }
   .variant-danger {
@@ -114,10 +115,11 @@
     border-color: var(--dnf);
     background: var(--bg-elev);
   }
+  /* Unlike hover: a dashed edge marks disabled in every theme. */
   .btn:disabled {
-    background: var(--bg-sunken);
+    background: var(--bg-elev);
     color: var(--fg-muted);
-    border-color: var(--border);
+    border: 1px dashed var(--border-strong);
     cursor: not-allowed;
   }
   .btn-hint {
