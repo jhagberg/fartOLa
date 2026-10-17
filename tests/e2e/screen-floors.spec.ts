@@ -67,6 +67,12 @@ import {
   prepareHyrbrickorLoadError,
   prepareHyrbrickorOpen,
 } from './helpers/hyrbrickor.ts';
+import {
+  prepareClubSearchEmpty,
+  prepareClubSearchOptions,
+  prepareReadoutLongCourse,
+  prepareRunnerSearchOptions,
+} from './helpers/search-options.ts';
 import { smallTargets, smallText } from './helpers/floors.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -448,6 +454,34 @@ const SCREENS: Screen[] = [
     url: (id) => `/competition/${id}/hyrbrickor`,
     ready: (p) => p.getByTestId('hyrbrickor-view'),
     prepare: async (page) => prepareHyrbrickorEmpty(page),
+  },
+  {
+    name: 'Anmälda, lägg till med löparsökning och träff',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareRunnerSearchOptions(page, request),
+  },
+  {
+    name: 'Anmälda, lägg till med klubbsökning och träff',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareClubSearchOptions(page, request),
+  },
+  {
+    name: 'Anmälda, lägg till med klubbsökning utan träff',
+    url: (id) => `/competition/${id}/runners`,
+    ready: (p) => p.getByTestId('runners-view'),
+    root: '[role="dialog"]',
+    prepare: async (page, _id, request) => prepareClubSearchEmpty(page, request),
+  },
+  {
+    name: 'Avläsning, lång bana med saknad kontroll',
+    url: (id) => `/competition/${id}/readout`,
+    ready: (p) => p.getByTestId('readout-view'),
+    root: '[data-testid=latest-read]',
+    prepare: async (page, _id, request) => prepareReadoutLongCourse(page, request),
   },
 ];
 
